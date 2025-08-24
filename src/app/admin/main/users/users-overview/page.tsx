@@ -24,11 +24,21 @@
 // Chakra imports
 import { Flex } from '@chakra-ui/react';
 import Card from 'components/card/Card';
-
+import { getDeals, getCustomDealFields } from 'clients/pipedrive/pipedrive';
 import SearchTableUsers from 'components/admin/main/users/users-overview/SearchTableUsersOverivew';
 import tableDataUsersOverview from 'variables/users/users-overview/tableDataUsersOverview';
 
+const loadDeals = async () => {
+  const deals = await getDeals();
+  console.log(deals);
+  const customDealFields = await getCustomDealFields();
+  console.log(customDealFields);
+  return deals;
+};
+
 export default function UsersOverview() {
+  const deals = loadDeals();
+  console.log(deals);
   return (
     <Flex direction="column" pt={{ sm: '125px', lg: '75px' }}>
       <Card px="0px">
