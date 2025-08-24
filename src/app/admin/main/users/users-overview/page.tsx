@@ -23,27 +23,59 @@
 
 // Chakra imports
 import { Flex } from '@chakra-ui/react';
+import { useEffect, useState } from 'react';
 import Card from 'components/card/Card';
 import { getDeals, getCustomDealFields } from 'clients/pipedrive/pipedrive';
 import SearchTableUsers from 'components/admin/main/users/users-overview/SearchTableUsersOverivew';
 import tableDataUsersOverview from 'variables/users/users-overview/tableDataUsersOverview';
 
-const loadDeals = async () => {
-  const deals = await getDeals();
-  console.log(deals);
-  const customDealFields = await getCustomDealFields();
-  console.log(customDealFields);
-  return deals;
-};
-
 export default function UsersOverview() {
-  const deals = loadDeals();
-  console.log(deals);
+  const [deals, setDeals] = useState([]);
+  const [customDealFields, setCustomDealFields] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const [dealsData, customFieldsData] = await Promise.all([
+          getDeals(),
+          getCustomDealFields()
+        ]);
+        setDeals(dealsData || []);
+        setCustomDealFields(customFieldsData || []);
+      } catch (error) {
+        console.error('Error loading Pipedrive data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
   return (
     <Flex direction="column" pt={{ sm: '125px', lg: '75px' }}>
       <Card px="0px">
         <SearchTableUsers tableData={tableDataUsersOverview} />
       </Card>
+      {loading && (
+        <Card px="20px" py="20px" mt="20px">
+          <div>Loading Pipedrive data...</div>
+        </Card>
+      )}
+      {deals && deals.length > 0 && (
+        <Card px="20px" py="20px" mt="20px">
+          <h3>Pipedrive Deals ({deals.length})</h3>
+          <pre>{JSON.stringify(deals.slice(0, 3), null, 2)}</pre>
+        </Card>
+      )}
+      {customDealFields && customDealFields.length > 0 && (
+        <Card px="20px" py="20px" mt="20px">
+          <h3>Custom Deal Fields ({customDealFields.length})</h3>
+          <pre>{JSON.stringify(customDealFields.slice(0, 3), null, 2)}</pre>
+        </Card>
+      )}
     </Flex>
   );
 }
