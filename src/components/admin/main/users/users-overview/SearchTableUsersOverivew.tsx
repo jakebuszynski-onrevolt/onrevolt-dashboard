@@ -187,7 +187,7 @@ export default function SearchTableOrders(props: { tableData: RowObj[] }) {
     const [{ pageIndex, pageSize }, setPagination] =
         React.useState<PaginationState>({
             pageIndex: 0,
-            pageSize: 6,
+            pageSize: 25,
         });
 
     const pagination = React.useMemo(
