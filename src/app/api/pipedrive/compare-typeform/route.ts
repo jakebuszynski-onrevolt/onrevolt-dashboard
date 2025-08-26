@@ -3,22 +3,29 @@ import {
   getTypeformForm,
   simplifyTypeformFieldsFull,
   type TypeformField,
+  type SimplifiedTFField,
 } from "../../../../clients/typeform";
 
-// --- Pipedrive config przez API KEY ---
+// ---- CONFIG PIPEDRIVE (API KEY) ----
 const DOMAIN = process.env.PIPEDRIVE_DOMAIN; // np. "mycompany"
 const BASE =
   process.env.PIPEDRIVE_BASE_URL ??
   (DOMAIN ? `https://${DOMAIN}.pipedrive.com/api/v1` : "");
 const TOKEN = process.env.PIPEDRIVE_API_TOKEN || "";
 
-// --- Pipedrive helpers ---
-async function listDealFields() {
+type Entity = "deal" | "person";
+
+// ---- PIPEDRIVE HELPERS ----
+function ep(entity: Entity) {
+  return entity === "person" ? "personFields" : "dealFields";
+}
+
+async function listFields(entity: Entity) {
   let start = 0;
   const limit = 500;
   const out: any[] = [];
   for (;;) {
-    const url = `${BASE}/dealFields?start=${start}&limit=${limit}`;
+    const url = `${BASE}/${ep(entity)}?start=${start}&limit=${limit}`;
     const r = await fetch(url, {
       headers: { "x-api-token": TOKEN },
       cache: "no-store",
@@ -32,14 +39,33 @@ async function listDealFields() {
   }
   return out.map((f: any) => ({
     id: f.id,
-    key: f.key,                // tym kluczem ustawiasz wartości w Deal
+    key: f.key,
     name: f.name,
-    field_type: f.field_type,  // varchar, double, enum, set, date, phone...
+    field_type: f.field_type,       // np. varchar, text, double, enum, set, phone, date...
     options: (f.options ?? []).map((o: any) => o.label),
   }));
 }
 
-// --- mapowanie Typeform → Pipedrive ---
+// ---- SANITIZER / NORMALIZER ----
+/** snake_case ASCII: usuwa diakrytyki, zamienia nie-alfanum. na _, scala, tnie, wymusza lowercase */
+function sanitizeToSnakeCase(input: string, refForFallback?: string, maxLen = 50): string {
+  let s = (input || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");      // strip diacritics
+  s = s.replace(/[^A-Za-z0-9]+/g, "_");     // wszystko poza [A-Za-z0-9] -> _
+  s = s.replace(/_+/g, "_").replace(/^_+|_+$/g, ""); // scala i trymuje _
+  s = s.toLowerCase();
+  if (!s || /^\d/.test(s)) s = `f_${s}`;    // nie zaczynaj od cyfry
+  if (s.length > maxLen) s = s.slice(0, maxLen);
+  if (!s) s = `field_${(refForFallback || "").slice(0, 8).toLowerCase()}`;
+  return s;
+}
+/** normalizacja nazw PD do porównań – ta sama reguła co dla sugerowanych */
+function normalizeForCompare(name: string) {
+  return sanitizeToSnakeCase(name || "", "", 200);
+}
+
+// ---- MAPOWANIE TF -> PD ----
 type PdType =
   | "varchar" | "text" | "double" | "enum" | "set"
   | "phone" | "date";
@@ -66,39 +92,27 @@ function mapTfToPdType(tfType: TypeformField, multi?: boolean): PdType | undefin
       return "enum";
     case "phone_number":
       return "phone";
-    // layoutowe lub kontenery pomijamy (dzieci już są spłaszczone):
+    // kontenery/layouty pomijamy (dzieci już są spłaszczone przez simplifyTypeformFieldsFull)
     case "contact_info":
     case "group":
     case "inline_group":
-    case "legal": // same „zgody” zwykle osobno modelujemy, ale nie mapujemy automatycznie
+    case "legal":
       return undefined;
     default:
       return undefined;
   }
 }
 
-function suggestedOptions(tf: {
-  type: TypeformField;
-  options?: string[];
-}): string[] | undefined {
-  if (tf.type === "yes_no") return ["Yes", "No"];
-  return tf.options;
-}
-
-// Czytelna, ale stabilna nazwa w PD (możesz dodać ref, jeśli chcesz 100% unikalności)
-function suggestedPdName(title: string, ref: string) {
-  return title?.trim() || ref;
-  // np. bardziej unikalnie:
-  // return `${(title || ref).trim()} (TF:${ref.slice(0,8)})`;
-}
-
-// normalizacja nazw do porównań (bez polskich znaków, case-insensitive)
-function normalizeName(s: string) {
-  return (s || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
+/** pola "personowe" — nie porównuj ich do Deal */
+function isPersonish(tf: SimplifiedTFField) {
+  const t = tf.type;
+  const ref = tf.ref || "";
+  const title = (tf.title || "").toLowerCase();
+  if (t === "email" || t === "phone_number") return true;
+  if (/__(first_name|last_name|email|phone)$/.test(ref)) return true;
+  if (/\b(first\s*name|last\s*name)\b/i.test(title)) return true;
+  if (title === "user_id" || /user[_\s]?id/.test(ref)) return true; // hidden identyfikacyjne
+  return false;
 }
 
 export async function GET(req: NextRequest) {
@@ -111,48 +125,66 @@ export async function GET(req: NextRequest) {
       url.searchParams.get("form_id") ||
       process.env.NEXT_PUBLIC_TYPEFORM_FORM_ID ||
       "";
+    const entity = (url.searchParams.get("entity") as Entity) || "deal"; // "deal" | "person"
+
     if (!formId) {
       return new Response("Missing form_id (query) or NEXT_PUBLIC_TYPEFORM_FORM_ID", { status: 400 });
     }
 
-    // 1) Typeform – pełne spłaszczenie (w tym contact_info → first/last/email/phone)
+    // 1) Typeform – spłaszczone pola (w tym contact_info rozbite)
     const form = await getTypeformForm(formId);
     const tfFlat = simplifyTypeformFieldsFull(form);
 
-    // mapujemy tylko pola, które mają sens w PD
-    const tfMappable = tfFlat
+    // 2) Filtr pod encję
+    const tfForEntity = tfFlat.filter(tf => {
+      if (entity === "deal" && isPersonish(tf)) return false;
+      if (entity === "person" && !isPersonish(tf)) return false;
+      return true;
+    });
+
+    // 3) Mapowanie + SUGEROWANA NAZWA (snake_case)
+    const seenNames = new Set<string>();
+    const tfMappable = tfForEntity
       .map(tf => {
         const pdType = mapTfToPdType(tf.type, tf.multi);
         if (!pdType) return null;
+
+        let suggested = sanitizeToSnakeCase(tf.title, tf.ref);
+        // rozwiąż ewentualną kolizję w ramach jednej listy
+        if (seenNames.has(suggested)) {
+          suggested = `${suggested}_${(tf.ref || "").slice(0, 6).toLowerCase()}`;
+        }
+        seenNames.add(suggested);
+
         return {
           ref: tf.ref,
           title: tf.title,
           tf_type: tf.type,
           pd_type: pdType,
-          options: suggestedOptions(tf),
-          suggested_name: suggestedPdName(tf.title, tf.ref),
+          options: tf.type === "yes_no" ? ["Yes", "No"] : (tf as any).options,
+          suggested_name: suggested,
         };
       })
       .filter(Boolean) as Array<{
         ref: string;
         title: string;
-        tf_type: string;
+        tf_type: TypeformField;
         pd_type: PdType;
         options?: string[];
         suggested_name: string;
       }>;
 
-    // 2) Pipedrive – deal fields
-    const pdFields = await listDealFields();
+    // 4) Pipedrive – pola dla encji
+    const pdFields = await listFields(entity);
 
-    // 3) porównanie po nazwie (z normalizacją)
+    // 5) Porównanie po **znormalizowanej** nazwie
     const pdByNormName = new Map(
-      pdFields.map(f => [normalizeName(f.name), f])
+      pdFields.map(f => [normalizeForCompare(f.name), f])
     );
 
     const missing = tfMappable
       .map(tf => {
-        const match = pdByNormName.get(normalizeName(tf.suggested_name));
+        const match = pdByNormName.get(normalizeForCompare(tf.suggested_name));
         if (match) {
           return {
             tf_ref: tf.ref,
@@ -175,9 +207,11 @@ export async function GET(req: NextRequest) {
 
     return Response.json({
       form: { id: form.id, title: form.title },
-      typeform_fields: tfMappable,   // spłaszczone + zmapowane
-      pipedrive_fields: pdFields,    // uproszczone PD
-      missing_on_pipedrive: missing, // tylko brakujące
+      entity,                          // "deal" (domyślnie) albo "person"
+      typeform_fields: tfMappable,     // spłaszczone i zmapowane
+      pipedrive_fields: pdFields,      // pola PD dla encji
+      missing_on_pipedrive: missing,   // brakujące wg snake_case
+      naming_convention: "snake_case ascii (no diacritics), lowercase, non-alnum -> _, collapse _, prefix f_ if starts with digit",
     });
   } catch (e: any) {
     return new Response(`compare-typeform error: ${e?.message || e}`, { status: 500 });
