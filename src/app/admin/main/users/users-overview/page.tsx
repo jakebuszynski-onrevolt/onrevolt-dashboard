@@ -131,7 +131,7 @@ export default function UsersOverview() {
 
     const orgName: string = deal?.org_name || deal?.organization?.name || "";
 
-    // Hidden fields do Typeforma – WSZYSTKO co wypełnione
+    // Hidden fields do Typeforma / naszego edytora – WSZYSTKO co wypełnione
     const hidden: Record<string, string> = {};
     const add = (k: string, v: any) => {
       if (v === null || v === undefined) return;
@@ -200,7 +200,9 @@ export default function UsersOverview() {
     }
 
     const params = new URLSearchParams(hidden).toString();
-    const editHref = `/admin/main/users/edit-user?${params}`;
+
+    // ⬇️ JEDYNA ZMIANA: kierujemy do nowego edytora „native”
+    const editHref = `/admin/main/users/edit-user-native?${params}`;
 
     return {
       name: [fullName, avatarUrl],
