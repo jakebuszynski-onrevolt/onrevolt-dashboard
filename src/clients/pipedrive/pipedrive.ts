@@ -72,4 +72,24 @@ const getCustomDealFields = async () => {
   return editableCustomFields;
 };
 
+// --- DODAJ NA DOLE PLIKU LUB W MIEJSCU EXPORTÓW ---
+
+// Klientowe helpery – trafiają do naszych API routes
+export async function getPipelines(): Promise<any[]> {
+  const r = await fetch("/api/pipedrive/pipelines", { cache: "no-store" });
+  if (!r.ok) throw new Error(`GET /api/pipedrive/pipelines -> ${r.status}`);
+  return await r.json();
+}
+
+export async function getStages(pipelineId?: number | string): Promise<any[]> {
+  const url = pipelineId
+    ? `/api/pipedrive/stages?pipeline_id=${pipelineId}`
+    : `/api/pipedrive/stages`;
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`GET ${url} -> ${r.status}`);
+  return await r.json();
+}
+
+
+
 export { getDeals, getCustomDealFields };
