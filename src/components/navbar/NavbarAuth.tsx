@@ -98,7 +98,7 @@ export default function AuthNavbar(props: {
 
   let brand = (
     <Link
-      href={`${process.env.PUBLIC_URL}/#/`}
+      href={`/`}
       display="flex"
       lineHeight="100%"
       fontWeight="bold"
@@ -110,7 +110,8 @@ export default function AuthNavbar(props: {
         direction="row"
         spacing="12px"
         alignItems="center"
-        justify="center"
+        justify="left
+        "
       >
         <HorizonLogo h="26px" w="175px" color={logoColor} />
       </Stack>
@@ -122,7 +123,7 @@ export default function AuthNavbar(props: {
   if (props.secondary === true) {
     brand = (
       <Link
-        minW="175px"
+        minW="109px"
         href={`${process.env.PUBLIC_URL}/#/`}
         display="flex"
         lineHeight="100%"
@@ -131,7 +132,7 @@ export default function AuthNavbar(props: {
         alignItems="center"
         color={mainText}
       >
-        <HorizonLogo h="26px" w="175px" my="32px" color={logoColor} />
+        <HorizonLogo h="19px" w="109px" my="32px" color={logoColor} />
       </Link>
     );
   }
@@ -454,8 +455,8 @@ export default function AuthNavbar(props: {
         px="16px"
         py="22px"
         mx="auto"
-        width="1044px"
-        maxW="90%"
+        width="1200px"
+        maxW="100%"
         alignItems="center"
         zIndex="3"
       >

@@ -39,7 +39,6 @@ function PricingAuthLayout(props: PricingAuthLayoutProps) {
         overflow="hidden"
         zIndex="0"
         top="0"
-        bgGradient="linear(to-b, brand.400, brand.600)"
         mx={{ md: 'auto' }}
       />
       <Navbar />
