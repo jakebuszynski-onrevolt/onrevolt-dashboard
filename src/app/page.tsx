@@ -32,6 +32,8 @@ import {
   Text,
   useColorModeValue,
 } from '@chakra-ui/react';
+// Custom components
+import Card from 'components/card/Card';
 import { Image } from 'components/image/Image';
 import * as d3 from 'd3';
 
@@ -50,33 +52,72 @@ import Layout from 'app/auth/layout';
 
 function Pricing() {
   useEffect(() => {
-    d3.select('#warstwa_kulki').selectAll('image');
-    const kulki = d3.select('#warstwa_kulki').selectAll('#kulka_fioletowa').clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone();
+    d3.select('#warstwa_kulki').selectAll('image').clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone();
+    const kulkiNiebieskie = d3.select('#warstwa_kulki').selectAll('#kulka_niebieska');
+    const kulkiZolte = d3.select('#warstwa_kulki').selectAll('#kulka_zolta');
+    const kulkiZielone = d3.select('#warstwa_kulki').selectAll('#kulka_zielona');
+    const kulkiZielone2 = d3.select('#warstwa_kulki').selectAll('#kulka_zielona2');
+    const kulkiFioletowe = d3.select('#warstwa_kulki').selectAll('#kulka_fioletowa');
+    const kulkiFioletowe2 = d3.select('#warstwa_kulki').selectAll('#kulka_fioletowa2');
     const sciezka_fioletowa = d3.select('#sciezka_fioletowa');
+    const sciezka_fioletowa2 = d3.select('#sciezka_fioletowa2');
+    const sciezka_fioletowa3 = d3.select('#sciezka_fioletowa3');
+    const sciezka_fioletowa4 = d3.select('#sciezka_fioletowa4');
+    const sciezka_fioletowa5 = d3.select('#sciezka_fioletowa5');
     const sciezka_zolta = d3.select('#sciezka_zolta');
     const sciezka_czerwona = d3.select('#sciezka_czerwona');
     const sciezka_zielona = d3.select('#sciezka_zielona');
-    const translateAlong = (path,index) => {
+    const translateAlong = (path, dir) => {
       var l = path.getTotalLength();
-      return function(d, i, a) {
-        return function(t) {
-          var p = path.getPointAtLength((1-t )* l);
+      return function (d, i, a) {
+        return function (t) {
+          var p = path.getPointAtLength(Math.abs(t - dir) * l);
           var px = p.x - 24;
           var py = p.y - 24;
-          return "translate(" + px +"," + py + ")";
+          return "translate(" + px + "," + py + ")";
         };
       };
     }
-    const animation = () => {
-      kulki.transition()
-      .duration(10000)
-      .ease(d3.easeLinear)
-      .delay((d,i) => i*140)
-      .attrTween("transform", translateAlong(sciezka_fioletowa.node()))
-      .on("end", animation);
+    const animation = (node, index, delay, gap, pathNode, dir, speed) => {
+      node.transition()
+        .delay(index * gap + delay)
+        .duration(27000 * speed)
+        .ease(d3.easeLinear)
+        .attrTween("transform", translateAlong(pathNode, dir));
+      // .on("end", animation(node,index));
     }
-    animation();
-    
+    const mainAnimation = () => {
+      kulkiNiebieskie.each(function (d, i) {
+        if (i < 12) {
+          animation(d3.select(this), i, 6350, 2250, sciezka_fioletowa4.node(), 1, 0.72);
+        }
+      });
+      kulkiZolte.each(function (d, i) {
+        if (i < 12) {
+          animation(d3.select(this), i, 0, 2250, sciezka_czerwona.node(), 0, 1);
+        }
+      });
+      kulkiFioletowe.each(function (d, i) {
+        if (i < 7) {
+          animation(d3.select(this), i, 0, 3750, sciezka_zielona.node(), 0, 0.6);
+        }
+      });
+      kulkiZielone.each(function (d, i) {
+        if (i < 8) {
+          animation(d3.select(this), i, 0, 4500, sciezka_zolta.node(), 1, 0.75);
+        }
+      });
+      kulkiZielone2.each(function (d, i) {
+        if (i < 10) {
+          animation(d3.select(this), i, 8750, 2750, sciezka_fioletowa2.node(), 0, 0.75);
+        }
+      });
+      kulkiFioletowe2.each(function (d, i) {
+        animation(d3.select(this), i, 22000, 1000, sciezka_fioletowa3.node(), 0, 0.45);
+      });
+      setTimeout(mainAnimation, 27000);
+    }
+    mainAnimation();
   }, []);
 
   const textColor = useColorModeValue('secondaryGray.900', 'white');
@@ -91,29 +132,131 @@ function Pricing() {
         left={0}
         overflow="hidden"
       >
-        <svg viewBox="0 0 3453.12 2160" width="120%" style={{ position: 'absolute', top: 0, left: "38%", right: 0, bottom: 0, zIndex: 0, transform: "translate(-42%, 0px)" }}>
+        <svg viewBox="0 0 3453.12 2160" width="105%" style={{ position: 'absolute', top: 0, left: "38%", right: 0, bottom: 0, zIndex: 0, transform: "translate(-40%, -10%)" }}>
+
           <g id="Warstwa_4">
-            <image width="3840" height="2402" transform="scale(.9)" href="/img/onrevolt/aniamcja_warstwa_3.png" />
+            <image width="3840" height="2402" transform="scale(.9)" href="/img/onrevolt/aniamcja_warstwa_3-min.png" />
           </g>
           <g id="warstwa_kulki">
-            <image id="kulka_fioletowa"  width="48" height="48" transform="scale(.9)" href="/img/onrevolt/kulki_fiolet.png" />
-            <image id="kulka_zolta" width="48" height="48" transform="scale(.9)" href="/img/onrevolt/kulki_zolta.png" />
-            <image id="kulka_niebieska"  width="48" height="48" transform="scale(.9)" href="/img/onrevolt/kulki_niebieska.png" />
-            <image id="kulka_zielona"  width="48" height="48" transform="scale(.9)" href="/img/onrevolt/kulki_zielona.png" />
+            <image id="kulka_fioletowa" width="48" height="48" transform="scale(.85)" href="/img/onrevolt/kulki_fiolet.png" />
+            <image id="kulka_fioletowa2" width="48" height="48" transform="scale(.85)" href="/img/onrevolt/kulki_fiolet.png" />
+            <image id="kulka_zolta" width="48" height="48" transform="scale(.85)" href="/img/onrevolt/kulki_zolta.png" />
+            <image id="kulka_niebieska" width="48" height="48" transform="scale(.85)" href="/img/onrevolt/kulki_niebieska.png" />
+            <image id="kulka_zielona" width="48" height="48" transform="scale(.85)" href="/img/onrevolt/kulki_zielona.png" />
+            <image id="kulka_zielona2" width="48" height="48" transform="scale(.85)" href="/img/onrevolt/kulki_zielona.png" />
           </g>
           <g id="Warstwa_1">
-            <path id="sciezka_fioletowa" style={{ fill: "none", stroke: "#FF00FF", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.44px" }} d="M2165.16,1612.96l-663.71-383.11.13-.13c-30.69-17.74-30.69-46.51,0-64.25l-.13.15,57.02-33.02h.01c30.69-17.73,30.69-46.5,0-64.24h-.01s-347.1-200.31-347.1-200.31v-.15c-30.68-17.74-80.44-17.74-111.13,0l-.13.15-31.49,18.17v-.13c-30.68,17.74-80.44,17.74-111.13,0l-.13.13-229.6-132.62" />
-            <path id="sciezka_zolta" style={{ fill: "none", stroke: "#FFFF00", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.44px" }} d="M989.82,1846.09l706.82-408.14.17-.13c10.21-5.93,26.77-5.93,36.98,0l-.11.13,401.27,231.62" />
-            <path id="sciezka_czerwona" style={{ fill: "none", stroke: "#FF0000", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.44px" }} d="M2045.41,821.85l266.5,153.85-.09-.03c51.17,29.55,51.17,77.47,0,107.02l.09.11-486.11,280.51h.17c-4.92,2.87-7.68,6.75-7.66,10.79.02,4.04,2.81,7.91,7.75,10.76l-.12-.04,443.93,253.87,655.21-375.98" />
-            <line id="sciezka_zielona" style={{ fill: "none", stroke: "#00FF00", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.44px" }} x1="667" y1="788.7" x2="2149.12" y2="1644.43" />
+            <path
+              id="sciezka_fioletowa"
+              style={{
+                fill: "none",
+                stroke: "none",//"#a259e6", //fioletowy
+                strokeLinecap: "round",
+                strokeLinejoin: "round",
+                strokeWidth: "1.44px"
+              }}
+              d="M2165.16,1612.96l-663.71-383.11.13-.13c-30.69-17.74-30.69-46.51,0-64.25l-.13.15,57.02-33.02h.01c30.69-17.73,30.69-46.5,0-64.24h-.01s-347.1-200.31-347.1-200.31v-.15c-30.68-17.74-80.44-17.74-111.13,0l-.13.15-31.49,18.17v-.13c-30.68,17.74-80.44,17.74-111.13,0l-.13.13-229.6-132.62"
+            />
+            <path
+              id="sciezka_zolta"
+              style={{
+                fill: "none",
+                stroke: "none",//"#ffe066", // żółty
+                strokeLinecap: "round",
+                strokeLinejoin: "round",
+                strokeWidth: "1.44px"
+              }}
+              d="M989.82,1846.09l706.82-408.14.17-.13c10.21-5.93,26.77-5.93,36.98,0l-.11.13,401.27,231.62"
+            />
+            <path
+              id="sciezka_czerwona"
+              style={{
+                fill: "none",
+                stroke: "none",//"#ff5c5c", // czerwony
+                strokeLinecap: "round",
+                strokeLinejoin: "round",
+                strokeWidth: "1.44px"
+              }}
+              d="M2045.41,821.85l266.5,153.85-.09-.03c51.17,29.55,51.17,77.47,0,107.02l.09.11-486.11,280.51h.17c-4.92,2.87-7.68,6.75-7.66,10.79.02,4.04,2.81,7.91,7.75,10.76l-.12-.04,428.31,244.94-30.73,16.9-722.06-416.79.13-.13c-30.69-17.74-30.69-46.51,0-64.25l-.13.15,57.02-33.02h.01c30.69-17.73,30.69-46.5,0-64.24h-.01s-143.54-82.83-143.54-82.83"
+            />
+            <line
+              id="sciezka_zielona"
+              style={{
+                fill: "none",
+                stroke: "none",//"#a259e6", // zielony
+                strokeLinecap: "round",
+                strokeLinejoin: "round",
+                strokeWidth: "1.44px"
+              }}
+              x1="667"
+              y1="788.7"
+              x2="1212.11"
+              y2="1103.43"
+            />
+            <line
+              id="sciezka_fioletowa2"
+              style={{
+                fill: "none",
+                stroke: "none",//"#4ecb71", // fioletowy
+                strokeLinecap: "round",
+                strokeLinejoin: "round",
+                strokeWidth: "1.44px"
+              }}
+              x1="1212.11"
+              y1="1103.43"
+              x2="2149.12"
+              y2="1644.43"
+            />
+            <path
+              id="sciezka_fioletowa3"
+              style={{
+                fill: "none",
+                stroke: "none",//"#ff59e6", // fioletowy
+                strokeLinecap: "round",
+                strokeLinejoin: "round",
+                strokeWidth: "1.44px"
+              }}
+              d="M1414.93,985.53l-203.56-117.48v-.15c-30.68-17.74-80.44-17.74-111.13,0l-.13.15-31.49,18.17v-.13c-30.68,17.74-80.44,17.74-111.13,0l-.13.13-229.6-132.62"
+            />
+            <path
+              id="sciezka_fioletowa4"
+              style={{
+                fill: "none",
+                stroke: "none",//"#a2ffe6", // fioletowy
+                strokeLinecap: "round",
+                strokeLinejoin: "round",
+                strokeWidth: "1.44px"
+              }}
+              d="M1414.63,985.36l143.83,83.01h.01c30.69,17.73,30.69,46.5,0,64.24h-.01s-57.02,33.01-57.02,33.01l.13-.15c-30.69,17.74-30.69,46.51,0,64.25l-.13.13,738.35,426.19,681.28-393.34"
+            />
+            <path
+              id="sciezka_fioletowa5"
+              style={{
+                fill: "none",
+                stroke: "none",//"#a259ff", // fioletowy
+                strokeLinecap: "round",
+                strokeLinejoin: "round",
+                strokeWidth: "1.44px"
+              }}
+              d="M727.76,753.6l229.6,132.62.13-.13c30.69,17.74,80.45,17.74,111.14,0v.13s31.48-18.17,31.48-18.17l.13-.15c30.69-17.74,80.45-17.74,111.14,0v.15s203.25,117.31,203.25,117.31"
+            />
           </g>
           <g id="Warstwa_2">
-            <image width="3840" height="2402" transform="scale(.9)" href="/img/onrevolt/aniamcja_warstwa_1.png" />
+            <image width="3840" height="2402" transform="scale(.9)" href="/img/onrevolt/aniamcja_warstwa_1-min.png" />
+          </g>
+          <g id="Warstwa_0">
+            <image width="800" height="1067" x="3205" y="515" transform="scale(0.8)" href="/img/onrevolt/turbina.gif" />
+          </g>
+          <g id="Warstwa_0">
+            <image width="800" height="1067" x="3205" y="515" transform="scale(0.8)" href="/img/onrevolt/maska_cien_turbina.png" />
+          </g>
+          <g id="Warstwa_2">
+            <image width="3840" height="2402" transform="scale(.9)" href="/img/onrevolt/aniamcja_warstwa_1-min.png" />
           </g>
         </svg>
       </Flex>
       <PricingLayout
-        contentTop={{ base: '140px', md: '14vh' }}
+        contentTop={{ base: '140px', md: '5vh' }}
         contentBottom={{ base: '50px', lg: 'auto' }}
       >
 
@@ -130,11 +273,12 @@ function Pricing() {
             justifyContent="left"
             align="left"
             mb="38px"
+            
           >
 
             <Text
               zIndex="1"
-              fontSize="44px"
+              fontSize="38px"
               color="white"
               fontWeight="700"
               maxW="550px"
@@ -143,7 +287,7 @@ function Pricing() {
               Osiągnij niezależność
               energetyczną już dziś!
             </Text>
-            <Text
+            {/* <Text
               zIndex="1"
               fontSize="md"
               color="white"
@@ -154,7 +298,7 @@ function Pricing() {
             >
               See our pricing plans for all Premium and Free products &
               templates. Try now Horizon UI Dashboard
-            </Text>
+            </Text> */}
             <Flex
               mb={{ base: '0px', '2xl': '80px' }}
               zIndex="2"
@@ -181,7 +325,7 @@ function Pricing() {
               spacing="20px"
               mt="40px"
               mb="160px"
-              marginTop="45vh"
+              marginTop="55vh"
             >
               <Pack
                 title="Freelancer"
@@ -264,17 +408,22 @@ function Pricing() {
                 ]}
               />
             </Stack>
+            <Card flexDirection="column" w="100%">
+              <Box w="100%" position="relative" pb="55%" /* 16:9 aspect ratio */>
+                <Image
+                  src="/img/onrevolt/schemat.svg"
+                  alt="schemat"
+                  position="absolute"
+                  top="0"
+                  left="0"
+                  width="100%"
+                  height="100%"
+                  objectFit="contain"
+                />
+              </Box>
+              </Card>
             <Flex direction="column" mb="160px" justify="center" align="center">
-              <Text
-                color={textColor}
-                fontWeight="bold"
-                fontSize="34px"
-                mb={{ sm: '32px', xl: '16px' }}
-                maxW={{ sm: '250px', md: '100%' }}
-                textAlign="center"
-              >
-                More than 25,000 users use Horizon
-              </Text>
+
               <SimpleGrid
                 columns={{ sm: 2, md: 3, lg: 6 }}
                 spacingX={{ sm: '65px', lg: '40px', xl: '65px' }}
@@ -318,9 +467,9 @@ function Pricing() {
                 />
               </SimpleGrid>
             </Flex>
-            <Text color={textColor} fontWeight="bold" fontSize="34px" mb="60px">
+            {/* <Text color={textColor} fontWeight="bold" fontSize="34px" mb="60px">
               Frequently Asked Questions
-            </Text>
+            </Text> */}
             <SimpleGrid
               columns={{ md: 1, lg: 2 }}
               spacing="60px"
