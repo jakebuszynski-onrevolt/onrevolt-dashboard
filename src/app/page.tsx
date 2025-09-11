@@ -23,14 +23,15 @@
 
 // Chakra imports
 import {
-  Badge,
   Box,
   Button,
   Flex,
+  Link,
   SimpleGrid,
   Stack,
   Text,
   useColorModeValue,
+  AspectRatio,
 } from '@chakra-ui/react';
 // Custom components
 import Card from 'components/card/Card';
@@ -44,11 +45,13 @@ import googleLogo from '/public/svg/google-logo.svg';
 import microsoftLogo from '/public/svg/microsoft-logo.svg';
 import msnLogo from '/public/svg/msn-logo.svg';
 import zohoLogo from '/public/svg/zoho-logo.svg';
+import { ReflowLogo, ResourceLogo, RevolveLogo } from 'components/icons/Icons';
 // Custom components
 import PricingLayout from '../components/auth/variants/PricingAuthLayout/page';
 import { useState, useEffect, useRef } from 'react';
 import Pack from 'components/admin/main/others/pricing/Pack';
 import Layout from 'app/auth/layout';
+import { Widget } from '@typeform/embed-react';
 
 function Pricing() {
   useEffect(() => {
@@ -86,6 +89,7 @@ function Pricing() {
         .attrTween("transform", translateAlong(pathNode, dir));
       // .on("end", animation(node,index));
     }
+    let animationTimeout = null;
     const mainAnimation = () => {
       kulkiNiebieskie.each(function (d, i) {
         if (i < 12) {
@@ -115,9 +119,62 @@ function Pricing() {
       kulkiFioletowe2.each(function (d, i) {
         animation(d3.select(this), i, 22000, 1000, sciezka_fioletowa3.node(), 0, 0.45);
       });
-      setTimeout(mainAnimation, 27000);
+      animationTimeout=setTimeout(mainAnimation, 27000);
     }
     mainAnimation();
+    // Store timeout id for animation loop
+    
+
+    // Helper to reset transforms for all kulki (each element)
+    const resetKulkiTransforms = () => {
+      kulkiNiebieskie.each(function() {
+        d3.select(this).attr("transform", "translate(0,0)");
+      });
+      kulkiZolte.each(function() {
+        d3.select(this).attr("transform", "translate(0,0)");
+      });
+      kulkiZielone.each(function() {
+        d3.select(this).attr("transform", "translate(0,0)");
+      });
+      kulkiZielone2.each(function() {
+        d3.select(this).attr("transform", "translate(0,0)");
+      });
+      kulkiFioletowe.each(function() {
+        d3.select(this).attr("transform", "translate(0,0)");
+      });
+      kulkiFioletowe2.each(function() {
+        d3.select(this).attr("transform", "translate(0,0)");
+      });
+    };
+
+    // Helper to interrupt all transitions for kulki
+    const interruptKulki = () => {
+      kulkiNiebieskie.each(function() { d3.select(this).interrupt(); });
+      kulkiZolte.each(function() { d3.select(this).interrupt(); });
+      kulkiZielone.each(function() { d3.select(this).interrupt(); });
+      kulkiZielone2.each(function() { d3.select(this).interrupt(); });
+      kulkiFioletowe.each(function() { d3.select(this).interrupt(); });
+      kulkiFioletowe2.each(function() { d3.select(this).interrupt(); });
+    };
+
+    // On window focus, reset animation
+    const handleFocus = () => {
+      if (animationTimeout) {
+        clearTimeout(animationTimeout);
+      }
+      interruptKulki();
+      resetKulkiTransforms();
+      mainAnimation();
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    // Clean up timeout on unmount (do not remove focus listener)
+    return () => {
+      if (animationTimeout) {
+        clearTimeout(animationTimeout);
+      }
+    };
   }, []);
 
   const textColor = useColorModeValue('secondaryGray.900', 'white');
@@ -130,7 +187,6 @@ function Pricing() {
         bottom={0}
         zIndex={0}
         left={0}
-        overflow="hidden"
       >
         <svg viewBox="0 0 3453.12 2160" width="105%" style={{ position: 'absolute', top: 0, left: "38%", right: 0, bottom: 0, zIndex: 0, transform: "translate(-40%, -10%)" }}>
 
@@ -254,6 +310,7 @@ function Pricing() {
             <image width="3840" height="2402" transform="scale(.9)" href="/img/onrevolt/aniamcja_warstwa_1-min.png" />
           </g>
         </svg>
+        <Image src="/img/onrevolt/background.png" overflow="hidden" alt="turbina" width="100%" height="99%" top="15vh" zIndex={-10} />
       </Flex>
       <PricingLayout
         contentTop={{ base: '140px', md: '5vh' }}
@@ -264,7 +321,6 @@ function Pricing() {
           direction="column"
           alignSelf="center"
           justifySelf="center"
-          overflow="hidden"
         >
 
           <Flex
@@ -273,7 +329,7 @@ function Pricing() {
             justifyContent="left"
             align="left"
             mb="38px"
-            
+
           >
 
             <Text
@@ -287,18 +343,6 @@ function Pricing() {
               Osiągnij niezależność
               energetyczną już dziś!
             </Text>
-            {/* <Text
-              zIndex="1"
-              fontSize="md"
-              color="white"
-              fontWeight="normal"
-              mt="10px"
-              mb="26px"
-              maxW="400px"
-            >
-              See our pricing plans for all Premium and Free products &
-              templates. Try now Horizon UI Dashboard
-            </Text> */}
             <Flex
               mb={{ base: '0px', '2xl': '80px' }}
               zIndex="2"
@@ -313,105 +357,113 @@ function Pricing() {
                 fontSize="ms"
                 color={'white'}
                 bg={'brand.500'}
-                onClick={() => { }}
+                onClick={() => { document.getElementById('form')?.scrollIntoView({ behavior: 'smooth' }) }}
                 borderRadius="60px"
               >
                 Skontaktuj się z nami
               </Button>
             </Flex>
             <Stack
-              direction={{ sm: 'column', xl: 'row' }}
-              alignItems="center"
+              direction={{ sm: 'column', md: 'column', lg: 'column', xl: 'row' }}
+              alignItems="top"
               spacing="20px"
               mt="40px"
-              mb="160px"
-              marginTop="55vh"
+              mb="100px"
+              verticalAlign="top"
+              marginTop={{ sm: '60px', md: '60px', lg: '55vh', xl: '55vh', '2xl': '55vh' }}
             >
               <Pack
-                title="Freelancer"
-                desc="Hit the ground running."
-                button="Start Free Trial"
-                price={
-                  <Text
-                    textAlign="start"
-                    w="100%"
-                    color={textColor}
-                    fontSize="40px"
-                    fontWeight="bold"
-                  >
-                    $159
-                    <Text
-                      as="span"
-                      color="secondaryGray.600"
-                      fontSize="40px"
-                      fontWeight="bold"
-                    >
-                      /mo
-                    </Text>
-                  </Text>
+                title={<RevolveLogo width={120} />}
+                desc="Innowacyjna turbina wiatrowa 2kW"
+                statement={["pokryje nawet ", <Text color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">50%</Text>, " Twojego rocznego zapotrzebowania na prąd!"]}
+                image={"/img/onrevolt/Revolve_image.png"}
+                benefits={[{
+                  bold: "Gwarancja uzysku energii",
+                  text: "Gwarantujemy uzysk energii obliczony na podstawie warunków wiatrowych Twojej lokalizacji."
+                }, {
+                  bold: "Produkcja energii już od 2,5 m/s",
+                  text: "Autorski generator, profil skrzydeł i konwerter zapewniają wydajność pracy przy niskich prędkościach wiatru."
+                }, {
+                  bold: "Montaż bez pozwoleń.",
+                  text: "Dzięki wymiarom turbiny nieprzekraczającym 3 m oraz wadze 60 kg nie potrzebujesz zgód z urzędu."
+                }, {
+                  bold: "Idealne uzupełnienie dla PV -",
+                  text: "Generuje energię, gdy nie świeci słońce. Transparentne i ciche skrzydła nie rzucają cienia na panele fotowoltaiczne."
+                }, {
+                  bold: "Projekt realizowany w całości w Polsce.",
+                  text: "Lokalny projekt, krajowa produkcja i kontrola jakości na każdym etapie."
                 }
-                details="(Per subscriber per month)"
-                benefits={[
-                  'Sell on your own terms',
-                  'Website, marketing tools & automations',
-                  'Bandwidth & storage is included',
-                  'We’ll get you onboarded',
                 ]}
+                CTA={
+                  <Link display="inline-flex" alignItems="center" gap="8px" fontSize="1rem"
+                    color="secondaryGray.600" justifyContent="center" flexDirection="row" mt="20px" ml="auto" mr="auto"
+                    href="/img/onrevolt/Revolve.pdf" target="_blank"
+                    type="application/octet-stream" download="Revolve_broszura.pdf">
+                    <Image
+                      src="/img/onrevolt/Download_icon.svg"
+                      alt="Pobierz"
+                      width="35px"
+                      height="35px"
+                      style={{ display: 'inline', verticalAlign: 'middle' }}
+                    />
+                    Pobierz broszurę informacyjną
+                  </Link>
+                }
               />
               <Pack
-                title="Company"
-                desc="Power-up your business."
-                button="Get started"
-                highlighted={true}
-                price={
-                  <Text
-                    textAlign="start"
-                    w="max-content"
-                    color={textColor}
-                    fontSize="40px"
-                    fontWeight="bold"
-                  >
-                    $189
-                    <Text
-                      as="span"
-                      color="secondaryGray.600"
-                      fontSize="40px"
-                      fontWeight="bold"
-                    >
-                      /mo
-                    </Text>
-                  </Text>
-                }
-                details="(Per subscriber per month)"
-                benefits={[
-                  'Live chat & countdowns',
-                  'Website, marketing tools & automations',
-                  'Bandwidth & storage is included',
-                  'We’ll get you onboarded',
-                ]}
+                title={<ReflowLogo width={104} />}
+                desc="Centrum energetycznej niezależności"
+                statement={["zmniejsza Twoje rachunki nawet o ", <Text color='secondaryGray.900' fontWeight="bold" as="span" fontSize="2.5rem">80%</Text>]}
+                image={"/img/onrevolt/Reflow_image.png"}
+                benefits={[{
+                  bold: "Twój dom jako centrum energetycznej niezależności.",
+                  text: "System automatycznie optymalizuje Twoje zużycie prądu, umożliwia handel energią i mierzy każdą kilowatogodzinę - wszystko po to, abyś maksymalnie wykorzystał swój depozyt prosumencki."
+                }, {
+                  bold: "Inteligentnie. Wydajnie. Zyskownie.",
+                  text: "Re:flow analizuje momenty, kiedy energia jest najtańsza, magazynuje ją w banku energii, a następnie sprzedaje energię wyprodukowaną z OZE w godzinach największej opłacalności – dzięki czemu Twój depozyt prosumencki rośnie każdego dnia."
+                }, {
+                  bold: "Więcej kontroli przy mniejszym wysiłku",
+                  text: "Pełna automatyzacja - system sam zbiera, przechowuje i sprzedaje energię, a Ty tylko obserwujesz korzyści na dedykowanym urządzeniu, które otrzymujesz w zestawie."
+                }]}
+                CTA={<Button mt="20px" justifyContent="center" flexDirection="row" variant="no-hover" w="100%" h="76px" fontSize="lg" color={'white'} bg={'brand.500'} onClick={() => { document.getElementById('form')?.scrollIntoView({ behavior: 'smooth' }) }} borderRadius="17px">Sprawdź, ile możesz zaoszczędzić</Button>}
               />
               <Pack
-                title="Freelancer"
-                desc="Hit the ground running."
-                button="Start Free Trial"
-                price={
-                  <Text color={textColor} fontSize="40px" fontWeight="bold">
-                    +1 982 66 88 99
-                  </Text>
+                title={<ResourceLogo width={137} />}
+                desc="Magazyn, który daje Ci niezależność"
+                statement={["gromadzi ", <Text color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">15kWh</Text>, " energii w zasięgu Twoich potrzeb"]}
+                image={"/img/onrevolt/Resource_image.png"}
+                benefits={[{
+                  bold: "Zaprojektowany na lata.",
+                  text: "Ponad 8000 cykli (22 lata codziennego użycia) z zachowaniem 80% pojemności"
+                }, {
+                  bold: "Bezpieczeństwo i stabilność",
+                  text: "Technologia LiFePO₄ gwarantuje stabilność termiczną i chemiczną, bez ryzyka przegrzewania czy degradacji, a autorski system BMS w czasie rzeczywistym dba o balans ogniw, kontroluje temperaturę i napięcie oraz chroni przed przeciążeniem, zwarciem i głębokim rozładowaniem."
+                }, {
+                  bold: "Realna oszczędność i pełna integracja",
+                  text: "Obniża rachunki i zwiększa zwrot z OZE, zapewnia niezależność od taryf i stały dostęp do energii. Magazynuje prąd jak oszczędności, a dzięki pełnej integracji z turbiną wiatrową i instalacją fotowoltaiczną staje się centralnym elementem domowego ekosystemu energetycznego."
+                }]}
+                CTA={
+                  <Link display="inline-flex" alignItems="center" gap="8px" fontSize="1rem"
+                    color="secondaryGray.600" justifyContent="center" flexDirection="row" mt="38px" ml="auto" mr="auto"
+                    href="/img/onrevolt/Reflow_Resource.pdf" target="_blank"
+                    type="application/octet-stream" download="Resource_Reflow_karta_katalogowa.pdf">
+                    <Image
+                      src="/img/onrevolt/Download_icon.svg"
+                      alt="Pobierz"
+                      width="35px"
+                      height="35px"
+                      style={{ display: 'inline', verticalAlign: 'middle' }}
+                    />
+                    Pobierz kartę katalogową
+                  </Link>
                 }
-                details="(Available in all countries)"
-                benefits={[
-                  'We’ll migrate you for free',
-                  'Live chat & countdowns',
-                  'Bandwidth & storage is included',
-                  'We’ll get you onboardedd',
-                ]}
               />
             </Stack>
             <Card flexDirection="column" w="100%">
               <Box w="100%" position="relative" pb="55%" /* 16:9 aspect ratio */>
                 <Image
                   src="/img/onrevolt/schemat.svg"
+                  shapeRendering="auto"
                   alt="schemat"
                   position="absolute"
                   top="0"
@@ -421,194 +473,10 @@ function Pricing() {
                   objectFit="contain"
                 />
               </Box>
-              </Card>
-            <Flex direction="column" mb="160px" justify="center" align="center">
-
-              <SimpleGrid
-                columns={{ sm: 2, md: 3, lg: 6 }}
-                spacingX={{ sm: '65px', lg: '40px', xl: '65px' }}
-                spacingY={{ sm: '30px' }}
-              >
-                <Image
-                  src={googleLogo}
-                  alignSelf="center"
-                  justifySelf="center"
-                  alt=""
-                />
-                <Image
-                  src={msnLogo}
-                  alignSelf="center"
-                  justifySelf="center"
-                  alt=""
-                />
-                <Image
-                  src={microsoftLogo}
-                  alignSelf="center"
-                  justifySelf="center"
-                  alt=""
-                />
-                <Image
-                  src={zohoLogo}
-                  alignSelf="center"
-                  justifySelf="center"
-                  alt=""
-                />
-                <Image
-                  src={georgiaLogo}
-                  alignSelf="center"
-                  justifySelf="center"
-                  alt=""
-                />
-                <Image
-                  src={deloitteLogo}
-                  alignSelf="center"
-                  justifySelf="center"
-                  alt=""
-                />
-              </SimpleGrid>
-            </Flex>
-            {/* <Text color={textColor} fontWeight="bold" fontSize="34px" mb="60px">
-              Frequently Asked Questions
-            </Text> */}
-            <SimpleGrid
-              columns={{ md: 1, lg: 2 }}
-              spacing="60px"
-              maxW="1170px"
-              mx="auto"
-            >
-              <Box>
-                <Box mb="60px">
-                  <Text
-                    textAlign="start"
-                    color={textColor}
-                    fontWeight="500"
-                    fontSize="2xl"
-                    mb="12px"
-                  >
-                    Are the images, fonts, and icons free to use?
-                  </Text>
-                  <Text
-                    textAlign="start"
-                    color="secondaryGray.600"
-                    fontWeight="500"
-                    fontSize="md"
-                  >
-                    These products are not Wordpress themes, however, they can
-                    be integrated in Wordpress by an experienced web developer.
-                  </Text>
-                </Box>
-                <Box mb="60px">
-                  <Text
-                    textAlign="start"
-                    color={textColor}
-                    fontWeight="500"
-                    fontSize="2xl"
-                    mb="12px"
-                  >
-                    Do these themes work with Wordpress?
-                  </Text>
-                  <Text
-                    textAlign="start"
-                    color="secondaryGray.600"
-                    fontWeight="500"
-                    fontSize="md"
-                  >
-                    These products are not Wordpress themes, however, they can
-                    be integrated in Wordpress by an experienced web developer.
-                  </Text>
-                </Box>
-                <Box mb="60px">
-                  <Text
-                    textAlign="start"
-                    color={textColor}
-                    fontWeight="500"
-                    fontSize="2xl"
-                    mb="12px"
-                  >
-                    What does the Included Documentation feature refer to?
-                  </Text>
-                  <Text
-                    textAlign="start"
-                    color="secondaryGray.600"
-                    fontWeight="500"
-                    fontSize="md"
-                  >
-                    It means that each theme within the Exclusive Digital Bundle
-                    promotion has a thorough and up to date documentation on how
-                    to get started with the product and each components and
-                    plugin is properly explained.
-                  </Text>
-                </Box>
-              </Box>
-              <Box>
-                <Box mb="60px">
-                  <Text
-                    textAlign="start"
-                    color={textColor}
-                    fontWeight="500"
-                    fontSize="2xl"
-                    mb="12px"
-                  >
-                    Are the themes available with only classic CSS and without
-                    Sass as well?
-                  </Text>
-                  <Text
-                    textAlign="start"
-                    color="secondaryGray.600"
-                    fontWeight="500"
-                    fontSize="md"
-                  >
-                    Yes, they are. Each theme has a html&css folder which
-                    contains the theme with classic HTML, CSS, and Javascript
-                    files.
-                  </Text>
-                </Box>
-                <Box mb="60px">
-                  <Text
-                    textAlign="start"
-                    color={textColor}
-                    fontWeight="500"
-                    fontSize="2xl"
-                    mb="12px"
-                  >
-                    If I purchased a Freelancer/Company License, how can I
-                    upgrade to the Company/Enterprise License?
-                  </Text>
-                  <Text
-                    textAlign="start"
-                    color="secondaryGray.600"
-                    fontWeight="500"
-                    fontSize="md"
-                  >
-                    In case you have already purchased a license, but you want
-                    to upgrade, you can just send us a message using the contact
-                    page and we will send you a discount code so you will only
-                    pay the difference for the upgrade.
-                  </Text>
-                </Box>
-                <Box mb="60px">
-                  <Text
-                    textAlign="start"
-                    color={textColor}
-                    fontWeight="500"
-                    fontSize="2xl"
-                    mb="12px"
-                  >
-                    What is the difference on Free and PRO products?
-                  </Text>
-                  <Text
-                    textAlign="start"
-                    color="secondaryGray.600"
-                    fontWeight="500"
-                    fontSize="md"
-                  >
-                    The differences between the Free and Pro products consists
-                    of the number of components, plugins, sections, pages in
-                    each
-                  </Text>
-                </Box>
-              </Box>
-            </SimpleGrid>
+            </Card>
+            <Card id="form" width="100%" height="750px" padding={0} overflow="hidden" mt="100px">
+              <Widget id="qmBmINJn" style={{ width: "100%", height: "100%" }} />
+            </Card>
           </Flex>
         </Flex>
       </PricingLayout>
