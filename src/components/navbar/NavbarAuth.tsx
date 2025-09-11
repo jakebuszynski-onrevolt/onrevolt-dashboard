@@ -104,7 +104,9 @@ export default function AuthNavbar(props: {
       fontWeight="bold"
       justifyContent="center"
       alignItems="center"
+      verticalAlign="center"
       color={mainText}
+      mt="5px"
     >
       <Stack
         direction="row"
@@ -241,7 +243,7 @@ export default function AuthNavbar(props: {
     });
   };
   const linksAuth = (
-    <HStack display={{ sm: 'none', lg: 'flex' }} spacing="20px">
+    <HStack display={{ sm: 'none', lg: 'none' }} spacing="20px">
       <Stack
         direction="row"
         spacing="4px"
@@ -460,7 +462,7 @@ export default function AuthNavbar(props: {
         alignItems="center"
         zIndex="3"
       >
-        <Flex w="100%" justifyContent={{ sm: 'start', lg: 'space-between' }}>
+        <Flex w="100%" justifyContent={{ sm: 'start', lg: 'space-between' }} verticalAlign="center">
           {brand}
           <Box
             ms={{ base: 'auto', lg: '0px' }}
@@ -468,23 +470,23 @@ export default function AuthNavbar(props: {
             justifyContent="center"
             alignItems="center"
           >
-            <SidebarResponsive routes={routes} />
+            <SidebarResponsive display="none" routes={routes} />
           </Box>
           {linksAuth}
-          <Link href="https://www.horizon-ui.com/pro">
+          <Link href="/ue">
             <Button
               bg={bgButton}
               color={colorButton}
               fontSize="xs"
               variant="no-effects"
-              borderRadius="50px"
-              px="45px"
+              borderRadius="40px"
+              h="44px"
               display={{
-                sm: 'none',
+                sm: 'flex',
                 lg: 'flex',
               }}
             >
-              Buy Now
+              <Image src="/img/onrevolt/ue_logo.png" width="150px" height="44px" />
             </Button>
           </Link>
         </Flex>

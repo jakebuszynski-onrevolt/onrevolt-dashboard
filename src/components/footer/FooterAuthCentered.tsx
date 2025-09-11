@@ -16,7 +16,7 @@ export default function Footer() {
       <Flex
           w={{ base: '100%', xl: '1170px' }}
           maxW={{ base: '90%', xl: '1170px' }}
-          zIndex="1.5"
+          zIndex="100"
           flexDirection={{
               base: 'column',
               xl: 'row',
@@ -31,7 +31,7 @@ export default function Footer() {
           mx="auto"
       >
           <Text
-              color={textColor}
+              color="white"
               textAlign={{
                   base: 'center',
                   xl: 'start',
@@ -39,17 +39,9 @@ export default function Footer() {
               mb={{ base: '20px', xl: '0px' }}
           >
               {' '}
-              &copy; {1900 + new Date().getFullYear()}
-              <Text as="span" fontWeight="500" ms="4px">
-                  Horizon UI. All Rights Reserved. Made with love by
-                  <Link
-                      mx="3px"
-                      color={textColor}
-                      href="https://www.simmmple.com"
-                      fontWeight="700"
-                  >
-                      Simmmple!
-                  </Link>
+              &copy; {new Date().getFullYear()}
+              <Text as="span" fontWeight="500" ms="4px" color="white">
+                  onRevolt Sp. z o. o. Wszelkie prawa zastrzeżone.
               </Text>
           </Text>
           <List display="flex">
@@ -61,13 +53,13 @@ export default function Footer() {
               >
                   <Link
                       fontWeight="500"
-                      color={textColor}
-                      href="mailto:hello@simmmple.com"
+                      color="white"
+                      href="mailto:kontakt@onrevolt.com"
                   >
-                      Support
+                      Kontakt mailowy
                   </Link>
               </ListItem>
-              <ListItem
+              {/* <ListItem
                   me={{
                       base: '20px',
                       md: '44px',
@@ -103,7 +95,7 @@ export default function Footer() {
                   >
                       Blog
                   </Link>
-              </ListItem>
+              </ListItem> */}
           </List>
       </Flex>
   );

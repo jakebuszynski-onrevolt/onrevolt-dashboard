@@ -15,7 +15,7 @@ export default function Footer() {
   let linkColor = useColorModeValue({ base: 'gray.400', lg: 'white' }, 'white');
   return (
     <Flex
-      zIndex="3"
+      zIndex="100"
       flexDirection={{
         base: 'column',
         lg: 'row',
@@ -29,7 +29,7 @@ export default function Footer() {
       pb="30px"
     >
       <Text
-        color={textColor}
+        color="white"
         textAlign={{
           base: 'center',
           xl: 'start',
@@ -37,18 +37,9 @@ export default function Footer() {
         mb={{ base: '20px', lg: '0px' }}
       >
         {' '}
-        &copy; {1900 + new Date().getFullYear()}
-        <Text as="span" fontWeight="500" ms="4px">
-          Horizon UI. All Rights Reserved. Made with love by
-          <Link
-            bg="none"
-            _hover={{ bg: 'none' }}
-            color={textColor}
-            href="https://www.simmmple.com"
-            fontWeight="700"
-          >
-            Simmmple!
-          </Link>
+        &copy; {new Date().getFullYear()}
+        <Text as="span" fontWeight="500" ms="4px" color="white">
+          onRevolt Sp. z o. o. Wszelkie prawa zastrzeżone.
         </Text>
       </Text>
       <List display="flex">
@@ -62,13 +53,13 @@ export default function Footer() {
             bg="none"
             _hover={{ bg: 'none' }}
             fontWeight="500"
-            color={linkColor}
-            href="mailto:hello@simmmple.com"
+            color="white"
+            href="mailto:kontakt@onrevolt.com"
           >
-            Support
+            Kontakt mailowy
           </Link>
         </ListItem>
-        <ListItem
+        {/* <ListItem
           me={{
             base: '20px',
             md: '44px',
@@ -110,7 +101,7 @@ export default function Footer() {
           >
             Blog
           </Link>
-        </ListItem>
+        </ListItem> */}
       </List>
     </Flex>
   );

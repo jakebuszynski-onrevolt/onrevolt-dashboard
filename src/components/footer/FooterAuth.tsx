@@ -39,15 +39,7 @@ export default function Footer() {
         {' '}
         &copy; {new Date().getFullYear()}
         <Text as="span" fontWeight="500" ms="4px">
-          Horizon UI. All Rights Reserved. Made with love by
-          <Link
-            mx="3px"
-            color={textColor}
-            href="https://www.simmmple.com"
-            fontWeight="700"
-          >
-            Simmmple!
-          </Link>
+          onRevolt Sp. z o. o. Wszelkie prawa zastrzeżone.
         </Text>
       </Text>
       <List display="flex">
@@ -60,12 +52,12 @@ export default function Footer() {
           <Link
             fontWeight="500"
             color={linkColor}
-            href="mailto:hello@simmmple.com"
+            href="mailto:kontakt@onrevolt.com"
           >
-            Support
+            Kontakt mailowy
           </Link>
         </ListItem>
-        <ListItem
+        {/* <ListItem
           me={{
             base: '20px',
             md: '44px',
@@ -101,7 +93,7 @@ export default function Footer() {
           >
             Blog
           </Link>
-        </ListItem>
+        </ListItem> */}
       </List>
     </Flex>
   );

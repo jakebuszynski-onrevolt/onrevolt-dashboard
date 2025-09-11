@@ -1,6 +1,6 @@
 'use client'
 // Chakra imports
-import { Badge, List, ListItem, ListIcon, Text, Button, useColorModeValue } from '@chakra-ui/react';
+import { Badge, List, ListItem, ListIcon, Text, Button, useColorModeValue, Image, Flex,AspectRatio} from '@chakra-ui/react';
 // Custom components
 import Card from 'components/card/Card';
 // Assets
@@ -15,17 +15,19 @@ export default function Pack(props: {
 	benefits: string[];
 	highlighted?: boolean;
 }) {
-	const { title, desc, button, price, details, benefits, highlighted } = props;
+	const { title, desc, button, price, details, benefits, highlighted, CTA, image, statement } = props;
 	const textColor = useColorModeValue('secondaryGray.900', 'white');
 	return (
         <Card
             p="20px"
-            pb="45px"
+            pb="20px"
             pt={highlighted ? '60px' : '30px'}
-            w={{ sm: '300px', md: '650px', lg: '375px' }}
+            w={{ sm: '100%', "2sm": '100%', md: '650px', lg: '375px' }}
             alignItems="flex-start"
             justifyContent="flex-start"
+            verticalAlign="top"
             overflow="unset !important"
+            pt="10px"
         >
             <Badge
                 display={highlighted ? 'block' : 'none'}
@@ -46,48 +48,66 @@ export default function Pack(props: {
                 {title}
             </Text>
             <Text
-                mb="30px"
+                mb="20px"
                 fontSize="md"
                 color="secondaryGray.600"
                 fontWeight="500"
             >
                 {desc}
             </Text>
-            <Button
+            {/* <Button
                 w="100%"
                 variant={highlighted ? 'brand' : 'lightBrand'}
                 mb="30px"
             >
                 {button}
-            </Button>
-            {price}
+            </Button> */}
+            <Text
+                mb="20px"
+                fontSize="1.65rem"
+                color="secondaryGray.600"
+                fontWeight="500"
+                lineHeight="2rem"
+                height="100px"
+                verticalAlign="baseline"
+            >
+                {statement}
+            </Text>
+            <AspectRatio width={'100%'} ratio={357 / 234}>
+                <Image src={image} alt="revolve" width="100%" height="100%"/>
+            </AspectRatio>
             <Text fontSize="md" color="secondaryGray.600" fontWeight="500">
                 {details}
             </Text>
-            <List spacing={3} justifyContent="flex-start">
+            <List spacing={3} justifyContent="flex-start" flexDirection="row" flexWrap="wrap">
                 {benefits.map((benefit, index) => (
                     <ListItem
                         key={index}
                         display="flex"
                         textAlign="start"
                         fontSize="md"
-                        fontWeight="500"
+                        fontWeight="400"
                         color={textColor}
-                        alignItems="center"
-                        lineHeight="100%"
-                        mt="30px !important"
+                        alignItems="top"
+                        lineHeight="110%"
+                        verticalAlign="top"
+                        mt="12px !important"
                     >
                         <ListIcon
                             w="10px"
                             h="10px"
                             as={BsCircleFill}
-                            my="auto"
+                            mt="4px"
                             color={textColor}
                         />
-                        {benefit}
+                        <Flex flexDirection="column" alignItems="left">
+                            <Text fontWeight="bold" display="inline">{benefit.bold}</Text>
+                            <Text display="inline">{benefit.text}</Text>
+                        </Flex>
                     </ListItem>
                 ))}{' '}
             </List>
+            {CTA}
         </Card>
     );
 }

@@ -23,7 +23,6 @@ function PricingAuthLayout(props: PricingAuthLayoutProps) {
       direction="column"
       alignSelf="center"
       justifySelf="center"
-      overflow="hidden"
       mx={{ base: '10px', lg: '0px' }}
       minH="100vh"
     >
@@ -36,14 +35,13 @@ function PricingAuthLayout(props: PricingAuthLayoutProps) {
         left="0"
         right="0"
         bgRepeat="no-repeat"
-        overflow="hidden"
         zIndex="0"
         top="0"
         mx={{ md: 'auto' }}
       />
       <Navbar />
       <Flex
-        w={{ base: '100%', md: 'max-content' }}
+        w={{ base: '100%', md: '100%' }}
         p={{ base: '10px', md: '50px' }}
         h="max-content"
         mx="auto"
@@ -59,6 +57,7 @@ function PricingAuthLayout(props: PricingAuthLayoutProps) {
             align="center"
             mt="125px"
             mb="30px"
+            w="100%"
           >
             <Text fontSize="4xl" color="white" fontWeight="bold">
               {title}
