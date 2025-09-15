@@ -72,7 +72,7 @@ function Pricing() {
       >
         <AspectRatio position="relative" w="100%" maxW="100%" ratio={1920 / 1134}>
           <Image
-            src="/img/onrevolt/ue_turbiny.png"
+            src="/img/onrevolt/ue_turbiny.jpg"
             width="100vw"
             height="auto"
           />
@@ -95,7 +95,7 @@ function Pricing() {
           <br />
           <p>Celem projektu była realizacja prac badawczo-rozwojowych  dotyczącym systemu do generacji energii elektrycznej z energii wiatru w warunkach przydomowych, a efektami projektu było utworzenie prototypu urządzenia nadomowej elektrowni wiatrowej o dużym uzysku energii przy warunkach słabego wiatru (średnia roczna 3,5 m/s) i przetestowanie go w warunkach zbliżonych do rzeczywistych.</p>
           <br />
-          <table style={{ width: "30%", borderCollapse: "collapse", marginTop: "16px", marginBottom: "16px" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "16px", marginBottom: "16px" }}>
             <tbody>
               <tr>
                 <td style={{ border: "0px solid #e2e8f0", padding: "8px", fontWeight: "bold" }}>Dofinansowanie projektu z UE:</td>

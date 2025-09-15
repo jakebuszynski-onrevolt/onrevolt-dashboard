@@ -55,6 +55,12 @@ import { Widget } from '@typeform/embed-react';
 
 function Pricing() {
   useEffect(() => {
+    // const script = document.createElement("script");
+
+    // script.src = '<script>var loadBabel = function(url, callback) {var script = document.createElement(\'script\');script.async = true;if (script.readyState) {script.onreadystatechange = function() {if (script.readyState == \'loaded\' || script.readyState == \'complete\') {script.onreadystatechange = null;callback(window, document);}};} else {script.onload = function() {callback(window, document);};}script.src = url;document.head.appendChild(script);};var getCookie = function(cname) {var objToday = new Date();var version = objToday.toISOString().split(\'T\')[0].split(\'-\').join(\'\');var name = cname + \'=\';var decodedCookie = decodeURIComponent(document.cookie);var cookieArray = decodedCookie.split(\';\');for (var i = 0; i < cookieArray.length; i++) {var cookie = cookieArray[i];cookie = cookie.trim();if (cookie.indexOf(name) == 0) {return cookie.substring(name.length, cookie.length);}}return version;};var loadWidget = function(window, document) {var __cp = {"id":"g6lg2f3gzKrPs6RJQHxU-36Xrzxtb40MAixqTB8VqKs","version":"1.1"};var cp = document.createElement(\'script\');cp.type = \'text/javascript\';cp.async = true;cp.src = "++cdn-widget.callpage.io+build+js+callpage.js".replace(/[+]/g, \'/\').replace(/[=]/g, \'.\') + \'?v=\' + getCookie(\'callpage-widget-version\');var s = document.getElementsByTagName(\'script\')[0];s.parentNode.insertBefore(cp, s);if (window.callpage) {alert(\'You could have only 1 CallPage code on your website!\');} else {window.callpage = function(method) {if (method == \'__getQueue\') {return this.methods;} else if (method) {if (typeof window.callpage.execute === \'function\') {return window.callpage.execute.apply(this, arguments);} else {(this.methods = this.methods || []).push({arguments: arguments,});}}};window.callpage.__cp = __cp;window.callpage(\'api.button.autoshow\');}};loadBabel(\'https://cdnjs.cloudflare.com/ajax/libs/babel-polyfill/6.26.0/polyfill.min.js\', function() {return loadWidget(window, document);});</script>';
+    // script.async = true;
+
+    // document.body.appendChild(script);
     d3.select('#warstwa_kulki').selectAll('image').clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone();
     const kulkiNiebieskie = d3.select('#warstwa_kulki').selectAll('#kulka_niebieska');
     const kulkiZolte = d3.select('#warstwa_kulki').selectAll('#kulka_zolta');
@@ -329,7 +335,6 @@ function Pricing() {
             justifyContent="left"
             align="left"
             mb="38px"
-
           >
 
             <Text
@@ -368,9 +373,9 @@ function Pricing() {
               alignItems="top"
               spacing="20px"
               mt="40px"
-              mb="100px"
+              mb="60px"
               verticalAlign="top"
-              marginTop={{ sm: '60px', md: '60px', lg: '55vh', xl: '55vh', '2xl': '55vh' }}
+              marginTop={{ sm: '60px', md: '60px', lg: '80vh', xl: '80vh', '2xl': '40vw' }}
             >
               <Pack
                 title={<RevolveLogo width={120} />}
@@ -384,13 +389,13 @@ function Pricing() {
                   bold: "Produkcja energii już od 2,5 m/s",
                   text: "Autorski generator, profil skrzydeł i konwerter zapewniają wydajność pracy przy niskich prędkościach wiatru."
                 }, {
-                  bold: "Montaż bez pozwoleń.",
+                  bold: "Montaż bez pozwoleń",
                   text: "Dzięki wymiarom turbiny nieprzekraczającym 3 m oraz wadze 60 kg nie potrzebujesz zgód z urzędu."
                 }, {
-                  bold: "Idealne uzupełnienie dla PV -",
+                  bold: "Idealne uzupełnienie dla PV",
                   text: "Generuje energię, gdy nie świeci słońce. Transparentne i ciche skrzydła nie rzucają cienia na panele fotowoltaiczne."
                 }, {
-                  bold: "Projekt realizowany w całości w Polsce.",
+                  bold: "Projekt realizowany w całości w Polsce",
                   text: "Lokalny projekt, krajowa produkcja i kontrola jakości na każdym etapie."
                 }
                 ]}
@@ -416,7 +421,7 @@ function Pricing() {
                 statement={["zmniejsza Twoje rachunki nawet o ", <Text color='secondaryGray.900' fontWeight="bold" as="span" fontSize="2.5rem">80%</Text>]}
                 image={"/img/onrevolt/Reflow_image.png"}
                 benefits={[{
-                  bold: "Twój dom jako centrum energetycznej niezależności.",
+                  bold: "Twój dom jako centrum energetycznej niezależności",
                   text: "System automatycznie optymalizuje Twoje zużycie prądu, umożliwia handel energią i mierzy każdą kilowatogodzinę - wszystko po to, abyś maksymalnie wykorzystał swój depozyt prosumencki."
                 }, {
                   bold: "Inteligentnie. Wydajnie. Zyskownie.",
@@ -433,7 +438,7 @@ function Pricing() {
                 statement={["gromadzi ", <Text color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">15kWh</Text>, " energii w zasięgu Twoich potrzeb"]}
                 image={"/img/onrevolt/Resource_image.png"}
                 benefits={[{
-                  bold: "Zaprojektowany na lata.",
+                  bold: "Zaprojektowany na lata",
                   text: "Ponad 8000 cykli (22 lata codziennego użycia) z zachowaniem 80% pojemności"
                 }, {
                   bold: "Bezpieczeństwo i stabilność",
@@ -459,6 +464,7 @@ function Pricing() {
                 }
               />
             </Stack>
+            <Text textAlign="center" w="100%" color="white" zIndex="10" fontSize="38px" fontWeight="700" lineHeight="52px" mt="18px" mb="28px">Technologia, która pracuje dla Twojej niezależności!</Text>
             <Card flexDirection="column" w="100%">
               <Box w="100%" position="relative" pb="55%" /* 16:9 aspect ratio */>
                 <Image
@@ -480,6 +486,7 @@ function Pricing() {
           </Flex>
         </Flex>
       </PricingLayout>
+      
     </Layout>
   );
 }

@@ -74,7 +74,7 @@ export default function Pack(props: {
                 {statement}
             </Text>
             <AspectRatio width={'100%'} ratio={357 / 234}>
-                <Image src={image} alt="revolve" width="100%" height="100%"/>
+                <Image imageRendering="auto" src={image} alt="revolve" width="100%" height="100%" borderRadius="20px"/>
             </AspectRatio>
             <Text fontSize="md" color="secondaryGray.600" fontWeight="500">
                 {details}
@@ -109,5 +109,6 @@ export default function Pack(props: {
             </List>
             {CTA}
         </Card>
+        
     );
 }

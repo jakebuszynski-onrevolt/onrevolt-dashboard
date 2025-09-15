@@ -480,7 +480,7 @@ export default function AuthNavbar(props: {
               fontSize="xs"
               variant="no-effects"
               borderRadius="40px"
-              h="44px"
+              h="46px"
               display={{
                 sm: 'flex',
                 lg: 'flex',

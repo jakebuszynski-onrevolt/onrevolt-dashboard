@@ -18,6 +18,11 @@ const routes: IRoute[] = [
     collapse: true,
     items: [
       {
+        name: 'Re:port',
+        layout: '/admin',
+        path: '/dashboards/report',
+      },
+      {
         name: 'Main Dashboard',
         layout: '/admin',
         path: '/dashboards/default',
