@@ -1,9 +1,9 @@
-'use client'
+'use client';
 import { Box, Button, Icon, Flex, Text, useColorModeValue } from '@chakra-ui/react';
 // Custom components
 import Card from 'components/card/Card';
 import { SearchBar } from 'components/navbar/searchBar/SearchBar';
-import Map from 'react-map-gl';
+import { Map } from 'react-map-gl';
 
 // Assets
 import 'mapbox-gl/dist/mapbox-gl.css';

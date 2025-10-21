@@ -473,7 +473,7 @@ export default function AuthNavbar(props: {
             <SidebarResponsive display="none" routes={routes} />
           </Box>
           {linksAuth}
-          <Link href="/ue">
+          <Link href="/ue" boxShadow="none">
             <Button
               bg={bgButton}
               color={colorButton}
@@ -485,6 +485,7 @@ export default function AuthNavbar(props: {
                 sm: 'flex',
                 lg: 'flex',
               }}
+              boxShadow="none"
             >
               <Image src="/img/onrevolt/ue_logo.png" width="150px" height="44px" />
             </Button>

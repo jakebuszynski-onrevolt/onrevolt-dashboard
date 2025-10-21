@@ -185,7 +185,7 @@ function Pricing() {
 
   const textColor = useColorModeValue('secondaryGray.900', 'white');
   return (
-    <Layout>
+    <Layout position="relative" overflowX="hidden">
       <Flex
         position="absolute"
         top={0}
@@ -193,6 +193,10 @@ function Pricing() {
         bottom={0}
         zIndex={0}
         left={0}
+        overflow="hidden"
+        width="100vw"
+        maxWidth="100%"
+        overflowX="hidden"
       >
         <svg viewBox="0 0 3453.12 2160" width="105%" style={{ position: 'absolute', top: 0, left: "38%", right: 0, bottom: 0, zIndex: 0, transform: "translate(-40%, -10%)" }}>
 

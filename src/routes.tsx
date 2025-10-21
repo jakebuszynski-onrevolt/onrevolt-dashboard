@@ -130,7 +130,7 @@ const routes: IRoute[] = [
       },
       {
         name: 'Ecommerce',
-        path: '/main/users',
+        path: '/main/ecommerce',
         collapse: true,
         items: [
           {
@@ -173,7 +173,7 @@ const routes: IRoute[] = [
           {
             name: 'New User',
             layout: '/admin',
-            path: '/main/users/new-user',
+            path: '/main/users/edit-user',
           },
           {
             name: 'Users Overview',

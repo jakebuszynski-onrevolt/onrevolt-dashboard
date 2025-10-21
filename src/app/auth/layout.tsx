@@ -19,7 +19,7 @@ export default function AuthLayout({ children }: AuthProps) {
   const authBg = useColorModeValue('white', 'navy.900');
   if (isWindowAvailable()) document.documentElement.dir = 'ltr';
   return (
-    <Box>
+    <Box  position="relative" overflowX="hidden">
       <SidebarContext.Provider
         value={{
           toggleSidebar,
