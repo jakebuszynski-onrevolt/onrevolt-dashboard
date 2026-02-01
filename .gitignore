@@ -12,6 +12,7 @@ yarn.lock
 _backup_deps/
 tmp/
 .vscode/
+__site/
 
 # testing
 /coverage
