@@ -1,38 +1,31 @@
 'use client';
-// Chakra Imports
 import {
-  Box,
-  Button,
-  Center,
-  Flex,
-  Icon,
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuList,
-  Text,
-  useColorMode,
-  useColorModeValue,
+  Box, Button, Center, Flex, Icon, Menu, MenuButton, MenuItem, MenuList, Text,
+  useColorMode, useColorModeValue,
 } from '@chakra-ui/react';
 import Link from 'components/link/Link';
-// Custom Components
 import { Image } from 'components/image/Image';
 import { ItemContent } from 'components/menu/ItemContent';
 import { SearchBar } from 'components/navbar/searchBar/SearchBar';
 import { SidebarResponsive } from 'components/sidebar/Sidebar';
 import Configurator from 'components/navbar/Configurator';
-// Assets
 import navImage from '/public/img/layout/Navbar.png';
 import { FaEthereum } from 'react-icons/fa';
 import { IoMdMoon, IoMdSunny } from 'react-icons/io';
 import { MdInfoOutline, MdNotificationsNone } from 'react-icons/md';
-import { useEffect, useState, useContext } from 'react';
+import { useContext } from 'react';
 import { ConfiguratorContext } from 'contexts/ConfiguratorContext';
 import routes from 'routes';
+
+// ⬇️ DODAJ
+import useMe from '../../hooks/useMe'; // ścieżka: components/navbar -> ../../hooks/useMe
+
 export default function HeaderLinks(props: { secondary: boolean }) {
   const { secondary } = props;
   const { colorMode, toggleColorMode } = useColorMode();
-  // Chakra Color Mode
+  const { user, logout } = useMe(); // ⬅️ pobieramy usera i akcję logout
+
+  // Kolory
   const navbarIcon = useColorModeValue('gray.400', 'white');
   let menuBg = useColorModeValue('white', 'navy.800');
   const textColor = useColorModeValue('secondaryGray.900', 'white');
@@ -47,6 +40,18 @@ export default function HeaderLinks(props: { secondary: boolean }) {
   );
   const borderButton = useColorModeValue('secondaryGray.500', 'whiteAlpha.200');
 
+  // ⬇️ oblicz inicjały i powitanie
+  const first = (user?.firstname || '').trim();
+  const last  = (user?.lastname || '').trim();
+  const uname = (user?.username || '').trim();
+
+  const initials = (
+    (first ? first[0] : (uname ? uname[0] : 'G')) +
+    (last  ? last[0]  : (first ? '' : (uname.slice(1,2) || 'U')))
+  ).toUpperCase();
+
+  const greetName = first || uname || 'Guest';
+
   return (
     <Flex
       w={{ sm: '100%', md: 'auto' }}
@@ -59,15 +64,11 @@ export default function HeaderLinks(props: { secondary: boolean }) {
       boxShadow={shadow}
     >
       <SearchBar
-        mb={() => {
-          if (secondary) {
-            return { base: '10px', md: 'unset' };
-          }
-          return 'unset';
-        }}
+        mb={() => (secondary ? { base: '10px', md: 'unset' } : 'unset')}
         me="10px"
         borderRadius="30px"
       />
+
       <Flex
         bg={ethBg}
         display={secondary ? 'flex' : 'none'}
@@ -77,215 +78,93 @@ export default function HeaderLinks(props: { secondary: boolean }) {
         align="center"
         me="6px"
       >
-        <Flex
-          align="center"
-          justify="center"
-          bg={ethBox}
-          h="29px"
-          w="29px"
-          borderRadius="30px"
-          me="7px"
-        >
+        <Flex align="center" justify="center" bg={ethBox} h="29px" w="29px" borderRadius="30px" me="7px">
           <Icon color={ethColor} w="9px" h="14px" as={FaEthereum} />
         </Flex>
-        <Text
-          w="max-content"
-          color={ethColor}
-          fontSize="sm"
-          fontWeight="700"
-          me="6px"
-        >
+        <Text w="max-content" color={ethColor} fontSize="sm" fontWeight="700" me="6px">
           1,924
-          <Text as="span" display={{ base: 'none', md: 'unset' }}>
-            {' '}
-            ETH
-          </Text>
+          <Text as="span" display={{ base: 'none', md: 'unset' }}> ETH</Text>
         </Text>
       </Flex>
+
       <SidebarResponsive routes={routes} />
+
+      {/* Dzwonek */}
       <Menu>
         <MenuButton p="0px">
-          <Icon
-            mt="6px"
-            as={MdNotificationsNone}
-            color={navbarIcon}
-            w="18px"
-            h="18px"
-            me="10px"
-          />
+          <Icon mt="6px" as={MdNotificationsNone} color={navbarIcon} w="18px" h="18px" me="10px" />
         </MenuButton>
-        <MenuList
-          boxShadow={shadow}
-          p="20px"
-          borderRadius="20px"
-          bg={menuBg}
-          border="none"
-          mt="22px"
-          me={{ base: '30px', md: 'unset' }}
-          minW={{ base: 'unset', md: '400px', xl: '450px' }}
-          maxW={{ base: '360px', md: 'unset' }}
-        >
+        <MenuList boxShadow={shadow} p="20px" borderRadius="20px" bg={menuBg} border="none" mt="22px"
+          me={{ base: '30px', md: 'unset' }} minW={{ base: 'unset', md: '400px', xl: '450px' }} maxW={{ base: '360px', md: 'unset' }}>
           <Flex w="100%" mb="20px">
-            <Text fontSize="md" fontWeight="600" color={textColor}>
-              Notifications
-            </Text>
-            <Text
-              fontSize="sm"
-              fontWeight="500"
-              color={textColorBrand}
-              ms="auto"
-              cursor="pointer"
-            >
-              Mark all read
-            </Text>
+            <Text fontSize="md" fontWeight="600" color={textColor}>Notifications</Text>
+            <Text fontSize="sm" fontWeight="500" color={textColorBrand} ms="auto" cursor="pointer">Mark all read</Text>
           </Flex>
           <Flex flexDirection="column">
-            <MenuItem
-              _hover={{ bg: 'none' }}
-              _focus={{ bg: 'none' }}
-              px="0"
-              borderRadius="8px"
-              mb="10px"
-            >
+            <MenuItem _hover={{ bg: 'none' }} _focus={{ bg: 'none' }} px="0" borderRadius="8px" mb="10px">
               <ItemContent info="Horizon UI Dashboard PRO" />
             </MenuItem>
-            <MenuItem
-              _hover={{ bg: 'none' }}
-              _focus={{ bg: 'none' }}
-              px="0"
-              borderRadius="8px"
-              mb="10px"
-            >
+            <MenuItem _hover={{ bg: 'none' }} _focus={{ bg: 'none' }} px="0" borderRadius="8px" mb="10px">
               <ItemContent info="Horizon Design System Free" />
             </MenuItem>
           </Flex>
         </MenuList>
       </Menu>
 
+      {/* Info */}
       <Menu>
         <MenuButton p="0px">
-          <Icon
-            mt="6px"
-            as={MdInfoOutline}
-            color={navbarIcon}
-            w="18px"
-            h="18px"
-            me="10px"
-          />
+          <Icon mt="6px" as={MdInfoOutline} color={navbarIcon} w="18px" h="18px" me="10px" />
         </MenuButton>
-        <MenuList
-          boxShadow={shadow}
-          p="20px"
-          me={{ base: '30px', md: 'unset' }}
-          borderRadius="20px"
-          bg={menuBg}
-          border="none"
-          mt="22px"
-          minW={{ base: 'unset' }}
-          maxW={{ base: '360px', md: 'unset' }}
-        >
+        <MenuList boxShadow={shadow} p="20px" me={{ base: '30px', md: 'unset' }} borderRadius="20px" bg={menuBg} border="none" mt="22px"
+          minW={{ base: 'unset' }} maxW={{ base: '360px', md: 'unset' }}>
           <Image src={navImage} borderRadius="16px" mb="28px" alt="" />
           <Flex flexDirection="column">
-            <Link w="100%" href="https://horizon-ui.com/pro">
-              <Button w="100%" h="44px" mb="10px" variant="brand">
-                Buy Horizon UI PRO
-              </Button>
+            <Link w="100%" href="https://horizon-ui.com/pro"><Button w="100%" h="44px" mb="10px" variant="brand">Buy Horizon UI PRO</Button></Link>
+            <Link w="100%" href="https://horizon-ui.com/documentation/docs/introduction">
+              <Button w="100%" h="44px" mb="10px" border="1px solid" bg="transparent" borderColor={borderButton}>See Documentation</Button>
             </Link>
-            <Link
-              w="100%"
-              href="https://horizon-ui.com/documentation/docs/introduction"
-            >
-              <Button
-                w="100%"
-                h="44px"
-                mb="10px"
-                border="1px solid"
-                bg="transparent"
-                borderColor={borderButton}
-              >
-                See Documentation
-              </Button>
-            </Link>
-            <Link
-              w="100%"
-              href="https://github.com/horizon-ui/horizon-ui-chakra-nextjs"
-            >
-              <Button
-                w="100%"
-                h="44px"
-                variant="no-hover"
-                color={textColor}
-                bg="transparent"
-              >
-                Try Horizon Free
-              </Button>
+            <Link w="100%" href="https://github.com/horizon-ui/horizon-ui-chakra-nextjs">
+              <Button w="100%" h="44px" variant="no-hover" color={textColor} bg="transparent">Try Horizon Free</Button>
             </Link>
           </Flex>
         </MenuList>
       </Menu>
+
       <Configurator />
+
+      {/* Avatar + menu użytkownika */}
       <Menu>
         <MenuButton p="0px" style={{ position: 'relative' }}>
-          <Box
-            _hover={{ cursor: 'pointer' }}
-            color="white"
-            bg="#11047A"
-            w="40px"
-            h="40px"
-            borderRadius={'50%'}
-          />
+          <Box _hover={{ cursor: 'pointer' }} color="white" bg="#11047A" w="40px" h="40px" borderRadius={'50%'} />
           <Center top={0} left={0} position={'absolute'} w={'100%'} h={'100%'}>
             <Text fontSize={'xs'} fontWeight="bold" color={'white'}>
-              AP
+              {initials}
             </Text>
           </Center>
         </MenuButton>
-        <MenuList
-          boxShadow={shadow}
-          p="0px"
-          mt="10px"
-          borderRadius="20px"
-          bg={menuBg}
-          border="none"
-        >
+
+        <MenuList boxShadow={shadow} p="0px" mt="10px" borderRadius="20px" bg={menuBg} border="none">
           <Flex w="100%" mb="0px">
             <Text
-              ps="20px"
-              pt="16px"
-              pb="10px"
-              w="100%"
-              borderBottom="1px solid"
-              borderColor={borderColor}
-              fontSize="sm"
-              fontWeight="700"
-              color={textColor}
+              ps="20px" pt="16px" pb="10px" w="100%"
+              borderBottom="1px solid" borderColor={borderColor}
+              fontSize="sm" fontWeight="700" color={textColor}
             >
-              👋&nbsp; Hey, Adela
+              👋&nbsp; Hey, {greetName}
             </Text>
           </Flex>
           <Flex flexDirection="column" p="10px">
-            <MenuItem
-              _hover={{ bg: 'none' }}
-              _focus={{ bg: 'none' }}
-              borderRadius="8px"
-              px="14px"
-            >
+            <MenuItem _hover={{ bg: 'none' }} _focus={{ bg: 'none' }} borderRadius="8px" px="14px">
               <Text fontSize="sm">Profile Settings</Text>
             </MenuItem>
-            <MenuItem
-              _hover={{ bg: 'none' }}
-              _focus={{ bg: 'none' }}
-              borderRadius="8px"
-              px="14px"
-            >
+            <MenuItem _hover={{ bg: 'none' }} _focus={{ bg: 'none' }} borderRadius="8px" px="14px">
               <Text fontSize="sm">Newsletter Settings</Text>
             </MenuItem>
             <MenuItem
-              _hover={{ bg: 'none' }}
-              _focus={{ bg: 'none' }}
-              color="red.400"
-              borderRadius="8px"
-              px="14px"
+              onClick={logout}  // ⬅️ prawdziwy logout
+              _hover={{ bg: 'none' }} _focus={{ bg: 'none' }}
+              color="red.400" borderRadius="8px" px="14px"
             >
               <Text fontSize="sm">Log out</Text>
             </MenuItem>

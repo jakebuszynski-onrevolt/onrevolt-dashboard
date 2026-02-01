@@ -1,5 +1,5 @@
 'use client';
-import React, { PropsWithChildren } from 'react';
+import React, { PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
 
 // chakra imports
 import {
@@ -26,9 +26,38 @@ import { Scrollbars } from 'react-custom-scrollbars-2';
 // Assets
 import { IoMenuOutline } from 'react-icons/io5';
 import { IRoute } from 'types/navigation';
-import { useContext } from 'react';
 import { ConfiguratorContext } from 'contexts/ConfiguratorContext';
 import { isWindowAvailable } from 'utils/navigation';
+import { apiPath } from '../../lib/basePath';
+
+// ==== helper: filtruj trasy po roli ====
+// Uwaga: korzystamy z optionalnego pola `roles?: number[]`.
+// Jeśli go nie ma — pozycja jest dla wszystkich.
+// Jeśli jest — pozycja widoczna tylko gdy rola użytkownika jest w tablicy.
+function filterRoutesByRole(items: IRoute[], role?: number): IRoute[] {
+const keep = (r: IRoute): boolean => {
+  if ((r as any).hidden) return false; // globalne ukrycie
+  const allowed = (r as any).roles as number[] | undefined;
+  if (!allowed || !allowed.length) return true;
+  return role != null && allowed.includes(role);
+};
+
+const walk = (arr: IRoute[]): IRoute[] =>
+  (arr || [])
+    .filter(keep)
+    .map((r) => {
+      if (r.items && r.items.length) {      // <– filtrujemy wszystkie podmenu
+        const sub = walk(r.items);
+        if (!sub.length) return null as any;
+        return { ...r, items: sub };
+      }
+      return r;
+    })
+    .filter(Boolean) as IRoute[];
+    
+  return walk(items || []);
+}
+
 
 export interface SidebarProps extends PropsWithChildren {
   routes: IRoute[];
@@ -38,6 +67,26 @@ function Sidebar(props: { routes: IRoute[]; [x: string]: any }) {
   const { routes } = props;
   const context = useContext(ConfiguratorContext);
   const { mini, hovered, setHovered } = context;
+
+  // pobierz rolę zalogowanego usera
+  const [role, setRole] = useState<number | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(apiPath('/api/auth/me'), { cache: 'no-store' });
+        if (!r.ok) throw new Error('me not ok');
+        const me = await r.json();
+        setRole(Number(me?.role));
+      } catch {
+        setRole(null);
+      }
+    })();
+  }, []);
+
+  const filteredRoutes = useMemo(
+    () => filterRoutesByRole(routes, role ?? undefined),
+    [routes, role]
+  );
 
   // this is for the rest of the collapses
   let variantChange = '0.2s linear';
@@ -57,11 +106,9 @@ function Sidebar(props: { routes: IRoute[]; [x: string]: any }) {
       minH="100%"
       onMouseEnter={() => {
         setHovered(true);
-        console.log(mini);
       }}
       onMouseLeave={() => {
         setHovered(false);
-        console.log(mini);
       }}
     >
       <Box
@@ -69,9 +116,9 @@ function Sidebar(props: { routes: IRoute[]; [x: string]: any }) {
         transition={variantChange}
         w={
           mini === false
-            ? '285px'
+            ? '240px'
             : mini === true && hovered === true
-            ? '285px'
+            ? '240px'
             : '120px'
         }
         ms={{
@@ -100,7 +147,7 @@ function Sidebar(props: { routes: IRoute[]; [x: string]: any }) {
               : renderViewMini
           }
         >
-          <Content mini={mini} hovered={hovered} routes={routes} />
+          <Content mini={mini} hovered={hovered} routes={filteredRoutes} />
         </Scrollbars>
       </Box>
     </Box>
@@ -116,14 +163,35 @@ export function SidebarResponsive(props: {
   let menuColor = useColorModeValue('gray.400', 'white');
   // // SIDEBAR
   const { isOpen, onOpen, onClose } = useDisclosure();
-  const btnRef = React.useRef();
+  const btnRef = React.useRef() as any;
 
   const { routes } = props;
+
+  // pobierz rolę usera również dla responsywnego sidebara
+  const [role, setRole] = useState<number | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(apiPath('/api/auth/me'), { cache: 'no-store' });
+        if (!r.ok) throw new Error('me not ok');
+        const me = await r.json();
+        setRole(Number(me?.role));
+      } catch {
+        setRole(null);
+      }
+    })();
+  }, []);
+
+  const filteredRoutes = useMemo(
+    () => filterRoutesByRole(routes, role ?? undefined),
+    [routes, role]
+  );
+
   // let isWindows = navigator.platform.startsWith("Win");
   //  BRAND
 
   return (
-    <Flex display={{ sm: 'none', xl: 'none' }} alignItems="center">
+    <Flex display={{ sm: 'flex', xl: 'none' }} alignItems="center">
       <Flex ref={btnRef} w="max-content" h="max-content" onClick={onOpen}>
         <Icon
           as={IoMenuOutline}
@@ -147,8 +215,8 @@ export function SidebarResponsive(props: {
       >
         <DrawerOverlay />
         <DrawerContent
-          w="285px"
-          maxW="285px"
+          w="240px"
+          maxW="240px"
           ms={{
             sm: '16px',
           }}
@@ -164,7 +232,7 @@ export function SidebarResponsive(props: {
             _focus={{ boxShadow: 'none' }}
             _hover={{ boxShadow: 'none' }}
           />
-          <DrawerBody maxW="285px" px="0rem" pb="0">
+          <DrawerBody maxW="240px" px="0rem" pb="0">
             {/* @ts-ignore */}
             <Scrollbars
               autoHide
@@ -172,7 +240,7 @@ export function SidebarResponsive(props: {
               renderThumbVertical={renderThumb}
               renderView={renderView}
             >
-              <Content mini={false} routes={routes} />
+              <Content mini={false} routes={filteredRoutes} />
             </Scrollbars>
           </DrawerBody>
         </DrawerContent>

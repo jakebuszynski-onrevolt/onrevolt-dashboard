@@ -8,6 +8,11 @@ yarn.lock
 /.pnp
 .pnp.js
 
+.pm2/
+_backup_deps/
+tmp/
+.vscode/
+
 # testing
 /coverage
 

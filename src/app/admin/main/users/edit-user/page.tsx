@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 
-const FORM_ID = process.env.NEXT_PUBLIC_TYPEFORM_FORM_ID || "u1jiARSz"; // możesz zostawić z .env
+const FORM_ID = process.env.NEXT_PUBLIC_TYPEFORM_FORM_ID;
 const FORM_BASE =
   process.env.NEXT_PUBLIC_TYPEFORM_BASE || "https://windyone.typeform.com"; // albo "https://form.typeform.com"
 

@@ -1,7 +1,7 @@
 // POST /api/pipedrive/create-field
 // Body: { entity?: "deal"|"person", name: string, field_type: "varchar"|"text"|"double"|"enum"|"set"|"phone"|"date", options?: string[] }
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from 'next/server';
 
 type Entity = "deal" | "person";
 
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const { entity = "deal", name, field_type, options } = await req.json();
 
     if (!name || !field_type) {
-      return new Response("Missing 'name' or 'field_type'", { status: 400 });
+      return NextResponse.json({ error: 'coś poszło nie tak' }, { status: 400 });
     }
 
     const body: any = { name, field_type };
@@ -43,11 +43,11 @@ export async function POST(req: NextRequest) {
 
     if (!res.ok) {
       const text = await res.text();
-      return new Response(`Pipedrive error: ${res.status} ${text}`, { status: 502 });
+      return NextResponse.json({ error: 'coś poszło nie tak' }, { status: 400 });
     }
 
     const json = await res.json();
-    return Response.json({
+    return NextResponse.json({
       created: true,
       entity,
       id: json?.data?.id,
@@ -55,6 +55,6 @@ export async function POST(req: NextRequest) {
       field: json?.data,
     });
   } catch (e: any) {
-    return new Response(`create-field error: ${e?.message || e}`, { status: 500 });
+    return NextResponse.json({ error: 'coś poszło nie tak' }, { status: 400 });
   }
 }

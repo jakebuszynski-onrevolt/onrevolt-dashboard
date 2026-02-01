@@ -19,10 +19,11 @@ import { useMemo, useState } from 'react';
 type Row = {
   name: [string, string];
   email: string;
-  username: string;
+  username: string; // <- tutaj wpada "tel:+48..." z UsersOverview
   date: string;
-  type: string;
+  type: string;     // <- tutaj wpada Yield (jako string z liczbą)
   editHref: string;
+  editFormHref?: string;
 };
 
 export default function SearchTableUsersOverivew({ tableData }: { tableData: Row[] }) {
@@ -67,6 +68,10 @@ export default function SearchTableUsersOverivew({ tableData }: { tableData: Row
     }
   };
 
+  // mały helper do prezentacji numeru bez prefiksu 'tel:'
+  const displayTel = (href?: string) =>
+    (href || '').replace(/^tel:/i, '') || '—';
+
   return (
     <Box p={6}>
       <Flex mb={4} align="center" gap={3}>
@@ -89,9 +94,9 @@ export default function SearchTableUsersOverivew({ tableData }: { tableData: Row
           <Tr>
             <Th cursor="pointer" onClick={() => toggleSort('name')}>Name</Th>
             <Th cursor="pointer" onClick={() => toggleSort('email')}>Email</Th>
-            <Th cursor="pointer" onClick={() => toggleSort('username')}>Owner</Th>
+            <Th cursor="pointer" onClick={() => toggleSort('username')}>Telefon</Th>
             <Th cursor="pointer" onClick={() => toggleSort('date')}>Date</Th>
-            <Th cursor="pointer" onClick={() => toggleSort('type')}>Type</Th>
+            <Th cursor="pointer" onClick={() => toggleSort('type')}>Yield</Th>
             <Th>Actions</Th>
           </Tr>
         </Thead>
@@ -101,15 +106,44 @@ export default function SearchTableUsersOverivew({ tableData }: { tableData: Row
               <Td>
                 <Text fontWeight="600">{row.name[0]}</Text>
               </Td>
-              <Td>{row.email}</Td>
-              <Td>{row.username}</Td>
-              <Td>{row.date}</Td>
-              <Td>{row.type}</Td>
+              <Td>{row.email || '—'}</Td>
+
+              {/* Telefon jako klikalny link tel: */}
               <Td>
-                <Button as={Link} href={row.editHref} colorScheme="purple" size="sm">
-                  Edit user
-                </Button>
+                {row.username ? (
+                  <a
+                    href={row.username}
+                    style={{ color: '#3182ce', textDecoration: 'underline' }}
+                  >
+                    {displayTel(row.username)}
+                  </a>
+                ) : (
+                  '—'
+                )}
               </Td>
+
+              <Td>{row.date || '—'}</Td>
+
+              {/* Yield – już wstawiony jako liczba/tekst w Row.type */}
+              <Td>{row.type || '—'}</Td>
+
+<Td>
+  <Button as={Link} href={row.editHref} colorScheme="purple" size="sm">
+    Edit user
+  </Button>
+  {/*  {row.editFormHref && (
+    <Button
+      as={Link}
+      href={row.editFormHref}
+      variant="outline"
+      size="sm"
+      ml={2}
+    >
+      Edit form
+  </Button> 
+  )} */}
+</Td>
+
             </Tr>
           ))}
         </Tbody>

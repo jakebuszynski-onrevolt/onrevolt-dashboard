@@ -10,4 +10,7 @@ export interface IRoute {
   secondary?: boolean;
   collapse?: boolean;
   items?: RoutesType[];
+  /** Kto widzi tę pozycję (np. [1] = tylko Super Admin) */
+  roles?: number[];
+  hidden?: boolean;
 }

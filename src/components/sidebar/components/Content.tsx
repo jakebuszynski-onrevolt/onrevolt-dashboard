@@ -10,9 +10,12 @@ import {
 //   Custom components
 import Brand from 'components/sidebar/components/Brand';
 import Links from 'components/sidebar/components/Links';
-import SidebarCard from 'components/sidebar/components/SidebarCard';
+//import SidebarCard from 'components/sidebar/components/SidebarCard';
 import avatar4 from '/public/img/avatars/avatar4.png';
 import { IRoute } from 'types/navigation';
+
+import useMe from "@/hooks/useMe"; // dostosuj ścieżkę jak w NavbarLinksAdmin.tsx
+import Image from "next/image";
 
 // FUNCTIONS
 
@@ -23,6 +26,15 @@ function SidebarContent(props: {
 }) {
   const { routes, mini, hovered } = props;
   const textColor = useColorModeValue('navy.700', 'white');
+
+  const { user } = useMe();
+
+  const first = (user?.firstname || "").trim();
+  const last = (user?.lastname || "").trim(); 
+  const fullName = `${first} ${last}`.trim() || "—";
+  const role = user?.role === 1 ? "Administrator" : "Seller";
+
+  
   // SIDEBAR
   return (
     <Flex direction="column" height="100%" pt="25px" borderRadius="30px">
@@ -51,7 +63,7 @@ function SidebarContent(props: {
         justifyContent={'center'}
         alignItems="center"
       >
-        <SidebarCard mini={mini} hovered={hovered} />
+	  {/* <SidebarCard mini={mini} hovered={hovered} /> */}
       </Flex>
       <Flex mt="75px" mb="56px" justifyContent="center" alignItems="center">
         <Avatar
@@ -76,10 +88,10 @@ function SidebarContent(props: {
           }
         >
           <Text color={textColor} fontSize="md" fontWeight="700">
-            Adela Parkson
+            {fullName}
           </Text>
           <Text color="secondaryGray.600" fontSize="sm" fontWeight="400">
-            Product Designer
+            {role}
           </Text>
         </Box>
       </Flex>

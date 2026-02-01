@@ -29,9 +29,13 @@
     "downlevelIteration": true,
     "baseUrl": "src",
     "paths": {
-      "@assets/*": [
-        "./src/assetsassets/*"
-      ]
+      "@assets/*": ["assets/*"],
+      "@/*": ["*"],                 // np. "@/components/..." → src/components/...
+      "@components/*": ["components/*"],
+      "@hooks/*": ["hooks/*"],
+      "@lib/*": ["lib/*"],
+      "@types/*": ["types/*"],
+      "@clients/*": ["clients/*"]	  
     },
     "incremental": true,
     "plugins": [

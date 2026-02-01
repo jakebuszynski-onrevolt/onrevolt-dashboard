@@ -1,51 +1,12 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Box,
-  Heading,
-  Text,
-  Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
-  Tag,
-  TagLabel,
-  Spinner,
-  Flex,
-  Tabs,
-  TabList,
-  TabPanels,
-  Tab,
-  TabPanel,
-  Input,
-  RadioGroup,
-  Radio,
-  HStack,
-  Button,
-  useToast,
-} from "@chakra-ui/react";
-
-type Entity = "deal" | "person";
-
-type TFField = {
-  ref: string;
-  title: string;
-  tf_type: string;
-  pd_type: string;
-  options?: string[];
-  suggested_name: string;
-};
-
-type PDField = {
-  id: number | null;
-  key: string;
-  name: string;
-  field_type: string;
-  options: string[];
-};
+  Badge, Box, Button, Flex, Heading, HStack, Select, Spinner, Table,
+  Tbody, Td, Th, Thead, Tr, Text, useToast,
+} from '@chakra-ui/react';
+import Card from 'components/card/Card';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 type MissingRow = {
   tf_ref: string;
@@ -53,282 +14,170 @@ type MissingRow = {
   tf_type: string;
   pd_suggested: { name: string; field_type: string; options?: string[] };
   exists_in_pipedrive?: boolean;
-  existing_pd?: PDField;
 };
 
-export default function FieldsComparePage() {
-  const [entity, setEntity] = useState<Entity>("deal");
-  const [loading, setLoading] = useState(true);
-  const [formTitle, setFormTitle] = useState<string>("");
-  const [tfFields, setTfFields] = useState<TFField[]>([]);
-  const [pdFields, setPdFields] = useState<PDField[]>([]);
-  const [missing, setMissing] = useState<MissingRow[]>([]);
-  const [q, setQ] = useState("");
-  const [creating, setCreating] = useState<string | null>(null);
+const BASE = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/$/, ''); // np. "/panel"
+
+export default function Page() {
+  const sp = useSearchParams();
+  const router = useRouter();
   const toast = useToast();
 
-  const fetchData = async (ent: Entity) => {
+  const defaultFormId = process.env.NEXT_PUBLIC_TYPEFORM_FORM_ID;
+  const [formId, setFormId] = useState<string>(sp.get('form_id') || defaultFormId);
+  const [entity, setEntity] = useState<'deal' | 'person'>((sp.get('entity') as any) || 'deal');
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [missing, setMissing] = useState<MissingRow[]>([]);
+  const [tfCount, setTfCount] = useState(0);
+  const [pdCount, setPdCount] = useState(0);
+
+  const query = useMemo(
+    () =>
+      `${BASE}/api/pipedrive/compare-typeform?form_id=${encodeURIComponent(
+        formId
+      )}&entity=${entity}`,
+    [formId, entity]
+  );
+
+  async function load() {
     setLoading(true);
-    const r = await fetch(`/api/pipedrive/compare-typeform?entity=${ent}`);
-    const j = await r.json();
-    setFormTitle(`${j.form?.title || ""} (${j.form?.id || ""})`);
-    setTfFields(j.typeform_fields || []);
-    setPdFields(j.pipedrive_fields || []);
-    setMissing(j.missing_on_pipedrive || []);
-    setLoading(false);
-  };
+    setError(null);
+    try {
+      const r = await fetch(query, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+      const data = await r.json();
+
+      const rows: MissingRow[] = data.missing_on_pipedrive ?? data.missing ?? [];
+      setMissing(rows);
+      setTfCount((data.typeform_fields || []).length);
+      setPdCount((data.pipedrive_fields || []).length);
+    } catch (e: any) {
+      setError(e?.message || 'error');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    fetchData(entity);
+    // aktualizuj ładnie URL i odświeżaj dane
+    const usp = new URLSearchParams(sp.toString());
+    usp.set('form_id', formId);
+    usp.set('entity', entity);
+    router.replace(`?${usp.toString()}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entity]);
+  }, [formId, entity]);
 
-  const qNorm = useMemo(() => q.trim().toLowerCase(), [q]);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
-  const tfFiltered = useMemo(
-    () =>
-      !qNorm
-        ? tfFields
-        : tfFields.filter(
-            (f) =>
-              f.title.toLowerCase().includes(qNorm) ||
-              f.suggested_name.toLowerCase().includes(qNorm) ||
-              f.tf_type.toLowerCase().includes(qNorm)
-          ),
-    [tfFields, qNorm]
-  );
-
-  const pdFiltered = useMemo(
-    () =>
-      !qNorm
-        ? pdFields
-        : pdFields.filter(
-            (f) =>
-              f.name.toLowerCase().includes(qNorm) ||
-              f.key.toLowerCase().includes(qNorm) ||
-              f.field_type.toLowerCase().includes(qNorm)
-          ),
-    [pdFields, qNorm]
-  );
-
-  const missingFiltered = useMemo(
-    () =>
-      !qNorm
-        ? missing
-        : missing.filter(
-            (r) =>
-              r.pd_suggested.name.toLowerCase().includes(qNorm) ||
-              r.tf_title.toLowerCase().includes(qNorm) ||
-              r.tf_type.toLowerCase().includes(qNorm)
-          ),
-    [missing, qNorm]
-  );
-
-  const createField = async (row: MissingRow) => {
+  async function createField(row: MissingRow) {
     try {
-      setCreating(row.tf_ref);
-      const res = await fetch("/api/pipedrive/create-field", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          entity,
-          name: row.pd_suggested.name,
-          field_type: row.pd_suggested.field_type,
-          options: row.pd_suggested.options,
-        }),
+      const body = {
+        entity,
+        name: row.pd_suggested.name,              // już zawiera 'raport_'
+        field_type: row.pd_suggested.field_type,
+        options: row.pd_suggested.options ?? [],
+      };
+      const r = await fetch(`${BASE}/api/pipedrive/create-field`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
       });
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(txt);
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(`${r.status} ${t}`);
       }
-      const j = await res.json();
-      toast({
-        title: "Field created",
-        description: `Pipedrive key: ${j.key}`,
-        status: "success",
-        duration: 4000,
-        isClosable: true,
-      });
-      // odśwież porównanie — nowo utworzone pole zniknie z "brakujących"
-      await fetchData(entity);
+      toast({ title: `Field "${body.name}" created`, status: 'success', duration: 3000 });
+      // lokalnie zdejmij wiersz z listy
+      setMissing((prev) => prev.filter((m) => m.pd_suggested.name !== row.pd_suggested.name));
     } catch (e: any) {
-      toast({
-        title: "Create failed",
-        description: e?.message || String(e),
-        status: "error",
-        duration: 6000,
-        isClosable: true,
-      });
-    } finally {
-      setCreating(null);
+      toast({ title: 'Create failed', description: e?.message, status: 'error', duration: 5000 });
     }
-  };
+  }
 
   return (
-    <Box p={6}>
-      <Flex justify="space-between" align="center" mb={4} wrap="wrap" gap={3}>
-        <Heading size="md">Fields compare</Heading>
-        <HStack>
-          <Text>Entity:</Text>
-          <RadioGroup
-            onChange={(val) => setEntity(val as Entity)}
-            value={entity}
-          >
-            <HStack spacing="16px">
-              <Radio value="deal">Deal</Radio>
-              <Radio value="person">Person</Radio>
-            </HStack>
-          </RadioGroup>
+    <Flex direction="column" pt={{ sm: '125px', lg: '75px' }}>
+      <Card px="24px" py="24px" mb="16px">
+        <HStack justify="space-between" align="center" wrap="wrap" gap={4}>
+          <Heading size="md">Fields Compare</Heading>
+          <HStack>
+            <Box>
+              <Text fontSize="sm" mb="1">Form ID</Text>
+              <Select size="sm" value={formId} onChange={(e) => setFormId(e.target.value)} minW="260px">
+                <option value={defaultFormId}>{defaultFormId}</option>
+              </Select>
+            </Box>
+            <Box>
+              <Text fontSize="sm" mb="1">Entity</Text>
+              <Select size="sm" value={entity} onChange={(e) => setEntity(e.target.value as any)} minW="140px">
+                <option value="deal">deal</option>
+                <option value="person">person</option>
+              </Select>
+            </Box>
+            <Button size="sm" onClick={load} isLoading={loading}>Refresh</Button>
+          </HStack>
         </HStack>
-        <Input
-          placeholder="Szukaj (nazwa, typ, klucz)…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          maxW="360px"
-        />
-      </Flex>
+        <HStack mt="12px" spacing={6}>
+          <Badge colorScheme="purple">TF FIELDS: {tfCount}</Badge>
+          <Badge colorScheme="blue">PD FIELDS: {pdCount}</Badge>
+          <Badge colorScheme={missing.length ? 'orange' : 'green'}>MISSING: {missing.length}</Badge>
+        </HStack>
+      </Card>
 
-      {loading ? (
-        <Flex align="center" gap={3}>
-          <Spinner /> <Text>Ładowanie pól…</Text>
-        </Flex>
-      ) : (
-        <>
-          <Text mb={4}>
-            Typeform: <b>{formTitle}</b>
-          </Text>
+      <Card px="0">
+        {loading && (
+          <Flex p="24px" align="center" gap="10px">
+            <Spinner /> <Text>Loading…</Text>
+          </Flex>
+        )}
 
-          <Tabs variant="enclosed" colorScheme="purple">
-            <TabList>
-              <Tab>Brakujące w Pipedrive ({missingFiltered.length})</Tab>
-              <Tab>Typeform → mapowanie ({tfFiltered.length})</Tab>
-              <Tab>Pipedrive – {entity} fields ({pdFiltered.length})</Tab>
-            </TabList>
-            <TabPanels>
-              {/* MISSING */}
-              <TabPanel>
-                <Table size="sm" variant="simple">
-                  <Thead>
-                    <Tr>
-                      <Th>TF: title</Th>
-                      <Th>TF: ref</Th>
-                      <Th>TF: type</Th>
-                      <Th>PD: suggested name</Th>
-                      <Th>PD: type</Th>
-                      <Th>PD: options</Th>
-                      <Th isNumeric>Action</Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    {missingFiltered.map((r) => (
-                      <Tr key={r.tf_ref}>
-                        <Td>{r.tf_title}</Td>
-                        <Td>{r.tf_ref}</Td>
-                        <Td>
-                          <Tag size="sm">
-                            <TagLabel>{r.tf_type}</TagLabel>
-                          </Tag>
-                        </Td>
-                        <Td>
-                          <b>{r.pd_suggested.name}</b>
-                        </Td>
-                        <Td>
-                          <Tag size="sm" variant="subtle">
-                            <TagLabel>{r.pd_suggested.field_type}</TagLabel>
-                          </Tag>
-                        </Td>
-                        <Td>{r.pd_suggested.options?.join(", ") || "—"}</Td>
-                        <Td isNumeric>
-                          <Button
-                            size="sm"
-                            onClick={() => createField(r)}
-                            isLoading={creating === r.tf_ref}
-                          >
-                            Create in Pipedrive
-                          </Button>
-                        </Td>
-                      </Tr>
-                    ))}
-                    {missingFiltered.length === 0 && (
-                      <Tr>
-                        <Td colSpan={7}>
-                          <Text>Brak brakujących pól – wszystko jest w Pipedrive.</Text>
-                        </Td>
-                      </Tr>
-                    )}
-                  </Tbody>
-                </Table>
-              </TabPanel>
+        {!loading && error && (
+          <Box p="24px"><Text color="red.400">{error}</Text></Box>
+        )}
 
-              {/* TYPEFORM */}
-              <TabPanel>
-                <Table size="sm" variant="simple">
-                  <Thead>
-                    <Tr>
-                      <Th>TF: title</Th>
-                      <Th>TF: ref</Th>
-                      <Th>TF: type</Th>
-                      <Th>PD: mapped type</Th>
-                      <Th>PD: suggested name</Th>
-                      <Th>options</Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    {tfFiltered.map((f) => (
-                      <Tr key={f.ref}>
-                        <Td>{f.title}</Td>
-                        <Td>{f.ref}</Td>
-                        <Td>
-                          <Tag size="sm">
-                            <TagLabel>{f.tf_type}</TagLabel>
-                          </Tag>
-                        </Td>
-                        <Td>
-                          <Tag size="sm" variant="subtle">
-                            <TagLabel>{f.pd_type}</TagLabel>
-                          </Tag>
-                        </Td>
-                        <Td>{f.suggested_name}</Td>
-                        <Td>{f.options?.join(", ") || "—"}</Td>
-                      </Tr>
-                    ))}
-                  </Tbody>
-                </Table>
-              </TabPanel>
+        {!loading && !error && missing.length === 0 && (
+          <Box p="24px">
+            <Text>Brak brakujących pól – wszystko jest w Pipedrive.</Text>
+          </Box>
+        )}
 
-              {/* PIPEDRIVE */}
-              <TabPanel>
-                <Table size="sm" variant="simple">
-                  <Thead>
-                    <Tr>
-                      <Th>PD: name</Th>
-                      <Th>PD: key</Th>
-                      <Th>PD: type</Th>
-                      <Th>options</Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    {pdFiltered.map((f) => (
-                      <Tr key={`${f.key}`}>
-                        <Td>{f.name}</Td>
-                        <Td>
-                          <code>{f.key}</code>
-                        </Td>
-                        <Td>
-                          <Tag size="sm" variant="subtle">
-                            <TagLabel>{f.field_type}</TagLabel>
-                          </Tag>
-                        </Td>
-                        <Td>{f.options?.join(", ") || "—"}</Td>
-                      </Tr>
-                    ))}
-                  </Tbody>
-                </Table>
-              </TabPanel>
-            </TabPanels>
-          </Tabs>
-        </>
-      )}
-    </Box>
+        {!loading && !error && missing.length > 0 && (
+          <Box p="12px 24px 24px">
+            <Table variant="simple">
+              <Thead>
+                <Tr>
+                  <Th>Typeform field</Th>
+                  <Th>TF type</Th>
+                  <Th>Suggested PD name</Th>
+                  <Th>PD type</Th>
+                  <Th>Options</Th>
+                  <Th></Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {missing.map((row) => (
+                  <Tr key={row.tf_ref}>
+                    <Td>{row.tf_title}</Td>
+                    <Td><Badge>{row.tf_type}</Badge></Td>
+                    <Td><Text fontFamily="mono">{row.pd_suggested.name}</Text></Td>
+                    <Td><Badge colorScheme="cyan">{row.pd_suggested.field_type}</Badge></Td>
+                    <Td>{(row.pd_suggested.options ?? []).slice(0, 6).join(', ')}
+                      {(row.pd_suggested.options ?? []).length > 6 ? '…' : ''}</Td>
+                    <Td textAlign="right">
+                      <Button size="sm" onClick={() => createField(row)}>Create</Button>
+                    </Td>
+                  </Tr>
+                ))}
+              </Tbody>
+            </Table>
+          </Box>
+        )}
+      </Card>
+    </Flex>
   );
 }

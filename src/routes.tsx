@@ -9,45 +9,20 @@ import {
 // Auth Imports
 import { IRoute } from 'types/navigation';
 
+import { MdShield, MdPersonAdd, MdList } from 'react-icons/md';
+import { visibility } from 'html2canvas/dist/types/css/property-descriptors/visibility';
+
 const routes: IRoute[] = [
   // --- Dashboards ---
   {
     name: 'Dashboards',
-    path: '/dashboards',
+    layout: '/admin',
+    path: '/dashboards/default',
     icon: <Icon as={MdHome} width="20px" height="20px" color="inherit" />,
-    collapse: true,
-    items: [
-      {
-        name: 'Re:port',
-        layout: '/admin',
-        path: '/dashboards/report',
-      },
-      {
-        name: 'Main Dashboard',
-        layout: '/admin',
-        path: '/dashboards/default',
-      },
-      {
-        name: 'Car Interface',
-        layout: '/admin',
-        path: '/dashboards/car-interface',
-      },
-      {
-        name: 'Smart Home',
-        layout: '/admin',
-        path: '/dashboards/smart-home',
-      },
-      {
-        name: 'RTL',
-        layout: '/rtl',
-        path: '/dashboards/rtl',
-      },
-    ],
   },
-  // // --- NFTs ---
   {
-    name: 'NFTs',
-    path: '/nfts',
+    name: 'Baza Klientów',
+    path: '/dashboards',
     icon: (
       <Icon
         as={MdOutlineShoppingCart}
@@ -57,39 +32,69 @@ const routes: IRoute[] = [
       />
     ),
     collapse: true,
+    roles: [0, 1],
     items: [
       {
-        name: 'Marketplace',
+        name: 'New Deal',
         layout: '/admin',
-        path: '/nfts/marketplace',
-        secondary: true,
+        path: '/main/users/new-user',
       },
       {
-        name: 'Collection',
+        name: 'Deals List',
         layout: '/admin',
-        path: '/nfts/collection',
-        secondary: true,
+        path: '/main/users/users-overview',
       },
       {
-        name: 'NFT Page',
+        name: 'Baza Klientów / Edytor',
         layout: '/admin',
-        path: '/nfts/page',
-        secondary: true,
+        path: '/main/users/user-offer',
+        hidden: true,
+        // reszta bez zmian / wg potrzeb
+      },
+    ],
+  },
+  {
+    name: 'Super User',
+    path: '/super',
+    icon: <Icon as={MdLock} width="20px" height="20px" color="inherit" />,
+    collapse: true,
+    /** <-- widoczne tylko dla roli 1 */
+    roles: [1],
+    items: [
+      {
+        name: 'Edytor konfiguracji',
+        layout: '/admin',
+        path: '/main/users/config-editor',
       },
       {
-        name: 'Profile',
+        name: 'Add seller',
+        layout: '/auth',
+        path: '/sign-up',       // => /panel/auth/sign-up
+      },
+      {
+        name: 'Sellers list',
         layout: '/admin',
-        path: '/nfts/profile',
-        secondary: true,
+        path: '/main/users/seller-list',       // na razie ten sam adres (placeholder)
+      },
+      {
+        name: 'Fields Compare',
+        layout: '/admin',
+        path: '/main/users/fields-compare', // <-- nasza nowa strona
+      },
+      {
+        name: 'Fields Organizing',
+        layout: '/admin',
+        path: '/main/users/fields-organizing', // <-- nasza nowa strona
       },
     ],
   },
   // // --- Main pages ---
   {
-    name: 'Main Pages',
+    name: 'old',
     path: '/main',
     icon: <Icon as={MdDashboard} width="20px" height="20px" color="inherit" />,
     collapse: true,
+    roles: [1],
     items: [
       {
         name: 'Account',
@@ -130,7 +135,7 @@ const routes: IRoute[] = [
       },
       {
         name: 'Ecommerce',
-        path: '/main/ecommerce',
+        path: '/main/users',
         collapse: true,
         items: [
           {
@@ -173,12 +178,17 @@ const routes: IRoute[] = [
           {
             name: 'New User',
             layout: '/admin',
-            path: '/main/users/edit-user',
+            path: '/main/users/new-user',
           },
           {
             name: 'Users Overview',
             layout: '/admin',
             path: '/main/users/users-overview',
+          },
+          {
+            name: 'Fields Compare',
+            layout: '/admin',
+            path: '/main/users/fields-compare', // <-- nasza nowa strona
           },
           {
             name: 'Users Reports',
@@ -258,19 +268,79 @@ const routes: IRoute[] = [
           },
         ],
       },
-    ],
-  },
-  // --- Authentication ---
-  {
-    name: 'Authentication',
-    path: '/auth',
-    icon: <Icon as={MdLock} width="20px" height="20px" color="inherit" />,
-    collapse: true,
-    items: [
-      // --- Sign In ---
+      // // --- NFTs ---
       {
-        name: 'Sign In',
-        path: '/sign-in',
+        name: 'OLD_NFTs',
+        path: '/nfts',
+        icon: (
+          <Icon
+            as={MdOutlineShoppingCart}
+            width="20px"
+            height="20px"
+            color="inherit"
+          />
+        ),
+        collapse: true,
+        items: [
+          {
+            name: 'Marketplace',
+            layout: '/admin',
+            path: '/nfts/marketplace',
+            secondary: true,
+          },
+          {
+            name: 'Collection',
+            layout: '/admin',
+            path: '/nfts/collection',
+            secondary: true,
+          },
+          {
+            name: 'NFT Page',
+            layout: '/admin',
+            path: '/nfts/page',
+            secondary: true,
+          },
+          {
+            name: 'Profile',
+            layout: '/admin',
+            path: '/nfts/profile',
+            secondary: true,
+          },
+        ],
+      },
+      {
+        name: 'OLD_Dashboards',
+        path: '/dashboards',
+        icon: <Icon as={MdHome} width="20px" height="20px" color="inherit" />,
+        collapse: true,
+        items: [
+          {
+            name: 'Main Dashboard',
+            layout: '/admin',
+            path: '/dashboards/default',
+          },
+          {
+            name: 'Car Interface',
+            layout: '/admin',
+            path: '/dashboards/car-interface',
+          },
+          {
+            name: 'Smart Home',
+            layout: '/admin',
+            path: '/dashboards/smart-home',
+          },
+          {
+            name: 'RTL',
+            layout: '/rtl',
+            path: '/dashboards/rtl',
+          },
+        ],
+      },
+      // --- Authentication ---
+      {
+        name: 'OLD_Authentication',
+        path: '/auth',
+        icon: <Icon as={MdLock} width="20px" height="20px" color="inherit" />,
         collapse: true,
         items: [
           {
@@ -283,32 +353,16 @@ const routes: IRoute[] = [
             layout: '/auth',
             path: '/sign-in/centered',
           },
-        ],
-      },
-      // --- Sign Up ---
-      {
-        name: 'Sign Up',
-        path: '/sign-up',
-        collapse: true,
-        items: [
           {
             name: 'Default',
             layout: '/auth',
-            path: '/sign-up/default',
+            path: '/sign-up',
           },
           {
             name: 'Centered',
             layout: '/auth',
             path: '/sign-up/centered',
           },
-        ],
-      },
-      // --- Verification ---
-      {
-        name: 'Verification',
-        path: '/verification',
-        collapse: true,
-        items: [
           {
             name: 'Default',
             layout: '/auth',
@@ -319,14 +373,6 @@ const routes: IRoute[] = [
             layout: '/auth',
             path: '/verification/centered',
           },
-        ],
-      },
-      // --- Lock ---
-      {
-        name: 'Lock',
-        path: '/lock',
-        collapse: true,
-        items: [
           {
             name: 'Default',
             layout: '/auth',
@@ -337,14 +383,6 @@ const routes: IRoute[] = [
             layout: '/auth',
             path: '/lock/centered',
           },
-        ],
-      },
-      // --- Forgot Password ---
-      {
-        name: 'Forgot Password',
-        path: '/forgot-password',
-        collapse: true,
-        items: [
           {
             name: 'Default',
             layout: '/auth',

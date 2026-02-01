@@ -15,6 +15,19 @@ import {
   getStages,
 } from "clients/pipedrive/pipedrive";
 import SearchTableUsers from "components/admin/main/users/users-overview/SearchTableUsersOverivew";
+import useMe from "hooks/useMe"; // ⬅️ pobieramy zalogowanego usera
+
+type TableRow = {
+  name: [string, string];
+  email: string;
+  username: string;
+  date: string;
+  type: string;
+  editHref: string;
+  editFormHref: string;
+  _stage_id: any;
+  _pipeline_id: any;
+};
 
 /** snake_case ASCII: usuwa diakrytyki, zamienia nie-alfanum. na _, scala, tnie, lowercase */
 function toSnake(input: string, fallback = "field", maxLen = 50) {
@@ -30,12 +43,42 @@ function toSnake(input: string, fallback = "field", maxLen = 50) {
   return s;
 }
 
+// ⬇️ helper do tel:
+const formatTel = (raw?: string) => {
+  const digits = String(raw ?? "").replace(/\D+/g, "");
+  if (!digits) return "";
+  const withCc =
+    digits.startsWith("48") || digits.startsWith("0048") || digits.startsWith("+48")
+      ? digits.replace(/^00/, "+")
+      : `+48${digits}`;
+  return `tel:${withCc.startsWith("+") ? withCc : `+${withCc}`}`;
+};
+
 type Deal = any;
 
 export default function UsersOverview() {
+  const { user: me } = useMe(); // ⬅️ mamy role i username
+
   const [deals, setDeals] = useState<Deal[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [customDealFields, setCustomDealFields] = useState<any[]>([]);
+
+  const yieldFieldKey = useMemo(() => {
+    const f = (customDealFields || []).find(
+      (x: any) => String(x?.name || "").toLowerCase().includes("yield")
+    );
+    return f?.key as string | undefined;
+  }, [customDealFields]);
+
+  // ⬇️ znajdź klucz pola „seller” w custom fields Pipedrive
+  const sellerFieldKey = useMemo(() => {
+    const f = (customDealFields || []).find((x: any) => {
+      const n = String(x?.name || "").trim().toLowerCase();
+      return n === "seller" || n.includes("seller");
+    });
+    return f?.key as string | undefined;
+  }, [customDealFields]);
+
   const [pipelines, setPipelines] = useState<any[]>([]);
   const [stages, setStages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -79,15 +122,13 @@ export default function UsersOverview() {
     return map;
   }, [customDealFields]);
 
-  // Helper: budowa wiersza użytkownika (z kompletnym editHref pełnym hiddenów)
-  function mapDealToUserRow(deal: any) {
+  function mapDealToUserRow(deal: any): TableRow {
     const fullName: string =
       deal?.person_name || deal?.person_id?.name || "Unknown User";
     const [firstName, ...rest] = (fullName || "").split(" ");
     const lastName = rest.join(" ");
 
-    const avatarUrl =
-      "https://i.ibb.co/7p0d1Cd/Frame-24.png";
+    const avatarUrl = "https://i.ibb.co/7p0d1Cd/Frame-24.png";
 
     const email: string =
       (deal?.person_id &&
@@ -95,13 +136,22 @@ export default function UsersOverview() {
         deal.person_id.email[0]?.value) ||
       "";
 
-    const phone: string =
+    const phoneRaw: string =
       (deal?.person_id &&
         Array.isArray(deal.person_id.phone) &&
         deal.person_id.phone[0]?.value) ||
       "";
 
-    const username: string = deal?.owner_name || "@unknownuser";
+    const phoneHref = formatTel(phoneRaw);
+
+    const yieldValRaw = yieldFieldKey ? deal[yieldFieldKey] : undefined;
+    const yieldNum =
+      yieldValRaw == null || yieldValRaw === ""
+        ? ""
+        : String(Math.floor(Number(String(yieldValRaw).replace(",", ".")) || 0));
+
+    const username: string = phoneHref || ""; // tymczasowo w kolumnie Owner
+    const type: string = yieldNum;            // tymczasowo w kolumnie Type
 
     const dateRaw: string = deal?.add_time || deal?.update_time || "";
     let date = "";
@@ -116,93 +166,28 @@ export default function UsersOverview() {
       }
     }
 
-    const type: string = deal?.channel_id || "Member";
-
-    // Identyfikatory
     const personId =
       deal?.person_id?.value ??
       deal?.person_id?.id ??
       (typeof deal?.person_id === "number" ? deal.person_id : "") ??
       "";
 
-    const dealOwnerId =
-      (typeof deal?.user_id === "number" ? deal.user_id : deal?.user_id?.id) ??
-      "";
-
-    const orgName: string = deal?.org_name || deal?.organization?.name || "";
-
-    // Hidden fields do Typeforma / naszego edytora – WSZYSTKO co wypełnione
-    const hidden: Record<string, string> = {};
-    const add = (k: string, v: any) => {
-      if (v === null || v === undefined) return;
-      const s = String(v).trim();
-      if (!s) return;
-      hidden[k] = s;
-    };
-
-    // Znane hiddeny
-    add("first_name", firstName);
-    add("last_name", lastName);
-    add("email", email);
-    add("phone_number", phone);
-    add("user_id", personId);
-    add("person_id", personId);
-    add("deal_id", deal?.id);
-    add("org_name", orgName);
-    add("owner_name", deal?.owner_name);
-    add("deal_owner_id", dealOwnerId);
-
-    // Stage/Pipeline nazwy
     const st = stageById[String(deal?.stage_id)];
     const pipelineId = st?.pipeline_id;
-    const pipelineName = pipelineById[String(pipelineId)]?.name;
-    add("stage_id", deal?.stage_id);
-    add("stage_name", st?.name);
-    add("pipeline_id", pipelineId);
-    add("pipeline_name", pipelineName);
 
-    // Standardowe pola deala
-    add("title", deal?.title);
-    add("status", deal?.status);
-    add("value", deal?.value);
-    add("currency", deal?.currency);
-    add("mrr", deal?.mrr);
-    add("arr", deal?.arr);
-    add("acv", deal?.acv);
-    add("pipeline", deal?.pipeline); // jeśli istnieje jako pole
-    add("label", Array.isArray(deal?.label) ? deal.label.join(",") : deal?.label);
-    add("channel", deal?.channel);
-    add("channel_id", deal?.channel_id);
-    add("add_time", deal?.add_time);
-    add("update_time", deal?.update_time);
-    add("expected_close_date", deal?.expected_close_date);
-    add("close_time", deal?.close_time);
-    add("won_time", deal?.won_time);
-    add("lost_time", deal?.lost_time);
+    const params = new URLSearchParams();
+    if (deal?.id) params.set("deal_id", String(deal.id));
+    if (personId) params.set("person_id", String(personId));
 
-    // Custom fields
-    if (Array.isArray(customDealFields)) {
-      for (const f of customDealFields) {
-        const key = f?.key;
-        if (!key) continue;
-        const val = deal[key];
-        if (val === null || val === undefined || val === "") continue;
-        const saneName = customKeyToName[key] || toSnake(key);
-        if (Array.isArray(val)) {
-          add(saneName, val.join(","));
-        } else if (typeof val === "object") {
-          const label = (val as any)?.label;
-          add(saneName, label ?? JSON.stringify(val));
-        } else {
-          add(saneName, val);
-        }
-      }
-    }
+    // link do istniejącej strony z parametrami first_name/last_name/email/phone
+    const formParams = new URLSearchParams();
+    if (firstName) formParams.set("first_name", firstName);
+    if (lastName) formParams.set("last_name", lastName);
+    if (email) formParams.set("email", email);
+    if (phoneRaw) formParams.set("phone_number", phoneRaw);
+    const editFormHref = `/admin/main/users/edit-user?${formParams.toString()}`;
 
-    const params = new URLSearchParams(hidden).toString();
-
-    // ⬇️ JEDYNA ZMIANA: kierujemy do nowego edytora „native”
-    const editHref = `/admin/main/users/edit-user-native?${params}`;
+    const editHref = `/admin/main/users/user-offer?${params.toString()}`;
 
     return {
       name: [fullName, avatarUrl],
@@ -211,31 +196,64 @@ export default function UsersOverview() {
       date,
       type,
       editHref,
-      // do ewentualnych debugów:
+      editFormHref,
       _stage_id: deal?.stage_id,
       _pipeline_id: pipelineId ?? deal?.pipeline_id ?? deal?.pipeline,
     };
   }
 
-  // Filtruj DEALE po pipeline/stage
-  const filteredDeals = useMemo(() => {
-    return (deals || []).filter((deal) => {
-      const st = stageById[String(deal?.stage_id)];
-      const pId = st?.pipeline_id;
+  // Filtruj DEALE po pipeline/stage + widoczność wg roli/sellera
+// Filtruj DEALE po pipeline/stage + widoczność wg roli/sellera/access
+const filteredDeals = useMemo(() => {
+  const uname = String(me?.username || "").trim().toLowerCase();
+  const role = Number(me?.role ?? 0);
 
-      if (selectedPipelineId !== "all" && String(pId) !== selectedPipelineId)
-        return false;
-      if (selectedStageId !== "all" && String(deal?.stage_id) !== selectedStageId)
-        return false;
+  // domyślnie: admin -> 2 (wszystkie), user -> 1 (tylko swoje)
+  const access =
+    me && (me as any).access != null
+      ? Number((me as any).access)
+      : role === 1
+      ? 2
+      : 1;
 
-      return true;
-    });
-  }, [deals, stageById, selectedPipelineId, selectedStageId]);
+  return (deals || []).filter((deal) => {
+    // filtry pipeline/stage
+    const st = stageById[String(deal?.stage_id)];
+    const pId = st?.pipeline_id;
+
+    if (selectedPipelineId !== "all" && String(pId) !== selectedPipelineId)
+      return false;
+    if (selectedStageId !== "all" && String(deal?.stage_id) !== selectedStageId)
+      return false;
+
+    // brak zalogowanego użytkownika -> nie pokazuj nic
+    if (!me) return false;
+
+    // access=0 -> brak dostępu do deal'i
+    if (access === 0) return false;
+
+    // access=1 -> tylko swoje deale (po polu "seller")
+    if (access === 1) {
+      if (!sellerFieldKey || !uname) return false;
+
+      const raw = deal?.[sellerFieldKey];
+      const seller = String(
+        typeof raw === "object" && raw?.label != null ? raw.label : raw ?? ""
+      )
+        .trim()
+        .toLowerCase();
+
+      if (seller !== uname) return false;
+    }
+
+    // access>=2 -> wszystkie deale (poza filtrami pipeline/stage)
+    return true;
+  });
+}, [deals, stageById, selectedPipelineId, selectedStageId, me, sellerFieldKey]);
 
   // Wiersze użytkowników po filtrach
-  const filteredUsers = useMemo(
+  const filteredUsers: TableRow[] = useMemo(
     () => filteredDeals.map((d) => mapDealToUserRow(d)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [filteredDeals, customDealFields, stageById, pipelineById]
   );
 
@@ -250,7 +268,7 @@ export default function UsersOverview() {
             getDeals(),
             getCustomDealFields(),
             getPipelines(),
-            getStages(), // wszystkie stage z wszystkich pipeline'ów
+            getStages(),
           ]);
 
         setDeals(dealsData || []);
@@ -322,8 +340,7 @@ export default function UsersOverview() {
           <Box flex="1" />
 
           <Text fontSize="sm" color="gray.600">
-            Widoczne deale: <b>{filteredDeals.length}</b> /{" "}
-            <b>{deals.length}</b>
+            Widoczne deale: <b>{filteredDeals.length}</b> / <b>{deals.length}</b>
           </Text>
         </Flex>
       </Card>
@@ -347,7 +364,7 @@ export default function UsersOverview() {
         <h3>Pipelines ({pipelines.length})</h3>
         <pre>{JSON.stringify(pipelines.slice(0, 3), null, 2)}</pre>
         <h3>Stages ({stages.length})</h3>
-        <pre>{JSON.stringify(stages.slice(0, 3), null, 2)}</pre>
+        <pre>{JSON.stringify(stages.length > 0 ? stages.slice(0, 3) : [], null, 2)}</pre>
       </Card>
       */}
     </Flex>

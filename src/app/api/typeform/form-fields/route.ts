@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from 'next/server';
 import { getTypeformForm, simplifyTypeformFieldsFull } from "../../../../clients/typeform";
 
 export async function GET(req: NextRequest) {
@@ -10,19 +10,19 @@ export async function GET(req: NextRequest) {
       "";
 
     if (!formId) {
-      return new Response("Missing form_id (query) or NEXT_PUBLIC_TYPEFORM_FORM_ID", { status: 400 });
+      return NextResponse.json({ error: 'coś poszło nie tak' }, { status: 400 });
     }
 
     const form = await getTypeformForm(formId); // TYPEFORM_TOKEN z env
     const fields = simplifyTypeformFieldsFull(form);
 
-    return Response.json({
+    return NextResponse.json({
       form: { id: form.id, title: form.title },
       hidden: form.hidden ?? [],
       count: fields.length,
       fields, // już spłaszczone + contact_info rozbite
     });
   } catch (e: any) {
-    return new Response(`form-fields error: ${e?.message || e}`, { status: 500 });
+    return NextResponse.json({ error: 'coś poszło nie tak' }, { status: 400 });
   }
 }

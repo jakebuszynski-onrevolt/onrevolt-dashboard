@@ -48,19 +48,175 @@ import zohoLogo from '/public/svg/zoho-logo.svg';
 import { ReflowLogo, ResourceLogo, RevolveLogo } from 'components/icons/Icons';
 // Custom components
 import PricingLayout from '../components/auth/variants/PricingAuthLayout/page';
-import { useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import Pack from 'components/admin/main/others/pricing/Pack';
 import Layout from 'app/auth/layout';
 import { Widget } from '@typeform/embed-react';
 
+const MAIN_VIEWBOX = { x: 0, y: 0, w: 3453.12, h: 2160 };
+
+type HotspotSrc = {
+  id: string;
+  label: string;
+  desc: string;
+  url: string; // ścieżka do pliku SVG w /public
+};
+
+const HOTSPOT_SOURCES: HotspotSrc[] = [
+  {
+    id: "rdn1",
+    label: "Re:volve",
+    desc: "Uzupełnia produkcję w okresie jesienno-zimowym i nocą, zwiększając ilość energii możliwej do sprzedaży z zyskiem.",
+    url: "/img/onrevolt/mask1.svg",
+  },
+  {
+    id: "rdn2",
+    label: "Miernik zużycia",
+    desc: "Rejestruje zużycie i produkcję energii w całym domu. Dostarcza systemowi dane potrzebne do maksymalizacji Twoich oszczędności.",
+    url: "/img/onrevolt/mask2.svg",
+  },  
+  {
+    id: "rdn3",
+    label: "System inwerterów",
+    desc: "Sterują przepływem energii między instalacją OZE, magazynem i siecią, dbając o efektywne ładowanie, autokonsumpcję i sprzedaż",
+    url: "/img/onrevolt/mask3.svg",
+  },  
+  {
+    id: "rdn4",
+    label: "Re:source",
+    desc: "Magazynuje energię z OZE i kupioną z sieci, zapewniając bezpieczeństwo i ciągłość zasilania",
+    url: "/img/onrevolt/mask4.svg",
+  },
+  {
+    id: "rdn5",
+    label: "Depozyt prosumencki",
+    desc: "Rejestruje wartość energii sprzedanej do sieci energii i pozwala wykorzystać ją  w ciągu kolejnych 12 miesięcy.",
+    url: "/img/onrevolt/mask5.svg",
+  },
+  {
+    id: "rdn6",
+    label: "Re:flow",
+    desc: "Integruje systemy, by kupować energię najtaniej i sprzedawać w godzinach najwyższych cen.",
+    url: "/img/onrevolt/mask6.svg",
+  },
+  {
+    id: "rdn7",
+    label: "Rynek Dnia Następnego",
+    desc: "Wyznacza godzinowe ceny energii, wskazując systemowi, kiedy opłaca się kupować, a kiedy sprzedawać prąd.",
+    url: "/img/onrevolt/mask7.svg",
+  },
+  {
+    id: "rdn8",
+    label: "Panele fotowoltaiczne",
+    desc: "Produkują energię głównie w okresie letnim, która trafia do Re:source, a następnie na przy najwyższych cenach.",
+    url: "/img/onrevolt/mask8.svg",
+  },  
+  // dodawaj kolejne obiekty:
+  // { id: "pv", label: "Fotowoltaika", desc: "Opis...", d: "M ... Z" },
+  // { id: "battery", label: "Magazyn energii", desc: "Opis...", d: "M ... Z" },
+];
+
+type HotspotItem = { d: string; transform: string };
+type HotspotLoaded = { id: string; label: string; desc: string; items: HotspotItem[] };
+
 function Pricing() {
+	
+const svgLayerRef = useRef<HTMLDivElement | null>(null);
+const svgRef = useRef<SVGSVGElement | null>(null);
+
+const [hotspots, setHotspots] = useState<HotspotLoaded[]>([]);
+const [debugMasks, setDebugMasks] = useState<boolean>(false);
+
+const [tip, setTip] = useState<{ show:boolean; x:number; y:number; label:string; desc:string; }>(
+  { show:false, x:0, y:0, label:"", desc:"" }
+);
+
+function toClientXY(svg: SVGSVGElement, x: number, y: number) {
+  const pt = svg.createSVGPoint(); pt.x = x; pt.y = y;
+  const ctm = svg.getScreenCTM();
+  const screen = ctm ? pt.matrixTransform(ctm) : { x, y };
+  const hostRect = svgLayerRef.current?.getBoundingClientRect();
+  return { x: screen.x - (hostRect?.left ?? 0), y: screen.y - (hostRect?.top ?? 0) };
+}
+
+function showTip(h: {label:string; desc:string}, target: SVGGraphicsElement) {
+  const svg = svgRef.current!;
+  const bb = target.getBBox();
+  const { x, y } = toClientXY(svg, bb.x + bb.width / 2, bb.y);
+  setTip({ show:true, x, y, label:h.label, desc:h.desc });
+}
+function moveTip(e: React.MouseEvent<SVGElement>) {
+  const hostRect = svgLayerRef.current?.getBoundingClientRect();
+  setTip(t => ({ ...t, x:(e.clientX - (hostRect?.left ?? 0)) + 12, y:(e.clientY - (hostRect?.top ?? 0)) - 12 }));
+}
+function hideTip() { setTip(t => ({ ...t, show:false })); }
+
+
+useEffect(() => {
+  function parseViewBox(svgEl: Element | null) {
+    // spróbuj viewBox, jak brak – spadnij do width/height
+    const vbAttr = svgEl?.getAttribute("viewBox");
+    if (vbAttr) {
+      const [x, y, w, h] = vbAttr.split(/[\s,]+/).map(Number);
+      return { x: x || 0, y: y || 0, w: w || MAIN_VIEWBOX.w, h: h || MAIN_VIEWBOX.h };
+    }
+    const w = Number(svgEl?.getAttribute("width") || MAIN_VIEWBOX.w);
+    const h = Number(svgEl?.getAttribute("height") || MAIN_VIEWBOX.h);
+    return { x: 0, y: 0, w, h };
+  }
+
+  function buildTransform(maskVB: {x:number;y:number;w:number;h:number}) {
+    // Dopasuj pełne płótno maski do głównego viewBox (skala + przesunięcie).
+    const sx = MAIN_VIEWBOX.w / maskVB.w;
+    const sy = MAIN_VIEWBOX.h / maskVB.h;
+    const tx = -maskVB.x * sx + MAIN_VIEWBOX.x;
+    const ty = -maskVB.y * sy + MAIN_VIEWBOX.y;
+    // matrix(a b c d e f) odpowiada macierzy:
+    // [ a c e ]
+    // [ b d f ]
+    // [ 0 0 1 ]
+    return `matrix(${sx} 0 0 ${sy} ${tx} ${ty})`;
+  }
+
+  async function loadAll() {
+    const parser = new DOMParser();
+
+    const loaded = await Promise.all(
+      HOTSPOT_SOURCES.map(async (s) => {
+        const res = await fetch(s.url);
+        if (!res.ok) {
+          console.warn("Mask fetch failed:", s.url, res.status);
+          return { id: s.id, label: s.label, desc: s.desc, items: [] };
+        }
+        const txt = await res.text();
+        const doc = parser.parseFromString(txt, "image/svg+xml");
+
+        const svgEl = doc.querySelector("svg");
+        const maskVB = parseViewBox(svgEl);
+        const transform = buildTransform(maskVB);
+
+        const ds = Array.from(doc.querySelectorAll("path"))
+          .map(p => p.getAttribute("d"))
+          .filter((d): d is string => !!d);
+
+        return {
+          id: s.id,
+          label: s.label,
+          desc: s.desc,
+          items: ds.map(d => ({ d, transform })),
+        };
+      })
+    );
+
+    setHotspots(loaded);
+  }
+
+  loadAll();
+}, []);
+
+
   useEffect(() => {
-    // const script = document.createElement("script");
-
-    // script.src = '<script>var loadBabel = function(url, callback) {var script = document.createElement(\'script\');script.async = true;if (script.readyState) {script.onreadystatechange = function() {if (script.readyState == \'loaded\' || script.readyState == \'complete\') {script.onreadystatechange = null;callback(window, document);}};} else {script.onload = function() {callback(window, document);};}script.src = url;document.head.appendChild(script);};var getCookie = function(cname) {var objToday = new Date();var version = objToday.toISOString().split(\'T\')[0].split(\'-\').join(\'\');var name = cname + \'=\';var decodedCookie = decodeURIComponent(document.cookie);var cookieArray = decodedCookie.split(\';\');for (var i = 0; i < cookieArray.length; i++) {var cookie = cookieArray[i];cookie = cookie.trim();if (cookie.indexOf(name) == 0) {return cookie.substring(name.length, cookie.length);}}return version;};var loadWidget = function(window, document) {var __cp = {"id":"g6lg2f3gzKrPs6RJQHxU-36Xrzxtb40MAixqTB8VqKs","version":"1.1"};var cp = document.createElement(\'script\');cp.type = \'text/javascript\';cp.async = true;cp.src = "++cdn-widget.callpage.io+build+js+callpage.js".replace(/[+]/g, \'/\').replace(/[=]/g, \'.\') + \'?v=\' + getCookie(\'callpage-widget-version\');var s = document.getElementsByTagName(\'script\')[0];s.parentNode.insertBefore(cp, s);if (window.callpage) {alert(\'You could have only 1 CallPage code on your website!\');} else {window.callpage = function(method) {if (method == \'__getQueue\') {return this.methods;} else if (method) {if (typeof window.callpage.execute === \'function\') {return window.callpage.execute.apply(this, arguments);} else {(this.methods = this.methods || []).push({arguments: arguments,});}}};window.callpage.__cp = __cp;window.callpage(\'api.button.autoshow\');}};loadBabel(\'https://cdnjs.cloudflare.com/ajax/libs/babel-polyfill/6.26.0/polyfill.min.js\', function() {return loadWidget(window, document);});</script>';
-    // script.async = true;
-
-    // document.body.appendChild(script);
+	  
     d3.select('#warstwa_kulki').selectAll('image').clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone().clone();
     const kulkiNiebieskie = d3.select('#warstwa_kulki').selectAll('#kulka_niebieska');
     const kulkiZolte = d3.select('#warstwa_kulki').selectAll('#kulka_zolta');
@@ -76,55 +232,81 @@ function Pricing() {
     const sciezka_zolta = d3.select('#sciezka_zolta');
     const sciezka_czerwona = d3.select('#sciezka_czerwona');
     const sciezka_zielona = d3.select('#sciezka_zielona');
-    const translateAlong = (path, dir) => {
-      var l = path.getTotalLength();
-      return function (d, i, a) {
-        return function (t) {
-          var p = path.getPointAtLength(Math.abs(t - dir) * l);
-          var px = p.x - 24;
-          var py = p.y - 24;
-          return "translate(" + px + "," + py + ")";
-        };
-      };
-    }
-    const animation = (node, index, delay, gap, pathNode, dir, speed) => {
-      node.transition()
-        .delay(index * gap + delay)
-        .duration(27000 * speed)
-        .ease(d3.easeLinear)
-        .attrTween("transform", translateAlong(pathNode, dir));
-      // .on("end", animation(node,index));
-    }
-    let animationTimeout = null;
+
+	const translateAlong = (path: SVGPathElement, dir: 0 | 1) => {
+	  const l = path.getTotalLength();
+	  return function (_d: unknown, _i: number, _a: unknown) {
+		return function (t: number) {
+		  const p = path.getPointAtLength(Math.abs(t - dir) * l);
+		  const px = p.x - 24;
+		  const py = p.y - 24;
+		  return `translate(${px},${py})`;
+		};
+	  };
+	};
+
+	const animation = (
+	  node: d3.Selection<SVGImageElement, unknown, null, undefined>,
+	  index: number,
+	  delay: number,
+	  gap: number,
+	  pathNode: SVGPathElement,
+	  dir: 0 | 1,
+	  speed: number
+	) => {
+	  node
+		.transition()
+		.delay(index * gap + delay)
+		.duration(27000 * speed)
+		.ease(d3.easeLinear as any)
+		.attrTween("transform", translateAlong(pathNode, dir) as any);
+	};
+	
+	let animationTimeout: ReturnType<typeof setTimeout> | null = null;
+		
+	const pFiolet4 = sciezka_fioletowa4.node() as SVGPathElement;
+	const pCzerwona = sciezka_czerwona.node() as SVGPathElement;
+	const pZielona  = sciezka_zielona.node()  as SVGPathElement;
+	const pZolta    = sciezka_zolta.node()    as SVGPathElement;
+	const pFiolet2  = sciezka_fioletowa2.node() as SVGPathElement;
+	const pFiolet3  = sciezka_fioletowa3.node() as SVGPathElement;	
+	
     const mainAnimation = () => {
-      kulkiNiebieskie.each(function (d, i) {
-        if (i < 12) {
-          animation(d3.select(this), i, 6350, 2250, sciezka_fioletowa4.node(), 1, 0.72);
-        }
-      });
-      kulkiZolte.each(function (d, i) {
-        if (i < 12) {
-          animation(d3.select(this), i, 0, 2250, sciezka_czerwona.node(), 0, 1);
-        }
-      });
-      kulkiFioletowe.each(function (d, i) {
-        if (i < 7) {
-          animation(d3.select(this), i, 0, 3750, sciezka_zielona.node(), 0, 0.6);
-        }
-      });
-      kulkiZielone.each(function (d, i) {
-        if (i < 8) {
-          animation(d3.select(this), i, 0, 4500, sciezka_zolta.node(), 1, 0.75);
-        }
-      });
-      kulkiZielone2.each(function (d, i) {
-        if (i < 10) {
-          animation(d3.select(this), i, 8750, 2750, sciezka_fioletowa2.node(), 0, 0.75);
-        }
-      });
-      kulkiFioletowe2.each(function (d, i) {
-        animation(d3.select(this), i, 22000, 1000, sciezka_fioletowa3.node(), 0, 0.45);
-      });
+kulkiNiebieskie.each(function (this: SVGImageElement, _d: unknown, i: number) {
+  if (i < 12 && pFiolet4) {
+    animation(d3.select(this as SVGImageElement), i, 6350, 2250, pFiolet4, 1, 0.72);
+  }
+});
+
+kulkiZolte.each(function (this: SVGImageElement, _d: unknown, i: number) {
+  if (i < 12 && pCzerwona) {
+    animation(d3.select(this as SVGImageElement), i, 0, 2250, pCzerwona, 0, 1);
+  }
+});
+
+kulkiFioletowe.each(function (this: SVGImageElement, _d: unknown, i: number) {
+  if (i < 7 && pZielona) {
+    animation(d3.select(this as SVGImageElement), i, 0, 3750, pZielona, 0, 0.6);
+  }
+});
+
+kulkiZielone.each(function (this: SVGImageElement, _d: unknown, i: number) {
+  if (i < 8 && pZolta) {
+    animation(d3.select(this as SVGImageElement), i, 0, 4500, pZolta, 1, 0.75);
+  }
+});
+
+kulkiZielone2.each(function (this: SVGImageElement, _d: unknown, i: number) {
+  if (i < 10 && pFiolet2) {
+    animation(d3.select(this as SVGImageElement), i, 8750, 2750, pFiolet2, 0, 0.75);
+  }
+});
+
+kulkiFioletowe2.each(function (this: SVGImageElement, _d: unknown, i: number) {
+  if (pFiolet3) {
+    animation(d3.select(this as SVGImageElement), i, 22000, 1000, pFiolet3, 0, 0.45);
+  }
+});
       animationTimeout=setTimeout(mainAnimation, 27000);
     }
     mainAnimation();
@@ -132,36 +314,48 @@ function Pricing() {
     
 
     // Helper to reset transforms for all kulki (each element)
-    const resetKulkiTransforms = () => {
-      kulkiNiebieskie.each(function() {
-        d3.select(this).attr("transform", "translate(0,0)");
-      });
-      kulkiZolte.each(function() {
-        d3.select(this).attr("transform", "translate(0,0)");
-      });
-      kulkiZielone.each(function() {
-        d3.select(this).attr("transform", "translate(0,0)");
-      });
-      kulkiZielone2.each(function() {
-        d3.select(this).attr("transform", "translate(0,0)");
-      });
-      kulkiFioletowe.each(function() {
-        d3.select(this).attr("transform", "translate(0,0)");
-      });
-      kulkiFioletowe2.each(function() {
-        d3.select(this).attr("transform", "translate(0,0)");
-      });
-    };
+const resetKulkiTransforms = () => {
+  kulkiNiebieskie.each(function (this: SVGImageElement) {
+    d3.select(this).attr("transform", "translate(0,0)");
+  });
+  kulkiZolte.each(function (this: SVGImageElement) {
+    d3.select(this).attr("transform", "translate(0,0)");
+  });
+  kulkiZielone.each(function (this: SVGImageElement) {
+    d3.select(this).attr("transform", "translate(0,0)");
+  });
+  kulkiZielone2.each(function (this: SVGImageElement) {
+    d3.select(this).attr("transform", "translate(0,0)");
+  });
+  kulkiFioletowe.each(function (this: SVGImageElement) {
+    d3.select(this).attr("transform", "translate(0,0)");
+  });
+  kulkiFioletowe2.each(function (this: SVGImageElement) {
+    d3.select(this).attr("transform", "translate(0,0)");
+  });
+};
 
     // Helper to interrupt all transitions for kulki
-    const interruptKulki = () => {
-      kulkiNiebieskie.each(function() { d3.select(this).interrupt(); });
-      kulkiZolte.each(function() { d3.select(this).interrupt(); });
-      kulkiZielone.each(function() { d3.select(this).interrupt(); });
-      kulkiZielone2.each(function() { d3.select(this).interrupt(); });
-      kulkiFioletowe.each(function() { d3.select(this).interrupt(); });
-      kulkiFioletowe2.each(function() { d3.select(this).interrupt(); });
-    };
+const interruptKulki = () => {
+  kulkiNiebieskie.each(function (this: SVGImageElement) {
+    d3.select(this).interrupt();
+  });
+  kulkiZolte.each(function (this: SVGImageElement) {
+    d3.select(this).interrupt();
+  });
+  kulkiZielone.each(function (this: SVGImageElement) {
+    d3.select(this).interrupt();
+  });
+  kulkiZielone2.each(function (this: SVGImageElement) {
+    d3.select(this).interrupt();
+  });
+  kulkiFioletowe.each(function (this: SVGImageElement) {
+    d3.select(this).interrupt();
+  });
+  kulkiFioletowe2.each(function (this: SVGImageElement) {
+    d3.select(this).interrupt();
+  });
+};
 
     // On window focus, reset animation
     const handleFocus = () => {
@@ -185,7 +379,7 @@ function Pricing() {
 
   const textColor = useColorModeValue('secondaryGray.900', 'white');
   return (
-    <Layout position="relative" overflowX="hidden">
+    <Layout>
       <Flex
         position="absolute"
         top={0}
@@ -193,12 +387,9 @@ function Pricing() {
         bottom={0}
         zIndex={0}
         left={0}
-        overflow="hidden"
-        width="100vw"
-        maxWidth="100%"
-        overflowX="hidden"
-      >
-        <svg viewBox="0 0 3453.12 2160" width="105%" style={{ position: 'absolute', top: 0, left: "38%", right: 0, bottom: 0, zIndex: 0, transform: "translate(-40%, -10%)" }}>
+		ref={svgLayerRef} 
+      > 	  
+        <svg ref={svgRef} viewBox="0 0 3453.12 2160" width="105%" style={{ position: 'absolute', top: 0, left: "38%", right: 0, bottom: 0, zIndex: 0, transform: "translate(-40%, -10%)" }}>
 
           <g id="Warstwa_4">
             <image width="3840" height="2402" transform="scale(.9)" href="/img/onrevolt/aniamcja_warstwa_3-min.png" />
@@ -319,8 +510,64 @@ function Pricing() {
           <g id="Warstwa_2">
             <image width="3840" height="2402" transform="scale(.9)" href="/img/onrevolt/aniamcja_warstwa_1-min.png" />
           </g>
+		  
+<g id="hotspots" style={{ cursor: 'help' }}>
+  {hotspots.map(h =>
+    h.items.map((p, idx) => (
+      <path
+        key={`${h.id}-${idx}`}
+        d={p.d}
+        transform={p.transform}
+        fill={debugMasks ? "rgba(0, 255, 0, 0.12)" : "rgba(255,255,255,0.01)"}
+        stroke={debugMasks ? "rgba(0, 255, 0, 0.85)" : "transparent"}
+        strokeWidth={debugMasks ? 2 : 1}
+        style={{ pointerEvents: 'all', cursor: 'help' }}
+        onMouseEnter={(e) => showTip(h, e.currentTarget as unknown as SVGGraphicsElement)}
+        onMouseMove={moveTip}
+        onMouseLeave={hideTip}
+        onTouchStart={(e) => { e.preventDefault(); showTip(h, e.currentTarget as unknown as SVGGraphicsElement); }}
+        onTouchEnd={hideTip}
+      />
+    ))
+  )}
+</g>
+
+		  
+		  
         </svg>
-        <Image src="/img/onrevolt/background.png" overflow="hidden" alt="turbina" width="100%" height="99%" top="15vh" zIndex={-10} />
+		
+		
+{tip.show && (
+  <Box
+    position="absolute"
+    left={tip.x}
+    top={tip.y}
+    transform="translate(-50%, -110%)"
+    zIndex={5}
+    pointerEvents="none"
+    borderRadius="16px"
+    overflow="hidden"
+    boxShadow="0 10px 30px rgba(0,0,0,0.35)"
+    maxW="360px"
+  >
+    <Box bg="black" color="white" px="14px" py="8px" fontWeight="700">
+      {tip.label}
+    </Box>
+    <Box
+      px="14px"
+      py="12px"
+      color="white"
+      bgGradient="linear(to-b, blackAlpha.800, blackAlpha.700)"
+      fontSize="16px"
+      lineHeight="1.4"
+    >
+      {tip.desc}
+    </Box>
+  </Box>
+)}
+		
+		
+        <Image src="/img/onrevolt/background.png" overflow="hidden" alt="turbina" w="full" h="full" top="15vh" zIndex={-10} />
       </Flex>
       <PricingLayout
         contentTop={{ base: '140px', md: '5vh' }}
@@ -411,8 +658,8 @@ function Pricing() {
                     <Image
                       src="/img/onrevolt/Download_icon.svg"
                       alt="Pobierz"
-                      width="35px"
-                      height="35px"
+                      w="35px"
+                      h="35px"
                       style={{ display: 'inline', verticalAlign: 'middle' }}
                     />
                     Pobierz broszurę informacyjną
@@ -459,8 +706,8 @@ function Pricing() {
                     <Image
                       src="/img/onrevolt/Download_icon.svg"
                       alt="Pobierz"
-                      width="35px"
-                      height="35px"
+                      w="35px"
+                      h="35px"
                       style={{ display: 'inline', verticalAlign: 'middle' }}
                     />
                     Pobierz kartę katalogową
@@ -473,19 +720,19 @@ function Pricing() {
               <Box w="100%" position="relative" pb="55%" /* 16:9 aspect ratio */>
                 <Image
                   src="/img/onrevolt/schemat.svg"
-                  shapeRendering="auto"
+                  
                   alt="schemat"
                   position="absolute"
                   top="0"
                   left="0"
-                  width="100%"
-                  height="100%"
+                  w="full"
+                  h="full"
                   objectFit="contain"
                 />
               </Box>
             </Card>
-            <Card id="form" width="100%" height="750px" padding={0} overflow="hidden" mt="100px">
-              <Widget id="qmBmINJn" style={{ width: "100%", height: "100%" }} />
+            <Card id="form" w="full" h="750px" padding={0} overflow="hidden" mt="100px">
+              <Widget id="iKQcpjR9" style={{ width: "100%", height: "100%" }} />
             </Card>
           </Flex>
         </Flex>

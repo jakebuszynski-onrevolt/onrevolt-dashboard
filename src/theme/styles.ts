@@ -1,30 +1,30 @@
 import { mode } from '@chakra-ui/theme-tools';
 export const globalStyles = {
   colors: {
-    brand: {
-      50: '#EFEBFF',
-      100: '#E9E3FF',
-      200: '#422AFB',
-      300: '#422AFB',
-      400: '#7551FF',
-      500: '#8A47FF',
-      600: '#3311DB',
-      700: '#02044A',
-      800: '#190793',
-      900: '#11047A',
-    },
-    brandScheme: {
-      50: '#EFEBFF',
-      100: '#E9E3FF',
-      200: '#7551FF',
-      300: '#7551FF',
-      400: '#7551FF',
-      500: '#422AFB',
-      600: '#3311DB',
-      700: '#02044A',
-      800: '#190793',
-      900: '#02044A',
-    },
+brand: {
+  50:  '#F3EFFF',
+  100: '#E9E2FF',
+  200: '#D4C6FF',
+  300: '#B8A2FF',
+  400: '#998CFF', // <- to Twój "top" gradientu
+  500: '#7E63FF',
+  600: '#5F00D9', // <- to Twój "bottom" gradientu
+  700: '#4B00B0',
+  800: '#360080',
+  900: '#240055',
+},
+brandScheme: {
+  50:  '#F3EFFF',
+  100: '#E9E2FF',
+  200: '#B8A2FF',
+  300: '#998CFF',
+  400: '#7E63FF',
+  500: '#5F00D9',
+  600: '#4B00B0',
+  700: '#360080',
+  800: '#240055',
+  900: '#18003A',
+},
     brandTabs: {
       50: '#EFEBFF',
       100: '#E9E3FF',
@@ -170,7 +170,7 @@ export const globalStyles = {
         letterSpacing: '-0.5px',
       },
       input: {
-        color: 'gray.700',
+        color: mode('gray.700', 'gray.400')(props),
       },
       html: {
         fontFamily: 'DM Sans',

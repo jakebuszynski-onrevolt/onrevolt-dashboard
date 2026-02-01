@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from 'next/server';
 
 const DOMAIN = process.env.PIPEDRIVE_DOMAIN; // np. "mycompany"
 const BASE =
@@ -31,8 +31,8 @@ async function listDealFields() {
 
 export async function GET(_req: NextRequest) {
   try {
-    if (!TOKEN) return new Response("Missing PIPEDRIVE_API_TOKEN", { status: 500 });
-    if (!BASE)  return new Response("Missing PIPEDRIVE_BASE_URL or PIPEDRIVE_DOMAIN", { status: 500 });
+    if (!TOKEN) return NextResponse.json({ error: 'coś poszło nie tak' }, { status: 400 });
+    if (!BASE)  return NextResponse.json({ error: 'coś poszło nie tak' }, { status: 400 });
 
     const fields = await listDealFields();
 
@@ -47,11 +47,11 @@ export async function GET(_req: NextRequest) {
       edit_flag: f.edit_flag,
     }));
 
-    return Response.json({
+    return NextResponse.json({
       count: simplified.length,
       fields: simplified,
     });
   } catch (e: any) {
-    return new Response(`deal-fields error: ${e?.message || e}`, { status: 500 });
+    return NextResponse.json({ error: 'coś poszło nie tak' }, { status: 400 });
   }
 }

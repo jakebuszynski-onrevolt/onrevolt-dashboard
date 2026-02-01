@@ -1,0 +1,58 @@
+<svg width="1490" height="300" viewBox="0 0 1490 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="1490" height="300" fill="#5D5D5D"/>
+<g id="Opis">
+<rect width="16436" height="6428" transform="translate(-712 -2957)" fill="#404040"/>
+<g id="Baza klient&#195;&#179;w" clip-path="url(#clip0_121_16717)">
+<rect width="1920" height="1259" transform="translate(-390 -387)" fill="white"/>
+<path id="Vector 1" d="M-23 60H1515.5" stroke="#FAFBFC"/>
+<path id="Vector 3" d="M-22 125H1516.5" stroke="#FAFBFC"/>
+<path id="Vector 4" d="M-22 190H1516.5" stroke="#FAFBFC"/>
+<rect id="Rectangle 407" x="-20" y="-239" width="1530" height="374" rx="30" fill="url(#paint0_linear_121_16717)"/>
+<g id="Large_Team table" filter="url(#filter0_d_121_16717)">
+<rect width="1490" height="300" rx="30" fill="white"/>
+<g id="Title">
+<text id="Title_2" fill="#1B2559" xml:space="preserve" style="white-space: pre" font-family="DM Sans" font-size="24" font-weight="bold" letter-spacing="-0.02em"><tspan x="30" y="50.184">Typ klienta</tspan></text>
+</g>
+<g id="Group 173">
+<g id="Group 180">
+<g id="Background">
+<rect id="Rectangle 8" x="266" y="115" width="476" height="70" rx="10" fill="#8A47FF"/>
+</g>
+<g id="Text">
+<text id="B2B" fill="white" xml:space="preserve" style="white-space: pre" font-family="DM Sans" font-size="25" font-weight="500" letter-spacing="-0.02em"><tspan x="481.625" y="159.092">B2B</tspan></text>
+</g>
+</g>
+</g>
+<g id="Group 174">
+<g id="Group 180_2">
+<g id="Background_2">
+<rect id="Rectangle 8_2" x="748" y="114" width="476" height="71" rx="10" fill="#8A47FF"/>
+</g>
+</g>
+</g>
+<g id="Text_2">
+<text id="B2C" fill="white" xml:space="preserve" style="white-space: pre" font-family="DM Sans" font-size="25" font-weight="500" letter-spacing="-0.02em"><tspan x="965.294" y="162.092">B2C</tspan></text>
+</g>
+</g>
+</g>
+</g>
+<defs>
+<filter id="filter0_d_121_16717" x="-30" y="-27" width="1578" height="388" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feMorphology radius="4" operator="dilate" in="SourceAlpha" result="effect1_dropShadow_121_16717"/>
+<feOffset dx="14" dy="17"/>
+<feGaussianBlur stdDeviation="20"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.439216 0 0 0 0 0.564706 0 0 0 0 0.690196 0 0 0 0.08 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_121_16717"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_121_16717" result="shape"/>
+</filter>
+<linearGradient id="paint0_linear_121_16717" x1="-20" y1="-239" x2="152.535" y2="466.825" gradientUnits="userSpaceOnUse">
+<stop stop-color="#998CFF"/>
+<stop offset="1" stop-color="#5F00D9"/>
+</linearGradient>
+<clipPath id="clip0_121_16717">
+<rect width="1920" height="1259" fill="white" transform="translate(-390 -387)"/>
+</clipPath>
+</defs>
+</svg>

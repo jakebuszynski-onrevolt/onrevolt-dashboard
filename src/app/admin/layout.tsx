@@ -45,16 +45,16 @@ export default function AdminLayout({
         maxHeight="100%"
         w={
           mini === false
-            ? { base: '100%', xl: 'calc( 100% - 290px )' }
+            ? { base: '100%', xl: 'calc( 100% - 250px )' }
             : mini === true && hovered === true
-            ? { base: '100%', xl: 'calc( 100% - 290px )' }
+            ? { base: '100%', xl: 'calc( 100% - 250px )' }
             : { base: '100%', xl: 'calc( 100% - 120px )' }
         }
         maxWidth={
           mini === false
-            ? { base: '100%', xl: 'calc( 100% - 290px )' }
+            ? { base: '100%', xl: 'calc( 100% - 250px )' }
             : mini === true && hovered === true
-            ? { base: '100%', xl: 'calc( 100% - 290px )' }
+            ? { base: '100%', xl: 'calc( 100% - 250px )' }
             : { base: '100%', xl: 'calc( 100% - 120px )' }
         }
         transition="all 0.33s cubic-bezier(0.685, 0.0473, 0.346, 1)"

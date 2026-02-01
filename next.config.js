@@ -1,19 +1,15 @@
 /** @type {import('next').NextConfig} */
+const path = require("path");
 
 const nextConfig = {
-  basePath: process.env.NEXT_PUBLIC_BASE_PATH,
-  assetPrefix: process.env.NEXT_PUBLIC_BASE_PATH,
-  reactStrictMode: false, // changed this to false
-  images: {
-    domains: [
-      'images.unsplash.com',
-      'i.ibb.co',
-      'scontent.fotp8-1.fna.fbcdn.net',
-    ],
-    // Make ENV
-    unoptimized: true,
+  reactStrictMode: true,
+  basePath: "",
+  eslint: { ignoreDuringBuilds: true },
+  productionBrowserSourceMaps: true,
+  webpack: (config) => {
+    config.resolve.alias["@"] = path.resolve(__dirname, "src");
+    return config;
   },
 };
 
-// module.exports = withTM(nextConfig);
 module.exports = nextConfig;

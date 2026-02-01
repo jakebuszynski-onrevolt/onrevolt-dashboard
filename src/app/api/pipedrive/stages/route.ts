@@ -1,28 +1,21 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from 'next/server';
+import { apis } from '../client';
 
-const DOMAIN = process.env.PIPEDRIVE_DOMAIN;
-const BASE =
-  process.env.PIPEDRIVE_BASE_URL ??
-  (DOMAIN ? `https://${DOMAIN}.pipedrive.com/api/v1` : "");
-const TOKEN = process.env.PIPEDRIVE_API_TOKEN || "";
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    if (!TOKEN) return new Response("Missing PIPEDRIVE_API_TOKEN", { status: 500 });
-    if (!BASE)  return new Response("Missing PIPEDRIVE_BASE_URL or PIPEDRIVE_DOMAIN", { status: 500 });
-
+    const { stages } = apis();
     const url = new URL(req.url);
-    const pid = url.searchParams.get("pipeline_id");
-    const target = pid ? `${BASE}/stages?pipeline_id=${pid}` : `${BASE}/stages`;
+    const pipelineId = url.searchParams.get('pipeline_id');
 
-    const r = await fetch(target, {
-      headers: { "x-api-token": TOKEN },
-      cache: "no-store",
-    });
-    if (!r.ok) return new Response(`Pipedrive /stages ${r.status}: ${await r.text()}`, { status: 502 });
-    const j = await r.json();
-    return Response.json(j?.data ?? []);
+    if (pipelineId) {
+      const r = await stages.getStages({ pipelineId: Number(pipelineId) as any });
+      return NextResponse.json(r?.data ?? []);
+    }
+    const r = await stages.getStages();
+    return NextResponse.json(r?.data ?? []);
   } catch (e: any) {
-    return new Response(`stages error: ${e?.message || e}`, { status: 500 });
+    return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
   }
 }

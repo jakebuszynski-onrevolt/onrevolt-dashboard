@@ -15,6 +15,8 @@ declare global {
     layout?: string;
     component?: () => JSX.Element;
     collapse?: boolean;
+    roles?: number[];
+    hidden?: boolean;
     items?: {
       // required props
       name: string;
@@ -24,6 +26,8 @@ declare global {
       layout?: string;
       component?: () => JSX.Element;
       collapse?: boolean;
+      roles?: number[];
+      hidden?: boolean;
       items?: {
         // required props
         name: string;
@@ -32,6 +36,8 @@ declare global {
         component: () => JSX.Element;
         // optional props
         secondary?: boolean;
+        roles?: number[];
+        hidden?: boolean;
       }[];
     }[];
   }
