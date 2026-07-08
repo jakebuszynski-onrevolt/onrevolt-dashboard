@@ -97,32 +97,32 @@ function Pricing() {
     }
     let animationTimeout = null;
     const mainAnimation = () => {
-      kulkiNiebieskie.each(function (d, i) {
+      kulkiNiebieskie.each(function (this: SVGImageElement, d, i) {
         if (i < 12) {
           animation(d3.select(this), i, 6350, 2250, sciezka_fioletowa4.node(), 1, 0.72);
         }
       });
-      kulkiZolte.each(function (d, i) {
+      kulkiZolte.each(function (this: SVGImageElement, d, i) {
         if (i < 12) {
           animation(d3.select(this), i, 0, 2250, sciezka_czerwona.node(), 0, 1);
         }
       });
-      kulkiFioletowe.each(function (d, i) {
+      kulkiFioletowe.each(function (this: SVGImageElement, d, i) {
         if (i < 7) {
           animation(d3.select(this), i, 0, 3750, sciezka_zielona.node(), 0, 0.6);
         }
       });
-      kulkiZielone.each(function (d, i) {
+      kulkiZielone.each(function (this: SVGImageElement, d, i) {
         if (i < 8) {
           animation(d3.select(this), i, 0, 4500, sciezka_zolta.node(), 1, 0.75);
         }
       });
-      kulkiZielone2.each(function (d, i) {
+      kulkiZielone2.each(function (this: SVGImageElement, d, i) {
         if (i < 10) {
           animation(d3.select(this), i, 8750, 2750, sciezka_fioletowa2.node(), 0, 0.75);
         }
       });
-      kulkiFioletowe2.each(function (d, i) {
+      kulkiFioletowe2.each(function (this: SVGImageElement, d, i) {
         animation(d3.select(this), i, 22000, 1000, sciezka_fioletowa3.node(), 0, 0.45);
       });
       animationTimeout=setTimeout(mainAnimation, 27000);
@@ -133,34 +133,34 @@ function Pricing() {
 
     // Helper to reset transforms for all kulki (each element)
     const resetKulkiTransforms = () => {
-      kulkiNiebieskie.each(function() {
+      kulkiNiebieskie.each(function(this: SVGImageElement) {
         d3.select(this).attr("transform", "translate(0,0)");
       });
-      kulkiZolte.each(function() {
+      kulkiZolte.each(function(this: SVGImageElement) {
         d3.select(this).attr("transform", "translate(0,0)");
       });
-      kulkiZielone.each(function() {
+      kulkiZielone.each(function(this: SVGImageElement) {
         d3.select(this).attr("transform", "translate(0,0)");
       });
-      kulkiZielone2.each(function() {
+      kulkiZielone2.each(function(this: SVGImageElement) {
         d3.select(this).attr("transform", "translate(0,0)");
       });
-      kulkiFioletowe.each(function() {
+      kulkiFioletowe.each(function(this: SVGImageElement) {
         d3.select(this).attr("transform", "translate(0,0)");
       });
-      kulkiFioletowe2.each(function() {
+      kulkiFioletowe2.each(function(this: SVGImageElement) {
         d3.select(this).attr("transform", "translate(0,0)");
       });
     };
 
     // Helper to interrupt all transitions for kulki
     const interruptKulki = () => {
-      kulkiNiebieskie.each(function() { d3.select(this).interrupt(); });
-      kulkiZolte.each(function() { d3.select(this).interrupt(); });
-      kulkiZielone.each(function() { d3.select(this).interrupt(); });
-      kulkiZielone2.each(function() { d3.select(this).interrupt(); });
-      kulkiFioletowe.each(function() { d3.select(this).interrupt(); });
-      kulkiFioletowe2.each(function() { d3.select(this).interrupt(); });
+      kulkiNiebieskie.each(function(this: SVGImageElement) { d3.select(this).interrupt(); });
+      kulkiZolte.each(function(this: SVGImageElement) { d3.select(this).interrupt(); });
+      kulkiZielone.each(function(this: SVGImageElement) { d3.select(this).interrupt(); });
+      kulkiZielone2.each(function(this: SVGImageElement) { d3.select(this).interrupt(); });
+      kulkiFioletowe.each(function(this: SVGImageElement) { d3.select(this).interrupt(); });
+      kulkiFioletowe2.each(function(this: SVGImageElement) { d3.select(this).interrupt(); });
     };
 
     // On window focus, reset animation
@@ -185,7 +185,7 @@ function Pricing() {
 
   const textColor = useColorModeValue('secondaryGray.900', 'white');
   return (
-    <Layout position="relative" overflowX="hidden">
+    <Layout>
       <Flex
         position="absolute"
         top={0}
@@ -320,7 +320,7 @@ function Pricing() {
             <image width="3840" height="2402" transform="scale(.9)" href="/img/onrevolt/aniamcja_warstwa_1-min.png" />
           </g>
         </svg>
-        <Image src="/img/onrevolt/background.png" overflow="hidden" alt="turbina" width="100%" height="99%" top="15vh" zIndex={-10} />
+        <Image src="/img/onrevolt/background.png" overflow="hidden" alt="turbina" w="100%" h="99%" top="15vh" zIndex={-10} />
       </Flex>
       <PricingLayout
         contentTop={{ base: '140px', md: '5vh' }}
@@ -384,7 +384,7 @@ function Pricing() {
               <Pack
                 title={<RevolveLogo width={120} />}
                 desc="Innowacyjna turbina wiatrowa 2kW"
-                statement={["pokryje nawet ", <Text color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">50%</Text>, " Twojego rocznego zapotrzebowania na prąd!"]}
+                statement={["pokryje nawet ", <Text key="percentage" color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">50%</Text>, " Twojego rocznego zapotrzebowania na prąd!"]}
                 image={"/img/onrevolt/Revolve_image.png"}
                 benefits={[{
                   bold: "Gwarancja uzysku energii",
@@ -411,8 +411,8 @@ function Pricing() {
                     <Image
                       src="/img/onrevolt/Download_icon.svg"
                       alt="Pobierz"
-                      width="35px"
-                      height="35px"
+                      w="35px"
+                      h="35px"
                       style={{ display: 'inline', verticalAlign: 'middle' }}
                     />
                     Pobierz broszurę informacyjną
@@ -422,7 +422,7 @@ function Pricing() {
               <Pack
                 title={<ReflowLogo width={104} />}
                 desc="Centrum energetycznej niezależności"
-                statement={["zmniejsza Twoje rachunki nawet o ", <Text color='secondaryGray.900' fontWeight="bold" as="span" fontSize="2.5rem">80%</Text>]}
+                statement={["zmniejsza Twoje rachunki nawet o ", <Text key="percentage" color='secondaryGray.900' fontWeight="bold" as="span" fontSize="2.5rem">80%</Text>]}
                 image={"/img/onrevolt/Reflow_image.png"}
                 benefits={[{
                   bold: "Twój dom jako centrum energetycznej niezależności",
@@ -439,7 +439,7 @@ function Pricing() {
               <Pack
                 title={<ResourceLogo width={137} />}
                 desc="Magazyn, który daje Ci niezależność"
-                statement={["gromadzi ", <Text color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">15kWh</Text>, " energii w zasięgu Twoich potrzeb"]}
+                statement={["gromadzi ", <Text key="capacity" color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">15kWh</Text>, " energii w zasięgu Twoich potrzeb"]}
                 image={"/img/onrevolt/Resource_image.png"}
                 benefits={[{
                   bold: "Zaprojektowany na lata",
@@ -459,8 +459,8 @@ function Pricing() {
                     <Image
                       src="/img/onrevolt/Download_icon.svg"
                       alt="Pobierz"
-                      width="35px"
-                      height="35px"
+                      w="35px"
+                      h="35px"
                       style={{ display: 'inline', verticalAlign: 'middle' }}
                     />
                     Pobierz kartę katalogową
@@ -473,14 +473,14 @@ function Pricing() {
               <Box w="100%" position="relative" pb="55%" /* 16:9 aspect ratio */>
                 <Image
                   src="/img/onrevolt/schemat.svg"
-                  shapeRendering="auto"
                   alt="schemat"
                   position="absolute"
                   top="0"
                   left="0"
-                  width="100%"
-                  height="100%"
+                  w="100%"
+                  h="100%"
                   objectFit="contain"
+                  style={{ shapeRendering: 'auto' }}
                 />
               </Box>
             </Card>

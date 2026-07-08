@@ -1,34 +1,49 @@
 import { mode } from '@chakra-ui/theme-tools';
+
+const formValueColor = (props: any) => mode('secondaryGray.900', 'rgba(226, 232, 255, 0.78)')(props);
+const formPlaceholderColor = (props: any) => mode('secondaryGray.500', 'rgba(163, 174, 208, 0.52)')(props);
+
 export const inputStyles = {
     components: {
         Input: {
-            baseStyle: {
+            baseStyle: (props: any) => ({
                 field: {
-                    fontWeight: 400,
+                    color: formValueColor(props),
+                    fontWeight: 500,
                     borderRadius: '8px',
+                    opacity: 1,
+                    WebkitTextFillColor: formValueColor(props),
+                    _placeholder: {
+                        color: formPlaceholderColor(props),
+                        fontWeight: 400,
+                        opacity: 1,
+                    },
                 },
-            },
+            }),
 
             variants: {
                 main: (props: any) => ({
                     field: {
                         bg: mode('transparent', 'navy.800')(props),
                         border: '1px solid',
-                        color: mode('secondaryGray.900', 'white')(props),
+                        color: formValueColor(props),
+                        WebkitTextFillColor: formValueColor(props),
                         borderColor: mode(
                             'secondaryGray.100',
                             'whiteAlpha.100'
                         )(props),
                         borderRadius: '16px',
                         fontSize: 'sm',
+                        fontWeight: 500,
                         p: '20px',
-                        _placeholder: { color: 'secondaryGray.400' },
+                        _placeholder: { color: formPlaceholderColor(props), fontWeight: 400, opacity: 1 },
                     },
                 }),
                 auth: (props: any) => ({
                     field: {
                         fontWeight: '500',
-                        color: mode('navy.700', 'white')(props),
+                        color: formValueColor(props),
+                        WebkitTextFillColor: formValueColor(props),
                         bg: mode('transparent', 'transparent')(props),
                         border: '1px solid',
                         borderColor: mode(
@@ -37,18 +52,21 @@ export const inputStyles = {
                         )(props),
                         borderRadius: '16px',
                         _placeholder: {
-                            color: 'secondaryGray.600',
+                            color: formPlaceholderColor(props),
                             fontWeight: '400',
+                            opacity: 1,
                         },
                     },
                 }),
-                authSecondary: () => ({
+                authSecondary: (props: any) => ({
                     field: {
                         bg: 'transparent',
                         border: '1px solid',
+                        color: formValueColor(props),
+                        WebkitTextFillColor: formValueColor(props),
                         borderColor: 'secondaryGray.100',
                         borderRadius: '16px',
-                        _placeholder: { color: 'secondaryGray.600' },
+                        _placeholder: { color: formPlaceholderColor(props), fontWeight: 400, opacity: 1 },
                     },
                 }),
                 search: () => ({
@@ -62,41 +80,55 @@ export const inputStyles = {
             },
         },
         NumberInput: {
-            baseStyle: {
+            baseStyle: (props: any) => ({
                 field: {
-                    fontWeight: 400,
+                    color: formValueColor(props),
+                    fontWeight: 500,
+                    opacity: 1,
+                    WebkitTextFillColor: formValueColor(props),
+                    _placeholder: {
+                        color: formPlaceholderColor(props),
+                        fontWeight: 400,
+                        opacity: 1,
+                    },
                 },
-            },
+            }),
 
             variants: {
-                main: () => ({
+                main: (props: any) => ({
                     field: {
                         bg: 'transparent',
                         border: '1px solid',
+                        color: formValueColor(props),
+                        WebkitTextFillColor: formValueColor(props),
 
                         borderColor: 'secondaryGray.100',
                         borderRadius: '16px',
-                        _placeholder: { color: 'secondaryGray.600' },
+                        _placeholder: { color: formPlaceholderColor(props), fontWeight: 400, opacity: 1 },
                     },
                 }),
-                auth: () => ({
+                auth: (props: any) => ({
                     field: {
                         bg: 'transparent',
                         border: '1px solid',
+                        color: formValueColor(props),
+                        WebkitTextFillColor: formValueColor(props),
 
                         borderColor: 'secondaryGray.100',
                         borderRadius: '16px',
-                        _placeholder: { color: 'secondaryGray.600' },
+                        _placeholder: { color: formPlaceholderColor(props), fontWeight: 400, opacity: 1 },
                     },
                 }),
-                authSecondary: () => ({
+                authSecondary: (props: any) => ({
                     field: {
                         bg: 'transparent',
                         border: '1px solid',
+                        color: formValueColor(props),
+                        WebkitTextFillColor: formValueColor(props),
 
                         borderColor: 'secondaryGray.100',
                         borderRadius: '16px',
-                        _placeholder: { color: 'secondaryGray.600' },
+                        _placeholder: { color: formPlaceholderColor(props), fontWeight: 400, opacity: 1 },
                     },
                 }),
                 search: () => ({
@@ -110,27 +142,35 @@ export const inputStyles = {
             },
         },
         Select: {
-            baseStyle: {
+            baseStyle: (props: any) => ({
                 field: {
-                    fontWeight: 400,
+                    color: formValueColor(props),
+                    fontWeight: 500,
+                    opacity: 1,
+                    WebkitTextFillColor: formValueColor(props),
                 },
-            },
+                icon: {
+                    color: formValueColor(props),
+                },
+            }),
 
             variants: {
                 main: (props: any) => ({
                     field: {
                         bg: mode('transparent', 'navy.800')(props),
                         border: '1px solid',
-                        color: 'secondaryGray.600',
+                        color: formValueColor(props),
+                        WebkitTextFillColor: formValueColor(props),
                         borderColor: mode(
                             'secondaryGray.100',
                             'whiteAlpha.100'
                         )(props),
                         borderRadius: '16px',
-                        _placeholder: { color: 'secondaryGray.600' },
+                        fontWeight: 500,
+                        _placeholder: { color: formPlaceholderColor(props), fontWeight: 400, opacity: 1 },
                     },
                     icon: {
-                        color: 'secondaryGray.600',
+                        color: formValueColor(props),
                     },
                 }),
                 mini: (props: any) => ({

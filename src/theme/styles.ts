@@ -162,19 +162,32 @@ export const globalStyles = {
     },
   },
   styles: {
-    global: (props: any) => ({
-      body: {
-        overflowX: 'hidden',
-        bg: mode('background.100', 'background.900')(props),
-        fontFamily: 'DM Sans',
-        letterSpacing: '-0.5px',
-      },
-      input: {
-        color: 'gray.700',
-      },
-      html: {
-        fontFamily: 'DM Sans',
-      },
-    }),
+    global: (props: any) => {
+      const formValueColor = mode('gray.700', 'rgba(226, 232, 255, 0.78)')(props);
+      const formPlaceholderColor = mode('secondaryGray.500', 'rgba(163, 174, 208, 0.52)')(props);
+
+      return {
+        body: {
+          overflowX: 'hidden',
+          bg: mode('background.100', 'background.900')(props),
+          fontFamily: 'DM Sans',
+          letterSpacing: '-0.5px',
+        },
+        'input, textarea, select': {
+          color: formValueColor,
+          fontWeight: 500,
+          opacity: 1,
+          WebkitTextFillColor: formValueColor,
+        },
+        'input::placeholder, textarea::placeholder': {
+          color: formPlaceholderColor,
+          fontWeight: 400,
+          opacity: 1,
+        },
+        html: {
+          fontFamily: 'DM Sans',
+        },
+      };
+    },
   },
 };

@@ -337,117 +337,114 @@ export default function Messages(props: {
           bottom="0px"
         >
           <InputGroup me="10px" w={{ base: '100%' }}>
-            <InputLeftElement
-              children={
-                <Box>
-                  <IconButton
-                    aria-label="iconbutton"
-                    ms="25px"
-                    h="max-content"
-                    w="max-content"
-                    mt="28px"
-                    bg="inherit"
-                    borderRadius="inherit"
-                    display={{ base: 'none', lg: 'flex' }}
-                    _hover={{ bg: 'none' }}
-                    _active={{
-                      bg: 'inherit',
-                      transform: 'none',
-                      borderColor: 'transparent',
-                    }}
-                    _focus={{
-                      boxShadow: 'none',
-                    }}
-                    icon={
-                      <Icon
-                        as={MdTagFaces}
-                        color={inputColor}
-                        w="30px"
-                        h="30px"
-                      />
-                    }
-                  />
-                  <IconButton
-                    aria-label="iconbutton"
-                    mt="10px"
-                    w="30px"
-                    h="30px"
-                    bg="inherit"
-                    borderRadius="inherit"
-                    display={{ base: 'flex', lg: 'none' }}
-                    _hover={{ bg: 'none' }}
-                    _active={{
-                      bg: 'inherit',
-                      transform: 'none',
-                      borderColor: 'transparent',
-                    }}
-                    _focus={{
-                      boxShadow: 'none',
-                    }}
-                    icon={
-                      <Icon as={MdAdd} color={inputColor} w="30px" h="30px" />
-                    }
-                  />
-                </Box>
-              }
-            />
+            <InputLeftElement>
+              <Box>
+                <IconButton
+                  aria-label="iconbutton"
+                  ms="25px"
+                  h="max-content"
+                  w="max-content"
+                  mt="28px"
+                  bg="inherit"
+                  borderRadius="inherit"
+                  display={{ base: 'none', lg: 'flex' }}
+                  _hover={{ bg: 'none' }}
+                  _active={{
+                    bg: 'inherit',
+                    transform: 'none',
+                    borderColor: 'transparent',
+                  }}
+                  _focus={{
+                    boxShadow: 'none',
+                  }}
+                  icon={
+                    <Icon
+                      as={MdTagFaces}
+                      color={inputColor}
+                      w="30px"
+                      h="30px"
+                    />
+                  }
+                />
+                <IconButton
+                  aria-label="iconbutton"
+                  mt="10px"
+                  w="30px"
+                  h="30px"
+                  bg="inherit"
+                  borderRadius="inherit"
+                  display={{ base: 'flex', lg: 'none' }}
+                  _hover={{ bg: 'none' }}
+                  _active={{
+                    bg: 'inherit',
+                    transform: 'none',
+                    borderColor: 'transparent',
+                  }}
+                  _focus={{
+                    boxShadow: 'none',
+                  }}
+                  icon={
+                    <Icon as={MdAdd} color={inputColor} w="30px" h="30px" />
+                  }
+                />
+              </Box>
+            </InputLeftElement>
             <InputRightElement
               display={{ base: 'none', lg: 'flex' }}
-              children={
-                <Flex me="70px">
-                  <IconButton
-                    aria-label="iconbutton"
-                    h="max-content"
-                    w="max-content"
-                    mt="28px"
-                    bg="inherit"
-                    borderRadius="inherit"
-                    _hover={{ bg: 'none' }}
-                    _active={{
-                      bg: 'inherit',
-                      transform: 'none',
-                      borderColor: 'transparent',
-                    }}
-                    _focus={{
-                      boxShadow: 'none',
-                    }}
-                    icon={
-                      <Icon
-                        as={MdAttachFile}
-                        color={inputColor}
-                        w="30px"
-                        h="30px"
-                      />
-                    }
-                  />
-                  <IconButton
-                    aria-label="iconbutton"
-                    h="max-content"
-                    w="max-content"
-                    mt="28px"
-                    bg="inherit"
-                    borderRadius="inherit"
-                    _hover={{ bg: 'none' }}
-                    _active={{
-                      bg: 'inherit',
-                      transform: 'none',
-                      borderColor: 'transparent',
-                    }}
-                    _focus={{
-                      boxShadow: 'none',
-                    }}
-                    icon={
-                      <Icon
-                        as={MdOutlineImage}
-                        color={inputColor}
-                        w="30px"
-                        h="30px"
-                      />
-                    }
-                  />
-                </Flex>
-              }
-            />
+            >
+              <Flex me="70px">
+                <IconButton
+                  aria-label="iconbutton"
+                  h="max-content"
+                  w="max-content"
+                  mt="28px"
+                  bg="inherit"
+                  borderRadius="inherit"
+                  _hover={{ bg: 'none' }}
+                  _active={{
+                    bg: 'inherit',
+                    transform: 'none',
+                    borderColor: 'transparent',
+                  }}
+                  _focus={{
+                    boxShadow: 'none',
+                  }}
+                  icon={
+                    <Icon
+                      as={MdAttachFile}
+                      color={inputColor}
+                      w="30px"
+                      h="30px"
+                    />
+                  }
+                />
+                <IconButton
+                  aria-label="iconbutton"
+                  h="max-content"
+                  w="max-content"
+                  mt="28px"
+                  bg="inherit"
+                  borderRadius="inherit"
+                  _hover={{ bg: 'none' }}
+                  _active={{
+                    bg: 'inherit',
+                    transform: 'none',
+                    borderColor: 'transparent',
+                  }}
+                  _focus={{
+                    boxShadow: 'none',
+                  }}
+                  icon={
+                    <Icon
+                      as={MdOutlineImage}
+                      color={inputColor}
+                      w="30px"
+                      h="30px"
+                    />
+                  }
+                />
+              </Flex>
+            </InputRightElement>
             <Input
               variant="search"
               fontSize="md"

@@ -205,7 +205,7 @@ export default function UsersOverview() {
     const editHref = `/admin/main/users/edit-user-native?${params}`;
 
     return {
-      name: [fullName, avatarUrl],
+      name: [fullName, avatarUrl] as [string, string],
       email,
       username,
       date,

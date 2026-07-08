@@ -1,3 +1,5 @@
+'use client';
+
 // chakra imports
 import {
   Avatar,
@@ -11,10 +13,28 @@ import {
 import Brand from 'components/sidebar/components/Brand';
 import Links from 'components/sidebar/components/Links';
 import SidebarCard from 'components/sidebar/components/SidebarCard';
-import avatar4 from '/public/img/avatars/avatar4.png';
+import { useEffect, useState } from 'react';
 import { IRoute } from 'types/navigation';
 
 // FUNCTIONS
+type CurrentStaffUser = {
+  id: string;
+  email: string;
+  name: string;
+  avatarUrl?: string | null;
+  positionTitle?: string | null;
+  systemRole: string;
+  companyRoles?: Array<{ name: string }>;
+};
+
+function userSubtitle(user: CurrentStaffUser | null) {
+  if (!user) return 'Panel onRevolt';
+  if (user.positionTitle) return user.positionTitle;
+  if (user.companyRoles?.length) return user.companyRoles.map((role) => role.name).join(', ');
+  if (user.systemRole === 'ADMIN') return 'Admin';
+  if (user.systemRole === 'MODERATOR') return 'Moderator';
+  return 'Użytkownik';
+}
 
 function SidebarContent(props: {
   routes: IRoute[];
@@ -22,7 +42,26 @@ function SidebarContent(props: {
   mini?: boolean;
 }) {
   const { routes, mini, hovered } = props;
+  const [user, setUser] = useState<CurrentStaffUser | null>(null);
   const textColor = useColorModeValue('navy.700', 'white');
+
+  async function loadCurrentUser() {
+    try {
+      const response = await fetch('/api/auth/me', { cache: 'no-store' });
+      const payload = await response.json();
+      setUser(response.ok && payload.ok ? payload.data : null);
+    } catch {
+      setUser(null);
+    }
+  }
+
+  useEffect(() => {
+    loadCurrentUser();
+    const handler = () => loadCurrentUser();
+    window.addEventListener('onrevolt:staff-user-updated', handler);
+    return () => window.removeEventListener('onrevolt:staff-user-updated', handler);
+  }, []);
+
   // SIDEBAR
   return (
     <Flex direction="column" height="100%" pt="25px" borderRadius="30px">
@@ -57,7 +96,8 @@ function SidebarContent(props: {
         <Avatar
           h="48px"
           w="48px"
-          src={avatar4.src}
+          name={user?.name || 'onRevolt'}
+          src={user?.avatarUrl || undefined}
           me={
             mini === false
               ? '20px'
@@ -76,10 +116,10 @@ function SidebarContent(props: {
           }
         >
           <Text color={textColor} fontSize="md" fontWeight="700">
-            Adela Parkson
+            {user?.name || 'Nie zalogowano'}
           </Text>
           <Text color="secondaryGray.600" fontSize="sm" fontWeight="400">
-            Product Designer
+            {userSubtitle(user)}
           </Text>
         </Box>
       </Flex>

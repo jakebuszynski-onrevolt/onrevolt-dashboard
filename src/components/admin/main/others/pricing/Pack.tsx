@@ -5,15 +5,19 @@ import { Badge, List, ListItem, ListIcon, Text, Button, useColorModeValue, Image
 import Card from 'components/card/Card';
 // Assets
 import { BsCircleFill } from 'react-icons/bs';
+import { ReactNode } from 'react';
 
 export default function Pack(props: {
-	title: string;
+	title: ReactNode;
 	desc: string;
-	button: string;
-	price: JSX.Element | string;
-	details: string;
-	benefits: string[];
+	button?: string;
+	price?: JSX.Element | string;
+	details?: string;
+	benefits: Array<string | { bold: string; text: string }>;
 	highlighted?: boolean;
+	CTA?: ReactNode;
+	image?: string;
+	statement?: ReactNode;
 }) {
 	const { title, desc, button, price, details, benefits, highlighted, CTA, image, statement } = props;
 	const textColor = useColorModeValue('secondaryGray.900', 'white');
@@ -21,7 +25,6 @@ export default function Pack(props: {
         <Card
             p="20px"
             pb="20px"
-            pt={highlighted ? '60px' : '30px'}
             w={{ sm: '100%', "2sm": '100%', md: '650px', lg: '375px' }}
             alignItems="flex-start"
             justifyContent="flex-start"
@@ -74,13 +77,17 @@ export default function Pack(props: {
                 {statement}
             </Text>
             <AspectRatio width={'100%'} ratio={357 / 234}>
-                <Image imageRendering="auto" src={image} alt="revolve" width="100%" height="100%" borderRadius="20px"/>
+                <Image style={{ imageRendering: 'auto' }} src={image} alt="revolve" width="100%" height="100%" borderRadius="20px"/>
             </AspectRatio>
             <Text fontSize="md" color="secondaryGray.600" fontWeight="500">
                 {details}
             </Text>
             <List spacing={3} justifyContent="flex-start" flexDirection="row" flexWrap="wrap">
-                {benefits.map((benefit, index) => (
+                {benefits.map((benefit, index) => {
+                    const bold = typeof benefit === 'string' ? benefit : benefit.bold;
+                    const text = typeof benefit === 'string' ? '' : benefit.text;
+
+                    return (
                     <ListItem
                         key={index}
                         display="flex"
@@ -101,11 +108,11 @@ export default function Pack(props: {
                             color={textColor}
                         />
                         <Flex flexDirection="column" alignItems="left">
-                            <Text fontWeight="bold" display="inline">{benefit.bold}</Text>
-                            <Text display="inline">{benefit.text}</Text>
+                            <Text fontWeight="bold" display="inline">{bold}</Text>
+                            <Text display="inline">{text}</Text>
                         </Flex>
                     </ListItem>
-                ))}{' '}
+                )})}{' '}
             </List>
             {CTA}
         </Card>

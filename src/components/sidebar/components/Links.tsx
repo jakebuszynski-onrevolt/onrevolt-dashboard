@@ -47,6 +47,7 @@ export function SidebarLinks(props: { routes: IRoute[]; [x: string]: any }) {
   // this function creates the links and collapses that appear in the sidebar (left menu)
   const createLinks = (routes: IRoute[]) => {
     return routes.map((route, key) => {
+      if (route.hidden) return null;
       if (route.collapse) {
         return (
           <Accordion allowToggle key={key}>

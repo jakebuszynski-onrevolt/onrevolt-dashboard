@@ -9,5 +9,6 @@ export interface IRoute {
   icon?: ComponentType | string | Element;
   secondary?: boolean;
   collapse?: boolean;
-  items?: RoutesType[];
+  hidden?: boolean;
+  items?: IRoute[];
 }

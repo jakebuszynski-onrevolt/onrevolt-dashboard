@@ -1,0 +1,17 @@
+ALTER TABLE `StaffUser`
+  MODIFY `systemRole` ENUM('ADMIN', 'MODERATOR', 'USER') NOT NULL DEFAULT 'USER';
+
+ALTER TABLE `CompanyRole`
+  MODIFY `code` ENUM(
+    'SZEF',
+    'KOORDYNATOR',
+    'SPRZEDAWCA',
+    'MONTER',
+    'ELEKTRYK',
+    'SERWIS',
+    'PROJEKTANT',
+    'DEVELOPER',
+    'KSIEGOWOSC',
+    'BIURO',
+    'PODWYKONAWCA'
+  ) NOT NULL;

@@ -35,18 +35,9 @@ export default function Footer() {
               }}
               mb={{ base: '20px', xl: '0px' }}
           >
-              {' '}
               &copy; {new Date().getFullYear()}
               <Text as="span" fontWeight="500" ms="4px">
-                  Horizon UI. All Rights Reserved. Made with love by
-                  <Link
-                      mx="3px"
-                      color={textColor}
-                      href="https://www.simmmple.com"
-                      fontWeight="700"
-                  >
-                      Simmmple!
-                  </Link>
+                  onRevolt. Wszelkie prawa zastrzeżone.
               </Text>
           </Text>
           <List display="flex">
@@ -59,7 +50,7 @@ export default function Footer() {
                   <Link
                       fontWeight="500"
                       color={textColor}
-                      href="mailto:hello@simmmple.com"
+                      href="mailto:support@onrevolt.com"
                   >
                       Support
                   </Link>
@@ -90,15 +81,6 @@ export default function Footer() {
                       href="https://simmmple.com/terms-of-service"
                   >
                       Terms of Use
-                  </Link>
-              </ListItem>
-              <ListItem>
-                  <Link
-                      fontWeight="500"
-                      color={textColor}
-                      href="https://www.blog.simmmple.com/"
-                  >
-                      Blog
                   </Link>
               </ListItem>
           </List>

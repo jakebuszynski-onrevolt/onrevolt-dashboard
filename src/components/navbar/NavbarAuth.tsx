@@ -487,7 +487,7 @@ export default function AuthNavbar(props: {
               }}
               boxShadow="none"
             >
-              <Image src="/img/onrevolt/ue_logo.png" width="150px" height="44px" />
+              <Image src="/img/onrevolt/ue_logo.png" alt="Fundusze Europejskie" w="150px" h="44px" />
             </Button>
           </Link>
         </Flex>

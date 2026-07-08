@@ -59,9 +59,9 @@ export default function NewProduct() {
     pricing: false,
   });
 
-  const productTab = React.useRef() as React.MutableRefObject<HTMLInputElement>;
-  const mediaTab = React.useRef() as React.MutableRefObject<HTMLInputElement>;
-  const pricingTab = React.useRef() as React.MutableRefObject<HTMLInputElement>;
+  const productTab = React.useRef<HTMLButtonElement>(null);
+  const mediaTab = React.useRef<HTMLButtonElement>(null);
+  const pricingTab = React.useRef<HTMLButtonElement>(null);
   const brand = useColorModeValue('brand.500', 'brand.400');
 
   return (

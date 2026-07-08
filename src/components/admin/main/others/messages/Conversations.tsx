@@ -169,25 +169,23 @@ export default function Conversations() {
 				</Flex>
 				<Flex align='center' w='calc(100%)' bottom='20px'>
 					<InputGroup me='10px' w={{ base: '100%' }}>
-						<InputLeftElement
-							children={
-								<IconButton
-									aria-label='iconbutton'
-									bg='inherit'
-									borderRadius='inherit'
-									_hover={{ bg: 'none' }}
-									_active={{
-										bg: 'inherit',
-										transform: 'none',
-										borderColor: 'transparent'
-									}}
-									_focus={{
-										boxShadow: 'none'
-									}}
-									icon={<Icon as={FiSearch} color={searchIconColor} w='15px' h='15px' />}
-								/>
-							}
-						/>
+						<InputLeftElement>
+							<IconButton
+								aria-label='iconbutton'
+								bg='inherit'
+								borderRadius='inherit'
+								_hover={{ bg: 'none' }}
+								_active={{
+									bg: 'inherit',
+									transform: 'none',
+									borderColor: 'transparent'
+								}}
+								_focus={{
+									boxShadow: 'none'
+								}}
+								icon={<Icon as={FiSearch} color={searchIconColor} w='15px' h='15px' />}
+							/>
+						</InputLeftElement>
 						<Input
 							variant='search'
 							fontSize='sm'

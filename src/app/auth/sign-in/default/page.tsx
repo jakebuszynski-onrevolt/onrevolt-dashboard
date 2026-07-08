@@ -24,6 +24,8 @@
 import React from 'react';
 // Chakra imports
 import {
+  Alert,
+  AlertIcon,
   Box,
   Button,
   Checkbox,
@@ -38,35 +40,49 @@ import {
   Text,
   useColorModeValue,
 } from '@chakra-ui/react';
-// Custom components
-import { HSeparator } from 'components/separator/Separator';
 import DefaultAuth from '../../../../components/auth/variants/DefaultAuthLayout/page';
 // Assets
 import illustration from '/public/img/auth/auth.png';
-import { FcGoogle } from 'react-icons/fc';
 import { MdOutlineRemoveRedEye } from 'react-icons/md';
 import { RiEyeCloseLine } from 'react-icons/ri';
 import NavLink from 'components/link/NavLink';
+import { useRouter } from 'next/navigation';
 
 function SignIn() {
+  const router = useRouter();
   // Chakra color mode
   const textColor = useColorModeValue('navy.700', 'white');
   const textColorSecondary = 'gray.400';
   const textColorDetails = useColorModeValue('navy.700', 'secondaryGray.600');
   const textColorBrand = useColorModeValue('brand.500', 'white');
   const brandStars = useColorModeValue('brand.500', 'brand.400');
-  const googleBg = useColorModeValue('secondaryGray.300', 'whiteAlpha.200');
-  const googleText = useColorModeValue('navy.700', 'white');
-  const googleHover = useColorModeValue(
-    { bg: 'gray.200' },
-    { bg: 'whiteAlpha.300' }
-  );
-  const googleActive = useColorModeValue(
-    { bg: 'secondaryGray.300' },
-    { bg: 'whiteAlpha.200' }
-  );
   const [show, setShow] = React.useState(false);
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
   const handleClick = () => setShow(!show);
+
+  async function handleLogin(event: React.FormEvent<HTMLDivElement>) {
+      event.preventDefault();
+      setLoading(true);
+      setError('');
+      try {
+          const response = await fetch('/api/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password }),
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+          router.push('/admin/dashboard');
+      } catch (e) {
+          setError(e instanceof Error ? e.message : String(e));
+      } finally {
+          setLoading(false);
+      }
+  }
+
   return (
       <DefaultAuth illustrationBackground={illustration?.src}>
           <Flex
@@ -84,7 +100,7 @@ function SignIn() {
           >
               <Box me="auto">
                   <Heading color={textColor} fontSize="36px" mb="10px">
-                      Sign In
+                      Logowanie
                   </Heading>
                   <Text
                       mb="36px"
@@ -93,7 +109,7 @@ function SignIn() {
                       fontWeight="400"
                       fontSize="md"
                   >
-                      Enter your email and password to sign in!
+                      Podaj email i hasło do panelu onRevolt.
                   </Text>
               </Box>
               <Flex
@@ -107,31 +123,13 @@ function SignIn() {
                   me="auto"
                   mb={{ base: '20px', md: 'auto' }}
               >
-                  <Button
-                      fontSize="sm"
-                      me="0px"
-                      mb="26px"
-                      py="15px"
-                      h="50px"
-                      borderRadius="16px"
-                      bg={googleBg}
-                      color={googleText}
-                      fontWeight="500"
-                      _hover={googleHover}
-                      _active={googleActive}
-                      _focus={googleActive}
-                  >
-                      <Icon as={FcGoogle} w="20px" h="20px" me="10px" />
-                      Sign in with Google
-                  </Button>
-                  <Flex align="center" mb="25px">
-                      <HSeparator />
-                      <Text color="gray.400" mx="14px">
-                          or
-                      </Text>
-                      <HSeparator />
-                  </Flex>
-                  <FormControl>
+                  {error ? (
+                      <Alert status="error" borderRadius="12px" mb="18px">
+                          <AlertIcon />
+                          {error}
+                      </Alert>
+                  ) : null}
+                  <Box as="form" onSubmit={handleLogin}>
                       <FormLabel
                           display="flex"
                           ms="4px"
@@ -144,11 +142,13 @@ function SignIn() {
                       </FormLabel>
                       <Input
                           isRequired={true}
+                          value={email}
+                          onChange={(event) => setEmail(event.target.value)}
                           variant="auth"
                           fontSize="sm"
                           ms={{ base: '0px', md: '0px' }}
                           type="email"
-                          placeholder="mail@simmmple.com"
+                          placeholder="admin@onrevolt.com"
                           mb="24px"
                           fontWeight="500"
                           size="lg"
@@ -160,13 +160,15 @@ function SignIn() {
                           color={textColor}
                           display="flex"
                       >
-                          Password<Text color={brandStars}>*</Text>
+                          Hasło<Text color={brandStars}>*</Text>
                       </FormLabel>
                       <InputGroup size="md">
                           <Input
                               isRequired={true}
+                              value={password}
+                              onChange={(event) => setPassword(event.target.value)}
                               fontSize="sm"
-                              placeholder="Min. 8 characters"
+                              placeholder="Minimum 8 znaków"
                               mb="24px"
                               size="lg"
                               type={show ? 'text' : 'password'}
@@ -207,7 +209,7 @@ function SignIn() {
                                   color={textColor}
                                   fontSize="sm"
                               >
-                                  Keep me logged in
+                                  Zapamiętaj logowanie
                               </FormLabel>
                           </FormControl>
                           <NavLink href="/auth/forgot-password">
@@ -217,7 +219,7 @@ function SignIn() {
                                   w="124px"
                                   fontWeight="500"
                               >
-                                  Forgot password?
+                                  Nie pamiętasz hasła?
                               </Text>
                           </NavLink>
                       </Flex>
@@ -228,10 +230,12 @@ function SignIn() {
                           w="100%"
                           h="50"
                           mb="24px"
+                          type="submit"
+                          isLoading={loading}
                       >
-                          Sign In
+                          Zaloguj
                       </Button>
-                  </FormControl>
+                  </Box>
                   <Flex
                       flexDirection="column"
                       justifyContent="center"
@@ -244,7 +248,7 @@ function SignIn() {
                           fontWeight="400"
                           fontSize="14px"
                       >
-                          Not registered yet?
+                          Nie masz konta?
                           <NavLink href="/auth/sign-up">
                               <Text
                                   color={textColorBrand}
@@ -252,7 +256,7 @@ function SignIn() {
                                   ms="5px"
                                   fontWeight="500"
                               >
-                                  Create an Account
+                                  Poproś administratora o dostęp
                               </Text>
                           </NavLink>
                       </Text>

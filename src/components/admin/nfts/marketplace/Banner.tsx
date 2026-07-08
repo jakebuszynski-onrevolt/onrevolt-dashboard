@@ -79,7 +79,7 @@ export default function Banner() {
           </Link>
         </Flex>
       </Flex>
-      <Image maxW="415px" src={banner.src} />
+      <Image maxW="415px" src={banner.src} alt="NFT marketplace banner" />
     </Flex>
   );
 }

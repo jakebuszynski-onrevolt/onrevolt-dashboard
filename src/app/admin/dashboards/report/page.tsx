@@ -77,11 +77,11 @@ export default function SmartHome() {
               >
                 <AspectRatio backgroundColor="#EEF1F9" w="100%" maxW="100%" ratio={210 / 297} onClick={() => setCurrentPage(0)} cursor="pointer">
                     <Box
-                      bgSize="cover"
-                      w=""
-                      minH={{ base: '310px', md: '100%' }}
+                        bgSize="cover"
+                        w=""
+                        minH={{ base: '310px', md: '100%' }}
                         bgImage={imageSrc1}
-                        imageRendering="auto"
+                        style={{ imageRendering: 'auto' }}
 
                     >
 
@@ -119,7 +119,7 @@ export default function SmartHome() {
                 ref={componentRef1}>
                 <Box display="flex" w="100%" h="100%" flexDirection="column" p="4%" gap="20px" alignItems="baseline !important">
                     {/* A4 Paper Area */}
-                    <Image src="/img/onrevolt/Report_logo_black.svg" alt="Report" width="15%" shapeRendering="auto" />
+                    <Image src="/img/onrevolt/Report_logo_black.svg" alt="Report" width="15%" style={{ shapeRendering: 'auto' }} />
                     <Card flexDirection="column" w="100%" height="17%" borderRadius="25px" alignItems="flex-start" gap="10px" p="15px">
                         <Text fontSize="1.5rem" color="secondaryGray.900" fontWeight="semibold" ml="10px">Dane osobowe</Text>
                         <Stack
@@ -146,7 +146,7 @@ export default function SmartHome() {
                         >
                              <Information borderRadius="15px" title="Lokalizacja" value="____________________" />
                              <Information borderRadius="15px" title="źródło ciepła" value="______, Moc ____ kW" />
-                             <Information borderRadius="15px" atitle="Operator" value="__________________" />
+                             <Information borderRadius="15px" title="Operator" value="__________________" />
                         </Stack>
 
                     </Card>
@@ -233,7 +233,7 @@ export default function SmartHome() {
                 ref={componentRef2}>
                 <Box display="flex" w="100%" h="100%" flexDirection="column" p="4%" gap="20px" alignItems="baseline !important">
                     {/* A4 Paper Area */}
-                    <Image src="/img/onrevolt/Report_logo_black.svg" alt="Report" width="15%" shapeRendering="auto" />
+                    <Image src="/img/onrevolt/Report_logo_black.svg" alt="Report" width="15%" style={{ shapeRendering: 'auto' }} />
                     <Stack
                         direction="row"
                         alignItems="top"
@@ -268,7 +268,7 @@ export default function SmartHome() {
                         <Pack
                             title={<ReflowLogo width={104} />}
                             desc="Centrum energetycznej niezależności"
-                            statement={["zmniejsza Twoje rachunki nawet o ", <Text color='secondaryGray.900' fontWeight="bold" as="span" fontSize="2.5rem">80%</Text>]}
+                            statement={["zmniejsza Twoje rachunki nawet o ", <Text key="percentage" color='secondaryGray.900' fontWeight="bold" as="span" fontSize="2.5rem">80%</Text>]}
                             image={"/img/onrevolt/Reflow_image.png"}
                             benefits={[{
                                 bold: "Twój dom jako centrum energetycznej niezależności",
@@ -285,7 +285,7 @@ export default function SmartHome() {
                         <Pack
                             title={<ResourceLogo width={137} />}
                             desc="Magazyn, który daje Ci niezależność"
-                            statement={["gromadzi ", <Text color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">15kWh</Text>, " energii w zasięgu Twoich potrzeb"]}
+                            statement={["gromadzi ", <Text key="capacity" color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">15kWh</Text>, " energii w zasięgu Twoich potrzeb"]}
                             image={"/img/onrevolt/Resource_image.png"}
                             benefits={[{
                                 bold: "Zaprojektowany na lata",
@@ -303,7 +303,7 @@ export default function SmartHome() {
                         <Box w="100%" position="relative" pb="55%" /* 16:9 aspect ratio */>
                             <Image
                                 src="/img/onrevolt/schemat.svg"
-                                shapeRendering="auto"
+                                style={{ shapeRendering: 'auto' }}
                                 alt="schemat"
                                 position="absolute"
                                 top="0"
@@ -320,7 +320,7 @@ export default function SmartHome() {
                 ref={componentRef3}>
                 <Box display="flex" w="100%" h="100%" flexDirection="column" p="4%" gap="20px" alignItems="baseline !important">
                     {/* A4 Paper Area */}
-                    <Image src="/img/onrevolt/Report_logo_black.svg" alt="Revolve" width="15%" shapeRendering="auto" />
+                    <Image src="/img/onrevolt/Report_logo_black.svg" alt="Revolve" width="15%" style={{ shapeRendering: 'auto' }} />
                     <Stack
                         direction="row"
                         alignItems="top"

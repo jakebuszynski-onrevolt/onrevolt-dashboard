@@ -1,9 +1,9 @@
 'use client';
 // Chakra Imports
 import {
+  Avatar,
   Box,
   Button,
-  Center,
   Flex,
   Icon,
   Menu,
@@ -21,6 +21,7 @@ import { ItemContent } from 'components/menu/ItemContent';
 import { SearchBar } from 'components/navbar/searchBar/SearchBar';
 import { SidebarResponsive } from 'components/sidebar/Sidebar';
 import Configurator from 'components/navbar/Configurator';
+import NextLink from 'next/link';
 // Assets
 import navImage from '/public/img/layout/Navbar.png';
 import { FaEthereum } from 'react-icons/fa';
@@ -29,8 +30,24 @@ import { MdInfoOutline, MdNotificationsNone } from 'react-icons/md';
 import { useEffect, useState, useContext } from 'react';
 import { ConfiguratorContext } from 'contexts/ConfiguratorContext';
 import routes from 'routes';
+
+type CurrentStaffUser = {
+  id: string;
+  email: string;
+  name: string;
+  avatarUrl?: string | null;
+  positionTitle?: string | null;
+  systemRole: string;
+  companyRoles?: Array<{ name: string }>;
+};
+
+function firstName(name?: string | null) {
+  return (name || '').trim().split(/\s+/)[0] || 'Operator';
+}
+
 export default function HeaderLinks(props: { secondary: boolean }) {
   const { secondary } = props;
+  const [user, setUser] = useState<CurrentStaffUser | null>(null);
   const { colorMode, toggleColorMode } = useColorMode();
   // Chakra Color Mode
   const navbarIcon = useColorModeValue('gray.400', 'white');
@@ -46,6 +63,29 @@ export default function HeaderLinks(props: { secondary: boolean }) {
     '14px 17px 40px 4px rgba(112, 144, 176, 0.06)',
   );
   const borderButton = useColorModeValue('secondaryGray.500', 'whiteAlpha.200');
+
+  async function loadCurrentUser() {
+    try {
+      const response = await fetch('/api/auth/me', { cache: 'no-store' });
+      const payload = await response.json();
+      setUser(response.ok && payload.ok ? payload.data : null);
+    } catch {
+      setUser(null);
+    }
+  }
+
+  useEffect(() => {
+    loadCurrentUser();
+    const handler = () => loadCurrentUser();
+    window.addEventListener('onrevolt:staff-user-updated', handler);
+    return () => window.removeEventListener('onrevolt:staff-user-updated', handler);
+  }, []);
+
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    setUser(null);
+    window.location.href = '/auth/sign-in/default';
+  }
 
   return (
     <Flex
@@ -226,19 +266,15 @@ export default function HeaderLinks(props: { secondary: boolean }) {
       <Configurator />
       <Menu>
         <MenuButton p="0px" style={{ position: 'relative' }}>
-          <Box
-            _hover={{ cursor: 'pointer' }}
-            color="white"
+          <Avatar
+            name={user?.name || 'onRevolt'}
+            src={user?.avatarUrl || undefined}
             bg="#11047A"
+            color="white"
             w="40px"
             h="40px"
-            borderRadius={'50%'}
+            _hover={{ cursor: 'pointer' }}
           />
-          <Center top={0} left={0} position={'absolute'} w={'100%'} h={'100%'}>
-            <Text fontSize={'xs'} fontWeight="bold" color={'white'}>
-              AP
-            </Text>
-          </Center>
         </MenuButton>
         <MenuList
           boxShadow={shadow}
@@ -260,25 +296,29 @@ export default function HeaderLinks(props: { secondary: boolean }) {
               fontWeight="700"
               color={textColor}
             >
-              👋&nbsp; Hey, Adela
+              Cześć, {firstName(user?.name)}
             </Text>
           </Flex>
           <Flex flexDirection="column" p="10px">
             <MenuItem
+              as={NextLink}
+              href="/admin/profile"
               _hover={{ bg: 'none' }}
               _focus={{ bg: 'none' }}
               borderRadius="8px"
               px="14px"
             >
-              <Text fontSize="sm">Profile Settings</Text>
+              <Text fontSize="sm">Ustawienia profilu</Text>
             </MenuItem>
             <MenuItem
+              as={NextLink}
+              href="/admin/settings"
               _hover={{ bg: 'none' }}
               _focus={{ bg: 'none' }}
               borderRadius="8px"
               px="14px"
             >
-              <Text fontSize="sm">Newsletter Settings</Text>
+              <Text fontSize="sm">Użytkownicy i role</Text>
             </MenuItem>
             <MenuItem
               _hover={{ bg: 'none' }}
@@ -286,8 +326,9 @@ export default function HeaderLinks(props: { secondary: boolean }) {
               color="red.400"
               borderRadius="8px"
               px="14px"
+              onClick={handleLogout}
             >
-              <Text fontSize="sm">Log out</Text>
+              <Text fontSize="sm">Wyloguj</Text>
             </MenuItem>
           </Flex>
         </MenuList>

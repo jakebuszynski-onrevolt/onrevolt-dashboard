@@ -73,8 +73,9 @@ function Pricing() {
         <AspectRatio position="relative" w="100%" maxW="100%" ratio={1920 / 1134}>
           <Image
             src="/img/onrevolt/ue_turbiny.jpg"
-            width="100vw"
-            height="auto"
+            alt="Turbiny onRevolt"
+            w="100vw"
+            h="auto"
           />
         </AspectRatio>
       </Box>
@@ -82,11 +83,10 @@ function Pricing() {
       <PricingLayout
         contentTop={{ base: '140px', md: '5vh' }}
         contentBottom={{ base: '50px', lg: 'auto' }}
-        width="100%"
       >
 
         <Card
-          direction="column"
+          flexDirection="column"
           zIndex={10}
           width="100%"
           mt="30vh"
@@ -112,8 +112,9 @@ function Pricing() {
           <AspectRatio w="100%" maxW="100%" ratio={1168 / 130}>
             <Image
               src="/img/onrevolt/logotypy_ue.png"
-              width="100%"
-              height="auto"
+              alt="Logotypy Funduszy Europejskich"
+              w="100%"
+              h="auto"
             />
           </AspectRatio>
         </Card>
