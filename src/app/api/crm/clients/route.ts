@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
-import { jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
+import { forbidden, jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
+import { getCurrentStaffUser, isAdminUser } from 'lib/onrevolt/staff-server';
 
 const clientTypes = new Set(['UNKNOWN', 'B2C', 'B2B', 'B2C_B2B']);
 const projectStatuses = new Set([
@@ -23,6 +24,28 @@ const projectInclude = {
   investmentSite: true,
 };
 
+const energyPortalAccountSelect = {
+  id: true,
+  clientId: true,
+  projectId: true,
+  operator: true,
+  login: true,
+  ppeNumber: true,
+  portalPpeId: true,
+  meterNumber: true,
+  notes: true,
+  lastSyncAt: true,
+  lastSyncStatus: true,
+  lastSyncMessage: true,
+  createdAt: true,
+  updatedAt: true,
+  measurementFiles: {
+    include: { document: true },
+    orderBy: [{ periodYear: 'desc' as const }, { periodMonth: 'desc' as const }, { kind: 'asc' as const }],
+    take: 40,
+  },
+};
+
 function jsonSnapshot(value: unknown) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -33,6 +56,34 @@ function optionalNestedString(source: Record<string, any> | undefined, key: stri
   if (value == null || value === '') return undefined;
   if (typeof value !== 'string') throw new Error(`Pole ${key} musi być tekstem`);
   return value.trim();
+}
+
+function dashboardStationValue(source: Record<string, any> | undefined) {
+  if (!source || !Object.prototype.hasOwnProperty.call(source, 'dashboardStation')) return undefined;
+  const value = source.dashboardStation;
+  if (value == null) return null;
+  if (typeof value !== 'string') throw new Error('Pole dashboardStation musi być tekstem');
+
+  const station = value.trim();
+  if (!station) return null;
+  if (!/^[0-9A-Za-z_-]{1,64}$/.test(station)) {
+    throw new Error('Station może zawierać tylko litery, cyfry, podkreślenie i myślnik');
+  }
+  return station;
+}
+
+function stationIdentifierValue(source: Record<string, any> | undefined, key: string, label: string) {
+  if (!source || !Object.prototype.hasOwnProperty.call(source, key)) return undefined;
+  const value = source[key];
+  if (value == null) return null;
+  if (typeof value !== 'string') throw new Error(`Pole ${key} musi być tekstem`);
+
+  const station = value.trim();
+  if (!station) return null;
+  if (!/^[0-9A-Za-z_-]{1,64}$/.test(station)) {
+    throw new Error(`${label} może zawierać tylko litery, cyfry, podkreślenie i myślnik`);
+  }
+  return station;
 }
 
 function validateStageId(stageId: unknown) {
@@ -106,11 +157,30 @@ function projectData(
     stageId: validateStageId(projectBody.stageId),
     clientType: validateClientType(projectBody.clientType, clientType) as any,
     source: optionalNestedString(projectBody, 'source') || 'manual',
-    dashboardStation: optionalNestedString(projectBody, 'dashboardStation'),
+    dashboardStation: dashboardStationValue(projectBody),
+    dashboardStationNumber: stationIdentifierValue(projectBody, 'dashboardStationNumber', 'Numer stacji'),
+    weatherStationNumber: stationIdentifierValue(projectBody, 'weatherStationNumber', 'Numer stacji pogody'),
     locationAddress: optionalNestedString(projectBody, 'locationAddress') || optionalNestedString(contactBody, 'investmentAddress'),
     investmentSiteId,
     notes: optionalNestedString(projectBody, 'notes'),
   };
+}
+
+function projectedValue(value: string | null | undefined, current: string | null | undefined) {
+  if (value === undefined) return current || null;
+  return value || null;
+}
+
+function lockedStationFieldsChanged(
+  existingProject: { dashboardStation?: string | null; dashboardStationNumber?: string | null } | undefined,
+  data: { dashboardStation?: string | null; dashboardStationNumber?: string | null },
+) {
+  if (!existingProject?.dashboardStation || !existingProject.dashboardStationNumber) return false;
+  const nextToken = projectedValue(data.dashboardStation, existingProject.dashboardStation);
+  const nextNumber = projectedValue(data.dashboardStationNumber, existingProject.dashboardStationNumber);
+
+  return nextToken !== (existingProject.dashboardStation || null)
+    || nextNumber !== (existingProject.dashboardStationNumber || null);
 }
 
 export async function GET(req: NextRequest) {
@@ -132,7 +202,11 @@ export async function GET(req: NextRequest) {
             },
             orderBy: { updatedAt: 'desc' },
           },
-          documents: true,
+          documents: { orderBy: { createdAt: 'desc' } },
+          energyPortalAccounts: {
+            select: energyPortalAccountSelect,
+            orderBy: { updatedAt: 'desc' },
+          },
           tasks: true,
           reminders: true,
           auditLogs: { orderBy: { createdAt: 'desc' }, take: 50 },
@@ -229,6 +303,16 @@ export async function PUT(req: NextRequest) {
       : undefined;
     const contactId = typeof body.contactId === 'string' ? body.contactId : existing.contacts[0]?.id;
     const projectId = typeof body.projectId === 'string' ? body.projectId : existing.projects[0]?.id;
+    const currentUser = await getCurrentStaffUser(req);
+    const isAdmin = isAdminUser(currentUser);
+
+    if (projectBody && projectId) {
+      const projected = projectData(displayName, clientType, projectBody, contactBody);
+      const existingProject = existing.projects.find((project) => project.id === projectId) || existing.projects[0];
+      if (!isAdmin && lockedStationFieldsChanged(existingProject, projected || {})) {
+        return forbidden('Tylko administrator może zmienić numer stacji RE albo token dashboardu po zapisaniu powiązania');
+      }
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const client = await tx.client.update({

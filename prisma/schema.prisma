@@ -210,6 +210,20 @@ enum DocumentType {
   INNE
 }
 
+enum EnergyOperator {
+  ENEA
+  PGE
+  TAURON
+  ENERGA
+  STOEN
+  INNY
+}
+
+enum EnergyMeasurementKind {
+  ACTIVE_IMPORT
+  ACTIVE_EXPORT
+}
+
 enum EmailStatus {
   QUEUED
   SENT
@@ -256,6 +270,9 @@ model StaffUser {
   ownedProjects         Project[]              @relation("ProjectOwner")
   assignedTasks         Task[]                 @relation("TaskAssignee")
   createdTasks          Task[]                 @relation("TaskCreator")
+  taskComments          TaskComment[]
+  notificationsReceived PanelNotification[]    @relation("NotificationRecipient")
+  notificationsCreated  PanelNotification[]    @relation("NotificationActor")
   reminders             Reminder[]
   uploadedDocs          Document[]             @relation("DocumentUploader")
   auditLogs             AuditLog[]             @relation("AuditActor")
@@ -291,6 +308,8 @@ model Client {
   tasks             Task[]
   reminders         Reminder[]
   documents         Document[]
+  energyPortalAccounts EnergyPortalAccount[]
+  energyMeasurementFiles EnergyMeasurementFile[]
   auditLogs         AuditLog[]
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -374,6 +393,8 @@ model Project {
   source           String?
   pipedriveDealId  String?         @unique
   dashboardStation String?
+  dashboardStationNumber String?
+  weatherStationNumber   String?
   locationAddress  String?
   notes            String?         @db.Text
   expectedCloseAt  DateTime?
@@ -387,6 +408,8 @@ model Project {
   contracts        Contract[]
   installations    Installation[]
   documents        Document[]
+  energyPortalAccounts EnergyPortalAccount[]
+  energyMeasurementFiles EnergyMeasurementFile[]
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -397,6 +420,8 @@ model Project {
   @@index([ownerId])
   @@index([status])
   @@index([source])
+  @@index([dashboardStation])
+  @@index([dashboardStationNumber])
 }
 
 model Task {
@@ -415,6 +440,8 @@ model Task {
   createdById  String?
   createdBy    StaffUser?   @relation("TaskCreator", fields: [createdById], references: [id])
   completedAt  DateTime?
+  comments      TaskComment[]
+  notifications PanelNotification[]
   reminders    Reminder[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -422,7 +449,44 @@ model Task {
   @@index([clientId])
   @@index([projectId])
   @@index([assignedToId])
+  @@index([createdById])
+  @@index([priority])
   @@index([status, dueAt])
+}
+
+model TaskComment {
+  id        String     @id @default(cuid())
+  taskId    String
+  task      Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    StaffUser? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  body      String     @db.Text
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([taskId])
+  @@index([authorId])
+}
+
+model PanelNotification {
+  id          String     @id @default(cuid())
+  staffUserId String
+  staffUser   StaffUser  @relation("NotificationRecipient", fields: [staffUserId], references: [id], onDelete: Cascade)
+  actorId     String?
+  actor       StaffUser? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  taskId      String?
+  task        Task?      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  type        String
+  title       String
+  message     String?    @db.Text
+  href        String?
+  readAt      DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@index([staffUserId, readAt, createdAt])
+  @@index([taskId])
+  @@index([actorId])
+  @@index([type])
 }
 
 model Reminder {
@@ -759,6 +823,7 @@ model Document {
   installation      Installation?    @relation(fields: [installationId], references: [id], onDelete: SetNull)
   installedDeviceId String?
   installedDevice   InstalledDevice? @relation(fields: [installedDeviceId], references: [id], onDelete: SetNull)
+  energyMeasurementFiles EnergyMeasurementFile[]
   uploadedById      String?
   uploadedBy        StaffUser?       @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   visibleToClient   Boolean          @default(false)
@@ -770,6 +835,63 @@ model Document {
   @@index([projectId])
   @@index([type])
   @@index([sha256])
+}
+
+model EnergyPortalAccount {
+  id                String                  @id @default(cuid())
+  clientId          String
+  client            Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  projectId         String?
+  project           Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  operator          EnergyOperator          @default(ENEA)
+  login             String?
+  encryptedPassword String?                 @db.Text
+  ppeNumber         String?
+  portalPpeId       String?
+  meterNumber       String?
+  notes             String?                 @db.Text
+  lastSyncAt        DateTime?
+  lastSyncStatus    String?
+  lastSyncMessage   String?                 @db.Text
+  measurementFiles  EnergyMeasurementFile[]
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@index([clientId])
+  @@index([projectId])
+  @@index([operator])
+}
+
+model EnergyMeasurementFile {
+  id            String                @id @default(cuid())
+  accountId     String
+  account       EnergyPortalAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId      String
+  client        Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  projectId     String?
+  project       Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  operator      EnergyOperator        @default(ENEA)
+  kind          EnergyMeasurementKind
+  periodYear    Int
+  periodMonth   Int
+  aggregation   String                @default("60 min")
+  dataSource    String                @default("Dane po bilansowaniu")
+  documentId    String?
+  document      Document?             @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  storagePath   String?
+  fileName      String?
+  status        String                @default("DOWNLOADED")
+  error         String?               @db.Text
+  downloadedAt  DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@unique([accountId, kind, periodYear, periodMonth])
+  @@index([clientId])
+  @@index([projectId])
+  @@index([documentId])
+  @@index([operator])
+  @@index([periodYear, periodMonth])
 }
 
 model PipedriveSyncState {
