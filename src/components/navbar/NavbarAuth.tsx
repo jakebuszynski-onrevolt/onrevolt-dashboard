@@ -1,5 +1,4 @@
 'use client';
-// Chakra imports
 import {
   Box,
   Button,
@@ -15,20 +14,16 @@ import {
   SimpleGrid,
 } from '@chakra-ui/react';
 import Link from 'components/link/Link';
-
 import { Image } from 'components/image/Image';
-
-// Custom components
 import { HorizonLogo } from 'components/icons/Icons';
 import { SidebarResponsive } from 'components/sidebar/Sidebar';
 import { SidebarContext } from 'contexts/SidebarContext';
-
-// Assets
 import dropdownMain from '/public/img/layout/dropdownMain.png';
 import dropdown from '/public/img/layout/dropdown.png';
 import { GoChevronDown } from 'react-icons/go';
 import routes from 'routes';
 import { IRoute } from 'types/navigation';
+import { usePathname } from 'next/navigation';
 
 export default function AuthNavbar(props: {
   logo?: JSX.Element | string;
@@ -37,64 +32,44 @@ export default function AuthNavbar(props: {
   sidebarWidth?: any;
 }) {
   const { logoText, sidebarWidth } = props;
-  // Menu States
-  const {
-    isOpen: isOpenAuth,
-    onOpen: onOpenAuth,
-    onClose: onCloseAuth,
-  } = useDisclosure();
-  const {
-    isOpen: isOpenDashboards,
-    onOpen: onOpenDashboards,
-    onClose: onCloseDashboards,
-  } = useDisclosure();
-  const {
-    isOpen: isOpenMain,
-    onOpen: onOpenMain,
-    onClose: onCloseMain,
-  } = useDisclosure();
-  const {
-    isOpen: isOpenNft,
-    onOpen: onOpenNft,
-    onClose: onCloseNft,
-  } = useDisclosure();
-  // Menus
-  function getLinks(routeName: string) {
-    let foundRoute = routes.filter(
-      (route) => route.items && route.name === routeName,
-    );
-    return foundRoute[0].items;
-  }
-  function getLinksCollapse(routeName: string) {
-    let foundRoute = routes.filter(
-      (route) => route.items && route.name === routeName,
-    );
-    // let foundLinks: { name: string; layout?: string; path: string; component?: () => JSX.Element }[];
-    let foundLinks: IRoute[] = [];
-    if (foundRoute[0].items) {
-      for (let link = 0; link < foundRoute[0].items.length; link++) {
-        foundLinks.push(foundRoute[0].items[link]);
-      }
-      return foundLinks;
-    }
 
-    return foundLinks;
-  }
-  let authObject = getLinksCollapse('Authentication');
-  let mainObject = getLinksCollapse('Main Pages');
-  let dashboardsObject = getLinks('Dashboards');
-  let nftsObject = getLinks('NFTs');
-  let logoColor = useColorModeValue('white', 'white');
-  // Chakra color mode
+  // router → czy jesteśmy w części admina?
+  const pathname = usePathname();
+  const isAdmin = Boolean(pathname && pathname.startsWith('/panel/admin'));
 
+  // Menus state
+  const { isOpen: isOpenAuth, onOpen: onOpenAuth, onClose: onCloseAuth } = useDisclosure();
+  const { isOpen: isOpenDashboards, onOpen: onOpenDashboards, onClose: onCloseDashboards } = useDisclosure();
+  const { isOpen: isOpenMain, onOpen: onOpenMain, onClose: onCloseMain } = useDisclosure();
+  const { isOpen: isOpenNft, onOpen: onOpenNft, onClose: onCloseNft } = useDisclosure();
+
+  // Helpers: routes safe access
+  function getGroupItems(routeName: string): IRoute[] {
+    const group = (routes as IRoute[]).find((r) => Array.isArray(r.items) && r.name === routeName);
+    return Array.isArray(group?.items) ? group!.items! : [];
+  }
+  function flattenGroup(routeName: string): IRoute[] {
+    const out: IRoute[] = [];
+    for (const it of getGroupItems(routeName)) out.push(it);
+    return out;
+  }
+
+  const authObject = flattenGroup('Authentication');
+  const mainObject = flattenGroup('Main Pages');
+  const dashboardsObject = getGroupItems('Dashboards');
+  const nftsObject = getGroupItems('NFTs');
+
+  const logoColor = useColorModeValue('white', 'white');
   const textColor = useColorModeValue('navy.700', 'white');
-  let menuBg = useColorModeValue('white', 'navy.900');
-  let mainText = '#fff';
-  let navbarBg = 'none';
-  let navbarShadow = 'initial';
-  let bgButton = 'white';
-  let colorButton = 'brand.500';
-  let navbarPosition = 'absolute' as 'absolute';
+  const menuBg = useColorModeValue('white', 'navy.900');
+
+  // Navbar visuals
+  const mainText = '#fff';
+  const navbarBg = 'none';
+  const navbarShadow = 'initial';
+  const bgButton = 'white';
+  const colorButton = 'brand.500';
+  const navbarPosition = 'absolute' as const;
 
   let brand = (
     <Link
@@ -104,17 +79,9 @@ export default function AuthNavbar(props: {
       fontWeight="bold"
       justifyContent="center"
       alignItems="center"
-      verticalAlign="center"
       color={mainText}
-      mt="5px"
     >
-      <Stack
-        direction="row"
-        spacing="12px"
-        alignItems="center"
-        justify="left
-        "
-      >
+      <Stack direction="row" spacing="12px" alignItems="center" justify="left">
         <HorizonLogo h="26px" w="175px" color={logoColor} />
       </Stack>
       <Text fontSize="sm" mt="3px">
@@ -122,6 +89,7 @@ export default function AuthNavbar(props: {
       </Text>
     </Link>
   );
+
   if (props.secondary === true) {
     brand = (
       <Link
@@ -138,54 +106,24 @@ export default function AuthNavbar(props: {
       </Link>
     );
   }
-  const createNftsLinks = (routes: IRoute[]): any => {
-    return routes.map((link, key) => {
-      return (
-        <Link
-          key={key}
-          href={link.layout + link.path}
-          style={{ maxWidth: 'max-content' }}
-        >
-          <Text color="gray.400" fontSize="sm" fontWeight="500">
-            {link.name}
-          </Text>
-        </Link>
-      );
-    });
-  };
-  const createDashboardsLinks = (routes: IRoute[]) => {
-    return routes.map((link, key) => {
-      return (
-        <Link
-          key={key}
-          href={link.layout + link.path}
-          style={{ maxWidth: 'max-content' }}
-        >
-          <Text color="gray.400" fontSize="sm" fontWeight="500">
-            {link.name}
-          </Text>
-        </Link>
-      );
-    });
-  };
-  const createMainLinks = (routes: IRoute[]) => {
-    return routes.map((link, key) => {
-      if (link.collapse === true) {
+
+  // Render helpers
+  const createLinksFlat = (arr: IRoute[]) =>
+    (arr || []).map((link, key) => (
+      <Link key={key} href={(link.layout || '') + (link.path || '')} style={{ maxWidth: 'max-content' }}>
+        <Text color="gray.400" fontSize="sm" fontWeight="500">
+          {link.name}
+        </Text>
+      </Link>
+    ));
+
+  const createMainLinks = (arr: IRoute[]): JSX.Element[] =>
+    (arr || []).map((link, key) => {
+      if (link.collapse && Array.isArray(link.items)) {
         return (
           <Stack key={key} direction="column" maxW="max-content">
-            <Stack
-              direction="row"
-              spacing="0px"
-              alignItems="center"
-              cursor="default"
-            >
-              <Text
-                textTransform="uppercase"
-                fontWeight="bold"
-                fontSize="sm"
-                me="auto"
-                color={textColor}
-              >
+            <Stack direction="row" spacing="0px" alignItems="center" cursor="default">
+              <Text textTransform="uppercase" fontWeight="bold" fontSize="sm" me="auto" color={textColor}>
                 {link.name}
               </Text>
             </Stack>
@@ -194,35 +132,23 @@ export default function AuthNavbar(props: {
             </Stack>
           </Stack>
         );
-      } else {
-        return (
-          <Link key={key} href={link.layout + link.path}>
-            <Text color="gray.400" fontSize="sm" fontWeight="normal">
-              {link.name}
-            </Text>
-          </Link>
-        );
       }
+      return (
+        <Link key={key} href={(link.layout || '') + (link.path || '')}>
+          <Text color="gray.400" fontSize="sm" fontWeight="normal">
+            {link.name}
+          </Text>
+        </Link>
+      );
     });
-  };
-  const createAuthLinks = (routes: any[]) => {
-    return routes.map((link, key) => {
-      if (link.collapse === true) {
+
+  const createAuthLinks = (arr: IRoute[]): JSX.Element[] =>
+    (arr || []).map((link, key) => {
+      if (link.collapse && Array.isArray(link.items)) {
         return (
           <Stack key={key} direction="column" maxW="max-content">
-            <Stack
-              direction="row"
-              spacing="0px"
-              alignItems="center"
-              cursor="default"
-            >
-              <Text
-                textTransform="uppercase"
-                fontWeight="bold"
-                fontSize="sm"
-                me="auto"
-                color={textColor}
-              >
+            <Stack direction="row" spacing="0px" alignItems="center" cursor="default">
+              <Text textTransform="uppercase" fontWeight="bold" fontSize="sm" me="auto" color={textColor}>
                 {link.name}
               </Text>
             </Stack>
@@ -231,19 +157,20 @@ export default function AuthNavbar(props: {
             </Stack>
           </Stack>
         );
-      } else {
-        return (
-          <Link key={key} href={link.layout + link.path}>
-            <Text color="gray.400" fontSize="sm" fontWeight="normal">
-              {link.name}
-            </Text>
-          </Link>
-        );
       }
+      return (
+        <Link key={key} href={(link.layout || '') + (link.path || '')}>
+          <Text color="gray.400" fontSize="sm" fontWeight="normal">
+            {link.name}
+          </Text>
+        </Link>
+      );
     });
-  };
-  const linksAuth = (
-    <HStack display={{ sm: 'none', lg: 'none' }} spacing="20px">
+
+  // Sekcja menu – renderowana TYLKO w admin
+  const linksAuth = !isAdmin ? null : (
+    <HStack display={{ sm: 'none', lg: 'flex' }} spacing="20px">
+      {/* Dashboards */}
       <Stack
         direction="row"
         spacing="4px"
@@ -259,14 +186,7 @@ export default function AuthNavbar(props: {
           Dashboards
         </Text>
         <Box>
-          <Icon
-            mt="8px"
-            as={GoChevronDown}
-            color={mainText}
-            w="14px"
-            h="14px"
-            fontWeight="2000"
-          />
+          <Icon mt="8px" as={GoChevronDown} color={mainText} w="14px" h="14px" fontWeight="2000" />
         </Box>
         <Menu isOpen={isOpenDashboards}>
           <MenuList
@@ -281,18 +201,14 @@ export default function AuthNavbar(props: {
             display="flex"
           >
             <SimpleGrid columns={1} gap="8px" w="150px">
-              {createDashboardsLinks(dashboardsObject)}
+              {createLinksFlat(dashboardsObject)}
             </SimpleGrid>
-            <Image
-              w="110px"
-              h="110px"
-              borderRadius="16px"
-              src={dropdown}
-              alt=""
-            />
+            <Image w="110px" h="110px" borderRadius="16px" src={dropdown} alt="" />
           </MenuList>
         </Menu>
       </Stack>
+
+      {/* NFTs */}
       <Stack
         direction="row"
         spacing="4px"
@@ -308,14 +224,7 @@ export default function AuthNavbar(props: {
           NFTs
         </Text>
         <Box>
-          <Icon
-            mt="8px"
-            as={GoChevronDown}
-            color={mainText}
-            w="14px"
-            h="14px"
-            fontWeight="2000"
-          />
+          <Icon mt="8px" as={GoChevronDown} color={mainText} w="14px" h="14px" fontWeight="2000" />
         </Box>
         <Menu isOpen={isOpenNft}>
           <MenuList
@@ -330,18 +239,14 @@ export default function AuthNavbar(props: {
             display="flex"
           >
             <SimpleGrid columns={1} gap="8px" w="150px">
-              {createNftsLinks(nftsObject)}
+              {createLinksFlat(nftsObject)}
             </SimpleGrid>
-            <Image
-              w="110px"
-              h="110px"
-              borderRadius="16px"
-              src={dropdown}
-              alt=""
-            />
+            <Image w="110px" h="110px" borderRadius="16px" src={dropdown} alt="" />
           </MenuList>
         </Menu>
       </Stack>
+
+      {/* Main Pages */}
       <Stack
         direction="row"
         spacing="4px"
@@ -357,14 +262,7 @@ export default function AuthNavbar(props: {
           Main Pages
         </Text>
         <Box>
-          <Icon
-            mt="8px"
-            as={GoChevronDown}
-            color={mainText}
-            w="14px"
-            h="14px"
-            fontWeight="2000"
-          />
+          <Icon mt="8px" as={GoChevronDown} color={mainText} w="14px" h="14px" fontWeight="2000" />
         </Box>
         <Menu isOpen={isOpenMain}>
           <MenuList
@@ -379,19 +277,15 @@ export default function AuthNavbar(props: {
             left="-10px"
             display="flex"
           >
-            <SimpleGrid
-              me="50px"
-              columns={2}
-              alignItems="start"
-              minW="280px"
-              gap="24px"
-            >
+            <SimpleGrid me="50px" columns={2} alignItems="start" minW="280px" gap="24px">
               {createMainLinks(mainObject)}
             </SimpleGrid>
             <Image borderRadius="16px" src={dropdownMain} alt="" />
           </MenuList>
         </Menu>
       </Stack>
+
+      {/* Authentications */}
       <Stack
         direction="row"
         spacing="4px"
@@ -407,14 +301,7 @@ export default function AuthNavbar(props: {
           Authentications
         </Text>
         <Box>
-          <Icon
-            mt="8px"
-            as={GoChevronDown}
-            color={mainText}
-            w="14px"
-            h="14px"
-            fontWeight="2000"
-          />
+          <Icon mt="8px" as={GoChevronDown} color={mainText} w="14px" h="14px" fontWeight="2000" />
         </Box>
         <Menu isOpen={isOpenAuth}>
           <MenuList
@@ -428,13 +315,7 @@ export default function AuthNavbar(props: {
             display="flex"
             w="max-content"
           >
-            <SimpleGrid
-              me="20px"
-              columns={2}
-              alignItems="start"
-              minW="180px"
-              gap="24px"
-            >
+            <SimpleGrid me="20px" columns={2} alignItems="start" minW="180px" gap="24px">
               {createAuthLinks(authObject)}
             </SimpleGrid>
             <Image borderRadius="16px" src={dropdown} alt="" />
@@ -449,7 +330,8 @@ export default function AuthNavbar(props: {
       <Flex
         position={navbarPosition}
         top="16px"
-        left="50%"
+        left="50%
+        "
         transform="translate(-50%, 0px)"
         background={navbarBg}
         boxShadow={navbarShadow}
@@ -462,34 +344,38 @@ export default function AuthNavbar(props: {
         alignItems="center"
         zIndex="3"
       >
-        <Flex w="100%" justifyContent={{ sm: 'start', lg: 'space-between' }} verticalAlign="center">
+        <Flex w="100%" justifyContent={{ sm: 'start', lg: 'space-between' }}>
           {brand}
-          <Box
-            ms={{ base: 'auto', lg: '0px' }}
-            display={{ base: 'flex', lg: 'none' }}
-            justifyContent="center"
-            alignItems="center"
-          >
-            <SidebarResponsive display="none" routes={routes} />
-          </Box>
-          {linksAuth}
-          <Link href="/ue" boxShadow="none">
-            <Button
-              bg={bgButton}
-              color={colorButton}
-              fontSize="xs"
-              variant="no-effects"
-              borderRadius="40px"
-              h="46px"
-              display={{
-                sm: 'flex',
-                lg: 'flex',
-              }}
-              boxShadow="none"
-            >
-              <Image src="/img/onrevolt/ue_logo.png" alt="Fundusze Europejskie" w="150px" h="44px" />
-            </Button>
-          </Link>
+
+{/* show dropdown links only in admin */}
+{isAdmin && linksAuth}
+
+
+<HStack ms="auto" spacing="10px" align="center">
+  {/* Burger only on mobile, only in admin */}
+  {isAdmin && (
+    <Box display={{ base: 'flex', lg: 'none' }} justifyContent="center" alignItems="center">
+      <SidebarResponsive display="none" routes={routes} />
+    </Box>
+  )}
+
+  {/* UE button – rightmost */}
+  <Link href="/ue">
+    <Button
+      bg="white"
+      color={colorButton}
+      fontSize="xs"
+      variant="no-effects"
+      borderRadius="40px"
+      h="46px"
+      display={{ sm: 'flex', lg: 'flex' }}
+    >
+      <Image src="/img/onrevolt/ue_logo.png" w="150px" h="44px" alt="UE" />
+    </Button>
+  </Link>
+</HStack>
+
+
         </Flex>
       </Flex>
     </SidebarContext.Provider>
