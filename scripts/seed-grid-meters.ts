@@ -48,7 +48,7 @@ type ProductSeed = {
   media: MediaSeed[];
 };
 
-const docsRoot = 'D:\\_WindSystems\\docs';
+const docsRoot = process.env.GRID_METER_DOCS_ROOT || 'D:\\_WindSystems\\docs';
 const publicRoot = path.join(process.cwd(), 'public');
 let prisma: PrismaClient | undefined;
 

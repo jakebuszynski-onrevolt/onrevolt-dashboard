@@ -223,7 +223,7 @@ export async function GET(req: NextRequest) {
         projects: { include: projectInclude, orderBy: { updatedAt: 'desc' } },
       },
       orderBy: { updatedAt: 'desc' },
-      take: 200,
+      take: 1000,
     });
     return jsonResponse({ ok: true, data: clients });
   } catch (error) {

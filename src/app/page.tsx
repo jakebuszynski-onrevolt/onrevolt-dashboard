@@ -631,7 +631,7 @@ const interruptKulki = () => {
               <Pack
                 title={<RevolveLogo width={120} />}
                 desc="Innowacyjna turbina wiatrowa 2kW"
-                statement={["pokryje nawet ", <Text color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">50%</Text>, " Twojego rocznego zapotrzebowania na prąd!"]}
+                statement={["pokryje nawet ", <Text key="revolve-percent" color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">50%</Text>, " Twojego rocznego zapotrzebowania na prąd!"]}
                 image={"/img/onrevolt/Revolve_image.png"}
                 benefits={[{
                   bold: "Gwarancja uzysku energii",
@@ -669,7 +669,7 @@ const interruptKulki = () => {
               <Pack
                 title={<ReflowLogo width={104} />}
                 desc="Centrum energetycznej niezależności"
-                statement={["zmniejsza Twoje rachunki nawet o ", <Text color='secondaryGray.900' fontWeight="bold" as="span" fontSize="2.5rem">80%</Text>]}
+                statement={["zmniejsza Twoje rachunki nawet o ", <Text key="reflow-percent" color='secondaryGray.900' fontWeight="bold" as="span" fontSize="2.5rem">80%</Text>]}
                 image={"/img/onrevolt/Reflow_image.png"}
                 benefits={[{
                   bold: "Twój dom jako centrum energetycznej niezależności",
@@ -686,7 +686,7 @@ const interruptKulki = () => {
               <Pack
                 title={<ResourceLogo width={137} />}
                 desc="Magazyn, który daje Ci niezależność"
-                statement={["gromadzi ", <Text color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">15kWh</Text>, " energii w zasięgu Twoich potrzeb"]}
+                statement={["gromadzi ", <Text key="resource-capacity" color="secondaryGray.900" as="span" fontWeight="bold" fontSize="2.5rem">15kWh</Text>, " energii w zasięgu Twoich potrzeb"]}
                 image={"/img/onrevolt/Resource_image.png"}
                 benefits={[{
                   bold: "Zaprojektowany na lata",
