@@ -74,6 +74,26 @@ type ProductMedia = {
   sortOrder: number;
 };
 
+type ProductMediaKind = 'datasheet' | 'manual' | 'certificate' | 'warranty' | 'document' | 'image';
+type ProductDocumentKind = Exclude<ProductMediaKind, 'image'>;
+
+const documentKindOptions: Array<{ value: ProductDocumentKind; label: string }> = [
+  { value: 'document', label: 'Inny dokument' },
+  { value: 'datasheet', label: 'Datasheet' },
+  { value: 'manual', label: 'Instrukcja' },
+  { value: 'certificate', label: 'Certyfikat' },
+  { value: 'warranty', label: 'Gwarancja' },
+];
+
+const mediaKindLabels: Record<ProductMediaKind, string> = {
+  datasheet: 'Datasheet',
+  manual: 'Instrukcja',
+  certificate: 'Certyfikat',
+  warranty: 'Gwarancja',
+  document: 'PDF / Inny',
+  image: 'Obraz',
+};
+
 type ProductRow = {
   id: string;
   sku?: string | null;
@@ -207,15 +227,16 @@ function productTotals(product: ProductRow) {
 }
 
 function mediaLabel(media: ProductMedia) {
-  if (media.kind === 'datasheet') return 'Datasheet';
-  if (media.kind === 'manual') return 'Instrukcja';
-  if (media.kind === 'image') return 'Obraz';
+  if (media.kind in mediaKindLabels) return mediaKindLabels[media.kind as ProductMediaKind];
   return media.kind;
 }
 
 function mediaColor(media: ProductMedia) {
   if (media.kind === 'image') return 'blue';
   if (media.kind === 'manual') return 'orange';
+  if (media.kind === 'certificate') return 'green';
+  if (media.kind === 'warranty') return 'purple';
+  if (media.kind === 'document') return 'gray';
   return 'red';
 }
 
@@ -305,6 +326,8 @@ export default function CatalogWorkspace() {
   const [savingProduct, setSavingProduct] = useState(false);
   const [deletingMediaId, setDeletingMediaId] = useState('');
   const [sortingMediaId, setSortingMediaId] = useState('');
+  const [updatingMediaKindId, setUpdatingMediaKindId] = useState('');
+  const [selectedPdfKind, setSelectedPdfKind] = useState<ProductDocumentKind>('document');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const textColor = useColorModeValue('secondaryGray.900', 'white');
@@ -489,7 +512,35 @@ export default function CatalogWorkspace() {
     }
   }
 
-  async function uploadMedia(product: ProductRow, file: File, kind: 'datasheet' | 'image') {
+  async function updateMediaKind(media: ProductMedia, kind: ProductDocumentKind) {
+    setUpdatingMediaKindId(media.id);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch('/api/catalog/media', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: media.id, kind }),
+      });
+      const payload = await readApiPayload(response);
+      const updated = payload.data as ProductMedia;
+      setProducts((current) => current.map((product) => (
+        product.id === updated.productId
+          ? { ...product, media: sortMediaItems(product.media.map((item) => item.id === updated.id ? updated : item)) }
+          : product
+      )));
+      setEditingProduct((current) => current
+        ? { ...current, media: sortMediaItems(current.media.map((item) => item.id === updated.id ? updated : item)) }
+        : current);
+      setNotice('Zmieniono typ załącznika');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUpdatingMediaKindId('');
+    }
+  }
+
+  async function uploadMedia(product: ProductRow, file: File, kind: ProductMediaKind) {
     const uploadKey = `${product.id}:${kind}`;
     setMediaUploading(uploadKey);
     setError('');
@@ -498,7 +549,7 @@ export default function CatalogWorkspace() {
       const form = new FormData();
       form.append('productId', product.id);
       form.append('kind', kind);
-      form.append('altText', `${product.name} - ${kind === 'image' ? 'obraz' : 'datasheet'}`);
+      form.append('altText', `${product.name} - ${(mediaKindLabels[kind] || kind).toLowerCase()}`);
       form.append('file', file);
 
       const response = await fetch('/api/catalog/media', {
@@ -714,15 +765,26 @@ export default function CatalogWorkspace() {
                         />
                       ) : null}
 
-                      <Flex gap="8px" wrap="wrap">
-                        <Tooltip label="Dodaj datasheet PDF">
+                      <Flex gap="8px" wrap="wrap" align="center">
+                        <Select
+                          size="sm"
+                          maxW="150px"
+                          value={selectedPdfKind}
+                          onChange={(event) => setSelectedPdfKind(event.target.value as ProductDocumentKind)}
+                          aria-label="Typ dodawanego PDF"
+                        >
+                          {documentKindOptions.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </Select>
+                        <Tooltip label={`Dodaj PDF jako ${mediaKindLabels[selectedPdfKind].toLowerCase()}`}>
                           <Button
                             as="label"
                             size="sm"
                             variant="outline"
                             leftIcon={<Icon as={MdPictureAsPdf} />}
                             cursor="pointer"
-                            isLoading={mediaUploading === `${product.id}:datasheet`}
+                            isLoading={mediaUploading === `${product.id}:${selectedPdfKind}`}
                           >
                             PDF
                             <Input
@@ -732,7 +794,7 @@ export default function CatalogWorkspace() {
                               onChange={(event) => {
                                 const file = event.target.files?.[0];
                                 event.currentTarget.value = '';
-                                if (file) void uploadMedia(product, file, 'datasheet');
+                                if (file) void uploadMedia(product, file, selectedPdfKind);
                               }}
                             />
                           </Button>
@@ -921,7 +983,22 @@ export default function CatalogWorkspace() {
                           px="10px"
                           py="8px"
                         >
-                          <Badge colorScheme={mediaColor(media)}>{mediaLabel(media)}</Badge>
+                          {media.kind === 'image' ? (
+                            <Badge colorScheme={mediaColor(media)}>{mediaLabel(media)}</Badge>
+                          ) : (
+                            <Select
+                              size="sm"
+                              w="150px"
+                              value={documentKindOptions.some((option) => option.value === media.kind) ? media.kind : 'document'}
+                              onChange={(event) => updateMediaKind(media, event.target.value as ProductDocumentKind)}
+                              isDisabled={updatingMediaKindId === media.id}
+                              aria-label="Typ załącznika PDF"
+                            >
+                              {documentKindOptions.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </Select>
+                          )}
                           {href ? (
                             <Link href={href} isExternal color={textColor} fontSize="sm">
                               Otwórz

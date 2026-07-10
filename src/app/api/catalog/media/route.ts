@@ -14,7 +14,7 @@ const allowedMimeTypes = new Map([
   ['image/webp', 'webp'],
 ]);
 
-const allowedKinds = new Set(['datasheet', 'manual', 'image']);
+const allowedKinds = new Set(['datasheet', 'manual', 'certificate', 'warranty', 'document', 'image']);
 const maxUploadBytes = 30 * 1024 * 1024;
 
 function formString(form: FormData, key: string) {
@@ -78,7 +78,7 @@ async function createUploadedMedia(req: NextRequest) {
     return badRequest('Medium typu image wymaga pliku graficznego');
   }
   if (requestedKind !== 'image' && file.type !== 'application/pdf') {
-    return badRequest('Datasheet lub instrukcja wymagają pliku PDF');
+    return badRequest('Medium dokumentowe wymaga pliku PDF');
   }
 
   const product = await prisma.product.findUnique({ where: { id: productId } });
