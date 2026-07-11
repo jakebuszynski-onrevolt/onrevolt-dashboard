@@ -1,13 +1,12 @@
 import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { encryptCredential } from 'lib/onrevolt/credentials';
+import { isEnergyOperator } from 'lib/onrevolt/energy-tariffs';
 import { prisma } from 'lib/onrevolt/prisma';
-
-const energyOperators = new Set(['ENEA', 'PGE', 'TAURON', 'ENERGA', 'STOEN', 'INNY']);
 
 function validateOperator(value: unknown) {
   if (value == null || value === '') return 'ENEA';
-  if (typeof value !== 'string' || !energyOperators.has(value)) {
+  if (!isEnergyOperator(value)) {
     throw new Error('Nieprawidłowy operator energii');
   }
   return value;
@@ -21,6 +20,7 @@ function accountSelect() {
     operator: true,
     login: true,
     encryptedPassword: true,
+    tariff: true,
     ppeNumber: true,
     portalPpeId: true,
     meterNumber: true,
@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
       projectId,
       operator,
       login: optionalString(body, 'login'),
+      tariff: optionalString(body, 'tariff'),
       ppeNumber: optionalString(body, 'ppeNumber'),
       portalPpeId: optionalString(body, 'portalPpeId'),
       meterNumber: optionalString(body, 'meterNumber'),

@@ -43,16 +43,16 @@ const routes: IRoute[] = [
     icon: <Icon as={MdViewColumn} {...iconProps} />,
   },
   {
-    name: 'Konfigurator',
-    layout: '/admin',
-    path: '/configurator',
-    icon: <Icon as={MdTune} {...iconProps} />,
-  },
-  {
     name: 'Katalog urządzeń',
     layout: '/admin',
     path: '/catalog',
     icon: <Icon as={MdInventory} {...iconProps} />,
+  },
+  {
+    name: 'Konfigurator',
+    layout: '/admin',
+    path: '/configurator',
+    icon: <Icon as={MdTune} {...iconProps} />,
   },
   {
     name: 'Oferty i umowy',

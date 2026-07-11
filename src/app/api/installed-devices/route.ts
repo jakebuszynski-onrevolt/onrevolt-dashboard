@@ -5,7 +5,11 @@ import { prisma } from 'lib/onrevolt/prisma';
 export async function GET() {
   try {
     const devices = await prisma.installedDevice.findMany({
-      include: { installation: { include: { project: { include: { client: true } } } }, product: true },
+      include: {
+        installation: { include: { project: { include: { client: true } } } },
+        product: true,
+        plannedItem: true,
+      },
       orderBy: { updatedAt: 'desc' },
       take: 300,
     });
@@ -21,6 +25,7 @@ export async function POST(req: NextRequest) {
     const device = await prisma.installedDevice.create({
       data: {
         installationId: requireString(body, 'installationId'),
+        plannedItemId: optionalString(body, 'plannedItemId'),
         productId: optionalString(body, 'productId'),
         name: requireString(body, 'name'),
         serialNumber: optionalString(body, 'serialNumber'),
@@ -34,4 +39,3 @@ export async function POST(req: NextRequest) {
     return serverError('Nie udało się zapisać urządzenia', error);
   }
 }
-

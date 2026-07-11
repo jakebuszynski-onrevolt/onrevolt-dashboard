@@ -190,8 +190,11 @@ enum ContractStatus {
 }
 
 enum InstallationStatus {
+  TO_SCHEDULE
   PLANNED
+  CONFIRMED
   IN_PROGRESS
+  NEEDS_COMPLETION
   WAITING_OSD
   COMPLETED
   SERVICE_REQUIRED
@@ -253,31 +256,34 @@ model CompanyRole {
 }
 
 model StaffUser {
-  id                    String                 @id @default(cuid())
-  email                 String                 @unique
-  name                  String
-  phone                 String?
-  active                Boolean                @default(true)
-  systemRole            StaffSystemRole        @default(USER)
-  positionTitle         String?
-  avatarUrl             String?
-  passwordHash          String?
-  passwordResetRequired Boolean                @default(true)
-  lastLoginAt           DateTime?
-  roleId                String
-  role                  Role                   @relation(fields: [roleId], references: [id])
-  companyRoles          StaffUserCompanyRole[]
-  ownedProjects         Project[]              @relation("ProjectOwner")
-  assignedTasks         Task[]                 @relation("TaskAssignee")
-  createdTasks          Task[]                 @relation("TaskCreator")
-  taskComments          TaskComment[]
-  notificationsReceived PanelNotification[]    @relation("NotificationRecipient")
-  notificationsCreated  PanelNotification[]    @relation("NotificationActor")
-  reminders             Reminder[]
-  uploadedDocs          Document[]             @relation("DocumentUploader")
-  auditLogs             AuditLog[]             @relation("AuditActor")
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
+  id                      String                      @id @default(cuid())
+  email                   String                      @unique
+  name                    String
+  phone                   String?
+  active                  Boolean                     @default(true)
+  systemRole              StaffSystemRole             @default(USER)
+  positionTitle           String?
+  avatarUrl               String?
+  passwordHash            String?
+  passwordResetRequired   Boolean                     @default(true)
+  lastLoginAt             DateTime?
+  roleId                  String
+  role                    Role                        @relation(fields: [roleId], references: [id])
+  companyRoles            StaffUserCompanyRole[]
+  ownedProjects           Project[]                   @relation("ProjectOwner")
+  assignedTasks           Task[]                      @relation("TaskAssignee")
+  createdTasks            Task[]                      @relation("TaskCreator")
+  taskComments            TaskComment[]
+  notificationsReceived   PanelNotification[]         @relation("NotificationRecipient")
+  notificationsCreated    PanelNotification[]         @relation("NotificationActor")
+  reminders               Reminder[]
+  uploadedDocs            Document[]                  @relation("DocumentUploader")
+  ledInstallations        Installation[]              @relation("InstallationTeamLead")
+  installationTeams       InstallationTeamMember[]
+  completedChecklistItems InstallationChecklistItem[] @relation("InstallationChecklistCompletedBy")
+  auditLogs               AuditLog[]                  @relation("AuditActor")
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
 
   @@index([roleId])
   @@index([systemRole])
@@ -296,23 +302,23 @@ model StaffUserCompanyRole {
 }
 
 model Client {
-  id                String           @id @default(cuid())
-  displayName       String
-  clientType        ClientType       @default(UNKNOWN)
-  taxId             String?
-  notes             String?          @db.Text
-  pipedrivePersonId String?          @unique
-  contacts          Contact[]
-  investmentSites   InvestmentSite[]
-  projects          Project[]
-  tasks             Task[]
-  reminders         Reminder[]
-  documents         Document[]
-  energyPortalAccounts EnergyPortalAccount[]
+  id                     String                  @id @default(cuid())
+  displayName            String
+  clientType             ClientType              @default(UNKNOWN)
+  taxId                  String?
+  notes                  String?                 @db.Text
+  pipedrivePersonId      String?                 @unique
+  contacts               Contact[]
+  investmentSites        InvestmentSite[]
+  projects               Project[]
+  tasks                  Task[]
+  reminders              Reminder[]
+  documents              Document[]
+  energyPortalAccounts   EnergyPortalAccount[]
   energyMeasurementFiles EnergyMeasurementFile[]
-  auditLogs         AuditLog[]
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  auditLogs              AuditLog[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@index([displayName])
   @@index([clientType])
@@ -378,40 +384,40 @@ model PipelineStage {
 }
 
 model Project {
-  id               String          @id @default(cuid())
-  clientId         String
-  client           Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  investmentSiteId String?
-  investmentSite   InvestmentSite? @relation(fields: [investmentSiteId], references: [id], onDelete: SetNull)
-  clientType       ClientType      @default(UNKNOWN)
-  title            String
-  status           ProjectStatus   @default(LEAD)
-  stageId          String?
-  stage            PipelineStage?  @relation(fields: [stageId], references: [id])
-  ownerId          String?
-  owner            StaffUser?      @relation("ProjectOwner", fields: [ownerId], references: [id])
-  source           String?
-  pipedriveDealId  String?         @unique
-  dashboardStation String?
+  id                     String                  @id @default(cuid())
+  clientId               String
+  client                 Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  investmentSiteId       String?
+  investmentSite         InvestmentSite?         @relation(fields: [investmentSiteId], references: [id], onDelete: SetNull)
+  clientType             ClientType              @default(UNKNOWN)
+  title                  String
+  status                 ProjectStatus           @default(LEAD)
+  stageId                String?
+  stage                  PipelineStage?          @relation(fields: [stageId], references: [id])
+  ownerId                String?
+  owner                  StaffUser?              @relation("ProjectOwner", fields: [ownerId], references: [id])
+  source                 String?
+  pipedriveDealId        String?                 @unique
+  dashboardStation       String?
   dashboardStationNumber String?
   weatherStationNumber   String?
-  locationAddress  String?
-  notes            String?         @db.Text
-  expectedCloseAt  DateTime?
-  saleDate         DateTime?
-  installationDate DateTime?
-  tasks            Task[]
-  reminders        Reminder[]
-  existingAssets   ProjectExistingAsset[]
-  configurations   Configuration[]
-  offers           Offer[]
-  contracts        Contract[]
-  installations    Installation[]
-  documents        Document[]
-  energyPortalAccounts EnergyPortalAccount[]
+  locationAddress        String?
+  notes                  String?                 @db.Text
+  expectedCloseAt        DateTime?
+  saleDate               DateTime?
+  installationDate       DateTime?
+  tasks                  Task[]
+  reminders              Reminder[]
+  existingAssets         ProjectExistingAsset[]
+  configurations         Configuration[]
+  offers                 Offer[]
+  contracts              Contract[]
+  installations          Installation[]
+  documents              Document[]
+  energyPortalAccounts   EnergyPortalAccount[]
   energyMeasurementFiles EnergyMeasurementFile[]
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@index([clientId])
   @@index([investmentSiteId])
@@ -425,29 +431,32 @@ model Project {
 }
 
 model Task {
-  id           String       @id @default(cuid())
-  clientId     String?
-  client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  projectId    String?
-  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  title        String
-  description  String?      @db.Text
-  status       TaskStatus   @default(OPEN)
-  priority     TaskPriority @default(NORMAL)
-  dueAt        DateTime?
-  assignedToId String?
-  assignedTo   StaffUser?   @relation("TaskAssignee", fields: [assignedToId], references: [id])
-  createdById  String?
-  createdBy    StaffUser?   @relation("TaskCreator", fields: [createdById], references: [id])
-  completedAt  DateTime?
-  comments      TaskComment[]
-  notifications PanelNotification[]
-  reminders    Reminder[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id             String              @id @default(cuid())
+  clientId       String?
+  client         Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  projectId      String?
+  project        Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  installationId String?
+  installation   Installation?       @relation(fields: [installationId], references: [id], onDelete: SetNull)
+  title          String
+  description    String?             @db.Text
+  status         TaskStatus          @default(OPEN)
+  priority       TaskPriority        @default(NORMAL)
+  dueAt          DateTime?
+  assignedToId   String?
+  assignedTo     StaffUser?          @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  createdById    String?
+  createdBy      StaffUser?          @relation("TaskCreator", fields: [createdById], references: [id])
+  completedAt    DateTime?
+  comments       TaskComment[]
+  notifications  PanelNotification[]
+  reminders      Reminder[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   @@index([clientId])
   @@index([projectId])
+  @@index([installationId])
   @@index([assignedToId])
   @@index([createdById])
   @@index([priority])
@@ -515,31 +524,32 @@ model Reminder {
 }
 
 model Product {
-  id            String                      @id @default(cuid())
-  sku           String?                     @unique
-  name          String
-  availability  String?
-  producer      String?
-  supplier      String?
-  supplierSku   String?
-  supplierUrl   String?
-  category      ProductCategory
-  clientType    ClientType?
-  description   String?                     @db.Text
-  powerCapacity String?
-  voltageKind   String?
-  notes         String?                     @db.Text
-  sourceSheet   String?
-  sourceRow     Int?
-  supplierSyncedAt DateTime?
-  prices        ProductPrice[]
-  media         ProductMedia[]
-  configItems   ConfigurationItem[]
-  templateItems ConfigurationTemplateItem[]
-  existingAssets ProjectExistingAsset[]
-  installed     InstalledDevice[]
-  createdAt     DateTime                    @default(now())
-  updatedAt     DateTime                    @updatedAt
+  id                       String                      @id @default(cuid())
+  sku                      String?                     @unique
+  name                     String
+  availability             String?
+  producer                 String?
+  supplier                 String?
+  supplierSku              String?
+  supplierUrl              String?
+  category                 ProductCategory
+  clientType               ClientType?
+  description              String?                     @db.Text
+  powerCapacity            String?
+  voltageKind              String?
+  notes                    String?                     @db.Text
+  sourceSheet              String?
+  sourceRow                Int?
+  supplierSyncedAt         DateTime?
+  prices                   ProductPrice[]
+  media                    ProductMedia[]
+  configItems              ConfigurationItem[]
+  templateItems            ConfigurationTemplateItem[]
+  existingAssets           ProjectExistingAsset[]
+  installationPlannedItems InstallationPlannedItem[]
+  installed                InstalledDevice[]
+  createdAt                DateTime                    @default(now())
+  updatedAt                DateTime                    @updatedAt
 
   @@index([name])
   @@index([category])
@@ -579,81 +589,82 @@ model ProductMedia {
 }
 
 model ConfigurationTemplate {
-  id          String                      @id @default(cuid())
-  name        String
-  kind        ConfigurationKind
-  clientType  ClientType
-  roofType    ConfigurationRoofType?
-  goal        ConfigurationGoal?
-  powerKw     Decimal?                    @db.Decimal(8, 3)
-  capacityKwh Decimal?                    @db.Decimal(8, 3)
-  sortOrder   Int                         @default(0)
-  requiresExistingPv       Boolean        @default(false)
-  requiresExistingInverter Boolean        @default(false)
-  sourceSheet String?
-  sourceRange String?
-  notes       String?                     @db.Text
-  items       ConfigurationTemplateItem[]
-  configs     Configuration[]
-  createdAt   DateTime                    @default(now())
-  updatedAt   DateTime                    @updatedAt
+  id                       String                      @id @default(cuid())
+  name                     String
+  kind                     ConfigurationKind
+  clientType               ClientType
+  roofType                 ConfigurationRoofType?
+  goal                     ConfigurationGoal?
+  powerKw                  Decimal?                    @db.Decimal(8, 3)
+  capacityKwh              Decimal?                    @db.Decimal(8, 3)
+  sortOrder                Int                         @default(0)
+  requiresExistingPv       Boolean                     @default(false)
+  requiresExistingInverter Boolean                     @default(false)
+  sourceSheet              String?
+  sourceRange              String?
+  notes                    String?                     @db.Text
+  items                    ConfigurationTemplateItem[]
+  configs                  Configuration[]
+  createdAt                DateTime                    @default(now())
+  updatedAt                DateTime                    @updatedAt
 
+  @@unique([sourceSheet, sourceRange])
   @@index([kind, clientType])
   @@index([goal])
   @@index([roofType])
-  @@unique([sourceSheet, sourceRange])
 }
 
 model ConfigurationTemplateItem {
-  id          String                @id @default(cuid())
-  templateId  String
-  template    ConfigurationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  productId   String?
-  product     Product?              @relation(fields: [productId], references: [id], onDelete: SetNull)
-  position    Int
-  description String?
-  quantity    Decimal               @db.Decimal(12, 3)
-  role        ConfigurationItemRole  @default(OTHER)
-  supplyMode  ConfigurationItemSupplyMode @default(ONREVOLT_SUPPLIED)
-  unitPurchaseNet  Decimal?          @db.Decimal(12, 2)
-  purchaseVatRate  Decimal?          @db.Decimal(5, 4)
-  operatingCostNet Decimal?          @db.Decimal(12, 2)
-  marginRate       Decimal?          @db.Decimal(5, 4)
-  saleVatRate      Decimal?          @db.Decimal(5, 4)
-  isOptional        Boolean          @default(false)
-  requiresReview    Boolean          @default(false)
-  sourceSheet String?
-  sourceRow   Int?
-  notes       String?               @db.Text
+  id               String                      @id @default(cuid())
+  templateId       String
+  template         ConfigurationTemplate       @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  productId        String?
+  product          Product?                    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  position         Int
+  description      String?
+  quantity         Decimal                     @db.Decimal(12, 3)
+  role             ConfigurationItemRole       @default(OTHER)
+  supplyMode       ConfigurationItemSupplyMode @default(ONREVOLT_SUPPLIED)
+  unitPurchaseNet  Decimal?                    @db.Decimal(12, 2)
+  purchaseVatRate  Decimal?                    @db.Decimal(5, 4)
+  operatingCostNet Decimal?                    @db.Decimal(12, 2)
+  marginRate       Decimal?                    @db.Decimal(5, 4)
+  saleVatRate      Decimal?                    @db.Decimal(5, 4)
+  isOptional       Boolean                     @default(false)
+  requiresReview   Boolean                     @default(false)
+  sourceSheet      String?
+  sourceRow        Int?
+  notes            String?                     @db.Text
 
   @@index([templateId])
   @@index([productId])
 }
 
 model Configuration {
-  id               String                 @id @default(cuid())
-  projectId        String
-  project          Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  templateId       String?
-  template         ConfigurationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  name             String
-  kind             ConfigurationKind
-  status           ConfigurationStatus    @default(DRAFT)
-  clientType       ClientType
-  goal             ConfigurationGoal?
-  roofType         ConfigurationRoofType?
-  targetPowerKw    Decimal?               @db.Decimal(8, 3)
-  targetCapacityKwh Decimal?              @db.Decimal(8, 3)
+  id                     String                 @id @default(cuid())
+  projectId              String
+  project                Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  templateId             String?
+  template               ConfigurationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  name                   String
+  kind                   ConfigurationKind
+  status                 ConfigurationStatus    @default(DRAFT)
+  clientType             ClientType
+  goal                   ConfigurationGoal?
+  roofType               ConfigurationRoofType?
+  targetPowerKw          Decimal?               @db.Decimal(8, 3)
+  targetCapacityKwh      Decimal?               @db.Decimal(8, 3)
   existingAssetsSnapshot Json?
-  totalPurchaseNet Decimal                @default(0) @db.Decimal(12, 2)
-  totalSaleGross   Decimal                @default(0) @db.Decimal(12, 2)
-  totalProfitNet   Decimal                @default(0) @db.Decimal(12, 2)
-  requiresReview   Boolean                @default(false)
-  reviewNotes      String?                @db.Text
-  items            ConfigurationItem[]
-  offers           Offer[]
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
+  totalPurchaseNet       Decimal                @default(0) @db.Decimal(12, 2)
+  totalSaleGross         Decimal                @default(0) @db.Decimal(12, 2)
+  totalProfitNet         Decimal                @default(0) @db.Decimal(12, 2)
+  requiresReview         Boolean                @default(false)
+  reviewNotes            String?                @db.Text
+  items                  ConfigurationItem[]
+  offers                 Offer[]
+  installations          Installation[]
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
 
   @@index([projectId])
   @@index([templateId])
@@ -661,56 +672,57 @@ model Configuration {
 }
 
 model ConfigurationItem {
-  id               String        @id @default(cuid())
-  configurationId  String
-  configuration    Configuration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
-  productId        String?
-  product          Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
-  position         Int
-  description      String
-  quantity         Decimal       @db.Decimal(12, 3)
-  role             ConfigurationItemRole @default(OTHER)
-  supplyMode       ConfigurationItemSupplyMode @default(ONREVOLT_SUPPLIED)
-  unitPurchaseNet  Decimal       @db.Decimal(12, 2)
-  purchaseVatRate  Decimal       @db.Decimal(5, 4)
-  operatingCostNet Decimal       @db.Decimal(12, 2)
-  marginRate       Decimal       @db.Decimal(5, 4)
-  saleVatRate      Decimal       @db.Decimal(5, 4)
-  saleNet          Decimal       @db.Decimal(12, 2)
-  saleGross        Decimal       @db.Decimal(12, 2)
-  profitNet        Decimal       @db.Decimal(12, 2)
-  vatSurplus       Decimal       @default(0) @db.Decimal(12, 2)
-  isOptional       Boolean       @default(false)
-  requiresReview   Boolean       @default(false)
-  sourceSheet      String?
-  sourceRow        Int?
-  notes            String?       @db.Text
+  id                       String                      @id @default(cuid())
+  configurationId          String
+  configuration            Configuration               @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+  productId                String?
+  product                  Product?                    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  position                 Int
+  description              String
+  quantity                 Decimal                     @db.Decimal(12, 3)
+  role                     ConfigurationItemRole       @default(OTHER)
+  supplyMode               ConfigurationItemSupplyMode @default(ONREVOLT_SUPPLIED)
+  unitPurchaseNet          Decimal                     @db.Decimal(12, 2)
+  purchaseVatRate          Decimal                     @db.Decimal(5, 4)
+  operatingCostNet         Decimal                     @db.Decimal(12, 2)
+  marginRate               Decimal                     @db.Decimal(5, 4)
+  saleVatRate              Decimal                     @db.Decimal(5, 4)
+  saleNet                  Decimal                     @db.Decimal(12, 2)
+  saleGross                Decimal                     @db.Decimal(12, 2)
+  profitNet                Decimal                     @db.Decimal(12, 2)
+  vatSurplus               Decimal                     @default(0) @db.Decimal(12, 2)
+  isOptional               Boolean                     @default(false)
+  requiresReview           Boolean                     @default(false)
+  sourceSheet              String?
+  sourceRow                Int?
+  notes                    String?                     @db.Text
+  installationPlannedItems InstallationPlannedItem[]
 
   @@index([configurationId])
   @@index([productId])
 }
 
 model ProjectExistingAsset {
-  id                  String                             @id @default(cuid())
+  id                  String                           @id @default(cuid())
   projectId           String
-  project             Project                            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project             Project                          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   productId           String?
-  product             Product?                           @relation(fields: [productId], references: [id], onDelete: SetNull)
+  product             Product?                         @relation(fields: [productId], references: [id], onDelete: SetNull)
   kind                ExistingAssetKind
   name                String
   producer            String?
   model               String?
-  powerKw             Decimal?                           @db.Decimal(8, 3)
-  capacityKwh         Decimal?                           @db.Decimal(8, 3)
-  quantity            Decimal?                           @db.Decimal(12, 3)
+  powerKw             Decimal?                         @db.Decimal(8, 3)
+  capacityKwh         Decimal?                         @db.Decimal(8, 3)
+  quantity            Decimal?                         @db.Decimal(12, 3)
   voltageKind         String?
   phaseCount          Int?
   parameters          Json?
-  verificationStatus  ExistingAssetVerificationStatus     @default(DECLARED)
-  compatibilityStatus ExistingAssetCompatibilityStatus    @default(UNKNOWN)
-  notes               String?                            @db.Text
-  createdAt           DateTime                           @default(now())
-  updatedAt           DateTime                           @updatedAt
+  verificationStatus  ExistingAssetVerificationStatus  @default(DECLARED)
+  compatibilityStatus ExistingAssetCompatibilityStatus @default(UNKNOWN)
+  notes               String?                          @db.Text
+  createdAt           DateTime                         @default(now())
+  updatedAt           DateTime                         @updatedAt
 
   @@index([projectId])
   @@index([productId])
@@ -718,23 +730,44 @@ model ProjectExistingAsset {
 }
 
 model Offer {
-  id              String         @id @default(cuid())
-  projectId       String
-  project         Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  configurationId String?
-  configuration   Configuration? @relation(fields: [configurationId], references: [id], onDelete: SetNull)
-  number          String?
-  status          OfferStatus    @default(DRAFT)
-  totalNet        Decimal        @default(0) @db.Decimal(12, 2)
-  totalGross      Decimal        @default(0) @db.Decimal(12, 2)
-  validUntil      DateTime?
-  sentAt          DateTime?
-  acceptedAt      DateTime?
-  notes           String?        @db.Text
-  contracts       Contract[]
-  documents       Document[]
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id                       String         @id @default(cuid())
+  projectId                String
+  project                  Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  configurationId          String?
+  configuration            Configuration? @relation(fields: [configurationId], references: [id], onDelete: SetNull)
+  number                   String?
+  title                    String?
+  version                  Int            @default(1)
+  status                   OfferStatus    @default(DRAFT)
+  currency                 String         @default("PLN")
+  totalNet                 Decimal        @default(0) @db.Decimal(12, 2)
+  totalGross               Decimal        @default(0) @db.Decimal(12, 2)
+  subsidyGross             Decimal        @default(0) @db.Decimal(12, 2)
+  thermoReliefGross        Decimal        @default(0) @db.Decimal(12, 2)
+  totalAfterSupportGross   Decimal        @default(0) @db.Decimal(12, 2)
+  currentAnnualBillGross   Decimal        @default(0) @db.Decimal(12, 2)
+  projectedAnnualBillGross Decimal        @default(0) @db.Decimal(12, 2)
+  annualSavingsGross       Decimal        @default(0) @db.Decimal(12, 2)
+  paybackYears             Decimal?       @db.Decimal(8, 2)
+  tariffBefore             String?
+  tariffAfter              String?
+  settlementBefore         String?
+  settlementAfter          String?
+  descriptionBefore        String?        @db.Text
+  descriptionAfter         String?        @db.Text
+  lineItemsSnapshot        Json?
+  energySnapshot           Json?
+  calculationSnapshot      Json?
+  clientSnapshot           Json?
+  validUntil               DateTime?
+  sentAt                   DateTime?
+  acceptedAt               DateTime?
+  notes                    String?        @db.Text
+  contracts                Contract[]
+  documents                Document[]
+  installations            Installation[]
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
 
   @@index([projectId])
   @@index([configurationId])
@@ -763,73 +796,150 @@ model Contract {
 }
 
 model Installation {
-  id               String             @id @default(cuid())
+  id               String                      @id @default(cuid())
   projectId        String
-  project          Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  status           InstallationStatus @default(PLANNED)
+  project          Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  offerId          String?
+  offer            Offer?                      @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  configurationId  String?
+  configuration    Configuration?              @relation(fields: [configurationId], references: [id], onDelete: SetNull)
+  status           InstallationStatus          @default(TO_SCHEDULE)
   plannedAt        DateTime?
+  plannedEndAt     DateTime?
+  confirmedAt      DateTime?
   startedAt        DateTime?
   completedAt      DateTime?
   teamLeadId       String?
+  teamLead         StaffUser?                  @relation("InstallationTeamLead", fields: [teamLeadId], references: [id], onDelete: SetNull)
   address          String?
-  notes            String?            @db.Text
+  contactName      String?
+  contactPhone     String?
+  notes            String?                     @db.Text
+  internalNotes    String?                     @db.Text
+  tasks            Task[]
+  teamMembers      InstallationTeamMember[]
+  checklistItems   InstallationChecklistItem[]
+  plannedItems     InstallationPlannedItem[]
   installedDevices InstalledDevice[]
   documents        Document[]
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
 
   @@index([projectId])
+  @@index([offerId])
+  @@index([configurationId])
   @@index([status])
+  @@index([plannedAt])
+  @@index([teamLeadId])
 }
 
-model InstalledDevice {
+model InstallationTeamMember {
+  installationId String
+  installation   Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  staffUserId    String
+  staffUser      StaffUser    @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  role           String?
+  isLead         Boolean      @default(false)
+  assignedAt     DateTime     @default(now())
+
+  @@id([installationId, staffUserId])
+  @@index([staffUserId])
+}
+
+model InstallationChecklistItem {
   id             String       @id @default(cuid())
   installationId String
   installation   Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
-  productId      String?
-  product        Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
-  name           String
-  serialNumber   String?
-  parameters     Json?
-  installedAt    DateTime?
+  title          String
+  required       Boolean      @default(true)
+  completed      Boolean      @default(false)
+  completedAt    DateTime?
+  completedById  String?
+  completedBy    StaffUser?   @relation("InstallationChecklistCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
   notes          String?      @db.Text
-  documents      Document[]
+  sortOrder      Int          @default(0)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   @@index([installationId])
+  @@index([completedById])
+  @@index([completed])
+}
+
+model InstallationPlannedItem {
+  id                  String                      @id @default(cuid())
+  installationId      String
+  installation        Installation                @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  configurationItemId String?
+  configurationItem   ConfigurationItem?          @relation(fields: [configurationItemId], references: [id], onDelete: SetNull)
+  productId           String?
+  product             Product?                    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  position            Int                         @default(0)
+  name                String
+  quantity            Decimal                     @db.Decimal(12, 3)
+  role                ConfigurationItemRole       @default(OTHER)
+  supplyMode          ConfigurationItemSupplyMode @default(ONREVOLT_SUPPLIED)
+  notes               String?                     @db.Text
+  installedDevices    InstalledDevice[]
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+
+  @@index([installationId])
+  @@index([configurationItemId])
+  @@index([productId])
+}
+
+model InstalledDevice {
+  id             String                   @id @default(cuid())
+  installationId String
+  installation   Installation             @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  plannedItemId  String?
+  plannedItem    InstallationPlannedItem? @relation(fields: [plannedItemId], references: [id], onDelete: SetNull)
+  productId      String?
+  product        Product?                 @relation(fields: [productId], references: [id], onDelete: SetNull)
+  name           String
+  serialNumber   String?
+  parameters     Json?
+  installedAt    DateTime?
+  notes          String?                  @db.Text
+  documents      Document[]
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@index([installationId])
+  @@index([plannedItemId])
   @@index([productId])
   @@index([serialNumber])
 }
 
 model Document {
-  id                String           @id @default(cuid())
-  type              DocumentType
-  title             String
-  fileName          String
-  mimeType          String?
-  sizeBytes         Int?
-  sha256            String?
-  storagePath       String
-  clientId          String?
-  client            Client?          @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  projectId         String?
-  project           Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  offerId           String?
-  offer             Offer?           @relation(fields: [offerId], references: [id], onDelete: SetNull)
-  contractId        String?
-  contract          Contract?        @relation(fields: [contractId], references: [id], onDelete: SetNull)
-  installationId    String?
-  installation      Installation?    @relation(fields: [installationId], references: [id], onDelete: SetNull)
-  installedDeviceId String?
-  installedDevice   InstalledDevice? @relation(fields: [installedDeviceId], references: [id], onDelete: SetNull)
+  id                     String                  @id @default(cuid())
+  type                   DocumentType
+  title                  String
+  fileName               String
+  mimeType               String?
+  sizeBytes              Int?
+  sha256                 String?
+  storagePath            String
+  clientId               String?
+  client                 Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  projectId              String?
+  project                Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  offerId                String?
+  offer                  Offer?                  @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  contractId             String?
+  contract               Contract?               @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  installationId         String?
+  installation           Installation?           @relation(fields: [installationId], references: [id], onDelete: SetNull)
+  installedDeviceId      String?
+  installedDevice        InstalledDevice?        @relation(fields: [installedDeviceId], references: [id], onDelete: SetNull)
   energyMeasurementFiles EnergyMeasurementFile[]
-  uploadedById      String?
-  uploadedBy        StaffUser?       @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
-  visibleToClient   Boolean          @default(false)
-  notes             String?          @db.Text
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  uploadedById           String?
+  uploadedBy             StaffUser?              @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  visibleToClient        Boolean                 @default(false)
+  notes                  String?                 @db.Text
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@index([clientId])
   @@index([projectId])
@@ -846,6 +956,7 @@ model EnergyPortalAccount {
   operator          EnergyOperator          @default(ENEA)
   login             String?
   encryptedPassword String?                 @db.Text
+  tariff            String?
   ppeNumber         String?
   portalPpeId       String?
   meterNumber       String?
@@ -863,28 +974,28 @@ model EnergyPortalAccount {
 }
 
 model EnergyMeasurementFile {
-  id            String                @id @default(cuid())
-  accountId     String
-  account       EnergyPortalAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  clientId      String
-  client        Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  projectId     String?
-  project       Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  operator      EnergyOperator        @default(ENEA)
-  kind          EnergyMeasurementKind
-  periodYear    Int
-  periodMonth   Int
-  aggregation   String                @default("60 min")
-  dataSource    String                @default("Dane po bilansowaniu")
-  documentId    String?
-  document      Document?             @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  storagePath   String?
-  fileName      String?
-  status        String                @default("DOWNLOADED")
-  error         String?               @db.Text
-  downloadedAt  DateTime?
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
+  id           String                @id @default(cuid())
+  accountId    String
+  account      EnergyPortalAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientId     String
+  client       Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  projectId    String?
+  project      Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  operator     EnergyOperator        @default(ENEA)
+  kind         EnergyMeasurementKind
+  periodYear   Int
+  periodMonth  Int
+  aggregation  String                @default("60 min")
+  dataSource   String                @default("Dane po bilansowaniu")
+  documentId   String?
+  document     Document?             @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  storagePath  String?
+  fileName     String?
+  status       String                @default("DOWNLOADED")
+  error        String?               @db.Text
+  downloadedAt DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 
   @@unique([accountId, kind, periodYear, periodMonth])
   @@index([clientId])

@@ -22,6 +22,7 @@ const taskPriorities = Object.values(TaskPriority) as string[];
 const taskInclude = {
   client: { select: { id: true, displayName: true, clientType: true } },
   project: { select: { id: true, title: true, status: true, clientId: true } },
+  installation: { select: { id: true, status: true, plannedAt: true, projectId: true } },
   assignedTo: { select: { id: true, name: true, email: true, avatarUrl: true, positionTitle: true } },
   createdBy: { select: { id: true, name: true, email: true, avatarUrl: true, positionTitle: true } },
   comments: {
@@ -74,10 +75,12 @@ function serializeTask(task: any) {
     completedAt: task.completedAt,
     clientId: task.clientId,
     projectId: task.projectId,
+    installationId: task.installationId,
     assignedToId: task.assignedToId,
     createdById: task.createdById,
     client: task.client,
     project: task.project,
+    installation: task.installation,
     assignedTo: serializeUser(task.assignedTo),
     createdBy: serializeUser(task.createdBy),
     comments: (task.comments || []).map((comment: any) => ({
@@ -152,6 +155,7 @@ function buildListWhere(req: NextRequest, user: any, admin: boolean) {
   const assignedToId = searchParams.get('assignedToId') || '';
   const clientId = searchParams.get('clientId') || '';
   const projectId = searchParams.get('projectId') || '';
+  const installationId = searchParams.get('installationId') || '';
 
   const searchWhere = buildSearchWhere(query);
   if (Object.keys(searchWhere).length > 0) and.push(searchWhere);
@@ -159,6 +163,7 @@ function buildListWhere(req: NextRequest, user: any, admin: boolean) {
   if (taskPriorities.includes(priority)) and.push({ priority });
   if (clientId) and.push({ clientId });
   if (projectId) and.push({ projectId });
+  if (installationId) and.push({ installationId });
   if (assignedToId && admin) and.push({ assignedToId });
 
   if (scope === 'mine') and.push({ OR: [{ assignedToId: user.id }, { createdById: user.id }] });
@@ -276,6 +281,7 @@ export async function POST(req: NextRequest) {
           dueAt: parseDate(body.dueAt),
           clientId: optionalString(body, 'clientId'),
           projectId: optionalString(body, 'projectId'),
+          installationId: optionalString(body, 'installationId'),
           assignedToId,
           createdById: currentUser.id,
         },
@@ -328,6 +334,7 @@ export async function PATCH(req: NextRequest) {
       if ('dueAt' in body) updateData.dueAt = body.dueAt ? parseDate(body.dueAt) : null;
       if ('clientId' in body) updateData.clientId = optionalNullableString(body, 'clientId');
       if ('projectId' in body) updateData.projectId = optionalNullableString(body, 'projectId');
+      if ('installationId' in body) updateData.installationId = optionalNullableString(body, 'installationId');
       if ('assignedToId' in body) updateData.assignedToId = optionalNullableString(body, 'assignedToId');
     }
 

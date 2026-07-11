@@ -25,8 +25,15 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import Card from 'components/card/Card';
+import OfferDocument from 'components/onrevolt/OfferDocument';
+import {
+  energyOperatorOptions,
+  getDefaultEnergyTariff,
+  getDefaultTargetEnergyTariff,
+  getEnergyTariffs,
+} from 'lib/onrevolt/energy-tariffs';
 import { useCallback, useEffect, useState } from 'react';
-import { MdAdd, MdAssignment, MdDeleteOutline, MdOpenInNew, MdRefresh } from 'react-icons/md';
+import { MdAdd, MdAssignment, MdDeleteOutline, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
 
 type ClientProfileProps = {
   clientId: string;
@@ -93,6 +100,7 @@ type EnergyAccountForm = {
   login: string;
   password: string;
   hasPassword: boolean;
+  tariff: string;
   ppeNumber: string;
   portalPpeId: string;
   meterNumber: string;
@@ -147,10 +155,11 @@ const tabs = [
   'Zadania',
   'Konfiguracje',
   'Oferta / umowa',
+  'Montaże',
   'Urządzenia',
   'Zdjęcia / pliki',
   'EMS / Audyt',
-  'Faktury iOSD',
+  'Faktury i OSD',
   'Historia',
 ];
 
@@ -194,6 +203,7 @@ const emptyEnergyAccount: EnergyAccountForm = {
   login: '',
   password: '',
   hasPassword: false,
+  tariff: 'G11',
   ppeNumber: '',
   portalPpeId: '',
   meterNumber: '',
@@ -211,7 +221,7 @@ const clientTypeOptions = [
   ['B2C_B2B', 'B2C/B2B'],
 ] as const;
 
-const energyOperators = [
+/*
   ['ENEA', 'ENEA'],
   ['PGE', 'PGE'],
   ['TAURON', 'Tauron'],
@@ -219,6 +229,7 @@ const energyOperators = [
   ['STOEN', 'Stoën'],
   ['INNY', 'Inny'],
 ] as const;
+*/
 
 const taskStatuses = [
   ['OPEN', 'Nowe'],
@@ -232,6 +243,14 @@ const taskPriorities = [
   ['NORMAL', 'Normalny'],
   ['HIGH', 'Wysoki'],
   ['URGENT', 'Pilne'],
+] as const;
+
+const offerStatuses = [
+  ['DRAFT', 'Robocza'],
+  ['SENT', 'Wysłana'],
+  ['ACCEPTED', 'Zaakceptowana'],
+  ['REJECTED', 'Odrzucona'],
+  ['EXPIRED', 'Wygasła'],
 ] as const;
 
 function projectStatusLabel(value?: string | null) {
@@ -264,6 +283,84 @@ function taskPriorityColor(value?: string | null) {
   return 'blue';
 }
 
+function offerStatusLabel(value?: string | null) {
+  return offerStatuses.find(([status]) => status === value)?.[1] || value || 'Robocza';
+}
+
+function offerStatusColor(value?: string | null) {
+  if (value === 'ACCEPTED') return 'green';
+  if (value === 'SENT') return 'blue';
+  if (value === 'REJECTED') return 'red';
+  if (value === 'EXPIRED') return 'orange';
+  return 'purple';
+}
+
+function configurationStatusLabel(value?: string | null) {
+  const labels: Record<string, string> = {
+    DRAFT: 'Robocza',
+    READY: 'Gotowa',
+    OFFERED: 'W ofercie',
+    ACCEPTED: 'Zaakceptowana',
+    INSTALLED: 'Zamontowana',
+    ARCHIVED: 'Archiwalna',
+  };
+  return labels[value || ''] || value || 'Robocza';
+}
+
+function configurationStatusColor(value?: string | null) {
+  if (value === 'ACCEPTED' || value === 'INSTALLED') return 'green';
+  if (value === 'READY') return 'blue';
+  if (value === 'OFFERED') return 'purple';
+  if (value === 'ARCHIVED') return 'gray';
+  return 'orange';
+}
+
+function installationStatusLabel(value?: string | null) {
+  const labels: Record<string, string> = {
+    TO_SCHEDULE: 'Do zaplanowania',
+    PLANNED: 'Zaplanowany',
+    CONFIRMED: 'Potwierdzony',
+    IN_PROGRESS: 'W trakcie',
+    NEEDS_COMPLETION: 'Do uzupełnienia',
+    WAITING_OSD: 'Oczekuje OSD',
+    COMPLETED: 'Zakończony',
+    SERVICE_REQUIRED: 'Wymaga serwisu',
+  };
+  return labels[value || ''] || value || 'Nie określono';
+}
+
+function installationStatusColor(value?: string | null) {
+  if (value === 'COMPLETED') return 'green';
+  if (value === 'IN_PROGRESS') return 'blue';
+  if (value === 'NEEDS_COMPLETION' || value === 'SERVICE_REQUIRED') return 'red';
+  if (value === 'WAITING_OSD') return 'orange';
+  if (value === 'PLANNED' || value === 'CONFIRMED') return 'purple';
+  return 'gray';
+}
+
+function supplyModeLabel(value?: string | null) {
+  const labels: Record<string, string> = {
+    ONREVOLT_SUPPLIED: 'Dostarczane przez onRevolt',
+    CLIENT_OWNED_USED: 'Własne klienta',
+    CLIENT_SUPPLIED_NEW: 'Dostarczone przez klienta',
+    SERVICE_ONLY: 'Tylko usługa',
+    NOT_INCLUDED: 'Poza zakresem',
+  };
+  return labels[value || ''] || value || '-';
+}
+
+function readJsonSnapshot<T>(value: unknown, fallback: T): T {
+  if (!value) return fallback;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  return value as T;
+}
+
 function energyAccountFromRecord(account: any): EnergyAccountForm {
   if (!account) return { ...emptyEnergyAccount };
   return {
@@ -272,6 +369,7 @@ function energyAccountFromRecord(account: any): EnergyAccountForm {
     login: account.login || '',
     password: '',
     hasPassword: Boolean(account.hasPassword || account.encryptedPassword),
+    tariff: account.tariff || getDefaultEnergyTariff(account.operator || 'ENEA'),
     ppeNumber: account.ppeNumber || '',
     portalPpeId: account.portalPpeId || '',
     meterNumber: account.meterNumber || '',
@@ -348,6 +446,11 @@ function formatKwhPrecise(value?: number | null) {
   return new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(safeValue);
 }
 
+function formatMoney(value?: number | string | null) {
+  const safeValue = Number.isFinite(Number(value)) ? Number(value) : 0;
+  return new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safeValue);
+}
+
 function formFromClient(client: any): ClientFormState {
   const contact = client?.contacts?.[0] || {};
   const project = client?.projects?.[0] || {};
@@ -396,6 +499,11 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [stationMessage, setStationMessage] = useState('');
   const [stationError, setStationError] = useState('');
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [offerCreating, setOfferCreating] = useState(false);
+  const [offerMessage, setOfferMessage] = useState('');
+  const [offerError, setOfferError] = useState('');
+  const [selectedClientConfigurationId, setSelectedClientConfigurationId] = useState('');
+  const [selectedClientOfferId, setSelectedClientOfferId] = useState('');
   const textColor = useColorModeValue('secondaryGray.900', 'white');
   const mutedColor = useColorModeValue('secondaryGray.600', 'secondaryGray.400');
   const borderColor = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
@@ -424,6 +532,19 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       setStages(stagesPayload.data || []);
       setForm(formFromClient(clientPayload.data));
       setEnergyAccount(energyAccountFromClient(clientPayload.data));
+      const loadedProject = clientPayload.data?.projects?.[0];
+      const firstConfiguration = loadedProject?.configurations?.[0];
+      const firstOffer = loadedProject?.offers?.[0];
+      setSelectedClientConfigurationId((current) => (
+        current && loadedProject?.configurations?.some((configuration: any) => configuration.id === current)
+          ? current
+          : firstConfiguration?.id || ''
+      ));
+      setSelectedClientOfferId((current) => (
+        current && loadedProject?.offers?.some((offer: any) => offer.id === current)
+          ? current
+          : firstOffer?.id || ''
+      ));
       if (authResponse?.ok) {
         const authPayload = await authResponse.json();
         setCurrentUser(authPayload.ok ? authPayload.data : null);
@@ -470,10 +591,19 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   }
 
   function updateEnergyAccount(
-    key: 'operator' | 'login' | 'password' | 'ppeNumber' | 'portalPpeId' | 'meterNumber' | 'notes',
+    key: 'operator' | 'login' | 'password' | 'tariff' | 'ppeNumber' | 'portalPpeId' | 'meterNumber' | 'notes',
     value: string,
   ) {
-    setEnergyAccount((current) => ({ ...current, [key]: value }));
+    setEnergyAccount((current) => {
+      if (key === 'operator') {
+        return {
+          ...current,
+          operator: value,
+          tariff: getDefaultEnergyTariff(value),
+        };
+      }
+      return { ...current, [key]: value };
+    });
   }
 
   async function saveClient() {
@@ -573,9 +703,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
           operator: energyAccount.operator,
           login: energyAccount.login,
           password: energyAccount.password || undefined,
+          tariff: energyAccount.tariff,
           ppeNumber: energyAccount.ppeNumber,
           portalPpeId: energyAccount.portalPpeId,
-          meterNumber: energyAccount.meterNumber,
           notes: energyAccount.notes,
         }),
       });
@@ -592,6 +722,54 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       return undefined;
     } finally {
       setEnergySaving(false);
+    }
+  }
+
+  async function createClientOffer(configurationIdOverride?: string) {
+    const project = client?.projects?.[0];
+    if (!project?.id) return;
+
+    setOfferCreating(true);
+    setOfferError('');
+    setOfferMessage('');
+    try {
+      const configurationId = configurationIdOverride || selectedClientConfigurationId;
+      if (configurationId) setSelectedClientConfigurationId(configurationId);
+      const configuration = project.configurations?.find((item: any) => item.id === configurationId);
+      const validUntil = new Date();
+      validUntil.setDate(validUntil.getDate() + 14);
+      const offerOperator = energyAccount.operator || 'ENEA';
+      const offerTariffBefore = energyAccount.tariff || getDefaultEnergyTariff(offerOperator);
+
+      const response = await fetch('/api/offers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,
+          configurationId: configurationId || undefined,
+          title: configuration?.name || project.title || `Oferta - ${client?.displayName || ''}`,
+          validUntil: validUntil.toISOString(),
+          energyOperator: offerOperator,
+          tariffBefore: offerTariffBefore,
+          tariffAfter: getDefaultTargetEnergyTariff(offerOperator),
+          settlementBefore: 'net-metering',
+          settlementAfter: 'net-billing',
+          subsidyGross: 0,
+          thermoReliefGross: 0,
+          currentAnnualBillGross: 0,
+          projectedAnnualBillGross: 0,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      setSelectedClientOfferId(payload.data?.id || '');
+      setOfferMessage(`Utworzono ofertę ${payload.data?.number || ''}.`);
+      await load();
+    } catch (e) {
+      setOfferError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOfferCreating(false);
     }
   }
 
@@ -703,6 +881,20 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const contact = client?.contacts?.[0] || {};
   const project = client?.projects?.[0] || {};
   const site = project?.investmentSite || client?.investmentSites?.[0] || {};
+  const projectConfigurations = project?.configurations || [];
+  const projectOffers = project?.offers || [];
+  const projectInstallations = project?.installations || [];
+  const selectedClientOffer = projectOffers.find((offer: any) => offer.id === selectedClientOfferId) || projectOffers[0];
+  const acceptedProjectOffer = projectOffers.find((offer: any) => offer.status === 'ACCEPTED');
+  const projectedDevices = acceptedProjectOffer
+    ? readJsonSnapshot<any[]>(acceptedProjectOffer.lineItemsSnapshot, [])
+    : [];
+  const installedDevices = (project?.installations || []).flatMap((installation: any) => (
+    (installation.installedDevices || []).map((device: any) => ({
+      ...device,
+      installation,
+    }))
+  ));
   const projectStatus = projectStatusLabel(project.status || form.status);
   const energyFiles = energyAccount.measurementFiles || [];
   const energyMonths = energyMonthRows(energyFiles);
@@ -729,7 +921,16 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const taskCreateParams = new URLSearchParams({ clientId, create: '1' });
   if (project?.id) taskCreateParams.set('projectId', project.id);
   const taskCreateUrl = `/admin/tasks?${taskCreateParams.toString()}`;
+  const installationCreateUrl = project?.id
+    ? `/admin/installations?projectId=${encodeURIComponent(project.id)}`
+    : '/admin/installations';
+  const installationCreateNewUrl = project?.id
+    ? `${installationCreateUrl}&create=1`
+    : '/admin/installations?create=1';
   const activeClientTasksCount = clientTasks.filter((task) => task.status !== 'DONE' && task.status !== 'CANCELLED').length;
+  const activeInstallationsCount = projectInstallations.filter((installation: any) => (
+    installation.status !== 'COMPLETED' && installation.status !== 'SERVICE_REQUIRED'
+  )).length;
 
   return (
     <Flex direction="column" pt={{ base: '130px', md: '80px', xl: '80px' }} gap="20px">
@@ -970,6 +1171,572 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
               );
             }
 
+            if (tab === 'Konfiguracje') {
+              return (
+                <TabPanel key={tab} px="0">
+                  <Flex direction="column" gap="20px">
+                    <Card p="22px">
+                      <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" align={{ lg: 'center' }} mb="18px">
+                        <Box>
+                          <Text color={textColor} fontSize="lg" fontWeight="800">Konfiguracje projektu</Text>
+                          <Text color={mutedColor}>
+                            Konfiguracja jest bazą techniczną oferty. Oferta zapisuje jej snapshot, ale powiązanie pozostaje widoczne.
+                          </Text>
+                        </Box>
+                        <Button
+                          as="a"
+                          href={`/admin/configurator?projectId=${encodeURIComponent(project?.id || '')}`}
+                          rightIcon={<MdOpenInNew />}
+                          variant="outline"
+                          colorScheme="purple"
+                        >
+                          Otwórz konfigurator
+                        </Button>
+                      </Flex>
+
+                      <SimpleGrid columns={{ base: 1, md: 3 }} gap="12px">
+                        <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
+                          <Text color={mutedColor} fontSize="sm" fontWeight="700">Konfiguracje</Text>
+                          <Text color={textColor} fontSize="xl" fontWeight="900">{projectConfigurations.length}</Text>
+                        </Box>
+                        <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
+                          <Text color={mutedColor} fontSize="sm" fontWeight="700">Oferty z konfiguracji</Text>
+                          <Text color={textColor} fontSize="xl" fontWeight="900">{projectOffers.filter((offer: any) => offer.configurationId).length}</Text>
+                        </Box>
+                        <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
+                          <Text color={mutedColor} fontSize="sm" fontWeight="700">Zaakceptowana oferta</Text>
+                          <Text color={textColor} fontSize="xl" fontWeight="900">{acceptedProjectOffer?.number || '-'}</Text>
+                        </Box>
+                      </SimpleGrid>
+                    </Card>
+
+                    {projectConfigurations.length === 0 ? (
+                      <Card p="22px">
+                        <Text color={mutedColor}>
+                          Brak konfiguracji przy tym projekcie. Oferta może istnieć tylko jako ręczna lub testowa, ale docelowo powinna powstać z konfiguracji.
+                        </Text>
+                      </Card>
+                    ) : (
+                      <Flex direction="column" gap="16px">
+                        {projectConfigurations.map((configuration: any) => {
+                          const linkedOffers = projectOffers.filter((offer: any) => offer.configurationId === configuration.id);
+                          const items = configuration.items || [];
+                          return (
+                            <Card key={configuration.id} p="22px">
+                              <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="14px" align={{ lg: 'start' }} mb="14px">
+                                <Box minW="0">
+                                  <Flex gap="8px" wrap="wrap" mb="8px">
+                                    <Badge colorScheme={configurationStatusColor(configuration.status)}>
+                                      {configurationStatusLabel(configuration.status)}
+                                    </Badge>
+                                    <Badge colorScheme="blue">{items.length} pozycji</Badge>
+                                    {linkedOffers.length ? <Badge colorScheme="purple">{linkedOffers.length} ofert</Badge> : null}
+                                  </Flex>
+                                  <Text color={textColor} fontSize="lg" fontWeight="900">{configuration.name}</Text>
+                                  <Text color={mutedColor}>
+                                    {configuration.kind || '-'} · {configuration.goal || 'bez celu'} · suma {formatMoney(configuration.totalSaleGross)} PLN
+                                  </Text>
+                                </Box>
+                                <Flex gap="10px" wrap="wrap">
+                                  <Button
+                                    size="sm"
+                                    colorScheme="purple"
+                                    leftIcon={<MdAdd />}
+                                    onClick={() => createClientOffer(configuration.id)}
+                                    isLoading={offerCreating && selectedClientConfigurationId === configuration.id}
+                                  >
+                                    Utwórz ofertę
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setSelectedClientConfigurationId(configuration.id)}
+                                  >
+                                    Wybierz do oferty
+                                  </Button>
+                                </Flex>
+                              </Flex>
+
+                              {linkedOffers.length ? (
+                                <Flex gap="8px" wrap="wrap" mb="14px">
+                                  {linkedOffers.map((offer: any) => (
+                                    <Button
+                                      key={offer.id}
+                                      size="sm"
+                                      variant="outline"
+                                      colorScheme={offerStatusColor(offer.status)}
+                                      onClick={() => setSelectedClientOfferId(offer.id)}
+                                    >
+                                      {offer.number || 'Oferta'} · {offerStatusLabel(offer.status)}
+                                    </Button>
+                                  ))}
+                                </Flex>
+                              ) : null}
+
+                              {items.length ? (
+                                <Box overflowX="auto" border="1px solid" borderColor={borderColor} borderRadius="8px">
+                                  <Box minW="720px">
+                                    <Flex px="12px" py="9px" bg="whiteAlpha.100" fontSize="sm" fontWeight="900" color={textColor}>
+                                      <Box w="42px">Nr</Box>
+                                      <Box flex="1">Pozycja</Box>
+                                      <Box w="150px">Tryb</Box>
+                                      <Box w="80px" textAlign="right">Ilość</Box>
+                                      <Box w="140px" textAlign="right">Wartość brutto</Box>
+                                    </Flex>
+                                    {items.map((item: any, index: number) => (
+                                      <Flex
+                                        key={item.id || index}
+                                        px="12px"
+                                        py="9px"
+                                        borderTop="1px solid"
+                                        borderColor={borderColor}
+                                        fontSize="sm"
+                                        color={textColor}
+                                        align="start"
+                                      >
+                                        <Box w="42px">{item.position || index + 1}</Box>
+                                        <Box flex="1">
+                                          <Text fontWeight="800">{item.description || item.product?.name || '-'}</Text>
+                                          <Text color={mutedColor} fontSize="xs">{item.product?.sku || item.product?.producer || '-'}</Text>
+                                        </Box>
+                                        <Box w="150px">{supplyModeLabel(item.supplyMode)}</Box>
+                                        <Box w="80px" textAlign="right">{Number(item.quantity || 0)}</Box>
+                                        <Box w="140px" textAlign="right" fontWeight="800">{formatMoney(item.saleGross)} PLN</Box>
+                                      </Flex>
+                                    ))}
+                                  </Box>
+                                </Box>
+                              ) : (
+                                <Text color={mutedColor}>Konfiguracja nie ma pozycji.</Text>
+                              )}
+                            </Card>
+                          );
+                        })}
+                      </Flex>
+                    )}
+                  </Flex>
+                </TabPanel>
+              );
+            }
+
+            if (tab === 'Oferta / umowa') {
+              return (
+                <TabPanel key={tab} px="0">
+                  <Flex direction="column" gap="20px">
+                    <Card p="22px">
+                      <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" align={{ lg: 'center' }} mb="18px">
+                        <Box>
+                          <Text color={textColor} fontSize="lg" fontWeight="800">Oferta / umowa</Text>
+                          <Text color={mutedColor}>Oferty tworzone z konfiguracji projektu i zapisane jako wersje historyczne.</Text>
+                        </Box>
+                        <Flex gap="10px" wrap="wrap">
+                          {selectedClientOffer ? (
+                            <Button
+                              as="a"
+                              href={`/offer-print/${selectedClientOffer.id}`}
+                              target="_blank"
+                              leftIcon={<MdPrint />}
+                              variant="outline"
+                              colorScheme="purple"
+                            >
+                              Drukuj / PDF
+                            </Button>
+                          ) : null}
+                          <Button
+                            leftIcon={<MdAdd />}
+                            colorScheme="purple"
+                            onClick={() => createClientOffer()}
+                            isLoading={offerCreating}
+                            isDisabled={!project?.id}
+                          >
+                            Utwórz ofertę
+                          </Button>
+                        </Flex>
+                      </Flex>
+
+                      {offerError ? (
+                        <Alert status="error" borderRadius="8px" mb="16px">
+                          <AlertIcon />
+                          {offerError}
+                        </Alert>
+                      ) : null}
+                      {offerMessage ? (
+                        <Alert status="success" borderRadius="8px" mb="16px">
+                          <AlertIcon />
+                          {offerMessage}
+                        </Alert>
+                      ) : null}
+
+                      <SimpleGrid columns={{ base: 1, xl: 3 }} gap="16px">
+                        <FormControl>
+                          <FormLabel>Konfiguracja do nowej oferty</FormLabel>
+                          <Select
+                            value={selectedClientConfigurationId}
+                            onChange={(event) => setSelectedClientConfigurationId(event.target.value)}
+                          >
+                            <option value="">Bez konfiguracji</option>
+                            {projectConfigurations.map((configuration: any) => (
+                              <option key={configuration.id} value={configuration.id}>
+                                {configuration.name} - {formatMoney(configuration.totalSaleGross)} PLN
+                              </option>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
+                          <Text color={mutedColor} fontSize="sm" fontWeight="700">Konfiguracje</Text>
+                          <Text color={textColor} fontSize="xl" fontWeight="900">{projectConfigurations.length}</Text>
+                        </Box>
+                        <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
+                          <Text color={mutedColor} fontSize="sm" fontWeight="700">Oferty</Text>
+                          <Text color={textColor} fontSize="xl" fontWeight="900">{projectOffers.length}</Text>
+                        </Box>
+                      </SimpleGrid>
+                    </Card>
+
+                    <SimpleGrid columns={{ base: 1, xl: selectedClientOffer ? 2 : 1 }} gap="20px" alignItems="start">
+                      <Card p="22px">
+                        <Text color={textColor} fontSize="lg" fontWeight="800" mb="14px">Oferty projektu</Text>
+                        {projectOffers.length === 0 ? (
+                          <Text color={mutedColor}>Brak ofert przy tym projekcie.</Text>
+                        ) : (
+                          <Flex direction="column" gap="10px">
+                            {projectOffers.map((offer: any) => (
+                              <Box
+                                as="button"
+                                type="button"
+                                key={offer.id}
+                                textAlign="left"
+                                border="1px solid"
+                                borderColor={selectedClientOffer?.id === offer.id ? 'purple.300' : borderColor}
+                                borderRadius="8px"
+                                p="12px"
+                                bg={selectedClientOffer?.id === offer.id ? 'whiteAlpha.100' : 'transparent'}
+                                onClick={() => setSelectedClientOfferId(offer.id)}
+                              >
+                                <Flex justify="space-between" gap="10px" align="start">
+                                  <Box minW="0">
+                                    <Text color={textColor} fontWeight="900" noOfLines={1}>{offer.number || 'Bez numeru'}</Text>
+                                    <Text color={mutedColor} fontSize="sm" noOfLines={1}>{offer.title || offer.configuration?.name || project.title}</Text>
+                                  </Box>
+                                  <Badge colorScheme={offerStatusColor(offer.status)}>{offerStatusLabel(offer.status)}</Badge>
+                                </Flex>
+                                <Flex justify="space-between" gap="10px" align="center" mt="10px">
+                                  <Text color={textColor} fontWeight="800">{formatMoney(offer.totalGross)} PLN</Text>
+                                  <Text color={mutedColor} fontSize="sm">v{offer.version || 1}</Text>
+                                </Flex>
+                              </Box>
+                            ))}
+                          </Flex>
+                        )}
+                      </Card>
+
+                      {selectedClientOffer ? (
+                        <Card p="0" overflow="hidden">
+                          <OfferDocument offer={selectedClientOffer} compact />
+                        </Card>
+                      ) : null}
+                    </SimpleGrid>
+                  </Flex>
+                </TabPanel>
+              );
+            }
+
+            if (tab === 'Montaże') {
+              return (
+                <TabPanel key={tab} px="0">
+                  <Flex direction="column" gap="20px">
+                    <Card p="22px">
+                      <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" align={{ lg: 'center' }}>
+                        <Box>
+                          <Text color={textColor} fontSize="lg" fontWeight="800">Montaże projektu</Text>
+                          <Text color={mutedColor}>
+                            Plan realizacji, ekipa, checklista, zdjęcia, protokoły i faktycznie zamontowane urządzenia.
+                          </Text>
+                        </Box>
+                        <Flex gap="10px" wrap="wrap">
+                          <Button
+                            as="a"
+                            href={installationCreateNewUrl}
+                            leftIcon={<MdAdd />}
+                            variant="brand"
+                          >
+                            Utwórz montaż
+                          </Button>
+                          <Button
+                            as="a"
+                            href={installationCreateUrl}
+                            rightIcon={<MdOpenInNew />}
+                            variant="outline"
+                            colorScheme="purple"
+                          >
+                            Otwórz dział
+                          </Button>
+                        </Flex>
+                      </Flex>
+                    </Card>
+
+                    <SimpleGrid columns={{ base: 1, md: 3 }} gap="16px">
+                      <Card p="18px">
+                        <Text color={mutedColor} fontSize="sm" fontWeight="800">Montaże</Text>
+                        <Text color={textColor} fontSize="2xl" fontWeight="900">{projectInstallations.length}</Text>
+                      </Card>
+                      <Card p="18px">
+                        <Text color={mutedColor} fontSize="sm" fontWeight="800">Aktywne</Text>
+                        <Text color={textColor} fontSize="2xl" fontWeight="900">{activeInstallationsCount}</Text>
+                      </Card>
+                      <Card p="18px">
+                        <Text color={mutedColor} fontSize="sm" fontWeight="800">Zamontowane urządzenia</Text>
+                        <Text color={textColor} fontSize="2xl" fontWeight="900">{installedDevices.length}</Text>
+                      </Card>
+                    </SimpleGrid>
+
+                    {projectInstallations.length === 0 ? (
+                      <Card p="22px">
+                        <Text color={textColor} fontSize="lg" fontWeight="800" mb="8px">Brak montaży</Text>
+                        <Text color={mutedColor}>
+                          Po zaakceptowaniu oferty utwórz montaż. System przeniesie zakres z konfiguracji, doda checklistę i pozwoli przypisać ekipę.
+                        </Text>
+                      </Card>
+                    ) : (
+                      <Flex direction="column" gap="14px">
+                        {projectInstallations.map((installation: any) => {
+                          const checklist = installation.checklistItems || [];
+                          const checklistDone = checklist.filter((item: any) => item.completed).length;
+                          const checklistTotal = checklist.length;
+                          const checklistPercent = checklistTotal ? Math.round((checklistDone / checklistTotal) * 100) : 0;
+                          const plannedItems = installation.plannedItems || [];
+                          const installationDevices = installation.installedDevices || [];
+                          const installationTasks = installation.tasks || [];
+                          return (
+                            <Card key={installation.id} p="22px">
+                              <Flex direction={{ base: 'column', xl: 'row' }} justify="space-between" gap="16px" align={{ xl: 'start' }}>
+                                <Box minW="0" flex="1">
+                                  <Flex align="center" gap="10px" wrap="wrap" mb="8px">
+                                    <Text color={textColor} fontSize="lg" fontWeight="900">
+                                      {formatDateTime(installation.plannedAt)}
+                                    </Text>
+                                    <Badge colorScheme={installationStatusColor(installation.status)}>
+                                      {installationStatusLabel(installation.status)}
+                                    </Badge>
+                                  </Flex>
+                                  <Text color={mutedColor} noOfLines={1}>
+                                    {installation.address || site.fullAddress || site.addressLine || 'Brak adresu montażu'}
+                                  </Text>
+                                  <Text color={mutedColor} fontSize="sm" mt="4px">
+                                    Ekipa: {installation.teamLead?.name || 'bez kierownika'} · {installation.teamMembers?.length || 0} osób
+                                  </Text>
+                                </Box>
+                                <Button
+                                  as="a"
+                                  href={`/admin/installations?projectId=${encodeURIComponent(project.id || '')}`}
+                                  rightIcon={<MdOpenInNew />}
+                                  variant="outline"
+                                  colorScheme="purple"
+                                  alignSelf={{ base: 'flex-start', xl: 'center' }}
+                                >
+                                  Otwórz
+                                </Button>
+                              </Flex>
+
+                              <SimpleGrid columns={{ base: 1, lg: 4 }} gap="14px" mt="18px">
+                                <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="800">Źródło</Text>
+                                  <Text color={textColor} fontWeight="900" noOfLines={2}>
+                                    {installation.configuration?.name || installation.offer?.number || 'Zakres ręczny'}
+                                  </Text>
+                                  {installation.offer ? (
+                                    <Text color={mutedColor} fontSize="xs">{installation.offer.title || installation.offer.number}</Text>
+                                  ) : null}
+                                </Box>
+                                <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="800">Checklista</Text>
+                                  <Text color={textColor} fontWeight="900">{checklistDone}/{checklistTotal || 0}</Text>
+                                  <Text color={mutedColor} fontSize="xs">{checklistPercent}% wykonane</Text>
+                                </Box>
+                                <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="800">Zakres</Text>
+                                  <Text color={textColor} fontWeight="900">{plannedItems.length} pozycji</Text>
+                                  <Text color={mutedColor} fontSize="xs">{installationDevices.length} urządzeń z numerami</Text>
+                                </Box>
+                                <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="800">Zadania</Text>
+                                  <Text color={textColor} fontWeight="900">{installationTasks.length}</Text>
+                                  <Text color={mutedColor} fontSize="xs">{installation.documents?.length || 0} dokumentów</Text>
+                                </Box>
+                              </SimpleGrid>
+
+                              {plannedItems.length ? (
+                                <Box mt="16px" overflowX="auto" border="1px solid" borderColor={borderColor} borderRadius="8px">
+                                  <Box minW="720px">
+                                    <Flex px="12px" py="9px" bg="whiteAlpha.100" color={textColor} fontSize="sm" fontWeight="900">
+                                      <Box w="50px">Nr</Box>
+                                      <Box flex="1">Pozycja</Box>
+                                      <Box w="120px">Ilość</Box>
+                                      <Box w="180px">Dostawa</Box>
+                                      <Box w="170px">Numery seryjne</Box>
+                                    </Flex>
+                                    {plannedItems.slice(0, 8).map((item: any, index: number) => (
+                                      <Flex key={item.id || index} px="12px" py="9px" borderTop="1px solid" borderColor={borderColor} color={textColor} fontSize="sm">
+                                        <Box w="50px">{item.position || index + 1}</Box>
+                                        <Box flex="1">
+                                          <Text fontWeight="800">{item.name}</Text>
+                                          <Text color={mutedColor} fontSize="xs">{item.product?.sku || item.product?.producer || '-'}</Text>
+                                        </Box>
+                                        <Box w="120px">{Number(item.quantity || 0)}</Box>
+                                        <Box w="180px">{supplyModeLabel(item.supplyMode)}</Box>
+                                        <Box w="170px">
+                                          {(installationDevices || []).filter((device: any) => device.plannedItemId === item.id).length || '-'}
+                                        </Box>
+                                      </Flex>
+                                    ))}
+                                  </Box>
+                                </Box>
+                              ) : null}
+                            </Card>
+                          );
+                        })}
+                      </Flex>
+                    )}
+                  </Flex>
+                </TabPanel>
+              );
+            }
+
+            if (tab === 'Urządzenia') {
+              return (
+                <TabPanel key={tab} px="0">
+                  <Flex direction="column" gap="20px">
+                    <Card p="22px">
+                      <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" align={{ lg: 'center' }}>
+                        <Box>
+                          <Text color={textColor} fontSize="lg" fontWeight="800">Urządzenia</Text>
+                          <Text color={mutedColor}>
+                            Zamontowane urządzenia są źródłem prawdy. Przed montażem pokazujemy projektowane urządzenia tylko z zaakceptowanej oferty.
+                          </Text>
+                        </Box>
+                        {acceptedProjectOffer ? (
+                          <Badge colorScheme="green" px="12px" py="7px" borderRadius="8px">
+                            Zaakceptowana: {acceptedProjectOffer.number || 'oferta'}
+                          </Badge>
+                        ) : (
+                          <Badge colorScheme="gray" px="12px" py="7px" borderRadius="8px">
+                            Brak zaakceptowanej oferty
+                          </Badge>
+                        )}
+                      </Flex>
+                    </Card>
+
+                    {installedDevices.length ? (
+                      <Card p="22px">
+                        <Text color={textColor} fontSize="lg" fontWeight="800" mb="14px">Zamontowane urządzenia</Text>
+                        <Flex direction="column" gap="10px">
+                          {installedDevices.map((device: any) => (
+                            <Flex
+                              key={device.id}
+                              direction={{ base: 'column', xl: 'row' }}
+                              justify="space-between"
+                              gap="12px"
+                              border="1px solid"
+                              borderColor={borderColor}
+                              borderRadius="8px"
+                              p="14px"
+                            >
+                              <Box minW="0">
+                                <Text color={textColor} fontWeight="900">{device.name}</Text>
+                                <Text color={mutedColor} fontSize="sm">
+                                  {device.product?.sku || device.product?.producer || '-'} · instalacja {device.installation?.status || '-'}
+                                </Text>
+                              </Box>
+                              <SimpleGrid columns={{ base: 1, md: 3 }} gap="12px" minW={{ xl: '460px' }}>
+                                <Box>
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="700">Numer seryjny</Text>
+                                  <Text color={textColor} fontWeight="800">{device.serialNumber || '-'}</Text>
+                                </Box>
+                                <Box>
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="700">Data montażu</Text>
+                                  <Text color={textColor} fontWeight="800">{formatDateTime(device.installedAt)}</Text>
+                                </Box>
+                                <Box>
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="700">Uwagi</Text>
+                                  <Text color={textColor} fontWeight="800" noOfLines={1}>{device.notes || '-'}</Text>
+                                </Box>
+                              </SimpleGrid>
+                            </Flex>
+                          ))}
+                        </Flex>
+                      </Card>
+                    ) : acceptedProjectOffer ? (
+                      <Card p="22px">
+                        <Flex justify="space-between" gap="14px" align="start" mb="14px" direction={{ base: 'column', lg: 'row' }}>
+                          <Box>
+                            <Text color={textColor} fontSize="lg" fontWeight="800">Projektowane urządzenia z zaakceptowanej oferty</Text>
+                            <Text color={mutedColor}>
+                              To nie jest lista zamontowanych urządzeń. Po montażu zastąpią ją rekordy z numerami seryjnymi.
+                            </Text>
+                          </Box>
+                          <Button
+                            as="a"
+                            href={`/offer-print/${acceptedProjectOffer.id}`}
+                            target="_blank"
+                            rightIcon={<MdOpenInNew />}
+                            variant="outline"
+                            colorScheme="purple"
+                          >
+                            Otwórz ofertę
+                          </Button>
+                        </Flex>
+
+                        {projectedDevices.length ? (
+                          <Box overflowX="auto" border="1px solid" borderColor={borderColor} borderRadius="8px">
+                            <Box minW="720px">
+                              <Flex px="12px" py="9px" bg="whiteAlpha.100" fontSize="sm" fontWeight="900" color={textColor}>
+                                <Box w="42px">Nr</Box>
+                                <Box flex="1">Urządzenie / pozycja</Box>
+                                <Box w="130px">Model</Box>
+                                <Box w="90px" textAlign="right">Ilość</Box>
+                                <Box w="145px" textAlign="right">Wartość brutto</Box>
+                              </Flex>
+                              {projectedDevices.map((item: any, index: number) => (
+                                <Flex
+                                  key={`${item.productId || item.description || item.name}-${index}`}
+                                  px="12px"
+                                  py="9px"
+                                  borderTop="1px solid"
+                                  borderColor={borderColor}
+                                  fontSize="sm"
+                                  color={textColor}
+                                  align="start"
+                                >
+                                  <Box w="42px">{item.position || index + 1}</Box>
+                                  <Box flex="1">
+                                    <Text fontWeight="800">{item.name || item.description || '-'}</Text>
+                                    <Text color={mutedColor} fontSize="xs">{supplyModeLabel(item.supplyMode)}</Text>
+                                  </Box>
+                                  <Box w="130px">{item.model || item.sku || item.producer || '-'}</Box>
+                                  <Box w="90px" textAlign="right">{Number(item.quantity || 0)}</Box>
+                                  <Box w="145px" textAlign="right" fontWeight="800">{formatMoney(item.saleGross)} PLN</Box>
+                                </Flex>
+                              ))}
+                            </Box>
+                          </Box>
+                        ) : (
+                          <Text color={mutedColor}>Zaakceptowana oferta nie ma snapshotu pozycji.</Text>
+                        )}
+                      </Card>
+                    ) : (
+                      <Card p="22px">
+                        <Text color={textColor} fontSize="lg" fontWeight="800" mb="8px">Brak urządzeń do pokazania</Text>
+                        <Text color={mutedColor}>
+                          Na etapie kilku wariantów ofert nie pokazujemy tutaj urządzeń, bo nie wiadomo jeszcze, który wariant jest finalny.
+                          Po akceptacji oferty pokażemy projektowany zakres, a po montażu właściwe zamontowane urządzenia.
+                        </Text>
+                      </Card>
+                    )}
+                  </Flex>
+                </TabPanel>
+              );
+            }
+
             if (tab === 'EMS / Audyt') {
               return (
                 <TabPanel key={tab} px="0">
@@ -1187,7 +1954,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
               );
             }
 
-            if (tab === 'Faktury iOSD') {
+            if (tab === 'Faktury i OSD') {
               return (
                 <TabPanel key={tab} px="0">
                   <Card p="22px">
@@ -1236,10 +2003,18 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
                     <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px">
                       <FormControl>
-                        <FormLabel>Operator</FormLabel>
+                        <FormLabel>OSD</FormLabel>
                         <Select value={energyAccount.operator} onChange={(event) => updateEnergyAccount('operator', event.target.value)}>
-                          {energyOperators.map(([value, label]) => (
+                          {energyOperatorOptions.map(([value, label]) => (
                             <option key={value} value={value}>{label}</option>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>Taryfa</FormLabel>
+                        <Select value={energyAccount.tariff} onChange={(event) => updateEnergyAccount('tariff', event.target.value)}>
+                          {getEnergyTariffs(energyAccount.operator).map((tariff) => (
+                            <option key={tariff.code} value={tariff.code}>{tariff.label}</option>
                           ))}
                         </Select>
                       </FormControl>
@@ -1266,10 +2041,6 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                           <FormControl>
                             <FormLabel>ID PPE w portalu</FormLabel>
                             <Input value={energyAccount.portalPpeId} onChange={(event) => updateEnergyAccount('portalPpeId', event.target.value)} />
-                          </FormControl>
-                          <FormControl>
-                            <FormLabel>Numer licznika</FormLabel>
-                            <Input value={energyAccount.meterNumber} onChange={(event) => updateEnergyAccount('meterNumber', event.target.value)} />
                           </FormControl>
                         </>
                       ) : (

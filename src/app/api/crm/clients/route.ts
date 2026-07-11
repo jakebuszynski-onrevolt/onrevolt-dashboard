@@ -30,6 +30,7 @@ const energyPortalAccountSelect = {
   projectId: true,
   operator: true,
   login: true,
+  tariff: true,
   ppeNumber: true,
   portalPpeId: true,
   meterNumber: true,
@@ -197,7 +198,57 @@ export async function GET(req: NextRequest) {
             include: {
               ...projectInclude,
               tasks: true,
-              configurations: true,
+              configurations: {
+                include: {
+                  items: {
+                    include: { product: true },
+                    orderBy: { position: 'asc' },
+                  },
+                },
+                orderBy: { updatedAt: 'desc' },
+              },
+              offers: {
+                include: {
+                  configuration: true,
+                  contracts: true,
+                  documents: { orderBy: { createdAt: 'desc' } },
+                },
+                orderBy: { updatedAt: 'desc' },
+              },
+              installations: {
+                include: {
+                  offer: true,
+                  configuration: true,
+                  teamLead: {
+                    select: { id: true, name: true, email: true, avatarUrl: true, positionTitle: true },
+                  },
+                  teamMembers: {
+                    include: {
+                      staffUser: {
+                        select: { id: true, name: true, email: true, avatarUrl: true, positionTitle: true },
+                      },
+                    },
+                    orderBy: [{ isLead: 'desc' }, { assignedAt: 'asc' }],
+                  },
+                  checklistItems: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
+                  plannedItems: {
+                    include: { product: true },
+                    orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+                  },
+                  tasks: {
+                    include: {
+                      assignedTo: { select: { id: true, name: true, email: true, avatarUrl: true, positionTitle: true } },
+                    },
+                    orderBy: [{ status: 'asc' }, { dueAt: 'asc' }],
+                  },
+                  documents: { orderBy: { createdAt: 'desc' } },
+                  installedDevices: {
+                    include: { product: true, plannedItem: true },
+                    orderBy: { updatedAt: 'desc' },
+                  },
+                },
+                orderBy: { updatedAt: 'desc' },
+              },
               documents: true,
             },
             orderBy: { updatedAt: 'desc' },
