@@ -76,9 +76,31 @@ enum ReminderChannel {
   EMAIL
 }
 
+enum ActivityType {
+  CALL
+  EMAIL
+  MEETING
+  NOTE
+  STATUS_CHANGE
+  SYSTEM
+}
+
+enum EnergyAuditStatus {
+  DRAFT
+  READY
+  APPROVED
+}
+
+enum EnergyProfileSource {
+  ANNUAL_DECLARATION
+  MONTHLY_MANUAL
+  OPERATOR_HOURLY
+}
+
 enum ProductCategory {
   MAGAZYN_ENERGII
   FALOWNIK
+  INWERTER
   FOTOWOLTAIKA
   LICZNIK_GRID
   OSPRZET_ELEKTRONIKA
@@ -200,6 +222,42 @@ enum InstallationStatus {
   SERVICE_REQUIRED
 }
 
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  PARTIAL
+  DELIVERED
+  CANCELLED
+}
+
+enum StockReservationStatus {
+  RESERVED
+  RELEASED
+  ISSUED
+  CANCELLED
+}
+
+enum OdsCaseStatus {
+  PREPARATION
+  READY_TO_SUBMIT
+  SUBMITTED
+  CORRECTION_REQUIRED
+  ACCEPTED
+  METER_WORK
+  COMPLETED
+  CANCELLED
+}
+
+enum ServiceTicketStatus {
+  NEW
+  DIAGNOSIS
+  SCHEDULED
+  IN_PROGRESS
+  WAITING_PARTS
+  RESOLVED
+  CLOSED
+}
+
 enum DocumentType {
   FAKTURA_PRAD
   ENEA_ZUZYCIE
@@ -282,12 +340,32 @@ model StaffUser {
   installationTeams       InstallationTeamMember[]
   completedChecklistItems InstallationChecklistItem[] @relation("InstallationChecklistCompletedBy")
   auditLogs               AuditLog[]                  @relation("AuditActor")
+  sessions                StaffSession[]
+  activities              Activity[]
+  energyScenariosCreated  EnergyScenario[]
+  assignedServiceTickets  ServiceTicket[]             @relation("ServiceTicketAssignee")
   createdAt               DateTime                    @default(now())
   updatedAt               DateTime                    @updatedAt
 
   @@index([roleId])
   @@index([systemRole])
   @@index([active])
+}
+
+model StaffSession {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique @db.Char(64)
+  staffUserId String
+  staffUser   StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  lastSeenAt  DateTime  @default(now())
+  revokedAt   DateTime?
+  userAgent   String?   @db.VarChar(500)
+  ipHash      String?   @db.Char(64)
+  createdAt   DateTime  @default(now())
+
+  @@index([staffUserId, revokedAt, expiresAt])
+  @@index([expiresAt])
 }
 
 model StaffUserCompanyRole {
@@ -317,6 +395,8 @@ model Client {
   energyPortalAccounts   EnergyPortalAccount[]
   energyMeasurementFiles EnergyMeasurementFile[]
   auditLogs              AuditLog[]
+  activities             Activity[]
+  serviceTickets         ServiceTicket[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 
@@ -370,15 +450,22 @@ model InvestmentSite {
 }
 
 model PipelineStage {
-  id               String    @id @default(cuid())
-  name             String
-  sortOrder        Int
-  color            String?
-  isTerminal       Boolean   @default(false)
-  pipedriveStageId String?   @unique
-  projects         Project[]
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                 String         @id @default(cuid())
+  code               String?        @unique
+  name               String
+  sortOrder          Int
+  color              String?
+  status             ProjectStatus  @default(W_TRAKCIE_OBSLUGI)
+  isTerminal         Boolean        @default(false)
+  isActive           Boolean        @default(true)
+  requiresOwner      Boolean        @default(true)
+  requiresNextAction Boolean        @default(true)
+  source             String         @default("LOCAL")
+  pipedriveStageId   String?        @unique
+  projects           Project[]
+  workflowRules      WorkflowRule[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   @@index([sortOrder])
 }
@@ -396,6 +483,9 @@ model Project {
   stage                  PipelineStage?          @relation(fields: [stageId], references: [id])
   ownerId                String?
   owner                  StaffUser?              @relation("ProjectOwner", fields: [ownerId], references: [id])
+  nextActionTitle        String?
+  nextActionAt           DateTime?
+  closedAt               DateTime?
   source                 String?
   pipedriveDealId        String?                 @unique
   dashboardStation       String?
@@ -416,6 +506,12 @@ model Project {
   documents              Document[]
   energyPortalAccounts   EnergyPortalAccount[]
   energyMeasurementFiles EnergyMeasurementFile[]
+  activities             Activity[]
+  energyAudits           EnergyAudit[]
+  purchaseOrders         PurchaseOrder[]
+  stockReservations      StockReservation[]
+  odsCase                OdsCase?
+  serviceTickets         ServiceTicket[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 
@@ -425,9 +521,98 @@ model Project {
   @@index([stageId])
   @@index([ownerId])
   @@index([status])
+  @@index([nextActionAt])
   @@index([source])
   @@index([dashboardStation])
   @@index([dashboardStationNumber])
+}
+
+model EnergyAudit {
+  id                   String                 @id @default(cuid())
+  projectId            String                 @unique
+  project              Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status               EnergyAuditStatus      @default(DRAFT)
+  profileSource        EnergyProfileSource    @default(ANNUAL_DECLARATION)
+  annualConsumptionKwh Decimal?               @db.Decimal(12, 3)
+  connectionPowerKw    Decimal?               @db.Decimal(10, 3)
+  phaseCount           Int?
+  mainFuseA            Int?
+  roofType             ConfigurationRoofType?
+  roofAreaM2           Decimal?               @db.Decimal(10, 2)
+  roofOrientation      String?
+  roofTiltDeg          Decimal?               @db.Decimal(5, 2)
+  shadingNotes         String?                @db.Text
+  existingPvKw         Decimal?               @db.Decimal(10, 3)
+  existingInverter     String?
+  existingBatteryKwh   Decimal?               @db.Decimal(10, 3)
+  notes                String?                @db.Text
+  scenarios            EnergyScenario[]
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  @@index([projectId, updatedAt])
+  @@index([status])
+}
+
+model EnergyScenario {
+  id                 String      @id @default(cuid())
+  auditId            String
+  audit              EnergyAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  name               String
+  engineVersion      String
+  inputSnapshot      Json
+  resultSnapshot     Json
+  pvPowerKw          Decimal     @db.Decimal(10, 3)
+  batteryCapacityKwh Decimal     @db.Decimal(10, 3)
+  investmentGross    Decimal?    @db.Decimal(12, 2)
+  recommended        Boolean     @default(false)
+  createdById        String?
+  createdBy          StaffUser?  @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  offers             Offer[]
+  createdAt          DateTime    @default(now())
+
+  @@index([auditId, createdAt])
+  @@index([createdById])
+  @@index([recommended])
+}
+
+model Activity {
+  id           String       @id @default(cuid())
+  type         ActivityType
+  title        String
+  body         String?      @db.Text
+  clientId     String?
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  projectId    String?
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  actorId      String?
+  actor        StaffUser?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  occurredAt   DateTime     @default(now())
+  nextActionAt DateTime?
+  metadata     Json?
+  createdAt    DateTime     @default(now())
+
+  @@index([clientId, occurredAt])
+  @@index([projectId, occurredAt])
+  @@index([actorId, occurredAt])
+  @@index([type, occurredAt])
+}
+
+model WorkflowRule {
+  id              String        @id @default(cuid())
+  name            String
+  triggerStageId  String
+  triggerStage    PipelineStage @relation(fields: [triggerStageId], references: [id], onDelete: Cascade)
+  active          Boolean       @default(true)
+  taskTitle       String
+  taskDescription String?       @db.Text
+  taskPriority    TaskPriority  @default(NORMAL)
+  dueOffsetDays   Int           @default(2)
+  assignToOwner   Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([triggerStageId, active])
 }
 
 model Task {
@@ -548,6 +733,8 @@ model Product {
   existingAssets           ProjectExistingAsset[]
   installationPlannedItems InstallationPlannedItem[]
   installed                InstalledDevice[]
+  purchaseOrderItems       PurchaseOrderItem[]
+  stockReservations        StockReservation[]
   createdAt                DateTime                    @default(now())
   updatedAt                DateTime                    @updatedAt
 
@@ -663,6 +850,7 @@ model Configuration {
   items                  ConfigurationItem[]
   offers                 Offer[]
   installations          Installation[]
+  stockReservations      StockReservation[]
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 
@@ -730,31 +918,33 @@ model ProjectExistingAsset {
 }
 
 model Offer {
-  id                       String         @id @default(cuid())
+  id                       String          @id @default(cuid())
   projectId                String
-  project                  Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project                  Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   configurationId          String?
-  configuration            Configuration? @relation(fields: [configurationId], references: [id], onDelete: SetNull)
+  configuration            Configuration?  @relation(fields: [configurationId], references: [id], onDelete: SetNull)
+  energyScenarioId         String?
+  energyScenario           EnergyScenario? @relation(fields: [energyScenarioId], references: [id], onDelete: SetNull)
   number                   String?
   title                    String?
-  version                  Int            @default(1)
-  status                   OfferStatus    @default(DRAFT)
-  currency                 String         @default("PLN")
-  totalNet                 Decimal        @default(0) @db.Decimal(12, 2)
-  totalGross               Decimal        @default(0) @db.Decimal(12, 2)
-  subsidyGross             Decimal        @default(0) @db.Decimal(12, 2)
-  thermoReliefGross        Decimal        @default(0) @db.Decimal(12, 2)
-  totalAfterSupportGross   Decimal        @default(0) @db.Decimal(12, 2)
-  currentAnnualBillGross   Decimal        @default(0) @db.Decimal(12, 2)
-  projectedAnnualBillGross Decimal        @default(0) @db.Decimal(12, 2)
-  annualSavingsGross       Decimal        @default(0) @db.Decimal(12, 2)
-  paybackYears             Decimal?       @db.Decimal(8, 2)
+  version                  Int             @default(1)
+  status                   OfferStatus     @default(DRAFT)
+  currency                 String          @default("PLN")
+  totalNet                 Decimal         @default(0) @db.Decimal(12, 2)
+  totalGross               Decimal         @default(0) @db.Decimal(12, 2)
+  subsidyGross             Decimal         @default(0) @db.Decimal(12, 2)
+  thermoReliefGross        Decimal         @default(0) @db.Decimal(12, 2)
+  totalAfterSupportGross   Decimal         @default(0) @db.Decimal(12, 2)
+  currentAnnualBillGross   Decimal         @default(0) @db.Decimal(12, 2)
+  projectedAnnualBillGross Decimal         @default(0) @db.Decimal(12, 2)
+  annualSavingsGross       Decimal         @default(0) @db.Decimal(12, 2)
+  paybackYears             Decimal?        @db.Decimal(8, 2)
   tariffBefore             String?
   tariffAfter              String?
   settlementBefore         String?
   settlementAfter          String?
-  descriptionBefore        String?        @db.Text
-  descriptionAfter         String?        @db.Text
+  descriptionBefore        String?         @db.Text
+  descriptionAfter         String?         @db.Text
   lineItemsSnapshot        Json?
   energySnapshot           Json?
   calculationSnapshot      Json?
@@ -762,68 +952,142 @@ model Offer {
   validUntil               DateTime?
   sentAt                   DateTime?
   acceptedAt               DateTime?
-  notes                    String?        @db.Text
+  notes                    String?         @db.Text
   contracts                Contract[]
   documents                Document[]
   installations            Installation[]
-  createdAt                DateTime       @default(now())
-  updatedAt                DateTime       @updatedAt
+  purchaseOrders           PurchaseOrder[]
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
 
   @@index([projectId])
   @@index([configurationId])
+  @@index([energyScenarioId])
   @@index([status])
 }
 
 model Contract {
-  id        String         @id @default(cuid())
-  projectId String
-  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  offerId   String?
-  offer     Offer?         @relation(fields: [offerId], references: [id], onDelete: SetNull)
-  number    String?
-  status    ContractStatus @default(DRAFT)
-  signedAt  DateTime?
-  saleGross Decimal?       @db.Decimal(12, 2)
-  deposit   Decimal?       @db.Decimal(12, 2)
-  notes     String?        @db.Text
-  documents Document[]
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  id                 String         @id @default(cuid())
+  projectId          String
+  project            Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  offerId            String?
+  offer              Offer?         @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  number             String?
+  status             ContractStatus @default(DRAFT)
+  signedAt           DateTime?
+  saleGross          Decimal?       @db.Decimal(12, 2)
+  deposit            Decimal?       @db.Decimal(12, 2)
+  depositPercent     Decimal?       @db.Decimal(5, 2)
+  paymentSchedule    Json?
+  commercialSnapshot Json?
+  notes              String?        @db.Text
+  documents          Document[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   @@index([projectId])
   @@index([offerId])
   @@index([status])
 }
 
+model PurchaseOrder {
+  id          String              @id @default(cuid())
+  number      String              @unique
+  projectId   String
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  offerId     String?
+  offer       Offer?              @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  supplier    String
+  status      PurchaseOrderStatus @default(DRAFT)
+  orderedAt   DateTime?
+  expectedAt  DateTime?
+  deliveredAt DateTime?
+  notes       String?             @db.Text
+  items       PurchaseOrderItem[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([projectId])
+  @@index([offerId])
+  @@index([supplier])
+  @@index([status, expectedAt])
+}
+
+model PurchaseOrderItem {
+  id               String             @id @default(cuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId        String?
+  product          Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
+  name             String
+  supplierSku      String?
+  quantity         Decimal            @db.Decimal(12, 3)
+  receivedQuantity Decimal            @default(0) @db.Decimal(12, 3)
+  unitPurchaseNet  Decimal?           @db.Decimal(12, 2)
+  reservations     StockReservation[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+}
+
+model StockReservation {
+  id                  String                 @id @default(cuid())
+  projectId           String
+  project             Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  configurationId     String?
+  configuration       Configuration?         @relation(fields: [configurationId], references: [id], onDelete: SetNull)
+  productId           String?
+  product             Product?               @relation(fields: [productId], references: [id], onDelete: SetNull)
+  purchaseOrderItemId String?
+  purchaseOrderItem   PurchaseOrderItem?     @relation(fields: [purchaseOrderItemId], references: [id], onDelete: SetNull)
+  installationId      String?
+  installation        Installation?          @relation(fields: [installationId], references: [id], onDelete: SetNull)
+  name                String
+  quantity            Decimal                @db.Decimal(12, 3)
+  status              StockReservationStatus @default(RESERVED)
+  notes               String?                @db.Text
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  @@index([projectId, status])
+  @@index([configurationId])
+  @@index([productId])
+  @@index([purchaseOrderItemId])
+  @@index([installationId])
+}
+
 model Installation {
-  id               String                      @id @default(cuid())
-  projectId        String
-  project          Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  offerId          String?
-  offer            Offer?                      @relation(fields: [offerId], references: [id], onDelete: SetNull)
-  configurationId  String?
-  configuration    Configuration?              @relation(fields: [configurationId], references: [id], onDelete: SetNull)
-  status           InstallationStatus          @default(TO_SCHEDULE)
-  plannedAt        DateTime?
-  plannedEndAt     DateTime?
-  confirmedAt      DateTime?
-  startedAt        DateTime?
-  completedAt      DateTime?
-  teamLeadId       String?
-  teamLead         StaffUser?                  @relation("InstallationTeamLead", fields: [teamLeadId], references: [id], onDelete: SetNull)
-  address          String?
-  contactName      String?
-  contactPhone     String?
-  notes            String?                     @db.Text
-  internalNotes    String?                     @db.Text
-  tasks            Task[]
-  teamMembers      InstallationTeamMember[]
-  checklistItems   InstallationChecklistItem[]
-  plannedItems     InstallationPlannedItem[]
-  installedDevices InstalledDevice[]
-  documents        Document[]
-  createdAt        DateTime                    @default(now())
-  updatedAt        DateTime                    @updatedAt
+  id                String                      @id @default(cuid())
+  projectId         String
+  project           Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  offerId           String?
+  offer             Offer?                      @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  configurationId   String?
+  configuration     Configuration?              @relation(fields: [configurationId], references: [id], onDelete: SetNull)
+  status            InstallationStatus          @default(TO_SCHEDULE)
+  plannedAt         DateTime?
+  plannedEndAt      DateTime?
+  confirmedAt       DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  teamLeadId        String?
+  teamLead          StaffUser?                  @relation("InstallationTeamLead", fields: [teamLeadId], references: [id], onDelete: SetNull)
+  address           String?
+  contactName       String?
+  contactPhone      String?
+  notes             String?                     @db.Text
+  internalNotes     String?                     @db.Text
+  tasks             Task[]
+  teamMembers       InstallationTeamMember[]
+  checklistItems    InstallationChecklistItem[]
+  plannedItems      InstallationPlannedItem[]
+  installedDevices  InstalledDevice[]
+  documents         Document[]
+  stockReservations StockReservation[]
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
 
   @@index([projectId])
   @@index([offerId])
@@ -901,8 +1165,12 @@ model InstalledDevice {
   serialNumber   String?
   parameters     Json?
   installedAt    DateTime?
+  commissionedAt DateTime?
+  warrantyMonths Int?
+  warrantyUntil  DateTime?
   notes          String?                  @db.Text
   documents      Document[]
+  serviceTickets ServiceTicket[]
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
 
@@ -910,6 +1178,74 @@ model InstalledDevice {
   @@index([plannedItemId])
   @@index([productId])
   @@index([serialNumber])
+}
+
+model OdsCase {
+  id                String             @id @default(cuid())
+  projectId         String             @unique
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  operator          EnergyOperator
+  ppeNumber         String?
+  applicationNumber String?
+  status            OdsCaseStatus      @default(PREPARATION)
+  submittedAt       DateTime?
+  deadlineAt        DateTime?
+  acceptedAt        DateTime?
+  completedAt       DateTime?
+  notes             String?            @db.Text
+  checklistItems    OdsChecklistItem[]
+  documents         Document[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([status, deadlineAt])
+  @@index([operator])
+}
+
+model OdsChecklistItem {
+  id          String    @id @default(cuid())
+  odsCaseId   String
+  odsCase     OdsCase   @relation(fields: [odsCaseId], references: [id], onDelete: Cascade)
+  title       String
+  required    Boolean   @default(true)
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  sortOrder   Int       @default(0)
+  notes       String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([odsCaseId, sortOrder])
+}
+
+model ServiceTicket {
+  id                String              @id @default(cuid())
+  number            String              @unique
+  clientId          String
+  client            Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  projectId         String?
+  project           Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  installedDeviceId String?
+  installedDevice   InstalledDevice?    @relation(fields: [installedDeviceId], references: [id], onDelete: SetNull)
+  assignedToId      String?
+  assignedTo        StaffUser?          @relation("ServiceTicketAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  title             String
+  description       String              @db.Text
+  status            ServiceTicketStatus @default(NEW)
+  priority          TaskPriority        @default(NORMAL)
+  warrantyClaim     Boolean             @default(false)
+  dueAt             DateTime?
+  resolvedAt        DateTime?
+  resolution        String?             @db.Text
+  documents         Document[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([clientId, status])
+  @@index([projectId])
+  @@index([installedDeviceId])
+  @@index([assignedToId, status])
+  @@index([dueAt])
 }
 
 model Document {
@@ -933,10 +1269,21 @@ model Document {
   installation           Installation?           @relation(fields: [installationId], references: [id], onDelete: SetNull)
   installedDeviceId      String?
   installedDevice        InstalledDevice?        @relation(fields: [installedDeviceId], references: [id], onDelete: SetNull)
+  odsCaseId              String?
+  odsCase                OdsCase?                @relation(fields: [odsCaseId], references: [id], onDelete: SetNull)
+  serviceTicketId        String?
+  serviceTicket          ServiceTicket?          @relation(fields: [serviceTicketId], references: [id], onDelete: SetNull)
   energyMeasurementFiles EnergyMeasurementFile[]
   uploadedById           String?
   uploadedBy             StaffUser?              @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   visibleToClient        Boolean                 @default(false)
+  documentDate           DateTime?
+  tags                   Json?
+  billingPeriodFrom      DateTime?
+  billingPeriodTo        DateTime?
+  billingCycleMonths     Int?
+  invoiceNumber          String?
+  amountGross            Decimal?                @db.Decimal(12, 2)
   notes                  String?                 @db.Text
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
@@ -944,7 +1291,11 @@ model Document {
   @@index([clientId])
   @@index([projectId])
   @@index([type])
+  @@index([documentDate])
+  @@index([billingPeriodFrom, billingPeriodTo])
   @@index([sha256])
+  @@index([odsCaseId])
+  @@index([serviceTicketId])
 }
 
 model EnergyPortalAccount {

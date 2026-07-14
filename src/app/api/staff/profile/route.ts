@@ -1,9 +1,11 @@
 import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, optionalString, readJsonObject, serverError, unauthorized } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
-import { getCurrentStaffUser, serializeStaffUser, staffUserInclude } from 'lib/onrevolt/staff-server';
+import { authorizeStaffRequest, getCurrentStaffUser, serializeStaffUser, staffUserInclude } from 'lib/onrevolt/staff-server';
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req);
+  if (!access.ok) return access.response;
   try {
     const user = await getCurrentStaffUser(req);
     if (!user) return unauthorized();
@@ -14,6 +16,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const access = await authorizeStaffRequest(req);
+  if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();

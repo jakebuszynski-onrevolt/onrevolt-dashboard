@@ -16,6 +16,8 @@ import {
   IconButton,
   Image,
   Input,
+  InputGroup,
+  InputRightElement,
   Link,
   Modal,
   ModalBody,
@@ -39,6 +41,7 @@ import {
 } from '@chakra-ui/react';
 import Card from 'components/card/Card';
 import { calculateConfigurationLine } from 'lib/onrevolt/calculator';
+import { percentFormValueToRate, rateToPercentFormValue } from 'lib/onrevolt/percentage';
 import { useEffect, useMemo, useState } from 'react';
 import {
   MdAdd,
@@ -73,6 +76,13 @@ type ProductMedia = {
   altText?: string | null;
   sortOrder: number;
 };
+
+function mediaHref(media: ProductMedia) {
+  if (media.storagePath || media.url?.startsWith('/uploads/catalog/products/')) {
+    return `/api/catalog/media/${encodeURIComponent(media.id)}/file`;
+  }
+  return media.url || '';
+}
 
 type ProductMediaKind = 'datasheet' | 'manual' | 'certificate' | 'warranty' | 'document' | 'image';
 type ProductDocumentKind = Exclude<ProductMediaKind, 'image'>;
@@ -144,6 +154,7 @@ type ProductEditForm = {
 const categoryLabels: Record<string, string> = {
   MAGAZYN_ENERGII: 'Magazyn energii',
   FALOWNIK: 'Falownik',
+  INWERTER: 'Inwerter',
   FOTOWOLTAIKA: 'Fotowoltaika',
   LICZNIK_GRID: 'Licznik Grid',
   OSPRZET_ELEKTRONIKA: 'Osprzęt / elektronika',
@@ -272,10 +283,10 @@ function editFormFromProduct(product: ProductRow): ProductEditForm {
     sourceRow: product.sourceRow == null ? '' : String(product.sourceRow),
     purchaseNet: formValue(price?.purchaseNet),
     currentPurchaseNet: formValue(price?.currentPurchaseNet),
-    purchaseVatRate: formValue(price?.purchaseVatRate),
+    purchaseVatRate: rateToPercentFormValue(price?.purchaseVatRate),
     operatingCostNet: formValue(price?.operatingCostNet),
-    marginRate: formValue(price?.marginRate),
-    saleVatRate: formValue(price?.saleVatRate),
+    marginRate: rateToPercentFormValue(price?.marginRate),
+    saleVatRate: rateToPercentFormValue(price?.saleVatRate),
     currency: price?.currency || 'PLN',
   };
 }
@@ -298,10 +309,10 @@ function buildPricePayload(form: ProductEditForm) {
   return {
     purchaseNet: form.purchaseNet,
     currentPurchaseNet: form.currentPurchaseNet.trim() ? form.currentPurchaseNet : null,
-    purchaseVatRate: form.purchaseVatRate,
+    purchaseVatRate: percentFormValueToRate(form.purchaseVatRate),
     operatingCostNet: form.operatingCostNet,
-    marginRate: form.marginRate,
-    saleVatRate: form.saleVatRate,
+    marginRate: percentFormValueToRate(form.marginRate),
+    saleVatRate: percentFormValueToRate(form.saleVatRate),
     currency: form.currency.trim() || 'PLN',
   };
 }
@@ -328,6 +339,7 @@ export default function CatalogWorkspace() {
   const [sortingMediaId, setSortingMediaId] = useState('');
   const [updatingMediaKindId, setUpdatingMediaKindId] = useState('');
   const [selectedPdfKind, setSelectedPdfKind] = useState<ProductDocumentKind>('document');
+  const [productModalError, setProductModalError] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const textColor = useColorModeValue('secondaryGray.900', 'white');
@@ -357,6 +369,7 @@ export default function CatalogWorkspace() {
     setEditingProduct(null);
     setEditForm(null);
     setProductModalMode('edit');
+    setProductModalError('');
   }
 
   function openCreate() {
@@ -365,6 +378,7 @@ export default function CatalogWorkspace() {
     setEditForm(emptyProductForm);
     setError('');
     setNotice('');
+    setProductModalError('');
   }
 
   function openEdit(product: ProductRow) {
@@ -373,6 +387,7 @@ export default function CatalogWorkspace() {
     setEditForm(editFormFromProduct(product));
     setError('');
     setNotice('');
+    setProductModalError('');
   }
 
   function updateEditField(field: keyof ProductEditForm, value: string) {
@@ -384,7 +399,7 @@ export default function CatalogWorkspace() {
     if (productModalMode === 'edit' && !editingProduct) return;
 
     setSavingProduct(true);
-    setError('');
+    setProductModalError('');
     setNotice('');
     try {
       if (!editForm.name.trim()) {
@@ -434,7 +449,7 @@ export default function CatalogWorkspace() {
       closeProductModal();
       setNotice(productModalMode === 'edit' ? `Zapisano produkt: ${saved.name}` : `Dodano towar: ${saved.name}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setProductModalError(e instanceof Error ? e.message : String(e));
     } finally {
       setSavingProduct(false);
     }
@@ -732,7 +747,7 @@ export default function CatalogWorkspace() {
                     <Td minW="260px">
                       <Flex gap="8px" wrap="wrap" align="center" mb="10px">
                         {product.media?.length ? sortMediaItems(product.media).map((media) => {
-                          const href = media.url || media.storagePath || '';
+                          const href = mediaHref(media);
                           return (
                             <Link
                               key={media.id}
@@ -752,9 +767,9 @@ export default function CatalogWorkspace() {
                         )}
                       </Flex>
 
-                      {product.media?.find((media) => media.kind === 'image' && media.url) ? (
+                      {product.media?.find((media) => media.kind === 'image' && (media.url || media.storagePath)) ? (
                         <Image
-                          src={product.media.find((media) => media.kind === 'image' && media.url)?.url || ''}
+                          src={mediaHref(product.media.find((media) => media.kind === 'image' && (media.url || media.storagePath))!)}
                           alt={product.name}
                           boxSize="44px"
                           objectFit="contain"
@@ -849,6 +864,12 @@ export default function CatalogWorkspace() {
           <ModalHeader color={textColor}>{productModalMode === 'edit' ? 'Edytuj produkt' : 'Nowy towar'}</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
+            {productModalError ? (
+              <Alert status="error" borderRadius="8px" mb="16px">
+                <AlertIcon />
+                <AlertDescription>{productModalError}</AlertDescription>
+              </Alert>
+            ) : null}
             {editForm ? (
               <Box>
                 <SimpleGrid columns={{ base: 1, md: 2 }} gap="14px">
@@ -948,20 +969,29 @@ export default function CatalogWorkspace() {
                     <Input value={editForm.currency} onChange={(event) => updateEditField('currency', event.target.value)} />
                   </FormControl>
                   <FormControl>
-                    <FormLabel>VAT zakupu</FormLabel>
-                    <Input value={editForm.purchaseVatRate} inputMode="decimal" onChange={(event) => updateEditField('purchaseVatRate', event.target.value)} />
+                    <FormLabel>VAT zakupu (%)</FormLabel>
+                    <InputGroup>
+                      <Input value={editForm.purchaseVatRate} inputMode="decimal" pe="38px" onChange={(event) => updateEditField('purchaseVatRate', event.target.value)} />
+                      <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
+                    </InputGroup>
                   </FormControl>
                   <FormControl>
                     <FormLabel>Koszty operacyjne</FormLabel>
                     <Input value={editForm.operatingCostNet} inputMode="decimal" onChange={(event) => updateEditField('operatingCostNet', event.target.value)} />
                   </FormControl>
                   <FormControl>
-                    <FormLabel>Marża</FormLabel>
-                    <Input value={editForm.marginRate} inputMode="decimal" onChange={(event) => updateEditField('marginRate', event.target.value)} />
+                    <FormLabel>Marża (%)</FormLabel>
+                    <InputGroup>
+                      <Input value={editForm.marginRate} inputMode="decimal" pe="38px" onChange={(event) => updateEditField('marginRate', event.target.value)} />
+                      <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
+                    </InputGroup>
                   </FormControl>
                   <FormControl>
-                    <FormLabel>VAT sprzedaży</FormLabel>
-                    <Input value={editForm.saleVatRate} inputMode="decimal" onChange={(event) => updateEditField('saleVatRate', event.target.value)} />
+                    <FormLabel>VAT sprzedaży (%)</FormLabel>
+                    <InputGroup>
+                      <Input value={editForm.saleVatRate} inputMode="decimal" pe="38px" onChange={(event) => updateEditField('saleVatRate', event.target.value)} />
+                      <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
+                    </InputGroup>
                   </FormControl>
                 </SimpleGrid>
 
@@ -971,7 +1001,7 @@ export default function CatalogWorkspace() {
                 {editingProduct?.media?.length ? (
                   <Flex gap="10px" wrap="wrap">
                     {sortMediaItems(editingProduct.media).map((media, index, orderedMedia) => {
-                      const href = media.url || media.storagePath || '';
+                      const href = mediaHref(media);
                       return (
                         <Flex
                           key={media.id}

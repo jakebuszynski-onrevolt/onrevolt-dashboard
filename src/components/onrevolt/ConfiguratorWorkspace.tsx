@@ -17,6 +17,12 @@ import {
   Icon,
   IconButton,
   Input,
+  InputGroup,
+  InputRightElement,
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuList,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -24,6 +30,7 @@ import {
   ModalFooter,
   ModalHeader,
   ModalOverlay,
+  Portal,
   Select,
   SimpleGrid,
   Spinner,
@@ -39,9 +46,11 @@ import {
   Tr,
   VStack,
   useColorModeValue,
+  useDisclosure,
 } from '@chakra-ui/react';
 import Card from 'components/card/Card';
 import { calculateConfigurationLine } from 'lib/onrevolt/calculator';
+import { percentFormValueToRate, rateToPercentFormValue } from 'lib/onrevolt/percentage';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   MdAdd,
@@ -287,7 +296,7 @@ function formatNumber(value: string | number | null | undefined, maximumFraction
 
 function roleFromProduct(product?: ProductRow) {
   if (!product) return 'OTHER';
-  if (product.category === 'FOTOWOLTAIKA' || product.category === 'FALOWNIK' || product.category === 'MAGAZYN_ENERGII') return 'MAIN_EQUIPMENT';
+  if (product.category === 'FOTOWOLTAIKA' || product.category === 'FALOWNIK' || product.category === 'INWERTER' || product.category === 'MAGAZYN_ENERGII') return 'MAIN_EQUIPMENT';
   if (product.category === 'USLUGA_MONTAZOWA') return 'LABOR';
   if (product.category === 'KOSZTY_OPERACYJNE') return 'FORMALITIES';
   if (product.category === 'MONITOROWANIE' || product.category === 'SYSTEM_MONITORUJACY') return 'MONITORING';
@@ -308,10 +317,10 @@ function itemFromTemplate(item: TemplateItemRow): ConfigItemForm {
     role: item.role || roleFromProduct(item.product || undefined),
     supplyMode: item.supplyMode || 'ONREVOLT_SUPPLIED',
     unitPurchaseNet: formValue(item.unitPurchaseNet),
-    purchaseVatRate: formValue(item.purchaseVatRate),
+    purchaseVatRate: rateToPercentFormValue(item.purchaseVatRate),
     operatingCostNet: formValue(item.operatingCostNet),
-    marginRate: formValue(item.marginRate),
-    saleVatRate: formValue(item.saleVatRate),
+    marginRate: rateToPercentFormValue(item.marginRate),
+    saleVatRate: rateToPercentFormValue(item.saleVatRate),
     isOptional: Boolean(item.isOptional),
     requiresReview: Boolean(item.requiresReview),
     sourceSheet: item.sourceSheet,
@@ -331,10 +340,10 @@ function itemFromProduct(product?: ProductRow, position = 1): ConfigItemForm {
     role,
     supplyMode: supplyModeFromRole(role),
     unitPurchaseNet: formValue(price?.currentPurchaseNet ?? price?.purchaseNet ?? ''),
-    purchaseVatRate: formValue(price?.purchaseVatRate ?? '0.23'),
+    purchaseVatRate: rateToPercentFormValue(price?.purchaseVatRate ?? '0.23'),
     operatingCostNet: formValue(price?.operatingCostNet ?? '0'),
-    marginRate: formValue(price?.marginRate ?? '0.3'),
-    saleVatRate: formValue(price?.saleVatRate ?? '0.23'),
+    marginRate: rateToPercentFormValue(price?.marginRate ?? '0.3'),
+    saleVatRate: rateToPercentFormValue(price?.saleVatRate ?? '0.23'),
     isOptional: false,
     requiresReview: false,
     notes: '',
@@ -357,10 +366,19 @@ function pricedInput(item: ConfigItemForm) {
   return {
     quantity: asNumber(item.quantity),
     unitPurchaseNet: asNumber(item.unitPurchaseNet),
-    purchaseVatRate: asNumber(item.purchaseVatRate),
+    purchaseVatRate: percentFormValueToRate(item.purchaseVatRate),
     operatingCostNet: asNumber(item.operatingCostNet),
-    marginRate: asNumber(item.marginRate),
-    saleVatRate: asNumber(item.saleVatRate),
+    marginRate: percentFormValueToRate(item.marginRate),
+    saleVatRate: percentFormValueToRate(item.saleVatRate),
+  };
+}
+
+function itemToPayload(item: ConfigItemForm) {
+  return {
+    ...item,
+    purchaseVatRate: percentFormValueToRate(item.purchaseVatRate),
+    marginRate: percentFormValueToRate(item.marginRate),
+    saleVatRate: percentFormValueToRate(item.saleVatRate),
   };
 }
 
@@ -606,7 +624,7 @@ export default function ConfiguratorWorkspace() {
           requiresExistingPv: goal === 'STORAGE_RETROFIT' || assets.some((asset) => asset.kind === 'PV_MODULES'),
           requiresExistingInverter: assets.some((asset) => asset.kind === 'PV_INVERTER' || asset.kind === 'HYBRID_INVERTER'),
           notes: templateNotes,
-          items,
+          items: items.map(itemToPayload),
         }),
       });
       const result = await response.json();
@@ -712,7 +730,7 @@ export default function ConfiguratorWorkspace() {
         };
       }
 
-      if (hasHybridInverter && (product?.category === 'FALOWNIK' || description.includes('falownik') || description.includes('inverter'))) {
+      if (hasHybridInverter && (product?.category === 'FALOWNIK' || product?.category === 'INWERTER' || description.includes('falownik') || description.includes('inverter'))) {
         return {
           ...item,
           supplyMode: 'CLIENT_OWNED_USED',
@@ -721,7 +739,7 @@ export default function ConfiguratorWorkspace() {
         };
       }
 
-      if (hasPvInverter && (product?.category === 'FALOWNIK' || description.includes('falownik') || description.includes('inverter'))) {
+      if (hasPvInverter && (product?.category === 'FALOWNIK' || product?.category === 'INWERTER' || description.includes('falownik') || description.includes('inverter'))) {
         return {
           ...item,
           requiresReview: true,
@@ -777,7 +795,7 @@ export default function ConfiguratorWorkspace() {
           existingAssetsSnapshot: assets,
           requiresReview: reviewCount > 0,
           reviewNotes: reviewCount > 0 ? `Pozycji do weryfikacji: ${reviewCount}` : undefined,
-          items,
+          items: items.map(itemToPayload),
         }),
       });
       const result = await response.json();
@@ -1106,10 +1124,10 @@ export default function ConfiguratorWorkspace() {
                         <Th color={mutedColor} minW="190px">Tryb</Th>
                         <Th color={mutedColor} minW="118px">Ilość</Th>
                         <Th color={mutedColor} minW="138px">Zakup netto</Th>
-                        <Th color={mutedColor} minW="118px">VAT zakup</Th>
+                        <Th color={mutedColor} minW="128px">VAT zakup (%)</Th>
                         <Th color={mutedColor} minW="138px">Koszt firmy</Th>
-                        <Th color={mutedColor} minW="118px">Marża</Th>
-                        <Th color={mutedColor} minW="118px">VAT sprz.</Th>
+                        <Th color={mutedColor} minW="128px">Marża (%)</Th>
+                        <Th color={mutedColor} minW="128px">VAT sprz. (%)</Th>
                         <Th color={mutedColor} minW="140px">Brutto</Th>
                         <Th color={mutedColor} w="92px">Akcje</Th>
                       </Tr>
@@ -1130,12 +1148,11 @@ export default function ConfiguratorWorkspace() {
                               </HStack>
                             </Td>
                             <Td>
-                              <Select value={item.productId} onChange={(event) => updateItem(index, 'productId', event.target.value)} sx={fieldStyles}>
-                                <option value="">Bez produktu</option>
-                                {products.map((product) => (
-                                  <option key={product.id} value={product.id}>{product.name}</option>
-                                ))}
-                              </Select>
+                              <SearchableProductPicker
+                                value={item.productId}
+                                products={products}
+                                onChange={(value) => updateItem(index, 'productId', value)}
+                              />
                             </Td>
                             <Td>
                               <Select value={item.role} onChange={(event) => updateItem(index, 'role', event.target.value)} sx={fieldStyles}>
@@ -1149,10 +1166,25 @@ export default function ConfiguratorWorkspace() {
                             </Td>
                             <Td minW="118px"><Input value={item.quantity} onChange={(event) => updateItem(index, 'quantity', event.target.value)} sx={numberFieldStyles} /></Td>
                             <Td minW="138px"><Input value={item.unitPurchaseNet} onChange={(event) => updateItem(index, 'unitPurchaseNet', event.target.value)} sx={numberFieldStyles} /></Td>
-                            <Td minW="118px"><Input value={item.purchaseVatRate} onChange={(event) => updateItem(index, 'purchaseVatRate', event.target.value)} sx={numberFieldStyles} /></Td>
+                            <Td minW="128px">
+                              <InputGroup>
+                                <Input value={item.purchaseVatRate} inputMode="decimal" pe="34px" onChange={(event) => updateItem(index, 'purchaseVatRate', event.target.value)} sx={numberFieldStyles} />
+                                <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
+                              </InputGroup>
+                            </Td>
                             <Td minW="138px"><Input value={item.operatingCostNet} onChange={(event) => updateItem(index, 'operatingCostNet', event.target.value)} sx={numberFieldStyles} /></Td>
-                            <Td minW="118px"><Input value={item.marginRate} onChange={(event) => updateItem(index, 'marginRate', event.target.value)} sx={numberFieldStyles} /></Td>
-                            <Td minW="118px"><Input value={item.saleVatRate} onChange={(event) => updateItem(index, 'saleVatRate', event.target.value)} sx={numberFieldStyles} /></Td>
+                            <Td minW="128px">
+                              <InputGroup>
+                                <Input value={item.marginRate} inputMode="decimal" pe="34px" onChange={(event) => updateItem(index, 'marginRate', event.target.value)} sx={numberFieldStyles} />
+                                <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
+                              </InputGroup>
+                            </Td>
+                            <Td minW="128px">
+                              <InputGroup>
+                                <Input value={item.saleVatRate} inputMode="decimal" pe="34px" onChange={(event) => updateItem(index, 'saleVatRate', event.target.value)} sx={numberFieldStyles} />
+                                <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
+                              </InputGroup>
+                            </Td>
                             <Td color={textColor} fontWeight="800">{formatMoney(calculated.saleGross)}</Td>
                             <Td>
                               <Tooltip label="Usuń pozycję">
@@ -1315,5 +1347,124 @@ export default function ConfiguratorWorkspace() {
         </ModalContent>
       </Modal>
     </Box>
+  );
+}
+
+function SearchableProductPicker({
+  value,
+  products,
+  onChange,
+}: {
+  value: string;
+  products: ProductRow[];
+  onChange: (value: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const textColor = useColorModeValue('secondaryGray.900', 'white');
+  const mutedColor = useColorModeValue('secondaryGray.600', 'secondaryGray.400');
+  const fieldBg = useColorModeValue('white', 'navy.900');
+  const menuBg = useColorModeValue('white', 'navy.800');
+  const borderColor = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
+  const hoverBg = useColorModeValue('secondaryGray.100', 'whiteAlpha.100');
+  const selected = products.find((product) => product.id === value);
+  const normalizedQuery = normalizeSearch(query);
+  const visibleProducts = normalizedQuery
+    ? products.filter((product) => normalizeSearch([
+      product.name,
+      product.producer,
+      product.sku,
+      product.category,
+      product.powerCapacity,
+    ].filter(Boolean).join(' ')).includes(normalizedQuery))
+    : products;
+
+  function openMenu() {
+    setQuery('');
+    onOpen();
+  }
+
+  function choose(productId: string) {
+    onChange(productId);
+    onClose();
+  }
+
+  return (
+    <Menu isOpen={isOpen} onOpen={openMenu} onClose={onClose} closeOnSelect={false} matchWidth>
+      <MenuButton
+        as={Button}
+        w="100%"
+        h="40px"
+        px="12px"
+        justifyContent="space-between"
+        textAlign="left"
+        bg={fieldBg}
+        color={selected ? textColor : mutedColor}
+        border="1px solid"
+        borderColor={borderColor}
+        borderRadius="8px"
+        fontWeight="700"
+        rightIcon={<Icon as={MdKeyboardArrowDown} />}
+        _hover={{ borderColor: 'brand.400' }}
+        _active={{ bg: fieldBg }}
+      >
+        <Text as="span" noOfLines={1}>{selected?.name || 'Bez produktu'}</Text>
+      </MenuButton>
+      <Portal>
+        <MenuList bg={menuBg} borderColor={borderColor} p="8px" maxH="360px" overflowY="auto" zIndex={2000}>
+          <Box pb="8px" position="sticky" top="-8px" bg={menuBg} zIndex={1}>
+            <Flex align="center" border="1px solid" borderColor={borderColor} borderRadius="8px" px="10px" bg={fieldBg}>
+              <Icon as={MdSearch} color={mutedColor} me="8px" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+                placeholder="Szukaj produktu..."
+                autoFocus
+                border="0"
+                bg="transparent"
+                color={textColor}
+                _focus={{ boxShadow: 'none' }}
+              />
+            </Flex>
+          </Box>
+          <MenuItem
+            onClick={() => choose('')}
+            bg="transparent"
+            color={!value ? textColor : mutedColor}
+            borderRadius="8px"
+            fontWeight={!value ? '800' : '600'}
+            _hover={{ bg: hoverBg }}
+            _focus={{ bg: hoverBg }}
+          >
+            Bez produktu
+          </MenuItem>
+          {visibleProducts.length === 0 ? (
+            <Box px="12px" py="14px">
+              <Text color={mutedColor} fontSize="sm">Brak pasujących produktów.</Text>
+            </Box>
+          ) : visibleProducts.map((product) => (
+            <MenuItem
+              key={product.id}
+              onClick={() => choose(product.id)}
+              bg="transparent"
+              borderRadius="8px"
+              _hover={{ bg: hoverBg }}
+              _focus={{ bg: hoverBg }}
+            >
+              <Box minW="0">
+                <Text color={textColor} fontWeight={product.id === value ? '800' : '700'} noOfLines={1}>
+                  {product.name}
+                </Text>
+                <Text color={mutedColor} fontSize="xs" noOfLines={1}>
+                  {[product.producer, product.sku, product.powerCapacity].filter(Boolean).join(' · ') || 'Bez dodatkowych danych'}
+                </Text>
+              </Box>
+            </MenuItem>
+          ))}
+        </MenuList>
+      </Portal>
+    </Menu>
   );
 }

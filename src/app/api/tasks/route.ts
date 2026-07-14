@@ -12,8 +12,9 @@ import {
   serverError,
   unauthorized,
 } from 'lib/onrevolt/api';
+import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
-import { getCurrentStaffUser, isAdminUser, serializeStaffUser } from 'lib/onrevolt/staff-server';
+import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser, serializeStaffUser } from 'lib/onrevolt/staff-server';
 
 const activeStatuses = [TaskStatus.OPEN, TaskStatus.IN_PROGRESS];
 const taskStatuses = Object.values(TaskStatus) as string[];
@@ -217,6 +218,8 @@ async function loadStats(user: any, admin: boolean) {
 }
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req);
+  if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();
@@ -263,6 +266,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'crm.write');
+  if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();
@@ -301,6 +306,14 @@ export async function POST(req: NextRequest) {
       return created;
     });
 
+    await writeAuditLog({
+      actorId: access.user.id,
+      clientId: task.clientId,
+      entityType: 'Task',
+      entityId: task.id,
+      action: 'CREATE',
+      after: task,
+    });
     return jsonResponse({ ok: true, data: serializeTask(task) }, { status: 201 });
   } catch (error) {
     return serverError('Nie udało się zapisać zadania', error);
@@ -308,6 +321,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'crm.write');
+  if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();
@@ -363,6 +378,15 @@ export async function PATCH(req: NextRequest) {
       return updated;
     });
 
+    await writeAuditLog({
+      actorId: access.user.id,
+      clientId: task.clientId,
+      entityType: 'Task',
+      entityId: task.id,
+      action: 'UPDATE',
+      before: existing,
+      after: task,
+    });
     return jsonResponse({ ok: true, data: serializeTask(task) });
   } catch (error) {
     return serverError('Nie udało się zaktualizować zadania', error);
@@ -370,6 +394,8 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'crm.write');
+  if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();
@@ -385,6 +411,15 @@ export async function DELETE(req: NextRequest) {
       include: taskInclude,
     });
 
+    await writeAuditLog({
+      actorId: access.user.id,
+      clientId: task.clientId,
+      entityType: 'Task',
+      entityId: task.id,
+      action: 'CANCEL',
+      before: existing,
+      after: task,
+    });
     return jsonResponse({ ok: true, data: serializeTask(task) });
   } catch (error) {
     return serverError('Nie udało się anulować zadania', error);

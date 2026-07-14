@@ -26,6 +26,7 @@ import {
 } from '@chakra-ui/react';
 import Card from 'components/card/Card';
 import OfferDocument from 'components/onrevolt/OfferDocument';
+import ClientDocumentsPanel from 'components/onrevolt/ClientDocumentsPanel';
 import {
   energyOperatorOptions,
   getDefaultEnergyTariff,
@@ -33,6 +34,7 @@ import {
   getEnergyTariffs,
 } from 'lib/onrevolt/energy-tariffs';
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { MdAdd, MdAssignment, MdDeleteOutline, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
 
 type ClientProfileProps = {
@@ -40,13 +42,17 @@ type ClientProfileProps = {
 };
 
 type CurrentUser = {
+  id?: string | null;
   systemRole?: string | null;
 };
 
 type StageRow = {
   id: string;
   name: string;
+  status?: string;
 };
+
+type StaffOption = { id: string; name: string; email: string };
 
 type ClientFormState = {
   displayName: string;
@@ -62,6 +68,9 @@ type ClientFormState = {
   projectClientType: string;
   status: string;
   stageId: string;
+  ownerId: string;
+  nextActionTitle: string;
+  nextActionAt: string;
   dashboardStation: string;
   dashboardStationNumber: string;
   weatherStationNumber: string;
@@ -148,6 +157,15 @@ type ClientTaskRow = {
   commentsCount?: number;
 };
 
+type ActivityRow = {
+  id: string;
+  type: string;
+  title: string;
+  body?: string | null;
+  occurredAt: string;
+  actor?: { name?: string | null } | null;
+};
+
 const tabs = [
   'Podsumowanie',
   'Kontakt i adres',
@@ -191,6 +209,9 @@ const emptyForm: ClientFormState = {
   projectClientType: 'UNKNOWN',
   status: 'LEAD',
   stageId: '',
+  ownerId: '',
+  nextActionTitle: '',
+  nextActionAt: '',
   dashboardStation: '',
   dashboardStationNumber: '',
   weatherStationNumber: '',
@@ -381,10 +402,13 @@ function energyAccountFromRecord(account: any): EnergyAccountForm {
   };
 }
 
-function energyAccountFromClient(client: any): EnergyAccountForm {
+function energyAccountFromClient(client: any, projectId?: string): EnergyAccountForm {
   const accounts = client?.energyPortalAccounts || [];
-  const eneaAccount = accounts.find((account: any) => account.operator === 'ENEA');
-  return energyAccountFromRecord(eneaAccount || accounts[0]);
+  const projectAccounts = projectId
+    ? accounts.filter((account: any) => account.projectId === projectId)
+    : accounts;
+  const eneaAccount = projectAccounts.find((account: any) => account.operator === 'ENEA');
+  return energyAccountFromRecord(eneaAccount || projectAccounts[0]);
 }
 
 function formatDateTime(value?: string | null) {
@@ -451,9 +475,9 @@ function formatMoney(value?: number | string | null) {
   return new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safeValue);
 }
 
-function formFromClient(client: any): ClientFormState {
+function formFromClient(client: any, selectedProject?: any): ClientFormState {
   const contact = client?.contacts?.[0] || {};
-  const project = client?.projects?.[0] || {};
+  const project = selectedProject || client?.projects?.[0] || {};
   const site = project?.investmentSite || client?.investmentSites?.[0] || {};
   return {
     displayName: client?.displayName || '',
@@ -469,6 +493,9 @@ function formFromClient(client: any): ClientFormState {
     projectClientType: project.clientType || client?.clientType || 'UNKNOWN',
     status: project.status || 'LEAD',
     stageId: project.stageId || '',
+    ownerId: project.ownerId || '',
+    nextActionTitle: project.nextActionTitle || '',
+    nextActionAt: project.nextActionAt ? new Date(project.nextActionAt).toISOString().slice(0, 16) : '',
     dashboardStation: project.dashboardStation || '',
     dashboardStationNumber: project.dashboardStationNumber || '',
     weatherStationNumber: project.weatherStationNumber || '',
@@ -477,6 +504,7 @@ function formFromClient(client: any): ClientFormState {
 }
 
 export default function ClientProfile({ clientId }: ClientProfileProps) {
+  const searchParams = useSearchParams();
   const [client, setClient] = useState<any>(null);
   const [clientTasks, setClientTasks] = useState<ClientTaskRow[]>([]);
   const [stages, setStages] = useState<StageRow[]>([]);
@@ -504,35 +532,52 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [offerError, setOfferError] = useState('');
   const [selectedClientConfigurationId, setSelectedClientConfigurationId] = useState('');
   const [selectedClientOfferId, setSelectedClientOfferId] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('projectId') || '');
+  const [staffUsers, setStaffUsers] = useState<StaffOption[]>([]);
+  const [projectCreating, setProjectCreating] = useState(false);
+  const [activities, setActivities] = useState<ActivityRow[]>([]);
+  const [activityType, setActivityType] = useState('NOTE');
+  const [activityTitle, setActivityTitle] = useState('');
+  const [activityBody, setActivityBody] = useState('');
+  const [activitySaving, setActivitySaving] = useState(false);
   const textColor = useColorModeValue('secondaryGray.900', 'white');
   const mutedColor = useColorModeValue('secondaryGray.600', 'secondaryGray.400');
   const borderColor = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
+  const activeProject = client?.projects?.find((item: any) => item.id === selectedProjectId)
+    || client?.projects?.[0];
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError('');
     try {
-      const [clientResponse, stagesResponse, tasksResponse, authResponse] = await Promise.all([
+      const [clientResponse, stagesResponse, tasksResponse, activitiesResponse, authResponse] = await Promise.all([
         fetch(`/api/crm/clients?id=${encodeURIComponent(clientId)}`, { cache: 'no-store' }),
         fetch('/api/crm/stages', { cache: 'no-store' }),
         fetch(`/api/tasks?clientId=${encodeURIComponent(clientId)}&scope=all`, { cache: 'no-store' }),
+        fetch(`/api/activities?clientId=${encodeURIComponent(clientId)}`, { cache: 'no-store' }),
         fetch('/api/auth/me', { cache: 'no-store' }).catch(() => null),
       ]);
-      const [clientPayload, stagesPayload, tasksPayload] = await Promise.all([
+      const [clientPayload, stagesPayload, tasksPayload, activitiesPayload] = await Promise.all([
         clientResponse.json(),
         stagesResponse.json(),
         tasksResponse.json(),
+        activitiesResponse.json(),
       ]);
       if (!clientResponse.ok || !clientPayload.ok) throw new Error(clientPayload.message || clientPayload.error || `HTTP ${clientResponse.status}`);
       if (!stagesResponse.ok || !stagesPayload.ok) throw new Error(stagesPayload.message || stagesPayload.error || `HTTP ${stagesResponse.status}`);
       if (!tasksResponse.ok || !tasksPayload.ok) throw new Error(tasksPayload.message || tasksPayload.error || `HTTP ${tasksResponse.status}`);
+      if (!activitiesResponse.ok || !activitiesPayload.ok) throw new Error(activitiesPayload.message || activitiesPayload.error || `HTTP ${activitiesResponse.status}`);
 
+      const projects = clientPayload.data?.projects || [];
+      const loadedProject = projects.find((item: any) => item.id === selectedProjectId) || projects[0];
       setClient(clientPayload.data);
       setClientTasks(tasksPayload.data?.tasks || []);
+      setActivities(activitiesPayload.data || []);
       setStages(stagesPayload.data || []);
-      setForm(formFromClient(clientPayload.data));
-      setEnergyAccount(energyAccountFromClient(clientPayload.data));
-      const loadedProject = clientPayload.data?.projects?.[0];
+      setStaffUsers(tasksPayload.data?.meta?.users || []);
+      setSelectedProjectId(loadedProject?.id || '');
+      setForm(formFromClient(clientPayload.data, loadedProject));
+      setEnergyAccount(energyAccountFromClient(clientPayload.data, loadedProject?.id));
       const firstConfiguration = loadedProject?.configurations?.[0];
       const firstOffer = loadedProject?.offers?.[0];
       setSelectedClientConfigurationId((current) => (
@@ -554,9 +599,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }, [clientId]);
+  }, [clientId, selectedProjectId]);
 
   const loadEnergyProfile = useCallback(async () => {
     setEnergyProfileLoading(true);
@@ -590,6 +635,75 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function selectProject(projectId: string) {
+    const project = client?.projects?.find((item: any) => item.id === projectId);
+    setSelectedProjectId(projectId);
+    setForm(formFromClient(client, project));
+    setEnergyAccount(energyAccountFromClient(client, projectId));
+  }
+
+  async function createProject() {
+    setProjectCreating(true);
+    setSaveError('');
+    try {
+      const response = await fetch('/api/crm/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          title: `Nowy projekt - ${client?.displayName || 'klient'}`,
+          clientType: client?.clientType || 'UNKNOWN',
+          source: 'manual',
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+      setSelectedProjectId(payload.data.id);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setProjectCreating(false);
+    }
+  }
+
+  async function saveActivity() {
+    if (!activityTitle.trim()) return;
+    setActivitySaving(true);
+    setSaveError('');
+    try {
+      const response = await fetch('/api/activities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: activityType,
+          title: activityTitle,
+          body: activityBody,
+          clientId,
+          projectId: activeProject?.id,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+      setActivityTitle('');
+      setActivityBody('');
+      await load();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setActivitySaving(false);
+    }
+  }
+
+  function selectStage(stageId: string) {
+    const stage = stages.find((item) => item.id === stageId);
+    setForm((current) => ({
+      ...current,
+      stageId,
+      status: stage?.status || current.status,
+      ownerId: current.ownerId || (stageId ? currentUser?.id || '' : ''),
+    }));
+  }
+
   function updateEnergyAccount(
     key: 'operator' | 'login' | 'password' | 'tariff' | 'ppeNumber' | 'portalPpeId' | 'meterNumber' | 'notes',
     value: string,
@@ -611,7 +725,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setSaveError('');
     try {
       const contact = client?.contacts?.[0];
-      const project = client?.projects?.[0];
+      const project = activeProject;
       const response = await fetch('/api/crm/clients', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -636,6 +750,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
             clientType: form.projectClientType,
             status: form.status,
             stageId: form.stageId,
+            ownerId: form.ownerId,
+            nextActionTitle: form.nextActionTitle,
+            nextActionAt: form.nextActionAt || null,
             dashboardStation: form.dashboardStation,
             dashboardStationNumber: form.dashboardStationNumber,
             weatherStationNumber: form.weatherStationNumber,
@@ -659,7 +776,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setStationError('');
     setStationMessage('');
     try {
-      const project = client?.projects?.[0];
+      const project = activeProject;
       const hadStationReference = Boolean(form.dashboardStation.trim() || form.dashboardStationNumber.trim());
       const response = await fetch('/api/integrations/re/station', {
         method: 'POST',
@@ -692,7 +809,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setEnergyError('');
     setEnergyMessage('');
     try {
-      const project = client?.projects?.[0];
+      const project = activeProject;
       const response = await fetch('/api/crm/clients/energy-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -726,7 +843,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   }
 
   async function createClientOffer(configurationIdOverride?: string) {
-    const project = client?.projects?.[0];
+    const project = activeProject;
     if (!project?.id) return;
 
     setOfferCreating(true);
@@ -879,7 +996,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   }
 
   const contact = client?.contacts?.[0] || {};
-  const project = client?.projects?.[0] || {};
+  const project = activeProject || {};
   const site = project?.investmentSite || client?.investmentSites?.[0] || {};
   const projectConfigurations = project?.configurations || [];
   const projectOffers = project?.offers || [];
@@ -937,6 +1054,28 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       <Card p={{ base: '20px', md: '28px' }}>
         <Flex direction={{ base: 'column', md: 'row' }} gap="16px" align={{ md: 'center' }}>
           <Box flex="1">
+            <Flex align="center" gap="8px" mb="14px" maxW="560px">
+              <Select
+                size="sm"
+                value={project.id || ''}
+                onChange={(event) => selectProject(event.target.value)}
+                aria-label="Aktywny projekt"
+              >
+                {(client.projects || []).map((item: any) => (
+                  <option key={item.id} value={item.id}>{item.title}</option>
+                ))}
+              </Select>
+              <Tooltip label="Utwórz nowy projekt">
+                <IconButton
+                  aria-label="Utwórz nowy projekt"
+                  icon={<MdAdd />}
+                  size="sm"
+                  variant="outline"
+                  onClick={createProject}
+                  isLoading={projectCreating}
+                />
+              </Tooltip>
+            </Flex>
             <Flex gap="8px" wrap="wrap" mb="12px">
               <Badge colorScheme="purple">Klient: {clientTypeLabel(client.clientType)}</Badge>
               <Badge colorScheme="blue">Projekt: {clientTypeLabel(project.clientType || 'UNKNOWN')}</Badge>
@@ -1051,20 +1190,33 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                 </FormControl>
                 <FormControl>
                   <FormLabel>Status projektu</FormLabel>
-                  <Select value={form.status} onChange={(event) => updateForm('status', event.target.value)}>
-                    {projectStatuses.map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </Select>
+                  <Input value={projectStatusLabel(form.status)} isReadOnly />
                 </FormControl>
                 <FormControl>
                   <FormLabel>Etap</FormLabel>
-                  <Select value={form.stageId} onChange={(event) => updateForm('stageId', event.target.value)}>
+                  <Select value={form.stageId} onChange={(event) => selectStage(event.target.value)}>
                     <option value="">Brak etapu</option>
                     {stages.map((stage) => (
                       <option key={stage.id} value={stage.id}>{stage.name}</option>
                     ))}
                   </Select>
+                </FormControl>
+                <FormControl>
+                  <FormLabel>Właściciel projektu</FormLabel>
+                  <Select value={form.ownerId} onChange={(event) => updateForm('ownerId', event.target.value)}>
+                    <option value="">Nieprzypisany</option>
+                    {staffUsers.map((user) => (
+                      <option key={user.id} value={user.id}>{user.name}</option>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl>
+                  <FormLabel>Następne działanie</FormLabel>
+                  <Input value={form.nextActionTitle} onChange={(event) => updateForm('nextActionTitle', event.target.value)} />
+                </FormControl>
+                <FormControl>
+                  <FormLabel>Termin następnego działania</FormLabel>
+                  <Input type="datetime-local" value={form.nextActionAt} onChange={(event) => updateForm('nextActionAt', event.target.value)} />
                 </FormControl>
                 <FormControl>
                   <FormLabel>Adres inwestycji projektu</FormLabel>
@@ -1737,6 +1889,10 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
               );
             }
 
+            if (tab === 'Zdjęcia / pliki') {
+              return <TabPanel key={tab} px="0"><ClientDocumentsPanel mode="files" clientId={clientId} projectId={activeProject?.id} documents={client?.documents || []} onChanged={() => load(true)} /></TabPanel>;
+            }
+
             if (tab === 'EMS / Audyt') {
               return (
                 <TabPanel key={tab} px="0">
@@ -1957,6 +2113,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
             if (tab === 'Faktury i OSD') {
               return (
                 <TabPanel key={tab} px="0">
+                  <Flex direction="column" gap="20px">
+                  <ClientDocumentsPanel mode="invoices" clientId={clientId} projectId={activeProject?.id} documents={client?.documents || []} onChanged={() => load(true)} />
                   <Card p="22px">
                     <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" mb="18px">
                       <Box>
@@ -2120,7 +2278,38 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                         <Text color={mutedColor}>Brak pobranych plików ENEA.</Text>
                       )}
                     </Box>
-                  </Card>
+                  </Card></Flex>
+                </TabPanel>
+              );
+            }
+
+            if (tab === 'Historia') {
+              return (
+                <TabPanel key={tab} px="0">
+                  <SimpleGrid columns={{ base: 1, xl: 3 }} gap="20px">
+                    <Card p="22px">
+                      <Text color={textColor} fontSize="lg" fontWeight="800" mb="14px">Nowa aktywność</Text>
+                      <Flex direction="column" gap="12px">
+                        <FormControl><FormLabel>Typ</FormLabel><Select value={activityType} onChange={(event) => setActivityType(event.target.value)}><option value="CALL">Telefon</option><option value="EMAIL">Email</option><option value="MEETING">Spotkanie</option><option value="NOTE">Notatka</option></Select></FormControl>
+                        <FormControl isRequired><FormLabel>Tytuł</FormLabel><Input value={activityTitle} onChange={(event) => setActivityTitle(event.target.value)} /></FormControl>
+                        <FormControl><FormLabel>Opis</FormLabel><Textarea value={activityBody} onChange={(event) => setActivityBody(event.target.value)} rows={4} /></FormControl>
+                        <Button colorScheme="purple" onClick={saveActivity} isLoading={activitySaving} isDisabled={!activityTitle.trim()}>Dodaj aktywność</Button>
+                      </Flex>
+                    </Card>
+                    <Card p="22px" gridColumn={{ xl: 'span 2' }}>
+                      <Text color={textColor} fontSize="lg" fontWeight="800" mb="14px">Historia aktywności</Text>
+                      <Flex direction="column" gap="10px">
+                        {activities.map((activity) => (
+                          <Box key={activity.id} border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
+                            <Flex justify="space-between" gap="10px" align="start"><Box><Badge mb="6px">{activity.type}</Badge><Text color={textColor} fontWeight="700">{activity.title}</Text></Box><Text color={mutedColor} fontSize="xs">{formatDateTime(activity.occurredAt)}</Text></Flex>
+                            {activity.body ? <Text color={mutedColor} mt="6px">{activity.body}</Text> : null}
+                            <Text color={mutedColor} fontSize="xs" mt="6px">{activity.actor?.name || 'System'}</Text>
+                          </Box>
+                        ))}
+                        {!activities.length ? <Text color={mutedColor}>Brak aktywności.</Text> : null}
+                      </Flex>
+                    </Card>
+                  </SimpleGrid>
                 </TabPanel>
               );
             }

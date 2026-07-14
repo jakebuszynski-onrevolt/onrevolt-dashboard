@@ -10,5 +10,6 @@ export interface IRoute {
   secondary?: boolean;
   collapse?: boolean;
   hidden?: boolean;
+  requiredPermission?: string;
   items?: IRoute[];
 }

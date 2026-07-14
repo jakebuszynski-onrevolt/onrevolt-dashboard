@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
 import { badRequest, forbidden, jsonResponse, optionalString, readJsonObject, requireString, serverError, unauthorized } from 'lib/onrevolt/api';
+import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
 import { generateTemporaryPassword, hashPassword } from 'lib/onrevolt/staff';
-import { getCurrentStaffUser, isAdminUser, serializeStaffUser, staffUserInclude } from 'lib/onrevolt/staff-server';
+import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser, serializeStaffUser, staffUserInclude } from 'lib/onrevolt/staff-server';
 
 function optionalBoolean(value: unknown) {
   if (value == null || value === '') return undefined;
@@ -28,6 +29,8 @@ async function assertAdmin(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'users.manage');
+  if (!access.ok) return access.response;
   try {
     const currentUser = await assertAdmin(req);
     const [users, companyRoles] = await Promise.all([
@@ -59,6 +62,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'users.manage');
+  if (!access.ok) return access.response;
   try {
     await assertAdmin(req);
     const body = await readJsonObject(req);
@@ -94,6 +99,13 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    await writeAuditLog({
+      actorId: access.user.id,
+      entityType: 'StaffUser',
+      entityId: user.id,
+      action: 'CREATE',
+      after: serializeStaffUser(user),
+    });
     return jsonResponse({ ok: true, data: serializeStaffUser(user), tempPassword }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message.includes('Wymagane logowanie')) return unauthorized(error.message);
@@ -103,11 +115,14 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'users.manage');
+  if (!access.ok) return access.response;
   try {
     await assertAdmin(req);
     const body = await readJsonObject(req);
     const id = requireString(body, 'id');
     const companyRoleIds = normalizeCompanyRoleIds(body.companyRoleIds);
+    const before = await prisma.staffUser.findUnique({ where: { id }, include: staffUserInclude });
 
     const updateData: Record<string, any> = {};
     if ('email' in body) updateData.email = requireString(body, 'email').toLowerCase();
@@ -132,6 +147,14 @@ export async function PATCH(req: NextRequest) {
       return tx.staffUser.findUniqueOrThrow({ where: { id }, include: staffUserInclude });
     });
 
+    await writeAuditLog({
+      actorId: access.user.id,
+      entityType: 'StaffUser',
+      entityId: user.id,
+      action: 'UPDATE',
+      before: serializeStaffUser(before),
+      after: serializeStaffUser(user),
+    });
     return jsonResponse({ ok: true, data: serializeStaffUser(user) });
   } catch (error) {
     if (error instanceof Error && error.message.includes('Wymagane logowanie')) return unauthorized(error.message);
@@ -141,13 +164,23 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'users.manage');
+  if (!access.ok) return access.response;
   try {
     const currentUser = await assertAdmin(req);
     const body = await readJsonObject(req);
     const id = requireString(body, 'id');
     if (currentUser?.id === id) return badRequest('Nie możesz usunąć własnego konta');
 
+    const before = await prisma.staffUser.findUnique({ where: { id }, include: staffUserInclude });
     await prisma.staffUser.delete({ where: { id } });
+    await writeAuditLog({
+      actorId: access.user.id,
+      entityType: 'StaffUser',
+      entityId: id,
+      action: 'DELETE',
+      before: serializeStaffUser(before),
+    });
     return jsonResponse({ ok: true, data: { id } });
   } catch (error) {
     if (error instanceof Error && error.message.includes('Wymagane logowanie')) return unauthorized(error.message);

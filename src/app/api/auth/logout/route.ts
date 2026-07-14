@@ -1,14 +1,22 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse } from 'lib/onrevolt/api';
-import { staffSessionCookie } from 'lib/onrevolt/staff-server';
+import {
+  assertSameOrigin,
+  clearStaffSessionCookie,
+  revokeStaffSession,
+  staffAuthorizationResponse,
+} from 'lib/onrevolt/staff-server';
 
-export async function POST() {
-  const response = jsonResponse({ ok: true });
-  (response as NextResponse).cookies.set(staffSessionCookie, '', {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-  });
-  return response;
+export async function POST(req: NextRequest) {
+  try {
+    assertSameOrigin(req);
+    await revokeStaffSession(req);
+    const response = jsonResponse({ ok: true });
+    clearStaffSessionCookie(response as NextResponse);
+    return response;
+  } catch (error) {
+    const authorizationResponse = staffAuthorizationResponse(error);
+    if (authorizationResponse) return authorizationResponse;
+    throw error;
+  }
 }

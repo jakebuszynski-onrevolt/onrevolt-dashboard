@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { badRequest, forbidden, jsonResponse, readJsonObject, requireString, serverError, unauthorized } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
 import { generateTemporaryPassword, hashPassword } from 'lib/onrevolt/staff';
-import { getCurrentStaffUser, isAdminUser, serializeStaffUser, staffUserInclude } from 'lib/onrevolt/staff-server';
+import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser, serializeStaffUser, staffUserInclude } from 'lib/onrevolt/staff-server';
 
 async function assertAdmin(req: NextRequest) {
   const user = await getCurrentStaffUser(req);
@@ -12,6 +12,8 @@ async function assertAdmin(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'users.manage');
+  if (!access.ok) return access.response;
   try {
     await assertAdmin(req);
     const body = await readJsonObject(req);

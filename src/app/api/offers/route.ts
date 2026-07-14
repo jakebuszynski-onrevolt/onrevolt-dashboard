@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, optionalString, parseDate, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
+import { writeAuditLog } from 'lib/onrevolt/audit';
 import { isEnergyOperator } from 'lib/onrevolt/energy-tariffs';
 import { createOfferFromConfiguration, offerInclude, offerStatusDateUpdate } from 'lib/onrevolt/offers';
 import { prisma } from 'lib/onrevolt/prisma';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 const offerStatuses = new Set(['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED']);
 
@@ -37,6 +39,9 @@ async function workspaceData() {
           orderBy: { updatedAt: 'desc' },
         },
         energyPortalAccounts: true,
+        energyAudits: {
+          include: { scenarios: { orderBy: { createdAt: 'desc' } } },
+        },
       },
       orderBy: { updatedAt: 'desc' },
       take: 500,
@@ -55,6 +60,8 @@ async function workspaceData() {
 }
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req);
+  if (!access.ok) return access.response;
   try {
     const workspace = req.nextUrl.searchParams.get('workspace') === '1';
     const offers = await prisma.offer.findMany({
@@ -79,6 +86,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'offers.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const projectId = requireString(body, 'projectId');
@@ -119,6 +128,7 @@ export async function POST(req: NextRequest) {
     const offer = await createOfferFromConfiguration(prisma, {
       projectId,
       configurationId: optionalString(body, 'configurationId'),
+      energyScenarioId: optionalString(body, 'energyScenarioId'),
       title: optionalString(body, 'title'),
       validUntil: parseDate(body.validUntil),
       subsidyGross: optionalNumber(body.subsidyGross),
@@ -133,6 +143,14 @@ export async function POST(req: NextRequest) {
       descriptionAfter: optionalString(body, 'descriptionAfter'),
       notes: optionalString(body, 'notes'),
     });
+    await writeAuditLog({
+      actorId: access.user.id,
+      clientId: offer.project.clientId,
+      entityType: 'Offer',
+      entityId: offer.id,
+      action: 'CREATE',
+      after: offer,
+    });
     return jsonResponse({ ok: true, data: offer }, { status: 201 });
   } catch (error) {
     return serverError('Nie udało się zapisać oferty', error);
@@ -140,9 +158,13 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'offers.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const id = requireString(body, 'id');
+    const existing = await prisma.offer.findUnique({ where: { id }, include: offerInclude });
+    if (!existing) return badRequest('Nie znaleziono oferty');
     const data: Record<string, any> = {};
 
     if ('status' in body) {
@@ -167,13 +189,35 @@ export async function PATCH(req: NextRequest) {
       include: offerInclude,
     });
 
-    if (updated.status === 'ACCEPTED') {
-      await prisma.project.update({
-        where: { id: updated.projectId },
-        data: { status: 'OFERTA_ZAAKCEPTOWANA' },
-      });
+    if (updated.status === 'ACCEPTED' && existing.status !== 'ACCEPTED') {
+      const stage = await prisma.pipelineStage.findFirst({ where: { code: 'CRM_OFERTA_ZAAKCEPTOWANA', isActive: true } });
+      await prisma.$transaction([
+        prisma.project.update({
+          where: { id: updated.projectId },
+          data: { status: 'OFERTA_ZAAKCEPTOWANA', ...(stage ? { stageId: stage.id } : {}) },
+        }),
+        prisma.activity.create({
+          data: {
+            type: 'SYSTEM',
+            title: `Zaakceptowano ofertę ${updated.number || ''}`.trim(),
+            clientId: updated.project.clientId,
+            projectId: updated.projectId,
+            actorId: access.user.id,
+            metadata: { offerId: updated.id, totalGross: Number(updated.totalGross) },
+          },
+        }),
+      ]);
     }
 
+    await writeAuditLog({
+      actorId: access.user.id,
+      clientId: updated.project.clientId,
+      entityType: 'Offer',
+      entityId: updated.id,
+      action: 'UPDATE',
+      before: existing,
+      after: updated,
+    });
     return jsonResponse({ ok: true, data: updated });
   } catch (error) {
     return serverError('Nie udało się zaktualizować oferty', error);

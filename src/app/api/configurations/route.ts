@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { calculateConfigurationLine, sumConfiguration } from 'lib/onrevolt/calculator';
 import { jsonResponse, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 const nonPricedSupplyModes = new Set(['CLIENT_OWNED_USED', 'CLIENT_SUPPLIED_NEW', 'NOT_INCLUDED']);
 
@@ -39,6 +40,8 @@ function lineInputFromItem(item: Record<string, any>) {
 }
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req);
+  if (!access.ok) return access.response;
   try {
     const workspace = req.nextUrl.searchParams.get('workspace') === '1';
     const configurations = await prisma.configuration.findMany({
@@ -96,6 +99,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'configurations.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const rawItems = Array.isArray(body.items) ? body.items : [];

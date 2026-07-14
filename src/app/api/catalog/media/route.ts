@@ -3,7 +3,9 @@ import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { badRequest, jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
+import { catalogMediaRelativePath, resolveCatalogMediaPath } from 'lib/onrevolt/catalog-media';
 import { prisma } from 'lib/onrevolt/prisma';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export const runtime = 'nodejs';
 
@@ -27,19 +29,6 @@ function sanitizeFileName(fileName: string) {
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function publicUrlFor(productId: string, fileName: string) {
-  return `/uploads/catalog/products/${encodeURIComponent(productId)}/${encodeURIComponent(fileName)}`;
-}
-
-function uploadsRoot() {
-  return path.resolve(process.cwd(), 'public', 'uploads', 'catalog', 'products');
-}
-
-function isInsideDirectory(filePath: string, rootPath: string) {
-  const relative = path.relative(rootPath, filePath);
-  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
 function nullableBodyString(body: Record<string, any>, key: string) {
@@ -86,28 +75,34 @@ async function createUploadedMedia(req: NextRequest) {
 
   const originalName = sanitizeFileName(file.name || `produkt.${extension}`);
   const storedName = `${randomUUID()}-${originalName || `produkt.${extension}`}`;
-  const productDir = path.join(process.cwd(), 'public', 'uploads', 'catalog', 'products', productId);
-  const storagePath = path.join(productDir, storedName);
+  const { filePath: storagePath, relativePath } = catalogMediaRelativePath(productId, storedName);
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  await fs.mkdir(productDir, { recursive: true });
-  await fs.writeFile(storagePath, buffer);
+  await fs.mkdir(path.dirname(storagePath), { recursive: true });
+  await fs.writeFile(storagePath, buffer, { flag: 'wx' });
 
-  const media = await prisma.productMedia.create({
-    data: {
-      productId,
-      kind: requestedKind,
-      url: publicUrlFor(productId, storedName),
-      storagePath,
-      altText: altText || originalName,
-      sortOrder: Number.isInteger(Number(form.get('sortOrder'))) ? Number(form.get('sortOrder')) : 0,
-    },
-  });
+  let media;
+  try {
+    media = await prisma.productMedia.create({
+      data: {
+        productId,
+        kind: requestedKind,
+        storagePath: relativePath,
+        altText: altText || originalName,
+        sortOrder: Number.isInteger(Number(form.get('sortOrder'))) ? Number(form.get('sortOrder')) : 0,
+      },
+    });
+  } catch (error) {
+    await fs.unlink(storagePath).catch(() => undefined);
+    throw error;
+  }
 
   return jsonResponse({ ok: true, data: media }, { status: 201 });
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'catalog.manage');
+  if (!access.ok) return access.response;
   try {
     const contentType = req.headers.get('content-type') || '';
     if (contentType.includes('multipart/form-data')) {
@@ -137,6 +132,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'catalog.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const id = requireString(body, 'id');
@@ -168,17 +165,15 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'catalog.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const id = requireString(body, 'id');
     const media = await prisma.productMedia.findUnique({ where: { id } });
     if (!media) return notFound('Załącznik produktu nie istnieje');
 
-    const rootPath = uploadsRoot();
-    const filePath = media.storagePath ? path.resolve(media.storagePath) : '';
-    if (filePath && !isInsideDirectory(filePath, rootPath)) {
-      return badRequest('Plik załącznika jest poza katalogiem uploads; usuń go ręcznie po weryfikacji ścieżki');
-    }
+    const filePath = resolveCatalogMediaPath(media);
 
     await prisma.productMedia.delete({ where: { id } });
 

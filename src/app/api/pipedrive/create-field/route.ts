@@ -2,6 +2,7 @@
 // Body: { entity?: "deal"|"person", name: string, field_type: "varchar"|"text"|"double"|"enum"|"set"|"phone"|"date", options?: string[] }
 
 import { NextRequest } from "next/server";
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 type Entity = "deal" | "person";
 
@@ -16,6 +17,8 @@ function ep(entity: Entity) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'synchronization.manage');
+  if (!access.ok) return access.response;
   try {
     if (!TOKEN) return new Response("Missing PIPEDRIVE_API_TOKEN", { status: 500 });
     if (!BASE)  return new Response("Missing PIPEDRIVE_BASE_URL or PIPEDRIVE_DOMAIN", { status: 500 });

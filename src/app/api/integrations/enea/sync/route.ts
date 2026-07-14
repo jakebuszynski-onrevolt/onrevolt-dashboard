@@ -14,6 +14,7 @@ import {
   selectEneaPpe,
 } from 'lib/onrevolt/enea-portal';
 import { prisma } from 'lib/onrevolt/prisma';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export const runtime = 'nodejs';
 
@@ -151,6 +152,8 @@ async function deleteMeasurementFiles(accountId: string, year: number, month: nu
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'energy.manage');
+  if (!access.ok) return access.response;
   let accountId: string | undefined;
 
   try {
@@ -363,6 +366,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'energy.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const accountId = optionalString(body, 'accountId');

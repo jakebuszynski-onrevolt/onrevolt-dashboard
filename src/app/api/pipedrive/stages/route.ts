@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 const DOMAIN = process.env.PIPEDRIVE_DOMAIN;
 const BASE =
@@ -7,6 +8,8 @@ const BASE =
 const TOKEN = process.env.PIPEDRIVE_API_TOKEN || "";
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'synchronization.manage');
+  if (!access.ok) return access.response;
   try {
     if (!TOKEN) return new Response("Missing PIPEDRIVE_API_TOKEN", { status: 500 });
     if (!BASE)  return new Response("Missing PIPEDRIVE_BASE_URL or PIPEDRIVE_DOMAIN", { status: 500 });

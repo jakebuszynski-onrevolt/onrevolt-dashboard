@@ -1,5 +1,6 @@
-import { CompanyRoleCode, PrismaClient, StaffRoleCode } from '@prisma/client';
+import { CompanyRoleCode, PrismaClient, ProjectStatus, StaffRoleCode } from '@prisma/client';
 import { companyRoleLabels, companyRoleOrder, hashPassword } from '../src/lib/onrevolt/staff';
+import { operationalPipelineStages, projectStatusStageCode } from '../src/lib/onrevolt/pipeline-stages';
 
 const prisma = new PrismaClient();
 
@@ -12,17 +13,7 @@ const legacyRoles: Array<{ code: StaffRoleCode; name: string; permissions: strin
   { code: 'KSIEGOWOSC', name: 'Księgowość', permissions: ['contracts:read', 'documents:read', 'documents:upload', 'reports:finance'] },
 ];
 
-const stages = [
-  { name: 'Lead', sortOrder: 10, color: '#7C3AED' },
-  { name: 'Czeka na kalkulację', sortOrder: 20, color: '#2563EB' },
-  { name: 'W trakcie obsługi', sortOrder: 30, color: '#0EA5E9' },
-  { name: 'Oferta przygotowana', sortOrder: 40, color: '#F59E0B' },
-  { name: 'Zaakceptowano ofertę', sortOrder: 50, color: '#16A34A' },
-  { name: 'Wpłacono zaliczkę / montaż', sortOrder: 60, color: '#059669' },
-  { name: 'Zamontowano / procedura OSD', sortOrder: 70, color: '#0284C7' },
-  { name: 'Protokół odbioru / zakończono', sortOrder: 80, color: '#15803D', isTerminal: true },
-  { name: 'Serwis', sortOrder: 90, color: '#DC2626' },
-];
+const stages = operationalPipelineStages;
 
 async function main() {
   for (const role of legacyRoles) {
@@ -127,12 +118,57 @@ async function main() {
   });
 
   for (const stage of stages) {
-    const existing = await prisma.pipelineStage.findFirst({ where: { name: stage.name } });
+    const existing = await prisma.pipelineStage.findFirst({
+      where: { OR: [{ code: stage.code }, { name: stage.name }] },
+    });
+    const data = {
+      ...stage,
+      isTerminal: stage.isTerminal ?? false,
+      requiresOwner: stage.requiresOwner ?? true,
+      requiresNextAction: stage.requiresNextAction ?? true,
+      isActive: true,
+      source: 'LOCAL',
+    };
     if (existing) {
-      await prisma.pipelineStage.update({ where: { id: existing.id }, data: stage });
+      await prisma.pipelineStage.update({ where: { id: existing.id }, data });
     } else {
-      await prisma.pipelineStage.create({ data: stage });
+      await prisma.pipelineStage.create({ data });
     }
+  }
+
+  for (const [status, code] of Object.entries(projectStatusStageCode)) {
+    const stage = await prisma.pipelineStage.findUniqueOrThrow({ where: { code } });
+    await prisma.project.updateMany({
+      where: { status: status as ProjectStatus },
+      data: {
+        stageId: stage.id,
+        closedAt: stage.isTerminal ? new Date() : undefined,
+      },
+    });
+  }
+
+  const workflowRules = [
+    { stageCode: 'CRM_CZEKA_NA_KALKULACJE', name: 'Dane do audytu', taskTitle: 'Uzupełnij dane energetyczne i audyt', dueOffsetDays: 2, taskPriority: 'HIGH' as const },
+    { stageCode: 'CRM_OFERTA_PRZYGOTOWANA', name: 'Kontakt po ofercie', taskTitle: 'Skontaktuj się po wysłaniu oferty', dueOffsetDays: 2, taskPriority: 'HIGH' as const },
+    { stageCode: 'CRM_OFERTA_ZAAKCEPTOWANA', name: 'Umowa i zaliczka', taskTitle: 'Przygotuj umowę i zaliczkę', dueOffsetDays: 1, taskPriority: 'HIGH' as const },
+    { stageCode: 'CRM_ZALICZKA_MONTAZ', name: 'Termin montażu', taskTitle: 'Ustal termin montażu z klientem', dueOffsetDays: 3, taskPriority: 'NORMAL' as const },
+    { stageCode: 'CRM_PROCEDURA_OSD', name: 'Dokumenty OSD', taskTitle: 'Przygotuj i złóż dokumenty OSD', dueOffsetDays: 1, taskPriority: 'HIGH' as const },
+  ];
+
+  for (const rule of workflowRules) {
+    const stage = await prisma.pipelineStage.findUniqueOrThrow({ where: { code: rule.stageCode } });
+    const existing = await prisma.workflowRule.findFirst({ where: { name: rule.name } });
+    const data = {
+      name: rule.name,
+      triggerStageId: stage.id,
+      taskTitle: rule.taskTitle,
+      dueOffsetDays: rule.dueOffsetDays,
+      taskPriority: rule.taskPriority,
+      active: true,
+      assignToOwner: true,
+    };
+    if (existing) await prisma.workflowRule.update({ where: { id: existing.id }, data });
+    else await prisma.workflowRule.create({ data });
   }
 }
 

@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 import * as XLSX from 'xlsx';
 import { badRequest, jsonResponse, optionalString, serverError } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export const runtime = 'nodejs';
 
@@ -177,6 +178,8 @@ async function readMeasurementFile(storagePath?: string | null) {
 }
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'energy.manage');
+  if (!access.ok) return access.response;
   try {
     const url = new URL(req.url);
     const clientId = optionalString({ clientId: url.searchParams.get('clientId') }, 'clientId');

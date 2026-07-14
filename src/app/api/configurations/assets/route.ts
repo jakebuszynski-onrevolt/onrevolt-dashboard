@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 function optionalNumber(value: unknown) {
   if (value == null || value === '') return undefined;
@@ -23,6 +24,8 @@ function optionalString(value: unknown) {
 }
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req);
+  if (!access.ok) return access.response;
   try {
     const projectId = req.nextUrl.searchParams.get('projectId');
     if (!projectId) throw new Error('Brak projectId');
@@ -39,6 +42,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'configurations.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const projectId = requireString(body, 'projectId');

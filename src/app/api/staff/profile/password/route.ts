@@ -2,9 +2,11 @@ import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, readJsonObject, requireString, serverError, unauthorized } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
 import { hashPassword, verifyPassword } from 'lib/onrevolt/staff';
-import { getCurrentStaffUser, serializeStaffUser, staffUserInclude } from 'lib/onrevolt/staff-server';
+import { authorizeStaffRequest, getCurrentStaffUser, serializeStaffUser, staffUserInclude } from 'lib/onrevolt/staff-server';
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req);
+  if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();

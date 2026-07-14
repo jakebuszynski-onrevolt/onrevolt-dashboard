@@ -1,7 +1,10 @@
 import { NextRequest } from "next/server";
 import { getTypeformForm, simplifyTypeformFieldsFull } from "../../../../clients/typeform";
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'synchronization.manage');
+  if (!access.ok) return access.response;
   try {
     const url = new URL(req.url);
     const formId =

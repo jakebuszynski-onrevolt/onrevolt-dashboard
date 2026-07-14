@@ -13,7 +13,7 @@ import {
   unauthorized,
 } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
-import { getCurrentStaffUser, isAdminUser, serializeStaffUser } from 'lib/onrevolt/staff-server';
+import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser, serializeStaffUser } from 'lib/onrevolt/staff-server';
 
 const activeStatuses = [
   InstallationStatus.TO_SCHEDULE,
@@ -489,6 +489,8 @@ function plannedItemsFromSource(configuration: any, offer: any) {
 }
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'installations.manage');
+  if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();
@@ -521,6 +523,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'installations.manage');
+  if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();
@@ -586,6 +590,16 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      await tx.stockReservation.updateMany({
+        where: {
+          projectId,
+          configurationId: configuration?.id || undefined,
+          status: 'RESERVED',
+          installationId: null,
+        },
+        data: { installationId: created.id },
+      });
+
       if (body.createTasks !== false) {
         await createTeamTasks(tx, {
           installation: created,
@@ -615,6 +629,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'installations.manage');
+  if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();
@@ -701,6 +717,12 @@ export async function PATCH(req: NextRequest) {
         await tx.project.update({
           where: { id: existing.projectId },
           data: { status: 'ODBIOR', installationDate: updateData.completedAt || existing.completedAt || new Date() },
+        });
+      }
+      if (updateData.status === InstallationStatus.IN_PROGRESS) {
+        await tx.stockReservation.updateMany({
+          where: { installationId: id, status: 'RESERVED' },
+          data: { status: 'ISSUED' },
         });
       }
     });

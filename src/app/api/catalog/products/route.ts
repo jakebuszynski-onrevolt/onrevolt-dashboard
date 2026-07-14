@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 type ProductPriceInput = {
   purchaseNet: number;
@@ -96,7 +97,9 @@ function includeProductDetails() {
   };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req);
+  if (!access.ok) return access.response;
   try {
     const products = await prisma.product.findMany({
       include: includeProductDetails(),
@@ -110,6 +113,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'catalog.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const price = parsePriceInput(body.price);
@@ -152,6 +157,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'catalog.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const id = requireString(body, 'id');

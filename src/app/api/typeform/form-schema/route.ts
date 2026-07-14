@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 // === Pomocnicze typy UI ===
 type UiField = {
@@ -34,6 +35,8 @@ function mapTfToUiType(tfType: string, multiple?: boolean): UiField["uiType"] | 
 }
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'synchronization.manage');
+  if (!access.ok) return access.response;
   try {
     const url = new URL(req.url);
     const formId =

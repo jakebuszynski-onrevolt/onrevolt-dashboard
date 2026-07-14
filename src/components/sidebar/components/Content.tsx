@@ -13,7 +13,7 @@ import {
 import Brand from 'components/sidebar/components/Brand';
 import Links from 'components/sidebar/components/Links';
 import SidebarCard from 'components/sidebar/components/SidebarCard';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { IRoute } from 'types/navigation';
 
 // FUNCTIONS
@@ -24,8 +24,19 @@ type CurrentStaffUser = {
   avatarUrl?: string | null;
   positionTitle?: string | null;
   systemRole: string;
+  permissions?: string[];
   companyRoles?: Array<{ name: string }>;
 };
+
+function visibleRoutes(routes: IRoute[], user: CurrentStaffUser | null): IRoute[] {
+  const permissions = new Set(user?.permissions || []);
+  return routes.flatMap((route) => {
+    if (route.requiredPermission && !permissions.has(route.requiredPermission)) return [];
+    if (!route.items) return [route];
+    const items = visibleRoutes(route.items, user);
+    return items.length ? [{ ...route, items }] : [];
+  });
+}
 
 function userSubtitle(user: CurrentStaffUser | null) {
   if (!user) return 'Panel onRevolt';
@@ -44,6 +55,7 @@ function SidebarContent(props: {
   const { routes, mini, hovered } = props;
   const [user, setUser] = useState<CurrentStaffUser | null>(null);
   const textColor = useColorModeValue('navy.700', 'white');
+  const navigationRoutes = useMemo(() => visibleRoutes(routes, user), [routes, user]);
 
   async function loadCurrentUser() {
     try {
@@ -78,7 +90,7 @@ function SidebarContent(props: {
           pe={{ md: '16px', '2xl': '1px' }}
           ms={mini && hovered === false ? '-16px' : 'unset'}
         >
-          <Links mini={mini} hovered={hovered} routes={routes} />
+          <Links mini={mini} hovered={hovered} routes={navigationRoutes} />
         </Box>
       </Stack>
 

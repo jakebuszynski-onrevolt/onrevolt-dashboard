@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 function optionalNumber(value: unknown) {
   if (value == null || value === '') return undefined;
@@ -16,6 +17,8 @@ function requiredNumber(value: unknown, fieldName: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'configurations.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const rawItems = Array.isArray(body.items) ? body.items : [];

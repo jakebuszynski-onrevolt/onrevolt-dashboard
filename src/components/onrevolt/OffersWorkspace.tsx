@@ -35,6 +35,7 @@ import OfferDocument from './OfferDocument';
 type OfferForm = {
   projectId: string;
   configurationId: string;
+  energyScenarioId: string;
   title: string;
   validUntil: string;
   subsidyGross: string;
@@ -54,6 +55,7 @@ type OfferForm = {
 const emptyForm: OfferForm = {
   projectId: '',
   configurationId: '',
+  energyScenarioId: '',
   title: '',
   validUntil: '',
   subsidyGross: '0',
@@ -122,6 +124,8 @@ export default function OffersWorkspace() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [statusSavingId, setStatusSavingId] = useState('');
+  const [depositPercent, setDepositPercent] = useState('40');
+  const [contractSaving, setContractSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const textColor = useColorModeValue('secondaryGray.900', 'white');
@@ -190,6 +194,18 @@ export default function OffersWorkspace() {
     () => configurations.filter((configuration) => configuration.projectId === form.projectId),
     [configurations, form.projectId],
   );
+  const projectScenarios = useMemo(
+    () => (selectedProject?.energyAudits || []).flatMap((audit: any) => audit.scenarios || []),
+    [selectedProject],
+  );
+
+  function scenarioValues(scenario: any) {
+    const result = scenario?.resultSnapshot || {};
+    return {
+      currentAnnualBillGross: String(result.baselineAnnualCostGross || 0),
+      projectedAnnualBillGross: String(result.scenarioAnnualCostGross || 0),
+    };
+  }
 
   function updateForm(key: keyof OfferForm, value: string) {
     setForm((current) => {
@@ -198,14 +214,18 @@ export default function OffersWorkspace() {
         const energyAccount = project?.energyPortalAccounts?.[0];
         const energyOperator = energyAccount?.operator || current.energyOperator || 'ENEA';
         const configuration = configurations.find((item) => item.projectId === value);
+        const scenarios = (project?.energyAudits || []).flatMap((audit: any) => audit.scenarios || []);
+        const scenario = scenarios.find((item: any) => item.recommended) || scenarios[0];
         return {
           ...current,
           projectId: value,
           configurationId: configuration?.id || '',
+          energyScenarioId: scenario?.id || '',
           title: configuration?.name || '',
           energyOperator,
           tariffBefore: energyAccount?.tariff || getDefaultEnergyTariff(energyOperator),
           tariffAfter: getDefaultTargetEnergyTariff(energyOperator),
+          ...(scenario ? scenarioValues(scenario) : { currentAnnualBillGross: '0', projectedAnnualBillGross: '0' }),
         };
       }
       if (key === 'energyOperator') {
@@ -223,6 +243,10 @@ export default function OffersWorkspace() {
           configurationId: value,
           title: current.title || configuration?.name || '',
         };
+      }
+      if (key === 'energyScenarioId') {
+        const scenario = projectScenarios.find((item: any) => item.id === value);
+        return { ...current, energyScenarioId: value, ...(scenario ? scenarioValues(scenario) : {}) };
       }
       return { ...current, [key]: value };
     });
@@ -278,6 +302,33 @@ export default function OffersWorkspace() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setStatusSavingId('');
+    }
+  }
+
+  async function createContract() {
+    if (!selectedOffer) return;
+    setContractSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch('/api/contracts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: selectedOffer.projectId,
+          offerId: selectedOffer.id,
+          depositPercent: Number(depositPercent),
+        }),
+      });
+      const contract = await readPayload(response);
+      setOffers((current) => current.map((offer) => offer.id === selectedOffer.id
+        ? { ...offer, contracts: [contract, ...(offer.contracts || [])] }
+        : offer));
+      setNotice(`Utworzono umowę ${contract.number}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setContractSaving(false);
     }
   }
 
@@ -416,6 +467,22 @@ export default function OffersWorkspace() {
                 </Select>
               </FormControl>
               <FormControl>
+                <FormLabel>Wariant energetyczny</FormLabel>
+                <Select value={form.energyScenarioId} onChange={(event) => updateForm('energyScenarioId', event.target.value)}>
+                  <option value="">Bez symulacji - wartości ręczne</option>
+                  {projectScenarios.map((scenario: any) => (
+                    <option key={scenario.id} value={scenario.id}>
+                      {scenario.name}{scenario.recommended ? ' (rekomendowany)' : ''} - PV {scenario.pvPowerKw} kWp / magazyn {scenario.batteryCapacityKwh} kWh
+                    </option>
+                  ))}
+                </Select>
+                {form.energyScenarioId ? (
+                  <Text color={mutedColor} fontSize="xs" mt="5px">
+                    Koszty energii i wykresy zostaną zamrożone w ofercie wraz z wersją silnika.
+                  </Text>
+                ) : null}
+              </FormControl>
+              <FormControl>
                 <FormLabel>Tytuł oferty</FormLabel>
                 <Input value={form.title} onChange={(event) => updateForm('title', event.target.value)} />
               </FormControl>
@@ -551,6 +618,32 @@ export default function OffersWorkspace() {
               </Flex>
             )}
           </Card>
+
+          {selectedOffer ? (
+            <Card p="22px">
+              <Text color={textColor} fontSize="lg" fontWeight="900" mb="8px">Umowa do wybranej oferty</Text>
+              {(selectedOffer.contracts || []).length ? (
+                <Flex direction="column" gap="8px">
+                  {selectedOffer.contracts.map((contract: any) => (
+                    <Flex key={contract.id} justify="space-between" gap="10px" border="1px solid" borderColor={borderColor} p="10px" borderRadius="8px">
+                      <Box><Text color={textColor} fontWeight="800">{contract.number}</Text><Text color={mutedColor} fontSize="sm">Zaliczka {money(contract.deposit)} PLN</Text></Box>
+                      <Badge colorScheme={contract.status === 'SIGNED' ? 'green' : 'purple'}>{contract.status === 'SIGNED' ? 'Podpisana' : 'Robocza'}</Badge>
+                    </Flex>
+                  ))}
+                </Flex>
+              ) : (
+                <>
+                  <Text color={mutedColor} fontSize="sm" mb="12px">
+                    Umowę można utworzyć po zaakceptowaniu oferty. Procent zaliczki jest jawny i zapisywany w harmonogramie.
+                  </Text>
+                  <Flex gap="10px" align="end">
+                    <FormControl maxW="150px"><FormLabel>Zaliczka (%)</FormLabel><Input type="number" min="0" max="100" value={depositPercent} onChange={(event) => setDepositPercent(event.target.value)} /></FormControl>
+                    <Button colorScheme="purple" onClick={createContract} isLoading={contractSaving} isDisabled={selectedOffer.status !== 'ACCEPTED'}>Utwórz umowę</Button>
+                  </Flex>
+                </>
+              )}
+            </Card>
+          ) : null}
         </Flex>
 
         <Card p="0" overflow="hidden">

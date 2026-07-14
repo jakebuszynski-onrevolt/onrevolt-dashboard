@@ -122,7 +122,12 @@ export async function importPipedriveToLocal(options: ImportOptions): Promise<Im
   counters.stagesSeen = stages.length;
   counters.dealsSeen = deals.length;
 
-  const localStageByPipedriveId = new Map<string, string>();
+  const leadStage = options.apply
+    ? await prisma.pipelineStage.findUnique({ where: { code: 'CRM_LEAD' } })
+    : null;
+  if (options.apply && !leadStage) {
+    throw new Error('Brak operacyjnego etapu CRM Lead. Uruchom crm:pipeline:reconcile.');
+  }
 
   for (const stage of stages) {
     const pipedriveStageId = String(stage?.id ?? '').trim();
@@ -131,25 +136,27 @@ export async function importPipedriveToLocal(options: ImportOptions): Promise<Im
     const existingStage = await prisma.pipelineStage.findUnique({ where: { pipedriveStageId } });
     if (existingStage) {
       counters.stagesExisting += 1;
-      localStageByPipedriveId.set(pipedriveStageId, existingStage.id);
     } else if (!options.apply) {
       counters.stagesWouldImport += 1;
     }
 
     if (options.apply) {
-      const saved = await prisma.pipelineStage.upsert({
+      await prisma.pipelineStage.upsert({
         where: { pipedriveStageId },
         update: {
           name: String(stage?.name || `Pipedrive stage ${pipedriveStageId}`),
           sortOrder: Number(stage?.order_nr ?? 0),
+          source: 'PIPEDRIVE',
+          isActive: false,
         },
         create: {
           name: String(stage?.name || `Pipedrive stage ${pipedriveStageId}`),
           sortOrder: Number(stage?.order_nr ?? 0),
           pipedriveStageId,
+          source: 'PIPEDRIVE',
+          isActive: false,
         },
       });
-      localStageByPipedriveId.set(pipedriveStageId, saved.id);
       counters.stagesImported += 1;
     }
   }
@@ -190,7 +197,6 @@ export async function importPipedriveToLocal(options: ImportOptions): Promise<Im
     const personName = String(deal?.person_name || deal?.person_id?.name || title || `Pipedrive ${personId}`).trim();
     const email = firstContactValue(deal?.person_id?.email);
     const phone = firstContactValue(deal?.person_id?.phone);
-    const stageId = localStageByPipedriveId.get(String(deal?.stage_id ?? ''));
     const investmentAddress = explicitInvestmentAddress(deal);
 
     const client = await prisma.client.upsert({
@@ -257,7 +263,7 @@ export async function importPipedriveToLocal(options: ImportOptions): Promise<Im
         title: title || personName,
         source: 'pipedrive',
         pipedriveDealId,
-        stageId,
+        stageId: leadStage?.id,
         locationAddress: investmentAddress || undefined,
         notes: deal?.org_name ? `Organizacja: ${deal.org_name}` : undefined,
       },

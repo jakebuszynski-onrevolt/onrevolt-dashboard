@@ -1,8 +1,11 @@
 import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, readJsonObject, serverError } from 'lib/onrevolt/api';
 import { importPipedriveToLocal } from 'lib/onrevolt/pipedrive-import';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'synchronization.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     if (body.dryRun === false) {

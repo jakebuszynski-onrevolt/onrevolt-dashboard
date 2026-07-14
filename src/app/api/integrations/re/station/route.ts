@@ -2,10 +2,13 @@ import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { createReStation, resolveReStation } from 'lib/onrevolt/re-stations';
 import { prisma } from 'lib/onrevolt/prisma';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'energy.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const clientId = requireString(body, 'clientId');

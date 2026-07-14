@@ -3,6 +3,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 type OfferCreateInput = {
   projectId: string;
   configurationId?: string;
+  energyScenarioId?: string;
   title?: string;
   validUntil?: Date;
   subsidyGross?: number;
@@ -117,7 +118,7 @@ function lineItemsSnapshot(configuration: any) {
     }));
 }
 
-function calculationSnapshot(input: OfferCreateInput, configuration: any, lineItems: any[]) {
+function calculationSnapshot(input: OfferCreateInput, configuration: any, lineItems: any[], scenario?: any) {
   const totalNet = decimalToNumber(configuration?.totalSaleGross)
     ? lineItems.reduce((sum, item) => sum + decimalToNumber(item.saleNet), 0)
     : lineItems.reduce((sum, item) => sum + decimalToNumber(item.saleNet), 0);
@@ -127,8 +128,13 @@ function calculationSnapshot(input: OfferCreateInput, configuration: any, lineIt
   const subsidyGross = optionalMoney(input.subsidyGross);
   const thermoReliefGross = optionalMoney(input.thermoReliefGross);
   const totalAfterSupportGross = Math.max(0, money(totalGross - subsidyGross - thermoReliefGross));
-  const currentAnnualBillGross = optionalMoney(input.currentAnnualBillGross);
-  const projectedAnnualBillGross = optionalMoney(input.projectedAnnualBillGross);
+  const result = scenario?.resultSnapshot || {};
+  const currentAnnualBillGross = scenario
+    ? optionalMoney(result.baselineAnnualCostGross)
+    : optionalMoney(input.currentAnnualBillGross);
+  const projectedAnnualBillGross = scenario
+    ? optionalMoney(result.scenarioAnnualCostGross)
+    : optionalMoney(input.projectedAnnualBillGross);
   const annualSavingsGross = Math.max(0, money(currentAnnualBillGross - projectedAnnualBillGross));
   const paybackYears = annualSavingsGross > 0
     ? money(totalAfterSupportGross / annualSavingsGross)
@@ -147,10 +153,12 @@ function calculationSnapshot(input: OfferCreateInput, configuration: any, lineIt
     savingsPercent: currentAnnualBillGross > 0
       ? Math.round((annualSavingsGross / currentAnnualBillGross) * 1000) / 10
       : 0,
+    energyScenarioId: scenario?.id || null,
+    energyEngineVersion: scenario?.engineVersion || null,
   };
 }
 
-function energySnapshot(project: any) {
+function energySnapshot(project: any, scenario?: any) {
   const files = project.energyMeasurementFiles || [];
   const downloaded = files.filter((file: any) => file.status === 'DOWNLOADED');
   const months = Array.from(new Set<string>(downloaded.map((file: any) => `${file.periodYear}-${String(file.periodMonth).padStart(2, '0')}`)))
@@ -166,11 +174,22 @@ function energySnapshot(project: any) {
     })),
     measurementMonths: months,
     measurementFiles: downloaded.length,
+    scenario: scenario ? {
+      id: scenario.id,
+      name: scenario.name,
+      engineVersion: scenario.engineVersion,
+      pvPowerKw: decimalToNumber(scenario.pvPowerKw),
+      batteryCapacityKwh: decimalToNumber(scenario.batteryCapacityKwh),
+      investmentGross: decimalToNumber(scenario.investmentGross),
+      input: scenario.inputSnapshot,
+      result: scenario.resultSnapshot,
+      createdAt: scenario.createdAt,
+    } : null,
   };
 }
 
 export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateInput) {
-  const [project, configuration] = await Promise.all([
+  const [project, configuration, selectedScenario] = await Promise.all([
     prisma.project.findUnique({
       where: { id: input.projectId },
       include: {
@@ -200,6 +219,16 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
         },
       })
       : null,
+    input.energyScenarioId
+      ? prisma.energyScenario.findUnique({
+        where: { id: input.energyScenarioId },
+        include: { audit: { select: { projectId: true } } },
+      })
+      : prisma.energyScenario.findFirst({
+        where: { audit: { projectId: input.projectId }, recommended: true },
+        include: { audit: { select: { projectId: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
   ]);
 
   if (!project) throw new Error('Nie znaleziono projektu dla oferty');
@@ -207,9 +236,13 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
   if (configuration && configuration.projectId !== project.id) {
     throw new Error('Konfiguracja nie należy do wybranego projektu');
   }
+  if (input.energyScenarioId && !selectedScenario) throw new Error('Nie znaleziono wariantu energetycznego');
+  if (selectedScenario && selectedScenario.audit.projectId !== project.id) {
+    throw new Error('Wariant energetyczny nie należy do wybranego projektu');
+  }
 
   const lineItems = lineItemsSnapshot(configuration);
-  const calculation = calculationSnapshot(input, configuration, lineItems);
+  const calculation = calculationSnapshot(input, configuration, lineItems, selectedScenario);
   const client = projectSnapshot(project);
   const title = optionalText(input.title)
     || configuration?.name
@@ -221,6 +254,7 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
     data: {
       projectId: project.id,
       configurationId: configuration?.id,
+      energyScenarioId: selectedScenario?.id,
       title,
       version: await nextOfferVersion(prisma, project.id, configuration?.id),
       status: 'DRAFT' as const,
@@ -241,7 +275,7 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
       descriptionBefore: optionalText(input.descriptionBefore),
       descriptionAfter: optionalText(input.descriptionAfter),
       lineItemsSnapshot: lineItems,
-      energySnapshot: energySnapshot(project),
+      energySnapshot: energySnapshot(project, selectedScenario),
       calculationSnapshot: calculation,
       clientSnapshot: client,
       validUntil: input.validUntil,
@@ -253,7 +287,7 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
 export async function createOfferFromConfiguration(prisma: PrismaClient, input: OfferCreateInput) {
   const draft = await buildOfferDraft(prisma, input);
   const number = await nextOfferNumber(prisma);
-  const { projectId, configurationId, ...offerData } = draft.data;
+  const { projectId, configurationId, energyScenarioId, ...offerData } = draft.data;
 
   const offer = await prisma.offer.create({
     data: {
@@ -265,6 +299,7 @@ export async function createOfferFromConfiguration(prisma: PrismaClient, input: 
       clientSnapshot: offerData.clientSnapshot as Prisma.InputJsonValue,
       project: { connect: { id: projectId } },
       configuration: configurationId ? { connect: { id: configurationId } } : undefined,
+      energyScenario: energyScenarioId ? { connect: { id: energyScenarioId } } : undefined,
     },
     include: offerInclude,
   });
@@ -292,6 +327,7 @@ export const offerInclude = {
       },
     },
   },
+  energyScenario: true,
   contracts: true,
   documents: {
     orderBy: { createdAt: 'desc' as const },

@@ -9,7 +9,7 @@ import {
   unauthorized,
 } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
-import { getCurrentStaffUser, isAdminUser } from 'lib/onrevolt/staff-server';
+import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser } from 'lib/onrevolt/staff-server';
 
 function canSeeTask(user: any, task: any) {
   return isAdminUser(user) || task.assignedToId === user.id || task.createdById === user.id;
@@ -36,6 +36,8 @@ function serializeComment(comment: any) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'crm.write');
+  if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();

@@ -57,6 +57,7 @@ type StageRow = {
   id: string;
   name: string;
   sortOrder: number;
+  status?: string;
 };
 
 type ClientFormState = {
@@ -119,12 +120,14 @@ const clientTypeOptions = [
   ['B2B', 'B2B'],
   ['B2C_B2B', 'B2C/B2B'],
 ] as const;
+const pageSize = 50;
 
 export default function ClientsWorkspace() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [stages, setStages] = useState<StageRow[]>([]);
   const [query, setQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -205,9 +208,22 @@ export default function ClientsWorkspace() {
       ].join(' ').toLowerCase().includes(text);
     });
   }, [clients, query, selectedStatus]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const visibleClients = filtered.slice(page * pageSize, (page + 1) * pageSize);
+
+  useEffect(() => { setPage(0); }, [query, selectedStatus]);
 
   function updateForm(key: keyof ClientFormState, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function selectStage(stageId: string) {
+    const stage = stages.find((item) => item.id === stageId);
+    setForm((current) => ({
+      ...current,
+      stageId,
+      status: stage?.status || current.status,
+    }));
   }
 
   function openCreateModal() {
@@ -324,7 +340,7 @@ export default function ClientsWorkspace() {
               </Tr>
             </Thead>
             <Tbody>
-              {filtered.map((client) => {
+              {visibleClients.map((client) => {
                 const contact: ClientRow['contacts'][number] = client.contacts?.[0] || {};
                 const project = client.projects?.[0];
                 const statusValue = projectStatusValue(project);
@@ -366,6 +382,11 @@ export default function ClientsWorkspace() {
             </Tbody>
           </Table>
         </Box>
+        <Flex mt="14px" justify="space-between" align="center" gap="10px">
+          <Button size="sm" variant="outline" onClick={() => setPage((value) => Math.max(0, value - 1))} isDisabled={page === 0}>Poprzednia</Button>
+          <Text color={mutedColor} fontSize="sm">Strona {page + 1} z {pageCount}</Text>
+          <Button size="sm" variant="outline" onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))} isDisabled={page + 1 >= pageCount}>Następna</Button>
+        </Flex>
       </Card>
 
       <Modal isOpen={isOpen} onClose={onClose} size="4xl">
@@ -441,15 +462,11 @@ export default function ClientsWorkspace() {
               </FormControl>
               <FormControl>
                 <FormLabel>Status projektu</FormLabel>
-                <Select value={form.status} onChange={(event) => updateForm('status', event.target.value)}>
-                  {projectStatuses.map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </Select>
+                <Input value={projectStatusLabel(form.status)} isReadOnly />
               </FormControl>
               <FormControl>
                 <FormLabel>Etap</FormLabel>
-                <Select value={form.stageId} onChange={(event) => updateForm('stageId', event.target.value)}>
+                <Select value={form.stageId} onChange={(event) => selectStage(event.target.value)}>
                   <option value="">Brak etapu</option>
                   {stages.map((stage) => (
                     <option key={stage.id} value={stage.id}>{stage.name}</option>

@@ -3,6 +3,7 @@ import { badRequest, jsonResponse, notFound, optionalString, readJsonObject, req
 import { encryptCredential } from 'lib/onrevolt/credentials';
 import { isEnergyOperator } from 'lib/onrevolt/energy-tariffs';
 import { prisma } from 'lib/onrevolt/prisma';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 function validateOperator(value: unknown) {
   if (value == null || value === '') return 'ENEA';
@@ -47,6 +48,8 @@ function publicAccount(account: any) {
 }
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'energy.manage');
+  if (!access.ok) return access.response;
   try {
     const url = new URL(req.url);
     const clientId = url.searchParams.get('clientId');
@@ -65,6 +68,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'energy.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const clientId = requireString(body, 'clientId');

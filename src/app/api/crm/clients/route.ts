@@ -1,7 +1,9 @@
 import { NextRequest } from 'next/server';
 import { forbidden, jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
+import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
-import { getCurrentStaffUser, isAdminUser } from 'lib/onrevolt/staff-server';
+import { isOperationalPipelineStageCode, projectStatusStageCode } from 'lib/onrevolt/pipeline-stages';
+import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser } from 'lib/onrevolt/staff-server';
 
 const clientTypes = new Set(['UNKNOWN', 'B2C', 'B2B', 'B2C_B2B']);
 const projectStatuses = new Set([
@@ -57,6 +59,15 @@ function optionalNestedString(source: Record<string, any> | undefined, key: stri
   if (value == null || value === '') return undefined;
   if (typeof value !== 'string') throw new Error(`Pole ${key} musi być tekstem`);
   return value.trim();
+}
+
+function optionalNestedDate(source: Record<string, any> | undefined, key: string) {
+  if (!source || !Object.prototype.hasOwnProperty.call(source, key)) return undefined;
+  const value = source[key];
+  if (value == null || value === '') return null;
+  const date = new Date(String(value));
+  if (!Number.isFinite(date.getTime())) throw new Error(`Nieprawidłowa data w polu ${key}`);
+  return date;
 }
 
 function dashboardStationValue(source: Record<string, any> | undefined) {
@@ -156,6 +167,10 @@ function projectData(
     title: optionalNestedString(projectBody, 'title') || `Projekt - ${displayName}`,
     status: validateProjectStatus(projectBody.status) as any,
     stageId: validateStageId(projectBody.stageId),
+    ownerId: optionalNestedString(projectBody, 'ownerId'),
+    nextActionTitle: optionalNestedString(projectBody, 'nextActionTitle'),
+    nextActionAt: optionalNestedDate(projectBody, 'nextActionAt'),
+    closedAt: undefined as Date | null | undefined,
     clientType: validateClientType(projectBody.clientType, clientType) as any,
     source: optionalNestedString(projectBody, 'source') || 'manual',
     dashboardStation: dashboardStationValue(projectBody),
@@ -185,6 +200,8 @@ function lockedStationFieldsChanged(
 }
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req);
+  if (!access.ok) return access.response;
   try {
     const url = new URL(req.url);
     const id = url.searchParams.get('id');
@@ -283,6 +300,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'crm.write');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const displayName = requireString(body, 'displayName');
@@ -309,6 +328,21 @@ export async function POST(req: NextRequest) {
       const site = siteInput ? await tx.investmentSite.create({ data: siteInput }) : null;
       const projectInput = projectData(displayName, clientType, projectBody, contactBody, site?.id);
       if (projectInput) {
+        const stageCode = projectStatusStageCode[projectInput.status];
+        const stage = projectInput.stageId
+          ? await tx.pipelineStage.findUnique({ where: { id: projectInput.stageId } })
+          : stageCode
+            ? await tx.pipelineStage.findUnique({ where: { code: stageCode } })
+            : null;
+        if (projectInput.stageId && (!stage || !isOperationalPipelineStageCode(stage.code))) {
+          throw new Error('Nie znaleziono wybranego etapu projektu');
+        }
+        if (stage) {
+          projectInput.stageId = stage.id;
+          projectInput.status = stage.status;
+          if (stage.requiresOwner && !projectInput.ownerId) projectInput.ownerId = access.user.id;
+          projectInput.closedAt = stage.isTerminal ? new Date() : null;
+        }
         await tx.project.create({ data: { ...projectInput, clientId: savedClient.id } });
       }
 
@@ -323,6 +357,14 @@ export async function POST(req: NextRequest) {
         projects: { include: projectInclude, orderBy: { updatedAt: 'desc' } },
       },
     });
+    await writeAuditLog({
+      actorId: access.user.id,
+      clientId: full.id,
+      entityType: 'Client',
+      entityId: full.id,
+      action: 'CREATE',
+      after: full,
+    });
     return jsonResponse({ ok: true, data: full }, { status: 201 });
   } catch (error) {
     return serverError('Nie udało się zapisać klienta', error);
@@ -330,6 +372,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'crm.write');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const id = requireString(body, 'id');
@@ -341,7 +385,7 @@ export async function PUT(req: NextRequest) {
       include: {
         contacts: { take: 1 },
         investmentSites: { orderBy: { updatedAt: 'desc' } },
-        projects: { orderBy: { updatedAt: 'desc' }, take: 1 },
+        projects: { orderBy: { updatedAt: 'desc' } },
       },
     });
     if (!existing) return notFound('Nie znaleziono klienta');
@@ -386,10 +430,11 @@ export async function PUT(req: NextRequest) {
       }
 
       if (projectBody) {
+        const existingProject = existing.projects.find((project) => project.id === projectId) || existing.projects[0];
         const preferredSiteId =
           typeof projectBody.investmentSiteId === 'string' && projectBody.investmentSiteId
             ? projectBody.investmentSiteId
-            : existing.projects[0]?.investmentSiteId || existing.investmentSites[0]?.id;
+            : existingProject?.investmentSiteId || existing.investmentSites[0]?.id;
         const siteInput = investmentSiteData(id, displayName, contactBody, projectBody);
         let investmentSiteId = preferredSiteId;
         if (siteInput) {
@@ -402,6 +447,21 @@ export async function PUT(req: NextRequest) {
         }
 
         const data = projectData(displayName, clientType, projectBody, contactBody, investmentSiteId)!;
+        const stageCode = projectStatusStageCode[data.status];
+        const stage = data.stageId
+          ? await tx.pipelineStage.findUnique({ where: { id: data.stageId } })
+          : stageCode
+            ? await tx.pipelineStage.findUnique({ where: { code: stageCode } })
+            : null;
+        if (data.stageId && (!stage || !isOperationalPipelineStageCode(stage.code))) {
+          throw new Error('Nie znaleziono wybranego etapu projektu');
+        }
+        if (stage) {
+          data.stageId = stage.id;
+          data.status = stage.status;
+          if (stage.requiresOwner && !data.ownerId && !existingProject?.ownerId) data.ownerId = access.user.id;
+          data.closedAt = stage.isTerminal ? new Date() : null;
+        }
         if (projectId) {
           await tx.project.update({ where: { id: projectId }, data });
         } else {
@@ -432,6 +492,15 @@ export async function PUT(req: NextRequest) {
       },
     });
 
+    await writeAuditLog({
+      actorId: access.user.id,
+      clientId: full.id,
+      entityType: 'Client',
+      entityId: full.id,
+      action: 'UPDATE',
+      before: existing,
+      after: full,
+    });
     return jsonResponse({ ok: true, data: full });
   } catch (error) {
     return serverError('Nie udało się zaktualizować klienta', error);

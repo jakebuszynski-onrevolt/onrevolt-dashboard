@@ -1,6 +1,9 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, optionalString, parseDate, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
+import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
+import { isOperationalPipelineStageCode } from 'lib/onrevolt/pipeline-stages';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 function dashboardStationValue(value: unknown) {
   if (value == null || value === '') return undefined;
@@ -26,7 +29,9 @@ function stationIdentifierValue(value: unknown, label: string) {
   return station;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req);
+  if (!access.ok) return access.response;
   try {
     const projects = await prisma.project.findMany({
       include: { client: true, stage: true, owner: true },
@@ -40,15 +45,27 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'crm.write');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
+    const stageId = optionalString(body, 'stageId');
+    const stage = stageId
+      ? await prisma.pipelineStage.findUnique({ where: { id: stageId } })
+      : await prisma.pipelineStage.findUnique({ where: { code: 'CRM_LEAD' } });
+    if (stageId && (!stage || !isOperationalPipelineStageCode(stage.code))) throw new Error('Nie znaleziono wybranego etapu projektu');
+    const ownerId = optionalString(body, 'ownerId') || (stage?.requiresOwner ? access.user.id : undefined);
     const project = await prisma.project.create({
       data: {
         clientId: requireString(body, 'clientId'),
         title: requireString(body, 'title'),
-        status: body.status || 'LEAD',
-        stageId: optionalString(body, 'stageId'),
-        ownerId: optionalString(body, 'ownerId'),
+        clientType: typeof body.clientType === 'string' ? body.clientType as any : 'UNKNOWN',
+        status: stage?.status || body.status || 'LEAD',
+        stageId: stage?.id,
+        ownerId,
+        nextActionTitle: optionalString(body, 'nextActionTitle'),
+        nextActionAt: parseDate(body.nextActionAt),
+        closedAt: stage?.isTerminal ? new Date() : undefined,
         source: optionalString(body, 'source'),
         dashboardStation: dashboardStationValue(body.dashboardStation),
         dashboardStationNumber: stationIdentifierValue(body.dashboardStationNumber, 'Numer stacji'),
@@ -59,6 +76,14 @@ export async function POST(req: NextRequest) {
         saleDate: parseDate(body.saleDate),
         installationDate: parseDate(body.installationDate),
       },
+    });
+    await writeAuditLog({
+      actorId: access.user.id,
+      clientId: project.clientId,
+      entityType: 'Project',
+      entityId: project.id,
+      action: 'CREATE',
+      after: project,
     });
     return jsonResponse({ ok: true, data: project }, { status: 201 });
   } catch (error) {

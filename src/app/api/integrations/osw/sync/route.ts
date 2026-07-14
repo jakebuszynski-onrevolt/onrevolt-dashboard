@@ -1,10 +1,13 @@
 import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, readJsonObject, serverError } from 'lib/onrevolt/api';
 import { getOswSyncStatus, syncOswProducts } from 'lib/onrevolt/osw-sync';
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'synchronization.manage');
+  if (!access.ok) return access.response;
   try {
     const data = await getOswSyncStatus();
     return jsonResponse({ ok: true, data });
@@ -14,6 +17,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'synchronization.manage');
+  if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const apply = body.dryRun === false;

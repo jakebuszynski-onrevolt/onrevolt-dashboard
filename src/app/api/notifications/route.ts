@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, readJsonObject, serverError, unauthorized } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
-import { getCurrentStaffUser } from 'lib/onrevolt/staff-server';
+import { authorizeStaffRequest, getCurrentStaffUser } from 'lib/onrevolt/staff-server';
 
 function dayRange(date = new Date()) {
   const start = new Date(date);
@@ -40,6 +40,8 @@ function serializeNotification(notification: any) {
 }
 
 export async function GET(req: NextRequest) {
+  const access = await authorizeStaffRequest(req);
+  if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();
@@ -87,6 +89,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const access = await authorizeStaffRequest(req);
+  if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();

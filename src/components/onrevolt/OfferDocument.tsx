@@ -118,10 +118,14 @@ function energySnapshot(offer: any) {
   });
 }
 
-function monthBars() {
-  const values = [76, 78, 88, 77, 72, 63, 61, 80, 79, 86, 72, 84];
+function monthBars(energy: Record<string, any>, field: 'consumptionKwh' | 'gridImportKwh') {
   const labels = ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru'];
-  return values.map((value, index) => ({ value, label: labels[index] }));
+  const months = energy.scenario?.result?.months || [];
+  const values = months.length === 12
+    ? months.map((month: any) => numberValue(month[field]))
+    : [76, 78, 88, 77, 72, 63, 61, 80, 79, 86, 72, 84];
+  const maximum = Math.max(...values, 1);
+  return values.map((raw: number, index: number) => ({ value: Math.max(4, raw / maximum * 100), raw, label: labels[index] }));
 }
 
 export default function OfferDocument({ offer, compact = false, showActions = false }: OfferDocumentProps) {
@@ -131,7 +135,8 @@ export default function OfferDocument({ offer, compact = false, showActions = fa
   const energy = energySnapshot(offer);
   const visibleLines = compact ? lines.slice(0, 7) : lines;
   const hasSavings = calc.currentAnnualBillGross > 0 || calc.projectedAnnualBillGross > 0 || calc.annualSavingsGross > 0;
-  const bars = monthBars();
+  const currentBars = monthBars(energy, 'consumptionKwh');
+  const projectedBars = monthBars(energy, 'gridImportKwh');
 
   return (
     <div className={`offer-doc-root${compact ? ' compact' : ''}`}>
@@ -527,9 +532,9 @@ export default function OfferDocument({ offer, compact = false, showActions = fa
           <div className="table-title">Aktualny stan</div>
           <div className="panel-inner">
             <div className="energy-bars">
-              {bars.map((bar) => (
+              {currentBars.map((bar) => (
                 <div className="energy-month" key={bar.label}>
-                  <div className="energy-bar" style={{ height: `${bar.value}%` }} />
+                  <div className="energy-bar" title={`${money(bar.raw)} kWh`} style={{ height: `${bar.value}%` }} />
                   <div className="energy-label">{bar.label}</div>
                 </div>
               ))}
@@ -547,9 +552,9 @@ export default function OfferDocument({ offer, compact = false, showActions = fa
           <div className="table-title">Prognozowany stan z systemem</div>
           <div className="panel-inner">
             <div className="energy-bars">
-              {bars.map((bar, index) => (
+              {projectedBars.map((bar) => (
                 <div className="energy-month" key={bar.label}>
-                  <div className="energy-bar" style={{ height: `${Math.max(18, bar.value - (index % 4) * 8)}%`, background: 'linear-gradient(to top, #ffb13c 0 35%, #21b869 35% 70%, #00a3ff 70% 100%)' }} />
+                  <div className="energy-bar" title={`${money(bar.raw)} kWh z sieci`} style={{ height: `${bar.value}%`, background: 'linear-gradient(to top, #21b869, #00a3ff)' }} />
                   <div className="energy-label">{bar.label}</div>
                 </div>
               ))}
@@ -560,6 +565,14 @@ export default function OfferDocument({ offer, compact = false, showActions = fa
               <div className="meta-card"><div className="meta-label">Zwrot</div><div className="meta-value">{calc.paybackYears ? `${money(calc.paybackYears)} lat` : '-'}</div></div>
               <div className="meta-card"><div className="meta-label">Dane OSD</div><div className="meta-value">{energy.measurementMonths?.join(', ') || 'Do uzupełnienia'}</div></div>
             </div>
+            {energy.scenario ? (
+              <div className="meta-grid">
+                <div className="meta-card"><div className="meta-label">Wariant</div><div className="meta-value">{energy.scenario.name}</div></div>
+                <div className="meta-card"><div className="meta-label">PV</div><div className="meta-value">{energy.scenario.pvPowerKw} kWp</div></div>
+                <div className="meta-card"><div className="meta-label">Magazyn</div><div className="meta-value">{energy.scenario.batteryCapacityKwh} kWh</div></div>
+                <div className="meta-card"><div className="meta-label">Silnik</div><div className="meta-value">{energy.scenario.engineVersion}</div></div>
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
