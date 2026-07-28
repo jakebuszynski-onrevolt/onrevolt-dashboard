@@ -50,6 +50,7 @@ type ClientRow = {
   id: string;
   displayName: string;
   clientType: string;
+  _count?: { tasks: number };
   contacts: Array<{ email?: string; phone?: string; investmentAddress?: string }>;
   investmentSites?: Array<{ fullAddress?: string | null; addressLine?: string | null }>;
   projects: Array<{
@@ -57,9 +58,10 @@ type ClientRow = {
     status: string;
     clientType: string;
     source?: string | null;
-    stage?: { id?: string; name: string; sortOrder?: number | null } | null;
+    stage?: { id?: string; name: string; sortOrder?: number | null; isTerminal?: boolean } | null;
     owner?: { name: string } | null;
     investmentSite?: { fullAddress?: string | null; addressLine?: string | null } | null;
+    _count?: { tasks: number };
   }>;
 };
 
@@ -125,6 +127,7 @@ const projectStatuses = [
 
 const missingStatusValue = '__NO_STATUS__';
 const activeServiceStatusValue = '__IN_SERVICE__';
+const activeServiceWithoutTasksStatusValue = '__IN_SERVICE_WITHOUT_TASKS__';
 const statusLabels = new Map<string, string>(projectStatuses.map(([value, label]) => [value, label]));
 const statusSortOrder = new Map<string, number>(projectStatuses.map(([value], index) => [value, index]));
 const statusFilterOptions = projectStatuses.map(([value, label]) => ({ value, label }));
@@ -249,12 +252,25 @@ export default function ClientsWorkspace() {
       const contact = client.contacts?.[0];
       const project = client.projects?.[0];
       const site = project?.investmentSite || client.investmentSites?.[0];
+      const hasActiveProject = client.projects?.some((item) => {
+        const status = projectStatusValue(item);
+        return status !== 'LEAD' && status !== missingStatusValue;
+      });
+      const hasOpenServiceProject = client.projects?.some((item) => {
+        const status = projectStatusValue(item);
+        return status !== 'LEAD'
+          && status !== 'ZAKONCZONY'
+          && status !== missingStatusValue
+          && !item.stage?.isTerminal;
+      });
+      const hasAssignedActiveTasks = Boolean(client._count?.tasks)
+        || client.projects?.some((item) => Boolean(item._count?.tasks));
       const matchesStatus = selectedStatus === 'all'
         || (selectedStatus === activeServiceStatusValue
-          && client.projects?.some((item) => {
-            const status = projectStatusValue(item);
-            return status !== 'LEAD' && status !== missingStatusValue;
-          }))
+          && hasActiveProject)
+        || (selectedStatus === activeServiceWithoutTasksStatusValue
+          && hasOpenServiceProject
+          && !hasAssignedActiveTasks)
         || client.projects?.some((item) => projectStatusValue(item) === selectedStatus)
         || (!client.projects?.length && selectedStatus === missingStatusValue);
       if (!matchesStatus) return false;
@@ -470,6 +486,7 @@ export default function ClientsWorkspace() {
             >
               <option value="all">Wszystkie</option>
               <option value={activeServiceStatusValue}>W obsłudze (bez Leadów)</option>
+              <option value={activeServiceWithoutTasksStatusValue}>W obsłudze (bez zadań)</option>
               {statusFilterOptions.map((status) => (
                 <option key={status.value} value={status.value}>
                   {status.label}
@@ -499,6 +516,7 @@ export default function ClientsWorkspace() {
                 const project = client.projects?.[0];
                 const statusValue = projectStatusValue(project);
                 const site = project?.investmentSite || client.investmentSites?.[0];
+                const projectClientType = project?.clientType;
                 return (
                   <Tr key={client.id}>
                     <Td>
@@ -516,8 +534,10 @@ export default function ClientsWorkspace() {
                       <Badge colorScheme={projectStatusColor(statusValue)}>{projectStatusLabel(statusValue)}</Badge>
                     </Td>
                     <Td>
-                      <Text>{project?.clientType || client.clientType}</Text>
-                      <Text color={mutedColor} fontSize="xs">Klient: {client.clientType}</Text>
+                      <Text>{client.clientType}</Text>
+                      {projectClientType && projectClientType !== client.clientType ? (
+                        <Text color={mutedColor} fontSize="xs">Projekt: {projectClientType}</Text>
+                      ) : null}
                     </Td>
                     <Td textAlign="right">
                       <Tooltip label="Otwórz kartę klienta" hasArrow>

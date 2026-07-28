@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { TaskStatus } from '@prisma/client';
 import { forbidden, jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
@@ -24,6 +25,15 @@ const projectInclude = {
   stage: true,
   owner: true,
   investmentSite: true,
+};
+
+const assignedActiveTasksCount = {
+  tasks: {
+    where: {
+      assignedToId: { not: null },
+      status: { in: [TaskStatus.OPEN, TaskStatus.IN_PROGRESS] },
+    },
+  },
 };
 
 const energyPortalAccountSelect = {
@@ -296,7 +306,14 @@ export async function GET(req: NextRequest) {
       include: {
         contacts: true,
         investmentSites: { orderBy: { updatedAt: 'desc' } },
-        projects: { include: projectInclude, orderBy: { updatedAt: 'desc' } },
+        projects: {
+          include: {
+            ...projectInclude,
+            _count: { select: assignedActiveTasksCount },
+          },
+          orderBy: { updatedAt: 'desc' },
+        },
+        _count: { select: assignedActiveTasksCount },
       },
       orderBy: { updatedAt: 'desc' },
       take: 1000,
