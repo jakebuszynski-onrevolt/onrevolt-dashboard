@@ -2114,7 +2114,15 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
               return (
                 <TabPanel key={tab} px="0">
                   <Flex direction="column" gap="20px">
-                  <ClientDocumentsPanel mode="invoices" clientId={clientId} projectId={activeProject?.id} documents={client?.documents || []} onChanged={() => load(true)} />
+                  <ClientDocumentsPanel
+                    mode="invoices"
+                    clientId={clientId}
+                    projectId={activeProject?.id}
+                    documents={client?.documents || []}
+                    expectedPpeNumber={energyAccount.id ? energyAccount.ppeNumber : ''}
+                    expectedTariff={energyAccount.id ? energyAccount.tariff : ''}
+                    onChanged={() => load(true)}
+                  />
                   <Card p="22px">
                     <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" mb="18px">
                       <Box>

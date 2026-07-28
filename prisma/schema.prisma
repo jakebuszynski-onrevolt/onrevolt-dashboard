@@ -1284,6 +1284,15 @@ model Document {
   billingCycleMonths     Int?
   invoiceNumber          String?
   amountGross            Decimal?                @db.Decimal(12, 2)
+  amountDue              Decimal?                @db.Decimal(12, 2)
+  invoiceProvider        String?
+  invoiceParserId        String?
+  invoiceParserVersion   String?
+  invoiceConfidence      Decimal?                @db.Decimal(5, 4)
+  invoicePpeNumber       String?
+  invoiceTariff          String?
+  energyConsumptionKwh   Decimal?                @db.Decimal(14, 3)
+  invoiceRecognition     Json?
   notes                  String?                 @db.Text
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
@@ -1293,6 +1302,7 @@ model Document {
   @@index([type])
   @@index([documentDate])
   @@index([billingPeriodFrom, billingPeriodTo])
+  @@index([invoicePpeNumber])
   @@index([sha256])
   @@index([odsCaseId])
   @@index([serviceTicketId])

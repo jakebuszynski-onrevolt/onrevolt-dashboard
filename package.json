@@ -52,6 +52,7 @@
     "next": "15.5.20",
     "next-transpile-modules": "^9.0.0",
     "nodemailer": "^9.0.3",
+    "pdf-parse": "2.2.16",
     "pipedrive": "33.4.3",
     "react": "19.0.7",
     "react-apexcharts": "^1.4.0",

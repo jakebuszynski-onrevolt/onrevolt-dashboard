@@ -78,6 +78,47 @@ export async function PATCH(req: NextRequest) {
     const nextPeriodTo = body.billingPeriodTo === undefined ? existing.billingPeriodTo : parseDate(body.billingPeriodTo) || null;
     if (existing.type === 'FAKTURA_PRAD' && (!nextPeriodFrom || !nextPeriodTo)) return badRequest('Faktura wymaga początku i końca okresu rozliczeniowego');
     if (nextPeriodFrom && nextPeriodTo && nextPeriodFrom > nextPeriodTo) return badRequest('Początek okresu faktury nie może być późniejszy niż koniec');
+    const storedRecognition = existing.invoiceRecognition && typeof existing.invoiceRecognition === 'object' && !Array.isArray(existing.invoiceRecognition)
+      ? existing.invoiceRecognition as Record<string, any>
+      : null;
+    const recognitionFields = storedRecognition?.fields && typeof storedRecognition.fields === 'object'
+      ? storedRecognition.fields as Record<string, any>
+      : null;
+    const recognitionConsumption = recognitionFields?.consumption && typeof recognitionFields.consumption === 'object'
+      ? recognitionFields.consumption as Record<string, any>
+      : null;
+    const invoiceRecognition = storedRecognition && recognitionFields
+      ? {
+          ...storedRecognition,
+          fields: {
+            ...recognitionFields,
+            invoiceNumber: body.invoiceNumber === undefined ? recognitionFields.invoiceNumber : optionalString(body, 'invoiceNumber'),
+            issueDate: body.documentDate === undefined ? recognitionFields.issueDate : body.documentDate || undefined,
+            periodFrom: body.billingPeriodFrom === undefined ? recognitionFields.periodFrom : body.billingPeriodFrom || undefined,
+            periodTo: body.billingPeriodTo === undefined ? recognitionFields.periodTo : body.billingPeriodTo || undefined,
+            billingCycleMonths: body.billingCycleMonths === undefined ? recognitionFields.billingCycleMonths : cycle || undefined,
+            amountGross: body.amountGross === undefined ? recognitionFields.amountGross : body.amountGross === '' ? undefined : Number(body.amountGross),
+            amountDue: body.amountDue === undefined ? recognitionFields.amountDue : body.amountDue === '' ? undefined : Number(body.amountDue),
+            ppeNumber: body.invoicePpeNumber === undefined ? recognitionFields.ppeNumber : optionalString(body, 'invoicePpeNumber'),
+            tariff: body.invoiceTariff === undefined ? recognitionFields.tariff : optionalString(body, 'invoiceTariff'),
+            consumption: recognitionConsumption
+              ? {
+                  ...recognitionConsumption,
+                  totalAfterBalancingKwh: body.energyConsumptionKwh === undefined
+                    ? recognitionConsumption.totalAfterBalancingKwh
+                    : body.energyConsumptionKwh === '' ? undefined : Number(body.energyConsumptionKwh),
+                }
+              : recognitionFields.consumption,
+          },
+          confirmation: {
+            ...(storedRecognition.confirmation && typeof storedRecognition.confirmation === 'object'
+              ? storedRecognition.confirmation as Record<string, any>
+              : {}),
+            correctedAt: new Date().toISOString(),
+            correctedById: access.user.id,
+          },
+        }
+      : undefined;
     const updated = await prisma.document.update({
       where: { id },
       data: {
@@ -91,6 +132,13 @@ export async function PATCH(req: NextRequest) {
         billingCycleMonths: body.billingCycleMonths === undefined ? undefined : cycle,
         invoiceNumber: body.invoiceNumber === undefined ? undefined : optionalString(body, 'invoiceNumber') || null,
         amountGross: body.amountGross === undefined ? undefined : body.amountGross === '' || body.amountGross == null ? null : Number(body.amountGross),
+        amountDue: body.amountDue === undefined ? undefined : body.amountDue === '' || body.amountDue == null ? null : Number(body.amountDue),
+        invoicePpeNumber: body.invoicePpeNumber === undefined ? undefined : optionalString(body, 'invoicePpeNumber') || null,
+        invoiceTariff: body.invoiceTariff === undefined ? undefined : optionalString(body, 'invoiceTariff') || null,
+        energyConsumptionKwh: body.energyConsumptionKwh === undefined
+          ? undefined
+          : body.energyConsumptionKwh === '' || body.energyConsumptionKwh == null ? null : Number(body.energyConsumptionKwh),
+        invoiceRecognition,
         notes: body.notes === undefined ? undefined : optionalString(body, 'notes') || null,
       },
     });
