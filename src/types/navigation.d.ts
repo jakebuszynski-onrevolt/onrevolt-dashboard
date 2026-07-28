@@ -2,6 +2,7 @@ import { ComponentType, Element } from 'react';
 
 export interface IRoute {
   path: string;
+  href?: string;
   name: string;
   layout?: string;
   exact?: boolean;

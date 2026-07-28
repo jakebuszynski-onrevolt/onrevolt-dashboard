@@ -37,6 +37,7 @@ import {
 } from '@chakra-ui/react';
 import Card from 'components/card/Card';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import {
   MdAdd,
@@ -269,6 +270,8 @@ function updateUrl(filters: FiltersState) {
 }
 
 export default function TasksWorkspace() {
+  const searchParams = useSearchParams();
+  const searchQuery = searchParams.toString();
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [stats, setStats] = useState<TaskStats>(emptyStats);
   const [users, setUsers] = useState<StaffOption[]>([]);
@@ -358,9 +361,8 @@ export default function TasksWorkspace() {
   }
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const initialFilters = {
+    const params = new URLSearchParams(searchQuery);
+    const urlFilters = {
       ...emptyFilters,
       q: params.get('q') || '',
       scope: params.get('scope') || emptyFilters.scope,
@@ -370,10 +372,12 @@ export default function TasksWorkspace() {
       clientId: params.get('clientId') || '',
       projectId: params.get('projectId') || '',
     };
-    setFilters(initialFilters);
-    loadTasks(initialFilters);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    setFilters((current) => (
+      Object.keys(urlFilters).every((key) => current[key as keyof FiltersState] === urlFilters[key as keyof FiltersState])
+        ? current
+        : urlFilters
+    ));
+  }, [searchQuery]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -382,7 +386,15 @@ export default function TasksWorkspace() {
     }, 250);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.q, filters.scope, filters.status, filters.priority, filters.assignedToId]);
+  }, [
+    filters.q,
+    filters.scope,
+    filters.status,
+    filters.priority,
+    filters.assignedToId,
+    filters.clientId,
+    filters.projectId,
+  ]);
 
   function setFilter(key: keyof FiltersState, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));

@@ -228,7 +228,7 @@ export function SidebarLinks(props: { routes: IRoute[]; [x: string]: any }) {
         );
       } else {
         return (
-          <NavLink href={route.layout + route.path} key={key}>
+          <NavLink href={route.href || route.layout + route.path} key={key}>
             {route.icon ? (
               <Flex
                 align="center"
@@ -313,7 +313,7 @@ export function SidebarLinks(props: { routes: IRoute[]; [x: string]: any }) {
   const createAccordionLinks = (routes: IRoute[]) => {
     return routes.map((route: IRoute, key: number) => {
       return (
-        <NavLink href={route.layout + route.path} key={key}>
+        <NavLink href={route.href || route.layout + route.path} key={key}>
           <ListItem
             ms={
               mini === false

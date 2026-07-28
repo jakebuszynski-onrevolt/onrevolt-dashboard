@@ -39,7 +39,10 @@ const routes: IRoute[] = [
     items: [
       child('Klienci i projekty', '/clients'),
       child('Lejek sprzedaży', '/pipeline'),
-      child('Zadania i aktywności', '/tasks'),
+      {
+        ...child('Zadania i aktywności', '/tasks'),
+        href: '/admin/tasks?scope=assigned',
+      },
       child('Oferty i umowy', '/offers', 'offers.manage'),
     ],
   },
