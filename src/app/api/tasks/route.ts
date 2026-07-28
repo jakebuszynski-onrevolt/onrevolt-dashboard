@@ -399,29 +399,24 @@ export async function DELETE(req: NextRequest) {
   try {
     const currentUser = await getCurrentStaffUser(req);
     if (!currentUser) return unauthorized();
+    if (!isAdminUser(currentUser)) return forbidden('Tylko administrator może usunąć zadanie');
+
     const body = await readJsonObject(req);
     const id = requireString(body, 'id');
     const existing = await prisma.task.findUnique({ where: { id } });
     if (!existing) return notFound('Nie znaleziono zadania');
-    if (!canManageTask(currentUser, existing)) return forbidden();
-
-    const task = await prisma.task.update({
-      where: { id },
-      data: { status: 'CANCELLED', completedAt: null },
-      include: taskInclude,
-    });
+    await prisma.task.delete({ where: { id } });
 
     await writeAuditLog({
       actorId: access.user.id,
-      clientId: task.clientId,
+      clientId: existing.clientId,
       entityType: 'Task',
-      entityId: task.id,
-      action: 'CANCEL',
+      entityId: existing.id,
+      action: 'DELETE',
       before: existing,
-      after: task,
     });
-    return jsonResponse({ ok: true, data: serializeTask(task) });
+    return jsonResponse({ ok: true, data: { id: existing.id } });
   } catch (error) {
-    return serverError('Nie udało się anulować zadania', error);
+    return serverError('Nie udało się usunąć zadania', error);
   }
 }

@@ -49,6 +49,7 @@ import {
   MdPlayArrow,
   MdRefresh,
   MdSearch,
+  MdDelete,
   MdToday,
   MdWarning,
 } from 'react-icons/md';
@@ -502,8 +503,10 @@ export default function TasksWorkspace() {
     }
   }
 
-  async function cancelTask() {
+  async function deleteTask() {
     if (!selectedTask) return;
+    if (!window.confirm(`Usunąć zadanie „${selectedTask.title}”? Tej operacji nie można cofnąć.`)) return;
+
     setSaving(true);
     setFormError('');
     try {
@@ -514,8 +517,8 @@ export default function TasksWorkspace() {
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
-      setSelectedTask(payload.data);
-      setForm(taskToForm(payload.data));
+      closeModal();
+      window.dispatchEvent(new Event('onrevolt:notifications-updated'));
       await loadTasks();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
@@ -922,9 +925,15 @@ export default function TasksWorkspace() {
             </SimpleGrid>
           </ModalBody>
           <ModalFooter gap="10px" flexWrap="wrap">
-            {selectedTask && canManageSelected && selectedTask.status !== 'CANCELLED' ? (
-              <Button variant="outline" colorScheme="red" onClick={cancelTask} isLoading={saving}>
-                Anuluj zadanie
+            {selectedTask && isAdmin ? (
+              <Button
+                variant="outline"
+                colorScheme="red"
+                leftIcon={<Icon as={MdDelete} />}
+                onClick={deleteTask}
+                isLoading={saving}
+              >
+                Usuń zadanie
               </Button>
             ) : null}
             <Button variant="ghost" onClick={closeModal}>

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getStaffPermissions, hasStaffPermission } from './staff-server';
+import { getStaffPermissions, hasStaffPermission, isAdminUser } from './staff-server';
 
 function user(systemRole: string, companyRoles: string[] = []) {
   return {
@@ -27,4 +27,10 @@ test('monter nie widzi cen, ale obsługuje montaż', () => {
   const installer = user('USER', ['MONTER']);
   assert.equal(hasStaffPermission(installer, 'installations.manage'), true);
   assert.equal(hasStaffPermission(installer, 'pricing.read'), false);
+});
+
+test('tylko administrator systemowy może usuwać zadania', () => {
+  assert.equal(isAdminUser(user('ADMIN')), true);
+  assert.equal(isAdminUser(user('MODERATOR')), false);
+  assert.equal(isAdminUser(user('USER', ['SPRZEDAWCA'])), false);
 });
