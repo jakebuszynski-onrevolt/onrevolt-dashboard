@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MdCalculate, MdOpenInNew, MdRefresh, MdSave } from 'react-icons/md';
 
 const consumptionDistribution = [0.11, 0.1, 0.09, 0.08, 0.07, 0.065, 0.065, 0.065, 0.075, 0.085, 0.095, 0.105];
+const consumptionDistributionTotal = consumptionDistribution.reduce((sum, share) => sum + share, 0);
 const monthLabels = ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru'];
 
 const emptyAudit = {
@@ -60,6 +61,14 @@ export default function AuditsWorkspace() {
   const selectedAudit = audits.find((item) => item.projectId === selectedProjectId);
   const scenarios = selectedAudit?.scenarios || [];
   const latestResult = scenarioResult(scenarios[0]);
+  const latestMonths = Array.isArray(latestResult?.months) ? latestResult.months : [];
+  const latestMonthMax = Math.max(1, ...latestMonths.map((month: any) => Math.max(
+    Number(month?.consumptionKwh || 0),
+    Number(month?.pvGenerationKwh || 0),
+  )));
+  const baselineAnnualCost = latestResult?.baselineAnnualCostGross ?? latestResult?.currentAnnualBillGross;
+  const scenarioAnnualCost = latestResult?.scenarioAnnualCostGross ?? latestResult?.projectedAnnualBillGross;
+  const energyAutonomy = latestResult?.energyAutonomyPercent ?? latestResult?.energyIndependencePercent;
   const filteredProjects = useMemo(() => {
     const q = projectSearch.trim().toLowerCase();
     if (!q) return projects;
@@ -135,7 +144,7 @@ export default function AuditsWorkspace() {
   function energyInputs() {
     const annual = Number(audit.annualConsumptionKwh || 0);
     if (!(annual > 0)) throw new Error('Podaj roczne zużycie energii');
-    let monthly = consumptionDistribution.map((share) => annual * share);
+    let monthly = consumptionDistribution.map((share) => annual * share / consumptionDistributionTotal);
     let hourly = defaultHourlyLoadProfile;
     if (audit.profileSource === 'OPERATOR_HOURLY') {
       if (!energyProfile?.months?.length) throw new Error('Brak wczytanego profilu godzinowego operatora');
@@ -223,9 +232,9 @@ export default function AuditsWorkspace() {
           </SimpleGrid><Button mt="14px" colorScheme="purple" leftIcon={<MdCalculate />} onClick={calculate} isLoading={calculating}>Oblicz i zapisz</Button></Card>
         </SimpleGrid>
         {latestResult ? <><SimpleGrid columns={{ base: 2, xl: 5 }} gap="14px">{[
-          ['Koszt przed', money(latestResult.baselineAnnualCostGross)], ['Koszt po', money(latestResult.scenarioAnnualCostGross)], ['Oszczędność', money(latestResult.annualSavingsGross)], ['Autonomia', `${latestResult.energyAutonomyPercent}%`], ['Zwrot', latestResult.simplePaybackYears ? `${latestResult.simplePaybackYears} lat` : '-'],
+          ['Koszt przed', money(baselineAnnualCost)], ['Koszt po', money(scenarioAnnualCost)], ['Oszczędność', money(latestResult.annualSavingsGross)], ['Autonomia', energyAutonomy == null ? '-' : `${energyAutonomy}%`], ['Zwrot', latestResult.simplePaybackYears ? `${latestResult.simplePaybackYears} lat` : '-'],
         ].map(([label, value]) => <Card key={label} p="16px"><Text color={mutedColor} fontSize="sm">{label}</Text><Text color={textColor} fontSize="xl" fontWeight="800">{value}</Text></Card>)}</SimpleGrid>
-        <Card p="20px"><Text color={textColor} fontWeight="800" mb="14px">Bilans miesięczny</Text><Grid templateColumns="repeat(12, minmax(54px, 1fr))" gap="8px" overflowX="auto">{latestResult.months.map((month: any, index: number) => { const max = Math.max(1, ...latestResult.months.map((item: any) => Math.max(item.consumptionKwh, item.pvGenerationKwh))); return <Box key={month.month} minW="54px"><Flex h="150px" align="end" gap="3px"><Box bg="gray.400" w="50%" h={`${month.consumptionKwh / max * 100}%`} minH="2px" /><Box bg="green.400" w="50%" h={`${month.pvGenerationKwh / max * 100}%`} minH="2px" /></Flex><Text textAlign="center" color={mutedColor} fontSize="xs" mt="6px">{monthLabels[index]}</Text></Box>; })}</Grid></Card></> : null}
+        <Card p="20px"><Text color={textColor} fontWeight="800" mb="14px">Bilans miesięczny</Text>{latestMonths.length ? <Grid templateColumns="repeat(12, minmax(54px, 1fr))" gap="8px" overflowX="auto">{latestMonths.map((month: any, index: number) => <Box key={month.month || index} minW="54px"><Flex h="150px" align="end" gap="3px"><Box bg="gray.400" w="50%" h={`${Number(month.consumptionKwh || 0) / latestMonthMax * 100}%`} minH="2px" /><Box bg="green.400" w="50%" h={`${Number(month.pvGenerationKwh || 0) / latestMonthMax * 100}%`} minH="2px" /></Flex><Text textAlign="center" color={mutedColor} fontSize="xs" mt="6px">{monthLabels[index] || month.month}</Text></Box>)}</Grid> : <Text color={mutedColor}>Ten scenariusz nie zawiera bilansu miesięcznego. Przelicz go ponownie, aby uzupełnić wykres.</Text>}</Card></> : null}
         <Card p="20px"><Flex justify="space-between" mb="12px"><Text color={textColor} fontWeight="800">Warianty</Text><Badge>{scenarios.length}</Badge></Flex><SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} gap="10px">{scenarios.map((item: any) => { const result = scenarioResult(item); return <Box key={item.id} border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px"><Flex justify="space-between"><Text color={textColor} fontWeight="700">{item.name}</Text>{item.recommended ? <Badge colorScheme="green">Rekomendowany</Badge> : null}</Flex><Text color={mutedColor} fontSize="sm">PV {Number(item.pvPowerKw)} kWp · magazyn {Number(item.batteryCapacityKwh)} kWh</Text><Text color={textColor} mt="8px" fontWeight="800">{money(result?.annualSavingsGross)} / rok</Text><Text color={mutedColor} fontSize="xs">{item.engineVersion}</Text></Box>; })}</SimpleGrid></Card>
       </> : <Card p="30px"><Text color={mutedColor}>Wybierz projekt.</Text></Card>}
     </Flex>

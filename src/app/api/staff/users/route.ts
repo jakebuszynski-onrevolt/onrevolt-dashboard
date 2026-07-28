@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { badRequest, forbidden, jsonResponse, optionalString, readJsonObject, requireString, serverError, unauthorized } from 'lib/onrevolt/api';
 import { writeAuditLog } from 'lib/onrevolt/audit';
+import { queueAndSendEmail } from 'lib/onrevolt/email';
 import { prisma } from 'lib/onrevolt/prisma';
 import { generateTemporaryPassword, hashPassword } from 'lib/onrevolt/staff';
 import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser, serializeStaffUser, staffUserInclude } from 'lib/onrevolt/staff-server';
@@ -90,13 +91,10 @@ export async function POST(req: NextRequest) {
       include: staffUserInclude,
     });
 
-    await prisma.emailMessage.create({
-      data: {
-        to: user.email,
-        subject: 'Dostęp do panelu onRevolt',
-        body: `Utworzono konto w panelu onRevolt.\nLogin: ${user.email}\nHasło tymczasowe: ${tempPassword}\nPo zalogowaniu zmień hasło.`,
-        status: 'QUEUED',
-      },
+    const emailDelivery = await queueAndSendEmail({
+      to: user.email,
+      subject: 'Dostęp do panelu onRevolt',
+      body: `Utworzono konto w panelu onRevolt.\n\nLogin: ${user.email}\nHasło tymczasowe: ${tempPassword}\n\nPo zalogowaniu zmień hasło.\nPanel: https://onrevolt.com/admin/`,
     });
 
     await writeAuditLog({
@@ -106,7 +104,7 @@ export async function POST(req: NextRequest) {
       action: 'CREATE',
       after: serializeStaffUser(user),
     });
-    return jsonResponse({ ok: true, data: serializeStaffUser(user), tempPassword }, { status: 201 });
+    return jsonResponse({ ok: true, data: serializeStaffUser(user), tempPassword, emailDelivery }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message.includes('Wymagane logowanie')) return unauthorized(error.message);
     if (error instanceof Error && error.message.includes('Brak uprawnień')) return forbidden(error.message);

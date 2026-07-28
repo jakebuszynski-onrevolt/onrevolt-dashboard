@@ -2134,15 +2134,16 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                         >
                           Zapisz dostęp
                         </Button>
-                        <Button
-                          colorScheme="blue"
-                          variant="outline"
-                          onClick={syncEnea}
-                          isLoading={energySyncing}
-                          isDisabled={energyAccount.operator !== 'ENEA'}
-                        >
-                          Uzupełnij braki ENEA
-                        </Button>
+                        {energyAccount.operator === 'ENEA' ? (
+                          <Button
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={syncEnea}
+                            isLoading={energySyncing}
+                          >
+                            Uzupełnij braki ENEA
+                          </Button>
+                        ) : null}
                       </Flex>
                     </Flex>
 
@@ -2214,7 +2215,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       <Textarea value={energyAccount.notes} onChange={(event) => updateEnergyAccount('notes', event.target.value)} rows={3} />
                     </FormControl>
 
-                    <Box mt="22px">
+                    {energyAccount.operator === 'ENEA' ? <Box mt="22px">
                       <Text color={textColor} fontSize="md" fontWeight="800" mb="10px">Dane pomiarowe ENEA</Text>
                       {energyRange ? (
                         <Text color={mutedColor} mb="10px">Zakres 12 pełnych miesięcy: {energyRange}</Text>
@@ -2277,7 +2278,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       ) : (
                         <Text color={mutedColor}>Brak pobranych plików ENEA.</Text>
                       )}
-                    </Box>
+                    </Box> : null}
                   </Card></Flex>
                 </TabPanel>
               );

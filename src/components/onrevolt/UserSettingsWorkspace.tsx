@@ -228,7 +228,14 @@ export default function UserSettingsWorkspace() {
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
-      setNotice(modalMode === 'edit' ? `Zapisano użytkownika: ${payload.data.name}` : `Dodano użytkownika: ${payload.data.name}`);
+      const emailSuffix = payload.emailDelivery?.status === 'SENT'
+        ? ' Email z danymi dostępowymi został wysłany.'
+        : payload.emailDelivery?.status === 'QUEUED'
+          ? ' Google chwilowo odroczył wiadomość. System ponowi wysyłkę automatycznie.'
+        : payload.emailDelivery?.status === 'FAILED'
+          ? ` Nie udało się wysłać emaila: ${payload.emailDelivery.error}`
+          : '';
+      setNotice((modalMode === 'edit' ? `Zapisano użytkownika: ${payload.data.name}` : `Dodano użytkownika: ${payload.data.name}`) + emailSuffix);
       if (payload.tempPassword) setTemporaryPassword(payload.tempPassword);
       await loadUsers();
       if (modalMode === 'edit') onClose();
@@ -253,7 +260,11 @@ export default function UserSettingsWorkspace() {
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
       setTemporaryPassword(payload.tempPassword || '');
-      setNotice(`Wygenerowano nowe hasło dla ${payload.data.name}. Wiadomość trafiła do kolejki email.`);
+      setNotice(payload.emailDelivery?.status === 'SENT'
+        ? `Wygenerowano nowe hasło dla ${payload.data.name} i wysłano je emailem.`
+        : payload.emailDelivery?.status === 'QUEUED'
+          ? `Wygenerowano nowe hasło dla ${payload.data.name}. Google chwilowo odroczył wiadomość, więc system ponowi wysyłkę automatycznie.`
+          : `Wygenerowano nowe hasło dla ${payload.data.name}, ale email nie został wysłany: ${payload.emailDelivery?.error || 'nieznany błąd'}`);
       await loadUsers();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

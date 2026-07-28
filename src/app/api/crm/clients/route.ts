@@ -61,6 +61,14 @@ function optionalNestedString(source: Record<string, any> | undefined, key: stri
   return value.trim();
 }
 
+function nullableNestedString(source: Record<string, any> | undefined, key: string) {
+  if (!source || !Object.prototype.hasOwnProperty.call(source, key)) return undefined;
+  const value = source[key];
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string') throw new Error(`Pole ${key} musi być tekstem`);
+  return value.trim() || null;
+}
+
 function optionalNestedDate(source: Record<string, any> | undefined, key: string) {
   if (!source || !Object.prototype.hasOwnProperty.call(source, key)) return undefined;
   const value = source[key];
@@ -124,12 +132,12 @@ function contactData(displayName: string, contactBody: Record<string, any> | und
   if (!contactBody) return undefined;
   return {
     name: optionalNestedString(contactBody, 'name') || displayName,
-    email: optionalNestedString(contactBody, 'email'),
-    phone: optionalNestedString(contactBody, 'phone'),
-    addressLine: optionalNestedString(contactBody, 'addressLine'),
-    postalCode: optionalNestedString(contactBody, 'postalCode'),
-    city: optionalNestedString(contactBody, 'city'),
-    investmentAddress: optionalNestedString(contactBody, 'investmentAddress'),
+    email: nullableNestedString(contactBody, 'email'),
+    phone: nullableNestedString(contactBody, 'phone'),
+    addressLine: nullableNestedString(contactBody, 'addressLine'),
+    postalCode: nullableNestedString(contactBody, 'postalCode'),
+    city: nullableNestedString(contactBody, 'city'),
+    investmentAddress: nullableNestedString(contactBody, 'investmentAddress'),
   };
 }
 
