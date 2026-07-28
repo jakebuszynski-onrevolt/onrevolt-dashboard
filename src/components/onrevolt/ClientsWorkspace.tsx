@@ -111,6 +111,7 @@ const projectStatuses = [
 ] as const;
 
 const missingStatusValue = '__NO_STATUS__';
+const activeServiceStatusValue = '__IN_SERVICE__';
 const statusLabels = new Map<string, string>(projectStatuses.map(([value, label]) => [value, label]));
 const statusFilterOptions = projectStatuses.map(([value, label]) => ({ value, label }));
 
@@ -188,6 +189,11 @@ export default function ClientsWorkspace() {
       const project = client.projects?.[0];
       const site = project?.investmentSite || client.investmentSites?.[0];
       const matchesStatus = selectedStatus === 'all'
+        || (selectedStatus === activeServiceStatusValue
+          && client.projects?.some((item) => {
+            const status = projectStatusValue(item);
+            return status !== 'LEAD' && status !== missingStatusValue;
+          }))
         || client.projects?.some((item) => projectStatusValue(item) === selectedStatus)
         || (!client.projects?.length && selectedStatus === missingStatusValue);
       if (!matchesStatus) return false;
@@ -317,6 +323,7 @@ export default function ClientsWorkspace() {
           />
           <Select value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value)} maxW="260px">
             <option value="all">Wszystkie statusy</option>
+            <option value={activeServiceStatusValue}>W obsłudze (bez Leadów)</option>
             {statusFilterOptions.map((status) => (
               <option key={status.value} value={status.value}>
                 {status.label}
