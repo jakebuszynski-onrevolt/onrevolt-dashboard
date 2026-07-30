@@ -126,6 +126,10 @@ function normalizedTariff(value?: string | null) {
   return String(value || '').trim().toUpperCase();
 }
 
+function isHeicFile(file?: File | null) {
+  return Boolean(file && /\.(heic|heif)$/i.test(file.name));
+}
+
 function recognitionOf(document: any) {
   const value = document?.invoiceRecognition;
   if (!value) return null;
@@ -177,6 +181,7 @@ function ClientFilesPanel({ clientId, projectId, documents, onChanged }: PanelPr
 
   async function upload() {
     if (!file || !title.trim()) return;
+    const convertedFromHeic = isHeicFile(file);
     setBusy(true);
     setError('');
     setMessage('');
@@ -197,7 +202,7 @@ function ClientFilesPanel({ clientId, projectId, documents, onChanged }: PanelPr
       setTitle('');
       setNotes('');
       setTagText('');
-      setMessage('Dodano plik.');
+      setMessage(convertedFromHeic ? 'Dodano zdjęcie po konwersji do JPG.' : 'Dodano plik.');
       await onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -221,7 +226,18 @@ function ClientFilesPanel({ clientId, projectId, documents, onChanged }: PanelPr
         <SimpleGrid columns={{ base: 1, md: 2 }} gap="12px">
           <FormControl isRequired>
             <FormLabel>Plik</FormLabel>
-            <Input key={fileInputKey} type="file" p="5px" onChange={selectFile} />
+            <Input
+              key={fileInputKey}
+              type="file"
+              p="5px"
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.heif,.xlsx,.xls,.ods,.docx,.doc,.csv,.txt,image/heic,image/heif"
+              onChange={selectFile}
+            />
+            {isHeicFile(file) ? (
+              <Text color={mutedColor} fontSize="sm" mt="6px">
+                Zdjęcie HEIC zostanie automatycznie zapisane jako JPG.
+              </Text>
+            ) : null}
           </FormControl>
           <FormControl isRequired>
             <FormLabel>Nazwa</FormLabel>

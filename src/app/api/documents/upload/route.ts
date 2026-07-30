@@ -4,6 +4,7 @@ import path from 'path';
 import { NextRequest } from 'next/server';
 import { jsonResponse, serverError } from 'lib/onrevolt/api';
 import { writeAuditLog } from 'lib/onrevolt/audit';
+import { prepareDocumentFile } from 'lib/onrevolt/document-image';
 import { recognizeInvoicePdf } from 'lib/onrevolt/invoice-recognition';
 import type { InvoiceRecognitionResult } from 'lib/onrevolt/invoice-recognition';
 import { prisma } from 'lib/onrevolt/prisma';
@@ -15,7 +16,7 @@ const allowedDocumentTypes = new Set([
   'PROTOKOL', 'ZDJECIE_MONTAZU', 'DOKUMENT_OSD', 'RE_DOKUMENT', 'INNE',
 ]);
 const allowedExtensions = new Set([
-  '.pdf', '.png', '.jpg', '.jpeg', '.webp', '.xlsx', '.xls', '.ods',
+  '.pdf', '.png', '.jpg', '.jpeg', '.webp', '.heic', '.heif', '.xlsx', '.xls', '.ods',
   '.docx', '.doc', '.csv', '.txt',
 ]);
 
@@ -111,13 +112,13 @@ export async function POST(req: NextRequest) {
       throw new Error(`Niedozwolony format pliku: ${extension || 'brak rozszerzenia'}`);
     }
 
-    const bytes = Buffer.from(await file.arrayBuffer());
+    const originalBytes = Buffer.from(await file.arrayBuffer());
     let recognition = submittedRecognition;
     if (type === 'FAKTURA_PRAD') {
-      if (extension !== '.pdf' || bytes.subarray(0, 5).toString('ascii') !== '%PDF-') {
+      if (extension !== '.pdf' || originalBytes.subarray(0, 5).toString('ascii') !== '%PDF-') {
         throw new Error('Faktura ENEA musi być prawidłowym plikiem PDF');
       }
-      const verifiedRecognition = await recognizeInvoicePdf(bytes);
+      const verifiedRecognition = await recognizeInvoicePdf(originalBytes);
       if (
         submittedRecognition?.parser.id !== verifiedRecognition.parser.id
         || submittedRecognition.parser.version !== verifiedRecognition.parser.version
@@ -126,6 +127,15 @@ export async function POST(req: NextRequest) {
       }
       recognition = verifiedRecognition;
     }
+    const preparedFile = await prepareDocumentFile({
+      bytes: originalBytes,
+      fileName: file.name,
+      mimeType: file.type || undefined,
+    });
+    if (preparedFile.bytes.length > maxUploadBytes) {
+      throw new Error('Plik po konwersji przekracza limit 25 MB');
+    }
+    const { bytes } = preparedFile;
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const clientId = String(form.get('clientId') || '').trim() || undefined;
     const projectId = String(form.get('projectId') || '').trim() || undefined;
@@ -219,7 +229,7 @@ export async function POST(req: NextRequest) {
     } : undefined;
 
     const month = new Date().toISOString().slice(0, 7);
-    const safeName = file.name.replace(/[^\p{L}\p{N}._-]+/gu, '_');
+    const safeName = preparedFile.fileName.replace(/[^\p{L}\p{N}._-]+/gu, '_');
     const relativePath = path.join(type.toLowerCase(), month, `${randomUUID()}-${safeName}`);
     const uploadRoot = path.resolve(uploadDir);
     const absolutePath = path.resolve(uploadRoot, relativePath);
@@ -235,8 +245,8 @@ export async function POST(req: NextRequest) {
       const documentData = {
         type: type as any,
         title,
-        fileName: file.name,
-        mimeType: file.type || undefined,
+        fileName: preparedFile.fileName,
+        mimeType: preparedFile.mimeType,
         sizeBytes: bytes.length,
         sha256,
         storagePath: relativePath,
