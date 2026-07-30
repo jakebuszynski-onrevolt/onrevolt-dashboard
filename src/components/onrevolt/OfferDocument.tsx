@@ -1,5 +1,6 @@
 'use client';
 
+import { vatBreakdown } from 'lib/onrevolt/configuration-vat';
 import Image from 'next/image';
 
 type OfferDocumentProps = {
@@ -73,12 +74,15 @@ function offerLines(offer: any) {
     description: item.description || item.product?.name || `Pozycja ${index + 1}`,
     model: item.product?.sku || item.product?.supplierSku || '',
     quantity: item.quantity || 0,
+    saleNet: item.saleNet || 0,
     saleGross: item.saleGross || 0,
+    saleVatRate: item.saleVatRate || 0,
   }));
 }
 
 function calculation(offer: any) {
   const saved = snapshot<Record<string, any>>(offer.calculationSnapshot, {});
+  const lines = offerLines(offer);
   const currentAnnualBillGross = numberValue(saved.currentAnnualBillGross ?? offer.currentAnnualBillGross);
   const projectedAnnualBillGross = numberValue(saved.projectedAnnualBillGross ?? offer.projectedAnnualBillGross);
   const annualSavingsGross = numberValue(saved.annualSavingsGross ?? offer.annualSavingsGross);
@@ -87,6 +91,14 @@ function calculation(offer: any) {
   return {
     totalNet: numberValue(saved.totalNet ?? offer.totalNet),
     totalGross: numberValue(saved.totalGross ?? offer.totalGross),
+    totalVat: numberValue(saved.totalVat ?? numberValue(offer.totalGross) - numberValue(offer.totalNet)),
+    vatBreakdown: Array.isArray(saved.vatBreakdown)
+      ? saved.vatBreakdown
+      : vatBreakdown(lines.map((line) => ({
+        saleNet: numberValue(line.saleNet),
+        saleGross: numberValue(line.saleGross),
+        saleVatRate: numberValue(line.saleVatRate),
+      }))),
     subsidyGross: numberValue(saved.subsidyGross ?? offer.subsidyGross),
     thermoReliefGross: numberValue(saved.thermoReliefGross ?? offer.thermoReliefGross),
     totalAfterSupportGross: numberValue(saved.totalAfterSupportGross ?? offer.totalAfterSupportGross ?? offer.totalGross),
@@ -435,7 +447,14 @@ export default function OfferDocument({ offer, compact = false, showActions = fa
                     <td colSpan={6}>Pozostałe pozycje w pełnym zestawieniu: {lines.length - visibleLines.length}</td>
                   </tr>
                 ) : null}
-                <tr className="summary-row"><td colSpan={5}>Koszt systemu</td><td className="number">{money(calc.totalGross)} PLN</td></tr>
+                <tr className="summary-row"><td colSpan={5}>Wartość netto</td><td className="number">{money(calc.totalNet)} PLN</td></tr>
+                {calc.vatBreakdown.map((row: any) => (
+                  <tr className="summary-row" key={row.rate}>
+                    <td colSpan={5}>VAT {numberValue(row.rate) * 100}%</td>
+                    <td className="number">{money(row.vat)} PLN</td>
+                  </tr>
+                ))}
+                <tr className="summary-row"><td colSpan={5}>Koszt systemu brutto</td><td className="number">{money(calc.totalGross)} PLN</td></tr>
                 <tr className="summary-row"><td colSpan={5}>Prognozowana kwota dotacji</td><td className="number">{money(calc.subsidyGross)} PLN</td></tr>
                 <tr className="summary-row"><td colSpan={5}>Prognozowana ulga termomodernizacyjna</td><td className="number">{money(calc.thermoReliefGross)} PLN</td></tr>
                 <tr className="summary-row green"><td colSpan={5}>Prognozowany koszt systemu po dofinansowaniach</td><td className="number">{money(calc.totalAfterSupportGross)} PLN</td></tr>

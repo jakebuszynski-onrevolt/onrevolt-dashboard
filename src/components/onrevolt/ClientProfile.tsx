@@ -1035,7 +1035,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     || energyProfile?.months?.[energyProfile.months.length - 1];
   const maxMonthlyKwh = Math.max(1, ...(energyProfile?.months || []).map((month) => month.totalKwh));
   const maxHourlyKwh = Math.max(1, ...(selectedUsageMonth?.hourly || []).map((value) => value));
-  const taskCreateParams = new URLSearchParams({ clientId, create: '1' });
+  const taskCreateParams = new URLSearchParams({ scope: 'all', clientId, create: '1' });
   if (project?.id) taskCreateParams.set('projectId', project.id);
   const taskCreateUrl = `/admin/tasks?${taskCreateParams.toString()}`;
   const installationCreateUrl = project?.id

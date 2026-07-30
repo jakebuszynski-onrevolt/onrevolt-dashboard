@@ -9,7 +9,6 @@ type ProductPriceInput = {
   purchaseVatRate: number;
   operatingCostNet: number;
   marginRate: number;
-  saleVatRate: number;
   currency: string;
 };
 
@@ -67,7 +66,6 @@ function parsePriceInput(value: unknown): ProductPriceInput | undefined {
     purchaseVatRate: normalizeNumber(price.purchaseVatRate, 'price.purchaseVatRate'),
     operatingCostNet: normalizeNumber(price.operatingCostNet, 'price.operatingCostNet'),
     marginRate: normalizeNumber(price.marginRate, 'price.marginRate'),
-    saleVatRate: normalizeNumber(price.saleVatRate, 'price.saleVatRate'),
     currency: typeof price.currency === 'string' && price.currency.trim() ? price.currency.trim() : 'PLN',
   };
 }
@@ -85,7 +83,6 @@ function priceChanged(current: any, next: ProductPriceInput) {
     decimalNumber(current.purchaseVatRate) !== next.purchaseVatRate ||
     decimalNumber(current.operatingCostNet) !== next.operatingCostNet ||
     decimalNumber(current.marginRate) !== next.marginRate ||
-    decimalNumber(current.saleVatRate) !== next.saleVatRate ||
     current.currency !== next.currency
   );
 }
@@ -143,7 +140,6 @@ export async function POST(req: NextRequest) {
             purchaseVatRate: price.purchaseVatRate,
             operatingCostNet: price.operatingCostNet,
             marginRate: price.marginRate,
-            saleVatRate: price.saleVatRate,
             currency: price.currency,
           },
         } : undefined,
@@ -196,7 +192,6 @@ export async function PATCH(req: NextRequest) {
             purchaseVatRate: price.purchaseVatRate,
             operatingCostNet: price.operatingCostNet,
             marginRate: price.marginRate,
-            saleVatRate: price.saleVatRate,
             currency: price.currency,
           },
         });

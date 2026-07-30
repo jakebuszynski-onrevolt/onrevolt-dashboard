@@ -40,7 +40,6 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import Card from 'components/card/Card';
-import { calculateConfigurationLine } from 'lib/onrevolt/calculator';
 import { percentFormValueToRate, rateToPercentFormValue } from 'lib/onrevolt/percentage';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -62,7 +61,7 @@ type ProductPrice = {
   purchaseVatRate: string | number;
   operatingCostNet: string | number;
   marginRate: string | number;
-  saleVatRate: string | number;
+  saleVatRate?: string | number | null;
   currency: string;
   validFrom: string;
 };
@@ -147,7 +146,6 @@ type ProductEditForm = {
   purchaseVatRate: string;
   operatingCostNet: string;
   marginRate: string;
-  saleVatRate: string;
   currency: string;
 };
 
@@ -174,7 +172,6 @@ const editablePriceFields: Array<keyof ProductEditForm> = [
   'purchaseVatRate',
   'operatingCostNet',
   'marginRate',
-  'saleVatRate',
 ];
 const emptyProductForm: ProductEditForm = {
   sku: '',
@@ -197,7 +194,6 @@ const emptyProductForm: ProductEditForm = {
   purchaseVatRate: '',
   operatingCostNet: '',
   marginRate: '',
-  saleVatRate: '',
   currency: 'PLN',
 };
 
@@ -227,14 +223,12 @@ function productTotals(product: ProductRow) {
   const price = product.prices?.[0];
   if (!price) return null;
 
-  return calculateConfigurationLine({
-    quantity: 1,
-    unitPurchaseNet: asNumber(price.purchaseNet),
-    purchaseVatRate: asNumber(price.purchaseVatRate),
-    operatingCostNet: asNumber(price.operatingCostNet),
-    marginRate: asNumber(price.marginRate),
-    saleVatRate: asNumber(price.saleVatRate),
-  });
+  const totalCostNet = asNumber(price.purchaseNet) + asNumber(price.operatingCostNet);
+  const profitNet = totalCostNet * asNumber(price.marginRate);
+  return {
+    saleNet: totalCostNet + profitNet,
+    profitNet,
+  };
 }
 
 function mediaLabel(media: ProductMedia) {
@@ -286,7 +280,6 @@ function editFormFromProduct(product: ProductRow): ProductEditForm {
     purchaseVatRate: rateToPercentFormValue(price?.purchaseVatRate),
     operatingCostNet: formValue(price?.operatingCostNet),
     marginRate: rateToPercentFormValue(price?.marginRate),
-    saleVatRate: rateToPercentFormValue(price?.saleVatRate),
     currency: price?.currency || 'PLN',
   };
 }
@@ -303,7 +296,7 @@ function buildPricePayload(form: ProductEditForm) {
   const requiredFields = editablePriceFields.filter((field) => field !== 'currentPurchaseNet');
   const missing = requiredFields.filter((field) => form[field].trim() === '');
   if (missing.length) {
-    throw new Error('Cena wymaga pól: koszt netto, VAT zakupu, koszty operacyjne, marża i VAT sprzedaży');
+    throw new Error('Cena wymaga pól: koszt netto, VAT zakupu, koszty operacyjne i marża');
   }
 
   return {
@@ -312,7 +305,6 @@ function buildPricePayload(form: ProductEditForm) {
     purchaseVatRate: percentFormValueToRate(form.purchaseVatRate),
     operatingCostNet: form.operatingCostNet,
     marginRate: percentFormValueToRate(form.marginRate),
-    saleVatRate: percentFormValueToRate(form.saleVatRate),
     currency: form.currency.trim() || 'PLN',
   };
 }
@@ -625,7 +617,7 @@ export default function CatalogWorkspace() {
               Katalog urządzeń
             </Text>
             <Text color={mutedColor} mt="6px">
-              Produkty, usługi, ceny, VAT i marże przeniesione z kalkulatora sprzedawcy ODS.
+              Produkty, usługi, ceny zakupu i domyślne marże wykorzystywane w konfiguracjach.
             </Text>
           </Box>
           <Flex gap="10px" wrap="wrap">
@@ -698,7 +690,7 @@ export default function CatalogWorkspace() {
                 <Th>Parametry</Th>
                 <Th isNumeric>Koszt netto</Th>
                 <Th isNumeric>Marża</Th>
-                <Th isNumeric>Cena brutto</Th>
+                <Th isNumeric>Sugerowana cena netto</Th>
                 <Th isNumeric>Zysk</Th>
                 <Th>Media</Th>
                 <Th>Działania</Th>
@@ -742,7 +734,7 @@ export default function CatalogWorkspace() {
                     </Td>
                     <Td isNumeric>{price ? formatMoney(asNumber(price.purchaseNet), price.currency) : '-'}</Td>
                     <Td isNumeric>{price ? formatPercent(price.marginRate) : '-'}</Td>
-                    <Td isNumeric>{totals && price ? formatMoney(totals.saleGross, price.currency) : '-'}</Td>
+                    <Td isNumeric>{totals && price ? formatMoney(totals.saleNet, price.currency) : '-'}</Td>
                     <Td isNumeric>{totals && price ? formatMoney(totals.profitNet, price.currency) : '-'}</Td>
                     <Td minW="260px">
                       <Flex gap="8px" wrap="wrap" align="center" mb="10px">
@@ -983,13 +975,6 @@ export default function CatalogWorkspace() {
                     <FormLabel>Marża (%)</FormLabel>
                     <InputGroup>
                       <Input value={editForm.marginRate} inputMode="decimal" pe="38px" onChange={(event) => updateEditField('marginRate', event.target.value)} />
-                      <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
-                    </InputGroup>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>VAT sprzedaży (%)</FormLabel>
-                    <InputGroup>
-                      <Input value={editForm.saleVatRate} inputMode="decimal" pe="38px" onChange={(event) => updateEditField('saleVatRate', event.target.value)} />
                       <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
                     </InputGroup>
                   </FormControl>

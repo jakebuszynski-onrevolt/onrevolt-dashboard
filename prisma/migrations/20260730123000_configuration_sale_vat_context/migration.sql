@@ -1,0 +1,7 @@
+ALTER TABLE `ProductPrice`
+  MODIFY `saleVatRate` DECIMAL(5, 4) NULL;
+
+ALTER TABLE `Configuration`
+  ADD COLUMN `saleVatMode` ENUM('REDUCED_8', 'STANDARD_23', 'MIXED', 'REVIEW') NOT NULL DEFAULT 'MIXED',
+  ADD COLUMN `defaultSaleVatRate` DECIMAL(5, 4) NULL,
+  ADD COLUMN `vatBasis` VARCHAR(191) NULL;

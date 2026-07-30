@@ -50,6 +50,13 @@ import {
 } from '@chakra-ui/react';
 import Card from 'components/card/Card';
 import { calculateConfigurationLine } from 'lib/onrevolt/calculator';
+import {
+  ConfigurationVatMode,
+  defaultSaleVatRateForMode,
+  defaultVatModeForClientType,
+  resolveSaleVatRate,
+  vatBreakdown,
+} from 'lib/onrevolt/configuration-vat';
 import { percentFormValueToRate, rateToPercentFormValue } from 'lib/onrevolt/percentage';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -73,7 +80,7 @@ type PriceRow = {
   purchaseVatRate: string | number;
   operatingCostNet: string | number;
   marginRate: string | number;
-  saleVatRate: string | number;
+  saleVatRate?: string | number | null;
 };
 
 type ProductRow = {
@@ -269,6 +276,18 @@ const assetKinds = Object.keys(assetKindLabels);
 const verificationStatuses = Object.keys(assetVerificationLabels);
 const compatibilityStatuses = Object.keys(compatibilityLabels);
 const nonPricedSupplyModes = new Set(['CLIENT_OWNED_USED', 'CLIENT_SUPPLIED_NEW', 'NOT_INCLUDED']);
+const saleVatModeLabels: Record<ConfigurationVatMode, string> = {
+  REDUCED_8: '8% - stawka obniżona',
+  STANDARD_23: '23% - stawka podstawowa',
+  MIXED: 'Mieszany - stawka przy pozycji',
+  REVIEW: 'Do weryfikacji',
+};
+const vatBasisLabels: Record<string, string> = {
+  RESIDENTIAL_INSTALLATION: 'Montaż w kwalifikującym się budynku mieszkalnym',
+  OTHER_REDUCED: 'Inna podstawa stawki obniżonej',
+  STANDARD_RATE: 'Stawka podstawowa',
+  MIXED_RATES: 'Stawki mieszane',
+};
 
 function asNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === '') return 0;
@@ -343,14 +362,14 @@ function itemFromProduct(product?: ProductRow, position = 1): ConfigItemForm {
     purchaseVatRate: rateToPercentFormValue(price?.purchaseVatRate ?? '0.23'),
     operatingCostNet: formValue(price?.operatingCostNet ?? '0'),
     marginRate: rateToPercentFormValue(price?.marginRate ?? '0.3'),
-    saleVatRate: rateToPercentFormValue(price?.saleVatRate ?? '0.23'),
+    saleVatRate: '',
     isOptional: false,
     requiresReview: false,
     notes: '',
   };
 }
 
-function pricedInput(item: ConfigItemForm) {
+function pricedInput(item: ConfigItemForm, saleVatMode: ConfigurationVatMode) {
   if (nonPricedSupplyModes.has(item.supplyMode)) {
     return {
       quantity: asNumber(item.quantity),
@@ -369,30 +388,40 @@ function pricedInput(item: ConfigItemForm) {
     purchaseVatRate: percentFormValueToRate(item.purchaseVatRate),
     operatingCostNet: asNumber(item.operatingCostNet),
     marginRate: percentFormValueToRate(item.marginRate),
-    saleVatRate: percentFormValueToRate(item.saleVatRate),
+    saleVatRate: resolveSaleVatRate(saleVatMode, percentFormValueToRate(item.saleVatRate)),
   };
 }
 
-function itemToPayload(item: ConfigItemForm) {
+function itemToPayload(item: ConfigItemForm, saleVatMode: ConfigurationVatMode) {
   return {
     ...item,
     purchaseVatRate: percentFormValueToRate(item.purchaseVatRate),
     marginRate: percentFormValueToRate(item.marginRate),
-    saleVatRate: percentFormValueToRate(item.saleVatRate),
+    saleVatRate: resolveSaleVatRate(saleVatMode, percentFormValueToRate(item.saleVatRate)),
   };
 }
 
-function calculateItems(items: ConfigItemForm[]) {
-  const lines = items.map((item) => calculateConfigurationLine(pricedInput(item)));
-  return lines.reduce(
+function calculateItems(items: ConfigItemForm[], saleVatMode: ConfigurationVatMode) {
+  const lines = items.map((item) => calculateConfigurationLine(pricedInput(item, saleVatMode)));
+  const totals = lines.reduce(
     (acc, line) => ({
       purchaseNet: acc.purchaseNet + line.purchaseNet,
+      saleNet: acc.saleNet + line.saleNet,
+      saleVatValue: acc.saleVatValue + line.saleVatValue,
       saleGross: acc.saleGross + line.saleGross,
       profitNet: acc.profitNet + line.profitNet,
       vatSurplus: acc.vatSurplus + line.vatSurplus,
     }),
-    { purchaseNet: 0, saleGross: 0, profitNet: 0, vatSurplus: 0 },
+    { purchaseNet: 0, saleNet: 0, saleVatValue: 0, saleGross: 0, profitNet: 0, vatSurplus: 0 },
   );
+  return {
+    ...totals,
+    vatBreakdown: vatBreakdown(lines.map((line, index) => ({
+      saleNet: line.saleNet,
+      saleGross: line.saleGross,
+      saleVatRate: pricedInput(items[index], saleVatMode).saleVatRate,
+    }))),
+  };
 }
 
 function cleanAsset(asset: ExistingAssetRow): ExistingAssetRow {
@@ -442,6 +471,8 @@ export default function ConfiguratorWorkspace() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [projectId, setProjectId] = useState('');
   const [clientType, setClientType] = useState('B2C');
+  const [saleVatMode, setSaleVatMode] = useState<ConfigurationVatMode>('REDUCED_8');
+  const [vatBasis, setVatBasis] = useState('RESIDENTIAL_INSTALLATION');
   const [goal, setGoal] = useState('STORAGE_RETROFIT');
   const [roofType, setRoofType] = useState('UNKNOWN');
   const [kind, setKind] = useState('MAGAZYN');
@@ -508,7 +539,7 @@ export default function ConfiguratorWorkspace() {
     return clientMatches && goalMatches && roofMatches;
   }), [clientType, goal, roofType, templates]);
 
-  const totals = useMemo(() => calculateItems(items), [items]);
+  const totals = useMemo(() => calculateItems(items, saleVatMode), [items, saleVatMode]);
   const reviewCount = useMemo(() => items.filter((item) => item.requiresReview).length, [items]);
 
   async function loadWorkspace() {
@@ -525,8 +556,10 @@ export default function ConfiguratorWorkspace() {
 
       const firstProject = result.data.projects?.[0];
       if (firstProject && !projectId) {
+        const firstClientType = firstProject.clientType === 'UNKNOWN' ? firstProject.client?.clientType || 'B2C' : firstProject.clientType;
         setProjectId(firstProject.id);
-        setClientType(firstProject.clientType === 'UNKNOWN' ? firstProject.client?.clientType || 'B2C' : firstProject.clientType);
+        setClientType(firstClientType);
+        applyClientTypeVat(firstClientType);
         setAssets((firstProject.existingAssets || []).map(cleanAsset));
       }
     } catch (loadError) {
@@ -559,9 +592,45 @@ export default function ConfiguratorWorkspace() {
     setProjectPickerOpen(false);
     setProjectQuery('');
     if (project) {
-      setClientType(project.clientType === 'UNKNOWN' ? project.client.clientType || 'B2C' : project.clientType);
+      const nextClientType = project.clientType === 'UNKNOWN' ? project.client.clientType || 'B2C' : project.clientType;
+      setClientType(nextClientType);
+      applyClientTypeVat(nextClientType);
       setAssets((project.existingAssets || []).map(cleanAsset));
     }
+  }
+
+  function applyClientTypeVat(nextClientType: string) {
+    const nextMode = defaultVatModeForClientType(nextClientType);
+    setSaleVatMode(nextMode);
+    setVatBasis(nextMode === 'REDUCED_8'
+      ? 'RESIDENTIAL_INSTALLATION'
+      : nextMode === 'STANDARD_23'
+        ? 'STANDARD_RATE'
+        : '');
+  }
+
+  function changeClientType(nextClientType: string) {
+    setClientType(nextClientType);
+    applyClientTypeVat(nextClientType);
+  }
+
+  function changeSaleVatMode(nextMode: ConfigurationVatMode) {
+    const previousRate = defaultSaleVatRateForMode(saleVatMode);
+    if (nextMode === 'MIXED' && previousRate != null) {
+      setItems((current) => current.map((item) => ({
+        ...item,
+        saleVatRate: rateToPercentFormValue(previousRate),
+      })));
+    }
+
+    setSaleVatMode(nextMode);
+    setVatBasis(nextMode === 'REDUCED_8'
+      ? 'RESIDENTIAL_INSTALLATION'
+      : nextMode === 'STANDARD_23'
+        ? 'STANDARD_RATE'
+        : nextMode === 'MIXED'
+          ? 'MIXED_RATES'
+          : '');
   }
 
   function toggleProjectPicker() {
@@ -624,7 +693,12 @@ export default function ConfiguratorWorkspace() {
           requiresExistingPv: goal === 'STORAGE_RETROFIT' || assets.some((asset) => asset.kind === 'PV_MODULES'),
           requiresExistingInverter: assets.some((asset) => asset.kind === 'PV_INVERTER' || asset.kind === 'HYBRID_INVERTER'),
           notes: templateNotes,
-          items: items.map(itemToPayload),
+          items: items.map((item) => ({
+            ...itemToPayload(item, saleVatMode),
+            saleVatRate: saleVatMode === 'MIXED'
+              ? percentFormValueToRate(item.saleVatRate)
+              : null,
+          })),
         }),
       });
       const result = await response.json();
@@ -760,6 +834,24 @@ export default function ConfiguratorWorkspace() {
       setError('Dodaj pozycje lub wybierz wariant ODS przed zapisem');
       return;
     }
+    if (saleVatMode === 'REVIEW') {
+      setError('Wybierz stawkę VAT sprzedaży przed zapisem konfiguracji');
+      return;
+    }
+    if (saleVatMode === 'REDUCED_8' && !vatBasis) {
+      setError('Wskaż podstawę zastosowania stawki VAT 8%');
+      return;
+    }
+    if (saleVatMode === 'MIXED') {
+      const invalidVatItem = items.find((item) => (
+        !nonPricedSupplyModes.has(item.supplyMode)
+        && ![8, 23].includes(Number(item.saleVatRate.trim().replace(',', '.')))
+      ));
+      if (invalidVatItem) {
+        setError(`Pozycja „${invalidVatItem.description || 'bez nazwy'}” wymaga stawki VAT 8% albo 23%`);
+        return;
+      }
+    }
 
     setSaving(true);
     setError('');
@@ -793,9 +885,12 @@ export default function ConfiguratorWorkspace() {
           targetPowerKw,
           targetCapacityKwh,
           existingAssetsSnapshot: assets,
+          saleVatMode,
+          defaultSaleVatRate: defaultSaleVatRateForMode(saleVatMode),
+          vatBasis,
           requiresReview: reviewCount > 0,
           reviewNotes: reviewCount > 0 ? `Pozycji do weryfikacji: ${reviewCount}` : undefined,
-          items: items.map(itemToPayload),
+          items: items.map((item) => itemToPayload(item, saleVatMode)),
         }),
       });
       const result = await response.json();
@@ -944,7 +1039,7 @@ export default function ConfiguratorWorkspace() {
                   </FormControl>
                   <FormControl>
                     <FormLabel color={textColor}>Typ klienta</FormLabel>
-                    <Select value={clientType} onChange={(event) => setClientType(event.target.value)} sx={fieldStyles}>
+                    <Select value={clientType} onChange={(event) => changeClientType(event.target.value)} sx={fieldStyles}>
                       {clientTypes.map((entry) => <option key={entry} value={entry}>{clientTypeLabels[entry] || entry}</option>)}
                     </Select>
                   </FormControl>
@@ -961,6 +1056,55 @@ export default function ConfiguratorWorkspace() {
                     </Select>
                   </FormControl>
                 </SimpleGrid>
+
+                <SimpleGrid columns={{ base: 1, md: 2 }} spacing="14px" mt="16px">
+                  <FormControl>
+                    <FormLabel color={textColor}>VAT dla konfiguracji</FormLabel>
+                    <Select
+                      value={saleVatMode}
+                      onChange={(event) => changeSaleVatMode(event.target.value as ConfigurationVatMode)}
+                      sx={fieldStyles}
+                    >
+                      {Object.entries(saleVatModeLabels).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl isDisabled={saleVatMode === 'REVIEW'}>
+                    <FormLabel color={textColor}>Podstawa stawki</FormLabel>
+                    <Select value={vatBasis} onChange={(event) => setVatBasis(event.target.value)} sx={fieldStyles}>
+                      {saleVatMode === 'REDUCED_8' ? (
+                        <>
+                          <option value="RESIDENTIAL_INSTALLATION">{vatBasisLabels.RESIDENTIAL_INSTALLATION}</option>
+                          <option value="OTHER_REDUCED">{vatBasisLabels.OTHER_REDUCED}</option>
+                        </>
+                      ) : null}
+                      {saleVatMode === 'STANDARD_23' ? (
+                        <option value="STANDARD_RATE">{vatBasisLabels.STANDARD_RATE}</option>
+                      ) : null}
+                      {saleVatMode === 'MIXED' ? (
+                        <option value="MIXED_RATES">{vatBasisLabels.MIXED_RATES}</option>
+                      ) : null}
+                      {saleVatMode === 'REVIEW' ? <option value="">Najpierw wybierz stawkę</option> : null}
+                    </Select>
+                  </FormControl>
+                </SimpleGrid>
+                {saleVatMode === 'REDUCED_8' ? (
+                  <Alert status="warning" borderRadius="10px" mt="14px">
+                    <AlertIcon />
+                    <AlertDescription>
+                      Stawka 8% wymaga potwierdzenia, że zakres i obiekt spełniają warunki stawki obniżonej.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+                {saleVatMode === 'REVIEW' ? (
+                  <Alert status="info" borderRadius="10px" mt="14px">
+                    <AlertIcon />
+                    <AlertDescription>
+                      Typ klienta nie rozstrzyga stawki. Wybierz 8%, 23% albo rozliczenie mieszane.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
               </Card>
 
               <Card>
@@ -1134,7 +1278,7 @@ export default function ConfiguratorWorkspace() {
                     </Thead>
                     <Tbody>
                       {items.map((item, index) => {
-                        const calculated = calculateConfigurationLine(pricedInput(item));
+                        const calculated = calculateConfigurationLine(pricedInput(item, saleVatMode));
                         return (
                           <Tr key={`${item.position}-${index}`} opacity={item.supplyMode === 'NOT_INCLUDED' ? 0.62 : 1}>
                             <Td color={textColor} fontWeight="800">{index + 1}</Td>
@@ -1180,10 +1324,18 @@ export default function ConfiguratorWorkspace() {
                               </InputGroup>
                             </Td>
                             <Td minW="128px">
-                              <InputGroup>
-                                <Input value={item.saleVatRate} inputMode="decimal" pe="34px" onChange={(event) => updateItem(index, 'saleVatRate', event.target.value)} sx={numberFieldStyles} />
-                                <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
-                              </InputGroup>
+                              {saleVatMode === 'MIXED' ? (
+                                <InputGroup>
+                                  <Input value={item.saleVatRate} inputMode="decimal" pe="34px" onChange={(event) => updateItem(index, 'saleVatRate', event.target.value)} sx={numberFieldStyles} />
+                                  <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
+                                </InputGroup>
+                              ) : (
+                                <Badge colorScheme={saleVatMode === 'REVIEW' ? 'orange' : 'purple'}>
+                                  {defaultSaleVatRateForMode(saleVatMode) == null
+                                    ? 'Sprawdź'
+                                    : `${rateToPercentFormValue(defaultSaleVatRateForMode(saleVatMode))}%`}
+                                </Badge>
+                              )}
                             </Td>
                             <Td color={textColor} fontWeight="800">{formatMoney(calculated.saleGross)}</Td>
                             <Td>
@@ -1210,6 +1362,18 @@ export default function ConfiguratorWorkspace() {
                     <Text color={mutedColor} fontWeight="700">Koszt netto</Text>
                     <Text color={textColor} fontWeight="900">{formatMoney(totals.purchaseNet)}</Text>
                   </Flex>
+                  <Flex justify="space-between" bg={subtleBg} borderRadius="10px" p="12px">
+                    <Text color={mutedColor} fontWeight="700">Cena sprzedaży netto</Text>
+                    <Text color={textColor} fontWeight="900">{formatMoney(totals.saleNet)}</Text>
+                  </Flex>
+                  {saleVatMode !== 'REVIEW' ? totals.vatBreakdown.map((row) => (
+                    <Flex key={row.rate} justify="space-between" bg={subtleBg} borderRadius="10px" p="12px">
+                      <Text color={mutedColor} fontWeight="700">
+                        VAT {rateToPercentFormValue(row.rate)}%
+                      </Text>
+                      <Text color={textColor} fontWeight="900">{formatMoney(row.vat)}</Text>
+                    </Flex>
+                  )) : null}
                   <Flex justify="space-between" bg={subtleBg} borderRadius="10px" p="12px">
                     <Text color={mutedColor} fontWeight="700">Cena brutto</Text>
                     <Text color={textColor} fontWeight="900">{formatMoney(totals.saleGross)}</Text>

@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
+import { vatBreakdown } from 'lib/onrevolt/configuration-vat';
 
 type OfferCreateInput = {
   projectId: string;
@@ -139,10 +140,17 @@ function calculationSnapshot(input: OfferCreateInput, configuration: any, lineIt
   const paybackYears = annualSavingsGross > 0
     ? money(totalAfterSupportGross / annualSavingsGross)
     : null;
+  const saleVatBreakdown = vatBreakdown(lineItems.map((item) => ({
+    saleNet: decimalToNumber(item.saleNet),
+    saleGross: decimalToNumber(item.saleGross),
+    saleVatRate: decimalToNumber(item.saleVatRate),
+  })));
 
   return {
     totalNet: money(totalNet),
     totalGross: money(totalGross),
+    totalVat: money(totalGross - totalNet),
+    vatBreakdown: saleVatBreakdown,
     subsidyGross,
     thermoReliefGross,
     totalAfterSupportGross,

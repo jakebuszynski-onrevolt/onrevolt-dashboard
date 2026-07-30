@@ -1,5 +1,11 @@
 import { NextRequest } from 'next/server';
 import { calculateConfigurationLine, sumConfiguration } from 'lib/onrevolt/calculator';
+import {
+  ConfigurationVatMode,
+  configurationVatModes,
+  defaultSaleVatRateForMode,
+  resolveSaleVatRate,
+} from 'lib/onrevolt/configuration-vat';
 import { jsonResponse, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
@@ -13,7 +19,7 @@ function optionalNumber(value: unknown) {
   return number;
 }
 
-function lineInputFromItem(item: Record<string, any>) {
+function lineInputFromItem(item: Record<string, any>, saleVatMode: ConfigurationVatMode) {
   const supplyMode = typeof item.supplyMode === 'string' ? item.supplyMode : 'ONREVOLT_SUPPLIED';
   if (nonPricedSupplyModes.has(supplyMode)) {
     return {
@@ -33,7 +39,7 @@ function lineInputFromItem(item: Record<string, any>) {
     purchaseVatRate: Number(item.purchaseVatRate || 0),
     operatingCostNet: Number(item.operatingCostNet || 0),
     marginRate: Number(item.marginRate || 0),
-    saleVatRate: Number(item.saleVatRate || 0),
+    saleVatRate: resolveSaleVatRate(saleVatMode, Number(item.saleVatRate || 0)),
     includeVatSurplus: item.includeVatSurplus !== false,
     forcedSaleNet: item.forcedSaleNet == null || item.forcedSaleNet === '' ? undefined : Number(item.forcedSaleNet),
   };
@@ -106,7 +112,30 @@ export async function POST(req: NextRequest) {
     const rawItems = Array.isArray(body.items) ? body.items : [];
     if (rawItems.length === 0) throw new Error('Konfiguracja wymaga przynajmniej jednej pozycji');
 
-    const lineInputs = rawItems.map((item) => lineInputFromItem(item));
+    const saleVatMode = requireString(body, 'saleVatMode') as ConfigurationVatMode;
+    if (!configurationVatModes.includes(saleVatMode)) {
+      throw new Error('Nieprawidłowy tryb VAT konfiguracji');
+    }
+    if (saleVatMode === 'REVIEW') {
+      throw new Error('Wybierz stawkę VAT sprzedaży przed zapisem konfiguracji');
+    }
+
+    const vatBasis = optionalString(body, 'vatBasis');
+    if (saleVatMode === 'REDUCED_8' && !vatBasis) {
+      throw new Error('Stawka VAT 8% wymaga wskazania podstawy');
+    }
+    if (saleVatMode === 'MIXED') {
+      const invalidIndex = rawItems.findIndex((item) => {
+        const supplyMode = typeof item.supplyMode === 'string' ? item.supplyMode : 'ONREVOLT_SUPPLIED';
+        if (nonPricedSupplyModes.has(supplyMode)) return false;
+        return ![0.08, 0.23].includes(Number(item.saleVatRate));
+      });
+      if (invalidIndex >= 0) {
+        throw new Error(`Pozycja ${invalidIndex + 1} wymaga stawki VAT 8% albo 23%`);
+      }
+    }
+
+    const lineInputs = rawItems.map((item) => lineInputFromItem(item, saleVatMode));
     const totals = sumConfiguration(lineInputs);
 
     const configuration = await prisma.configuration.create({
@@ -122,6 +151,9 @@ export async function POST(req: NextRequest) {
         targetPowerKw: optionalNumber(body.targetPowerKw),
         targetCapacityKwh: optionalNumber(body.targetCapacityKwh),
         existingAssetsSnapshot: Array.isArray(body.existingAssetsSnapshot) ? body.existingAssetsSnapshot : undefined,
+        saleVatMode: saleVatMode as any,
+        defaultSaleVatRate: defaultSaleVatRateForMode(saleVatMode) ?? undefined,
+        vatBasis,
         totalPurchaseNet: totals.purchaseNet,
         totalSaleGross: totals.saleGross,
         totalProfitNet: totals.profitNet,

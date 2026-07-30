@@ -260,8 +260,13 @@ function isToday(task: TaskItem) {
 
 function updateUrl(filters: FiltersState) {
   if (typeof window === 'undefined') return;
+  const currentParams = new URLSearchParams(window.location.search);
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {
+    if (value) params.set(key, value);
+  });
+  ['taskId', 'create'].forEach((key) => {
+    const value = currentParams.get(key);
     if (value) params.set(key, value);
   });
   const query = params.toString();
