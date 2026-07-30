@@ -19,6 +19,7 @@ test('administrator ma pełny zestaw uprawnień', () => {
 test('sprzedawca tworzy oferty, ale nie zarządza użytkownikami', () => {
   const seller = user('USER', ['SPRZEDAWCA']);
   assert.equal(hasStaffPermission(seller, 'offers.manage'), true);
+  assert.equal(hasStaffPermission(seller, 'site-audits.manage'), true);
   assert.equal(hasStaffPermission(seller, 'users.manage'), false);
   assert.equal(hasStaffPermission(seller, 'installations.manage'), false);
 });
@@ -26,6 +27,8 @@ test('sprzedawca tworzy oferty, ale nie zarządza użytkownikami', () => {
 test('monter nie widzi cen, ale obsługuje montaż', () => {
   const installer = user('USER', ['MONTER']);
   assert.equal(hasStaffPermission(installer, 'installations.manage'), true);
+  assert.equal(hasStaffPermission(installer, 'site-audits.manage'), true);
+  assert.equal(hasStaffPermission(installer, 'documents.manage'), true);
   assert.equal(hasStaffPermission(installer, 'pricing.read'), false);
 });
 

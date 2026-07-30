@@ -91,6 +91,11 @@ enum EnergyAuditStatus {
   APPROVED
 }
 
+enum SiteAuditStatus {
+  DRAFT
+  COMPLETED
+}
+
 enum EnergyProfileSource {
   ANNUAL_DECLARATION
   MONTHLY_MANUAL
@@ -350,6 +355,8 @@ model StaffUser {
   sessions                StaffSession[]
   activities              Activity[]
   energyScenariosCreated  EnergyScenario[]
+  siteAuditsAssigned      SiteAudit[]                 @relation("SiteAuditAuditor")
+  siteAuditsCreated       SiteAudit[]                 @relation("SiteAuditCreator")
   assignedServiceTickets  ServiceTicket[]             @relation("ServiceTicketAssignee")
   createdAt               DateTime                    @default(now())
   updatedAt               DateTime                    @updatedAt
@@ -515,6 +522,7 @@ model Project {
   energyMeasurementFiles EnergyMeasurementFile[]
   activities             Activity[]
   energyAudits           EnergyAudit[]
+  siteAudits             SiteAudit[]
   purchaseOrders         PurchaseOrder[]
   stockReservations      StockReservation[]
   odsCase                OdsCase?
@@ -559,6 +567,34 @@ model EnergyAudit {
 
   @@index([projectId, updatedAt])
   @@index([status])
+}
+
+model SiteAudit {
+  id              String          @id @default(cuid())
+  projectId       String
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title           String
+  status          SiteAuditStatus @default(DRAFT)
+  schemaVersion   Int             @default(1)
+  visitDate       DateTime?
+  auditorId       String?
+  auditor         StaffUser?      @relation("SiteAuditAuditor", fields: [auditorId], references: [id], onDelete: SetNull)
+  createdById     String?
+  createdBy       StaffUser?      @relation("SiteAuditCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  currentStep     Int             @default(1)
+  completedSteps  Json?
+  progressPercent Int             @default(0)
+  formData        Json
+  completedAt     DateTime?
+  documents       Document[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([projectId, updatedAt])
+  @@index([status])
+  @@index([auditorId])
+  @@index([createdById])
+  @@index([visitDate])
 }
 
 model EnergyScenario {
@@ -1283,6 +1319,9 @@ model Document {
   odsCase                OdsCase?                @relation(fields: [odsCaseId], references: [id], onDelete: SetNull)
   serviceTicketId        String?
   serviceTicket          ServiceTicket?          @relation(fields: [serviceTicketId], references: [id], onDelete: SetNull)
+  siteAuditId            String?
+  siteAudit              SiteAudit?              @relation(fields: [siteAuditId], references: [id], onDelete: SetNull)
+  auditFieldKey          String?
   energyMeasurementFiles EnergyMeasurementFile[]
   uploadedById           String?
   uploadedBy             StaffUser?              @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
@@ -1316,6 +1355,7 @@ model Document {
   @@index([sha256])
   @@index([odsCaseId])
   @@index([serviceTicketId])
+  @@index([siteAuditId, auditFieldKey])
 }
 
 model EnergyPortalAccount {

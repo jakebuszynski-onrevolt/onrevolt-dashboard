@@ -139,8 +139,25 @@ export async function POST(req: NextRequest) {
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const clientId = String(form.get('clientId') || '').trim() || undefined;
     const projectId = String(form.get('projectId') || '').trim() || undefined;
+    const siteAuditId = String(form.get('siteAuditId') || '').trim() || undefined;
+    const auditFieldKey = String(form.get('auditFieldKey') || '').trim() || undefined;
     if (type === 'FAKTURA_PRAD' && !clientId) {
       throw new Error('Faktura musi być przypisana do klienta');
+    }
+    if (siteAuditId) {
+      if (!auditFieldKey || !/^[a-z0-9_.-]{1,120}$/i.test(auditFieldKey)) {
+        throw new Error('Załącznik audytu wymaga prawidłowego klucza pola');
+      }
+      const siteAudit = await prisma.siteAudit.findUnique({
+        where: { id: siteAuditId },
+        select: { projectId: true, project: { select: { clientId: true } } },
+      });
+      if (!siteAudit) throw new Error('Nie znaleziono audytu dla załącznika');
+      if (projectId !== siteAudit.projectId || clientId !== siteAudit.project.clientId) {
+        throw new Error('Załącznik nie odpowiada klientowi lub projektowi audytu');
+      }
+    } else if (auditFieldKey) {
+      throw new Error('Klucz pola audytu wymaga siteAuditId');
     }
 
     const effectiveInvoiceNumber = String(form.get('invoiceNumber') || '').trim()
@@ -258,6 +275,8 @@ export async function POST(req: NextRequest) {
         installedDeviceId: String(form.get('installedDeviceId') || '') || undefined,
         odsCaseId: String(form.get('odsCaseId') || '') || undefined,
         serviceTicketId: String(form.get('serviceTicketId') || '') || undefined,
+        siteAuditId,
+        auditFieldKey,
         uploadedById: user.id,
         visibleToClient: String(form.get('visibleToClient') || '') === 'true',
         documentDate: formDate(form, 'documentDate'),

@@ -233,6 +233,10 @@ export async function GET(req: NextRequest) {
             include: {
               ...projectInclude,
               tasks: true,
+              existingAssets: {
+                include: { product: true },
+                orderBy: { updatedAt: 'desc' },
+              },
               configurations: {
                 include: {
                   items: {

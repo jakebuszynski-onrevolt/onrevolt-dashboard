@@ -17,6 +17,7 @@ export type StaffPermission =
   | 'service.manage'
   | 'documents.manage'
   | 'energy.manage'
+  | 'site-audits.manage'
   | 'reports.read'
   | 'synchronization.manage'
   | 'users.manage'
@@ -34,6 +35,7 @@ const allPermissions: StaffPermission[] = [
   'service.manage',
   'documents.manage',
   'energy.manage',
+  'site-audits.manage',
   'reports.read',
   'synchronization.manage',
   'users.manage',
@@ -49,20 +51,20 @@ const companyRolePermissions: Record<string, StaffPermission[]> = {
   KOORDYNATOR: [
     'crm.read', 'crm.write', 'pricing.read', 'catalog.manage',
     'configurations.manage', 'offers.manage', 'installations.manage',
-    'service.manage', 'documents.manage', 'energy.manage', 'reports.read',
+    'service.manage', 'documents.manage', 'energy.manage', 'site-audits.manage', 'reports.read',
   ],
   SPRZEDAWCA: [
     'crm.read', 'crm.write', 'pricing.read', 'configurations.manage',
-    'offers.manage', 'documents.manage', 'energy.manage',
+    'offers.manage', 'documents.manage', 'energy.manage', 'site-audits.manage',
   ],
-  MONTER: ['crm.read', 'installations.manage', 'documents.manage'],
-  ELEKTRYK: ['crm.read', 'installations.manage', 'documents.manage', 'service.manage'],
+  MONTER: ['crm.read', 'installations.manage', 'documents.manage', 'site-audits.manage'],
+  ELEKTRYK: ['crm.read', 'installations.manage', 'documents.manage', 'service.manage', 'site-audits.manage'],
   SERWIS: ['crm.read', 'service.manage', 'documents.manage'],
-  PROJEKTANT: ['crm.read', 'pricing.read', 'configurations.manage', 'documents.manage', 'energy.manage'],
+  PROJEKTANT: ['crm.read', 'pricing.read', 'configurations.manage', 'documents.manage', 'energy.manage', 'site-audits.manage'],
   DEVELOPER: moderatorPermissions,
   KSIEGOWOSC: ['crm.read', 'pricing.read', 'offers.manage', 'documents.manage', 'reports.read'],
-  BIURO: ['crm.read', 'crm.write', 'documents.manage', 'energy.manage'],
-  PODWYKONAWCA: ['crm.read', 'installations.manage', 'documents.manage'],
+  BIURO: ['crm.read', 'crm.write', 'documents.manage', 'energy.manage', 'site-audits.manage'],
+  PODWYKONAWCA: ['crm.read', 'installations.manage', 'documents.manage', 'site-audits.manage'],
 };
 
 export const staffUserInclude = {

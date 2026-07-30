@@ -28,6 +28,7 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import Card from 'components/card/Card';
+import DocumentImagePreviewModal from 'components/onrevolt/DocumentImagePreviewModal';
 import type { InvoiceRecognitionResult } from 'lib/onrevolt/invoice-recognition';
 import { ChangeEvent, useMemo, useState } from 'react';
 import {
@@ -37,6 +38,7 @@ import {
   MdOpenInNew,
   MdSave,
   MdUploadFile,
+  MdVisibility,
 } from 'react-icons/md';
 
 type Props = {
@@ -712,6 +714,7 @@ function DocumentsList({
   onChanged: () => Promise<void> | void;
 }) {
   const [editing, setEditing] = useState<any | null>(null);
+  const [previewDocument, setPreviewDocument] = useState<any | null>(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -886,15 +889,25 @@ function DocumentsList({
                 <Flex gap="12px" align="start">
                   {image ? (
                     <Box
-                      as="img"
-                      src={`/api/documents/${document.id}/file`}
-                      alt={document.title}
+                      as="button"
+                      type="button"
+                      aria-label={`Podejrzyj zdjęcie ${document.fileName}`}
                       w="86px"
                       h="64px"
-                      objectFit="cover"
                       borderRadius="6px"
+                      overflow="hidden"
                       flexShrink="0"
-                    />
+                      onClick={() => setPreviewDocument(document)}
+                    >
+                      <Box
+                        as="img"
+                        src={`/api/documents/${document.id}/file`}
+                        alt={document.title}
+                        w="100%"
+                        h="100%"
+                        objectFit="cover"
+                      />
+                    </Box>
                   ) : null}
                   <Box flex="1" minW="0">
                     <Flex gap="8px" wrap="wrap">
@@ -926,9 +939,21 @@ function DocumentsList({
                     {document.notes ? <Text color={mutedColor} mt="5px">{document.notes}</Text> : null}
                   </Box>
                   <Flex gap="4px">
-                    <Tooltip label="Otwórz">
-                      <IconButton as="a" href={`/api/documents/${document.id}/file`} target="_blank" aria-label="Otwórz plik" icon={<MdOpenInNew />} size="sm" variant="outline" />
-                    </Tooltip>
+                    {image ? (
+                      <Tooltip label="Podejrzyj zdjęcie">
+                        <IconButton
+                          aria-label="Podejrzyj zdjęcie"
+                          icon={<MdVisibility />}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setPreviewDocument(document)}
+                        />
+                      </Tooltip>
+                    ) : (
+                      <Tooltip label="Otwórz">
+                        <IconButton as="a" href={`/api/documents/${document.id}/file`} target="_blank" aria-label="Otwórz plik" icon={<MdOpenInNew />} size="sm" variant="outline" />
+                      </Tooltip>
+                    )}
                     <Tooltip label="Pobierz">
                       <IconButton as="a" href={`/api/documents/${document.id}/file?download=1`} aria-label="Pobierz plik" icon={<MdDownload />} size="sm" variant="outline" />
                     </Tooltip>
@@ -946,6 +971,11 @@ function DocumentsList({
         })}
         {!documents.length ? <Text color={mutedColor}>Brak dokumentów w tej sekcji.</Text> : null}
       </Flex>
+      <DocumentImagePreviewModal
+        document={previewDocument}
+        isOpen={Boolean(previewDocument)}
+        onClose={() => setPreviewDocument(null)}
+      />
     </Card>
   );
 }

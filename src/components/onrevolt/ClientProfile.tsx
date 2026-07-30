@@ -27,6 +27,7 @@ import {
 import Card from 'components/card/Card';
 import OfferDocument from 'components/onrevolt/OfferDocument';
 import ClientDocumentsPanel from 'components/onrevolt/ClientDocumentsPanel';
+import ClientSiteAuditPanel from 'components/onrevolt/ClientSiteAuditPanel';
 import {
   energyOperatorOptions,
   getDefaultEnergyTariff,
@@ -168,9 +169,10 @@ type ActivityRow = {
 
 const tabs = [
   'Podsumowanie',
-  'Kontakt i adres',
+  'Dane klienta',
   'Etap',
   'Zadania',
+  'Audyt',
   'Konfiguracje',
   'Oferta / umowa',
   'Montaże',
@@ -1319,6 +1321,21 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       </Flex>
                     )}
                   </Card>
+                </TabPanel>
+              );
+            }
+
+            if (tab === 'Audyt') {
+              return (
+                <TabPanel key={tab} px="0">
+                  <ClientSiteAuditPanel
+                    clientId={clientId}
+                    client={client}
+                    project={activeProject}
+                    staffUsers={staffUsers}
+                    currentUser={currentUser}
+                    onDocumentsChanged={() => load(true)}
+                  />
                 </TabPanel>
               );
             }
