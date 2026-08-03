@@ -30,8 +30,11 @@ const projectInclude = {
 const assignedActiveTasksCount = {
   tasks: {
     where: {
-      assignedToId: { not: null },
       status: { in: [TaskStatus.OPEN, TaskStatus.IN_PROGRESS] },
+      OR: [
+        { assignedToId: { not: null } },
+        { assistants: { some: {} } },
+      ],
     },
   },
 };

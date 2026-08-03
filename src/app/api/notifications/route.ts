@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { jsonResponse, readJsonObject, serverError, unauthorized } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
 import { authorizeStaffRequest, getCurrentStaffUser } from 'lib/onrevolt/staff-server';
+import { taskAssignedWhere } from 'lib/onrevolt/task-participants';
 
 function dayRange(date = new Date()) {
   const start = new Date(date);
@@ -60,14 +61,14 @@ export async function GET(req: NextRequest) {
       prisma.panelNotification.count({ where: { staffUserId: currentUser.id, readAt: null } }),
       prisma.task.count({
         where: {
-          assignedToId: currentUser.id,
+          ...taskAssignedWhere(currentUser.id),
           status: { in: ['OPEN', 'IN_PROGRESS'] },
           dueAt: { gte: start, lt: end },
         },
       }),
       prisma.task.count({
         where: {
-          assignedToId: currentUser.id,
+          ...taskAssignedWhere(currentUser.id),
           status: { in: ['OPEN', 'IN_PROGRESS'] },
           dueAt: { lt: start },
         },

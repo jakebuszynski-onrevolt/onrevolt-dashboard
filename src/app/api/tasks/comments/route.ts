@@ -10,9 +10,10 @@ import {
 } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
 import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser } from 'lib/onrevolt/staff-server';
+import { isTaskParticipant } from 'lib/onrevolt/task-participants';
 
 function canSeeTask(user: any, task: any) {
-  return isAdminUser(user) || task.assignedToId === user.id || task.createdById === user.id;
+  return isAdminUser(user) || isTaskParticipant(task, user.id);
 }
 
 function serializeUser(user: any) {
@@ -45,7 +46,10 @@ export async function POST(req: NextRequest) {
     const taskId = requireString(body, 'taskId');
     const text = requireString(body, 'body');
 
-    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: { assistants: { select: { staffUserId: true } } },
+    });
     if (!task) return notFound('Nie znaleziono zadania');
     if (!canSeeTask(currentUser, task)) return forbidden();
 
@@ -59,7 +63,11 @@ export async function POST(req: NextRequest) {
         include: { author: { select: { id: true, name: true, email: true, avatarUrl: true } } },
       });
 
-      const recipients = Array.from(new Set([task.assignedToId, task.createdById].filter(Boolean)))
+      const recipients = Array.from(new Set([
+        task.assignedToId,
+        task.createdById,
+        ...task.assistants.map((assistant) => assistant.staffUserId),
+      ].filter(Boolean)))
         .filter((staffUserId) => staffUserId !== currentUser.id) as string[];
 
       if (recipients.length > 0) {

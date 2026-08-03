@@ -15,6 +15,12 @@ import {
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
 import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser, serializeStaffUser } from 'lib/onrevolt/staff-server';
+import {
+  isTaskParticipant,
+  normalizeTaskAssistantIds,
+  taskAssignedWhere,
+  taskParticipantWhere,
+} from 'lib/onrevolt/task-participants';
 
 const activeStatuses = [TaskStatus.OPEN, TaskStatus.IN_PROGRESS];
 const taskStatuses = Object.values(TaskStatus) as string[];
@@ -25,6 +31,10 @@ const taskInclude = {
   project: { select: { id: true, title: true, status: true, clientId: true } },
   installation: { select: { id: true, status: true, plannedAt: true, projectId: true } },
   assignedTo: { select: { id: true, name: true, email: true, avatarUrl: true, positionTitle: true } },
+  assistants: {
+    include: { staffUser: { select: { id: true, name: true, email: true, avatarUrl: true, positionTitle: true } } },
+    orderBy: { createdAt: 'asc' as const },
+  },
   createdBy: { select: { id: true, name: true, email: true, avatarUrl: true, positionTitle: true } },
   comments: {
     include: { author: { select: { id: true, name: true, email: true, avatarUrl: true } } },
@@ -83,6 +93,7 @@ function serializeTask(task: any) {
     project: task.project,
     installation: task.installation,
     assignedTo: serializeUser(task.assignedTo),
+    assistants: (task.assistants || []).map((assistant: any) => serializeUser(assistant.staffUser)),
     createdBy: serializeUser(task.createdBy),
     comments: (task.comments || []).map((comment: any) => ({
       id: comment.id,
@@ -99,7 +110,7 @@ function serializeTask(task: any) {
 }
 
 function canSeeTask(user: any, task: any) {
-  return isAdminUser(user) || task.assignedToId === user.id || task.createdById === user.id;
+  return isAdminUser(user) || isTaskParticipant(task, user.id);
 }
 
 function canManageTask(user: any, task: any) {
@@ -127,7 +138,7 @@ function createNotificationData(params: {
 }
 
 function buildAccessWhere(user: any, admin: boolean) {
-  return admin ? {} : { OR: [{ assignedToId: user.id }, { createdById: user.id }] };
+  return admin ? {} : taskParticipantWhere(user.id);
 }
 
 function buildSearchWhere(query: string) {
@@ -141,6 +152,8 @@ function buildSearchWhere(query: string) {
       { project: { title: { contains: text } } },
       { assignedTo: { name: { contains: text } } },
       { assignedTo: { email: { contains: text } } },
+      { assistants: { some: { staffUser: { name: { contains: text } } } } },
+      { assistants: { some: { staffUser: { email: { contains: text } } } } },
     ],
   };
 }
@@ -165,10 +178,10 @@ function buildListWhere(req: NextRequest, user: any, admin: boolean) {
   if (clientId) and.push({ clientId });
   if (projectId) and.push({ projectId });
   if (installationId) and.push({ installationId });
-  if (assignedToId && admin) and.push({ assignedToId });
+  if (assignedToId && admin) and.push(taskAssignedWhere(assignedToId));
 
-  if (scope === 'mine') and.push({ OR: [{ assignedToId: user.id }, { createdById: user.id }] });
-  if (scope === 'assigned') and.push({ assignedToId: user.id });
+  if (scope === 'mine') and.push(taskParticipantWhere(user.id));
+  if (scope === 'assigned') and.push(taskAssignedWhere(user.id));
   if (scope === 'created') and.push({ createdById: user.id });
   if (scope === 'new') and.push({ status: 'OPEN' });
   if (scope === 'in_progress') and.push({ status: 'IN_PROGRESS' });
@@ -275,6 +288,13 @@ export async function POST(req: NextRequest) {
 
     const title = requireString(body, 'title');
     const assignedToId = optionalString(body, 'assignedToId');
+    const assistantIds = normalizeTaskAssistantIds(body.assistantIds ?? [], assignedToId);
+    if (assistantIds.length > 0) {
+      const activeAssistants = await prisma.staffUser.count({
+        where: { id: { in: assistantIds }, active: true },
+      });
+      if (activeAssistants !== assistantIds.length) return badRequest('Wybrano nieaktywną lub nieistniejącą osobę asystującą');
+    }
 
     const task = await prisma.$transaction(async (tx) => {
       const created = await tx.task.create({
@@ -289,10 +309,14 @@ export async function POST(req: NextRequest) {
           installationId: optionalString(body, 'installationId'),
           assignedToId,
           createdById: currentUser.id,
+          assistants: assistantIds.length > 0
+            ? { create: assistantIds.map((staffUserId) => ({ staffUserId })) }
+            : undefined,
         },
         include: taskInclude,
       });
 
+      const notifications: Array<NonNullable<ReturnType<typeof createNotificationData>>> = [];
       const notification = createNotificationData({
         staffUserId: assignedToId,
         actorId: currentUser.id,
@@ -301,7 +325,19 @@ export async function POST(req: NextRequest) {
         title: 'Nowe zadanie',
         message: created.title,
       });
-      if (notification) await tx.panelNotification.create({ data: notification });
+      if (notification) notifications.push(notification);
+      assistantIds.forEach((staffUserId) => {
+        const assistantNotification = createNotificationData({
+          staffUserId,
+          actorId: currentUser.id,
+          taskId: created.id,
+          type: 'TASK_ASSISTANT_ADDED',
+          title: 'Dodano Cię do zadania',
+          message: created.title,
+        });
+        if (assistantNotification) notifications.push(assistantNotification);
+      });
+      if (notifications.length > 0) await tx.panelNotification.createMany({ data: notifications });
 
       return created;
     });
@@ -329,12 +365,16 @@ export async function PATCH(req: NextRequest) {
     const body = await readJsonObject(req);
     const id = requireString(body, 'id');
 
-    const existing = await prisma.task.findUnique({ where: { id } });
+    const existing = await prisma.task.findUnique({
+      where: { id },
+      include: { assistants: { select: { staffUserId: true } } },
+    });
     if (!existing) return notFound('Nie znaleziono zadania');
     if (!canSeeTask(currentUser, existing)) return forbidden();
 
     const canManage = canManageTask(currentUser, existing);
     const updateData: Record<string, any> = {};
+    let nextAssistantIds: string[] | undefined;
 
     if ('status' in body) {
       const nextStatus = normalizeEnum(body.status, taskStatuses, existing.status);
@@ -351,6 +391,22 @@ export async function PATCH(req: NextRequest) {
       if ('projectId' in body) updateData.projectId = optionalNullableString(body, 'projectId');
       if ('installationId' in body) updateData.installationId = optionalNullableString(body, 'installationId');
       if ('assignedToId' in body) updateData.assignedToId = optionalNullableString(body, 'assignedToId');
+      const nextAssignedToId = 'assignedToId' in updateData ? updateData.assignedToId : existing.assignedToId;
+      if ('assistantIds' in body) {
+        nextAssistantIds = normalizeTaskAssistantIds(body.assistantIds, nextAssignedToId);
+        if (nextAssistantIds.length > 0) {
+          const activeAssistants = await prisma.staffUser.count({
+            where: { id: { in: nextAssistantIds }, active: true },
+          });
+          if (activeAssistants !== nextAssistantIds.length) return badRequest('Wybrano nieaktywną lub nieistniejącą osobę asystującą');
+        }
+        updateData.assistants = {
+          deleteMany: {},
+          create: nextAssistantIds.map((staffUserId) => ({ staffUserId })),
+        };
+      } else if ('assignedToId' in updateData && nextAssignedToId) {
+        updateData.assistants = { deleteMany: { staffUserId: nextAssignedToId } };
+      }
     }
 
     if (Object.keys(updateData).length === 0) {
@@ -374,6 +430,21 @@ export async function PATCH(req: NextRequest) {
           message: updated.title,
         });
         if (notification) await tx.panelNotification.create({ data: notification });
+      }
+      if (canManage && nextAssistantIds) {
+        const previousAssistantIds = new Set(existing.assistants.map((assistant) => assistant.staffUserId));
+        const notifications = nextAssistantIds
+          .filter((staffUserId) => !previousAssistantIds.has(staffUserId))
+          .map((staffUserId) => createNotificationData({
+            staffUserId,
+            actorId: currentUser.id,
+            taskId: updated.id,
+            type: 'TASK_ASSISTANT_ADDED',
+            title: 'Dodano Cię do zadania',
+            message: updated.title,
+          }))
+          .filter((notification): notification is NonNullable<typeof notification> => Boolean(notification));
+        if (notifications.length > 0) await tx.panelNotification.createMany({ data: notifications });
       }
       return updated;
     });

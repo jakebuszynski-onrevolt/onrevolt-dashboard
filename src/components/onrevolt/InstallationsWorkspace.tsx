@@ -242,6 +242,7 @@ type InstallationItem = {
     priority: string;
     dueAt?: string | null;
     assignedTo?: StaffOption | null;
+    assistants?: StaffOption[];
   }>;
   progress: {
     checklistDone: number;
@@ -1294,7 +1295,14 @@ export default function InstallationsWorkspace() {
                               <Link href={`/admin/tasks?taskId=${task.id}&installationId=${selectedInstallation.id}`}>
                                 <Text color="brand.300" fontWeight="900" noOfLines={1}>{task.title}</Text>
                               </Link>
-                              <Text color={mutedColor} fontSize="xs">{task.assignedTo?.name || 'Nieprzypisane'} · {formatDateTime(task.dueAt)}</Text>
+                              <Text color={mutedColor} fontSize="xs">
+                                {task.assignedTo?.name || 'Nieprzypisane'} · {formatDateTime(task.dueAt)}
+                              </Text>
+                              {task.assistants?.length ? (
+                                <Text color={mutedColor} fontSize="xs">
+                                  Asystują: {task.assistants.map((assistant) => assistant.name).join(', ')}
+                                </Text>
+                              ) : null}
                             </Box>
                             <Badge colorScheme={task.status === 'DONE' ? 'green' : task.status === 'IN_PROGRESS' ? 'blue' : 'purple'}>
                               {task.status}

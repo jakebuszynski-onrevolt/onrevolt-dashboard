@@ -150,6 +150,11 @@ type ClientTaskRow = {
     name: string;
     email: string;
   } | null;
+  assistants?: Array<{
+    id: string;
+    name: string;
+    email: string;
+  }>;
   createdBy?: {
     id: string;
     name: string;
@@ -1304,8 +1309,13 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                 <Text color={textColor} fontWeight="700">{formatDateTime(task.dueAt)}</Text>
                               </Box>
                               <Box minW="150px">
-                                <Text color={mutedColor} fontSize="xs" fontWeight="700">Osoba</Text>
+                                <Text color={mutedColor} fontSize="xs" fontWeight="700">Odpowiedzialny</Text>
                                 <Text color={textColor} fontWeight="700">{task.assignedTo?.name || 'Nieprzypisane'}</Text>
+                                {task.assistants?.length ? (
+                                  <Text color={mutedColor} fontSize="xs">
+                                    Asystują: {task.assistants.map((assistant) => assistant.name).join(', ')}
+                                  </Text>
+                                ) : null}
                               </Box>
                               <Tooltip label="Otwórz zadanie">
                                 <IconButton

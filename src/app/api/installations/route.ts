@@ -14,6 +14,7 @@ import {
 } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
 import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser, serializeStaffUser } from 'lib/onrevolt/staff-server';
+import { isTaskParticipant, taskAssignedWhere, taskParticipantWhere } from 'lib/onrevolt/task-participants';
 
 const activeStatuses = [
   InstallationStatus.TO_SCHEDULE,
@@ -109,6 +110,10 @@ const installationInclude: any = {
   tasks: {
     include: {
       assignedTo: { select: userSelect },
+      assistants: {
+        include: { staffUser: { select: userSelect } },
+        orderBy: { createdAt: 'asc' as const },
+      },
       createdBy: { select: userSelect },
       _count: { select: { comments: true } },
     },
@@ -153,7 +158,7 @@ function canSeeInstallation(user: any, admin: boolean, installation: any) {
   if (installation.teamLeadId === user.id) return true;
   if (installation.project?.ownerId === user.id) return true;
   if ((installation.teamMembers || []).some((member: any) => member.staffUserId === user.id)) return true;
-  if ((installation.tasks || []).some((task: any) => task.assignedToId === user.id || task.createdById === user.id)) return true;
+  if ((installation.tasks || []).some((task: any) => isTaskParticipant(task, user.id))) return true;
   return false;
 }
 
@@ -164,7 +169,7 @@ function buildAccessWhere(user: any, admin: boolean) {
       { teamLeadId: user.id },
       { teamMembers: { some: { staffUserId: user.id } } },
       { project: { ownerId: user.id } },
-      { tasks: { some: { OR: [{ assignedToId: user.id }, { createdById: user.id }] } } },
+      { tasks: { some: taskParticipantWhere(user.id) } },
     ],
   };
 }
@@ -210,7 +215,7 @@ function buildListWhere(req: NextRequest, user: any, admin: boolean) {
     OR: [
       { teamLeadId: user.id },
       { teamMembers: { some: { staffUserId: user.id } } },
-      { tasks: { some: { assignedToId: user.id } } },
+      { tasks: { some: taskAssignedWhere(user.id) } },
     ],
   });
   if (scope === 'to_schedule') and.push({ status: InstallationStatus.TO_SCHEDULE });
@@ -246,6 +251,7 @@ function serializeTask(task: any) {
     dueAt: task.dueAt,
     assignedToId: task.assignedToId,
     assignedTo: serializeUser(task.assignedTo),
+    assistants: (task.assistants || []).map((assistant: any) => serializeUser(assistant.staffUser)),
     createdBy: serializeUser(task.createdBy),
     commentsCount: task._count?.comments || 0,
   };

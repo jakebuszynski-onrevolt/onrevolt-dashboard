@@ -6,6 +6,7 @@ import {
   Badge,
   Box,
   Button,
+  Checkbox,
   Flex,
   FormControl,
   FormLabel,
@@ -99,6 +100,7 @@ type TaskItem = {
   client?: ClientOption | null;
   project?: ProjectOption | null;
   assignedTo?: StaffOption | null;
+  assistants: StaffOption[];
   createdBy?: StaffOption | null;
   comments: TaskComment[];
   commentsCount: number;
@@ -134,6 +136,7 @@ type TaskFormState = {
   priority: string;
   dueAt: string;
   assignedToId: string;
+  assistantIds: string[];
   clientId: string;
   projectId: string;
 };
@@ -164,6 +167,7 @@ const emptyForm: TaskFormState = {
   priority: 'NORMAL',
   dueAt: '',
   assignedToId: '',
+  assistantIds: [],
   clientId: '',
   projectId: '',
 };
@@ -306,6 +310,22 @@ export default function TasksWorkspace() {
     return projects.filter((project) => project.clientId === form.clientId);
   }, [form.clientId, projects]);
 
+  const clientPickerOptions = useMemo(() => clients.map((client) => ({
+    value: client.id,
+    label: client.displayName,
+    meta: client.clientType === 'UNKNOWN' ? 'Nie określono' : client.clientType,
+  })), [clients]);
+
+  const clientNameById = useMemo(() => new Map(
+    clients.map((client) => [client.id, client.displayName]),
+  ), [clients]);
+
+  const projectPickerOptions = useMemo(() => projectOptions.map((project) => ({
+    value: project.id,
+    label: project.title,
+    meta: clientNameById.get(project.clientId) || labelFor(statusOptions, project.status),
+  })), [clientNameById, projectOptions]);
+
   const canManageSelected = selectedTask
     ? isAdmin || selectedTask.createdById === currentUser?.id
     : true;
@@ -416,6 +436,9 @@ export default function TasksWorkspace() {
         const project = projects.find((item) => item.id === current.projectId);
         if (project && project.clientId !== value) next.projectId = '';
       }
+      if (key === 'assignedToId') {
+        next.assistantIds = current.assistantIds.filter((staffUserId) => staffUserId !== value);
+      }
       return next;
     });
   }
@@ -429,9 +452,17 @@ export default function TasksWorkspace() {
       priority: task.priority || 'NORMAL',
       dueAt: toLocalInputValue(task.dueAt),
       assignedToId: task.assignedToId || '',
+      assistantIds: (task.assistants || []).map((assistant) => assistant.id),
       clientId: task.clientId || task.client?.id || '',
       projectId: task.projectId || task.project?.id || '',
     };
+  }
+
+  function setAssistantIds(assistantIds: string[]) {
+    setForm((current) => ({
+      ...current,
+      assistantIds: assistantIds.filter((staffUserId) => staffUserId !== current.assignedToId),
+    }));
   }
 
   function openCreateTask() {
@@ -479,6 +510,7 @@ export default function TasksWorkspace() {
         priority: form.priority,
         dueAt: form.dueAt ? new Date(form.dueAt).toISOString() : null,
         assignedToId: form.assignedToId || null,
+        assistantIds: form.assistantIds,
         clientId: form.clientId || null,
         projectId: form.projectId || null,
       };
@@ -688,7 +720,7 @@ export default function TasksWorkspace() {
             <Tr>
               <Th>Zadanie</Th>
               <Th>Klient / projekt</Th>
-              <Th>Odpowiedzialny</Th>
+              <Th>Zespół</Th>
               <Th>Termin</Th>
               <Th>Status</Th>
               <Th>Komentarze</Th>
@@ -741,6 +773,11 @@ export default function TasksWorkspace() {
                   <Text color={textColor} fontWeight="700">
                     {task.assignedTo?.name || 'Nieprzypisane'}
                   </Text>
+                  {task.assistants?.length ? (
+                    <Text color={mutedColor} fontSize="xs">
+                      Asystują: {task.assistants.map((assistant) => assistant.name).join(', ')}
+                    </Text>
+                  ) : null}
                   <Text color={mutedColor} fontSize="xs">
                     Utworzył: {task.createdBy?.name || 'System'}
                   </Text>
@@ -782,7 +819,7 @@ export default function TasksWorkspace() {
         </Table>
       </Card>
 
-      <Modal isOpen={isOpen} onClose={closeModal} size="6xl" scrollBehavior="inside">
+      <Modal isOpen={isOpen} onClose={closeModal} size={selectedTask ? '6xl' : '4xl'} scrollBehavior="inside">
         <ModalOverlay />
         <ModalContent bg={modalBg} borderRadius="18px">
           <ModalHeader color={textColor}>
@@ -796,7 +833,7 @@ export default function TasksWorkspace() {
                 {formError}
               </Alert>
             ) : null}
-            <SimpleGrid columns={{ base: 1, lg: 2 }} gap="16px">
+            <SimpleGrid columns={{ base: 1, lg: selectedTask ? 2 : 1 }} gap="16px">
               <Box>
                 <SimpleGrid columns={{ base: 1, md: 2 }} gap="14px">
                   <FormControl gridColumn={{ base: 'auto', md: '1 / -1' }} isRequired>
@@ -848,6 +885,18 @@ export default function TasksWorkspace() {
                       ))}
                     </Select>
                   </FormControl>
+                  <FormControl gridColumn={{ base: 'auto', md: '1 / -1' }}>
+                    <FormLabel color={textColor} fontWeight="700">
+                      Osoby asystujące
+                    </FormLabel>
+                    <StaffMultiPicker
+                      selectedIds={form.assistantIds}
+                      options={users}
+                      excludedId={form.assignedToId}
+                      isDisabled={!canManageSelected}
+                      onChange={setAssistantIds}
+                    />
+                  </FormControl>
                   <FormControl>
                     <FormLabel color={textColor} fontWeight="700">
                       Klient
@@ -857,11 +906,7 @@ export default function TasksWorkspace() {
                       placeholder="Bez klienta"
                       searchPlaceholder="Szukaj klienta..."
                       isDisabled={!canManageSelected}
-                      options={clients.map((client) => ({
-                        value: client.id,
-                        label: client.displayName,
-                        meta: client.clientType === 'UNKNOWN' ? 'Nie określono' : client.clientType,
-                      }))}
+                      options={clientPickerOptions}
                       onChange={(value) => updateForm('clientId', value)}
                     />
                   </FormControl>
@@ -874,11 +919,7 @@ export default function TasksWorkspace() {
                       placeholder="Bez projektu"
                       searchPlaceholder="Szukaj projektu..."
                       isDisabled={!canManageSelected}
-                      options={projectOptions.map((project) => ({
-                        value: project.id,
-                        label: project.title,
-                        meta: clients.find((client) => client.id === project.clientId)?.displayName || labelFor(statusOptions, project.status),
-                      }))}
+                      options={projectPickerOptions}
                       onChange={(value) => updateForm('projectId', value)}
                     />
                   </FormControl>
@@ -891,7 +932,7 @@ export default function TasksWorkspace() {
                 </SimpleGrid>
               </Box>
 
-              <Box>
+              <Box display={selectedTask ? 'block' : 'none'}>
                 <Flex align="center" justify="space-between" mb="12px">
                   <Text color={textColor} fontSize="lg" fontWeight="800">
                     Komentarze
@@ -981,11 +1022,18 @@ function SearchablePicker(props: {
   const bg = useColorModeValue('white', 'rgba(17, 27, 66, 0.96)');
   const borderColor = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
   const hoverBg = useColorModeValue('secondaryGray.100', 'whiteAlpha.100');
-  const selected = props.options.find((option) => option.value === props.value);
-  const filteredOptions = props.options.filter((option) => {
-    const searchText = normalizeSearch([option.label, option.meta].filter(Boolean).join(' '));
-    return searchText.includes(normalizeSearch(query));
-  });
+  const selected = useMemo(
+    () => props.options.find((option) => option.value === props.value),
+    [props.options, props.value],
+  );
+  const filteredOptions = useMemo(() => {
+    if (!isOpen) return [];
+    const normalizedQuery = normalizeSearch(query);
+    return props.options.filter((option) => {
+      const searchText = normalizeSearch([option.label, option.meta].filter(Boolean).join(' '));
+      return searchText.includes(normalizedQuery);
+    });
+  }, [isOpen, props.options, query]);
 
   function openMenu() {
     setQuery('');
@@ -998,7 +1046,7 @@ function SearchablePicker(props: {
   }
 
   return (
-    <Menu isOpen={isOpen} onOpen={openMenu} onClose={onClose} closeOnSelect={false} matchWidth>
+    <Menu isOpen={isOpen} onOpen={openMenu} onClose={onClose} closeOnSelect={false} matchWidth isLazy lazyBehavior="unmount">
       <MenuButton
         as={Button}
         w="100%"
@@ -1079,6 +1127,126 @@ function SearchablePicker(props: {
         ))}
       </MenuList>
     </Menu>
+  );
+}
+
+function StaffMultiPicker(props: {
+  selectedIds: string[];
+  options: StaffOption[];
+  excludedId?: string;
+  isDisabled?: boolean;
+  onChange: (value: string[]) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const textColor = useColorModeValue('secondaryGray.900', 'white');
+  const mutedColor = useColorModeValue('secondaryGray.600', 'secondaryGray.400');
+  const bg = useColorModeValue('white', 'rgba(17, 27, 66, 0.96)');
+  const borderColor = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
+  const hoverBg = useColorModeValue('secondaryGray.100', 'whiteAlpha.100');
+  const availableOptions = useMemo(
+    () => props.options.filter((option) => option.id !== props.excludedId),
+    [props.excludedId, props.options],
+  );
+  const selectedOptions = useMemo(
+    () => availableOptions.filter((option) => props.selectedIds.includes(option.id)),
+    [availableOptions, props.selectedIds],
+  );
+  const filteredOptions = useMemo(() => {
+    if (!isOpen) return [];
+    const normalizedQuery = normalizeSearch(query);
+    return availableOptions.filter((option) => (
+      normalizeSearch(`${option.name} ${option.email} ${option.positionTitle || ''}`).includes(normalizedQuery)
+    ));
+  }, [availableOptions, isOpen, query]);
+
+  function toggle(staffUserId: string) {
+    props.onChange(props.selectedIds.includes(staffUserId)
+      ? props.selectedIds.filter((id) => id !== staffUserId)
+      : [...props.selectedIds, staffUserId]);
+  }
+
+  const summary = selectedOptions.length === 0
+    ? 'Bez osób asystujących'
+    : selectedOptions.length === 1
+      ? selectedOptions[0].name
+      : `${selectedOptions.length} ${selectedOptions.length < 5 ? 'osoby' : 'osób'}`;
+
+  return (
+    <Box>
+      <Menu isOpen={isOpen} onOpen={() => { setQuery(''); onOpen(); }} onClose={onClose} closeOnSelect={false} matchWidth isLazy lazyBehavior="unmount">
+        <MenuButton
+          as={Button}
+          w="100%"
+          h="46px"
+          px="14px"
+          justifyContent="space-between"
+          textAlign="left"
+          bg={bg}
+          color={selectedOptions.length ? textColor : mutedColor}
+          border="1px solid"
+          borderColor={borderColor}
+          borderRadius="12px"
+          fontWeight="700"
+          isDisabled={props.isDisabled}
+          rightIcon={<Icon as={MdKeyboardArrowDown} />}
+          _hover={{ borderColor: 'brand.400' }}
+          _active={{ bg }}
+        >
+          <Text noOfLines={1} as="span">{summary}</Text>
+        </MenuButton>
+        <MenuList bg={bg} borderColor={borderColor} p="8px" maxH="340px" overflowY="auto" zIndex={1600}>
+          <Box pb="8px" position="sticky" top="-8px" bg={bg} zIndex={1}>
+            <Flex align="center" border="1px solid" borderColor={borderColor} borderRadius="10px" px="10px">
+              <Icon as={MdSearch} color={mutedColor} me="8px" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+                placeholder="Szukaj osoby..."
+                autoFocus
+                border="0"
+                bg="transparent"
+                color={textColor}
+                _focus={{ boxShadow: 'none' }}
+              />
+            </Flex>
+          </Box>
+          {filteredOptions.length === 0 ? (
+            <Box px="12px" py="14px">
+              <Text color={mutedColor} fontSize="sm">Brak wyników.</Text>
+            </Box>
+          ) : filteredOptions.map((option) => (
+            <MenuItem
+              key={option.id}
+              onClick={() => toggle(option.id)}
+              bg="transparent"
+              borderRadius="10px"
+              _hover={{ bg: hoverBg }}
+              _focus={{ bg: hoverBg }}
+            >
+              <Checkbox isChecked={props.selectedIds.includes(option.id)} pointerEvents="none" me="10px" colorScheme="purple" />
+              <Box minW="0">
+                <Text color={textColor} fontWeight="700" noOfLines={1}>{option.name}</Text>
+                <Text color={mutedColor} fontSize="xs" noOfLines={1}>
+                  {[option.positionTitle, option.email].filter(Boolean).join(' · ')}
+                </Text>
+              </Box>
+            </MenuItem>
+          ))}
+        </MenuList>
+      </Menu>
+      {selectedOptions.length ? (
+        <Flex gap="6px" mt="8px" flexWrap="wrap">
+          {selectedOptions.map((option) => (
+            <Badge key={option.id} colorScheme="blue" variant="subtle" px="8px" py="4px" borderRadius="6px">
+              {option.name}
+            </Badge>
+          ))}
+        </Flex>
+      ) : null}
+    </Box>
   );
 }
 

@@ -3,6 +3,7 @@ import { jsonResponse, serverError } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
 import { operationalPipelineStageCodes } from 'lib/onrevolt/pipeline-stages';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
+import { taskAssignedWhere } from 'lib/onrevolt/task-participants';
 
 export async function GET(req: NextRequest) {
   const access = await authorizeStaffRequest(req);
@@ -14,19 +15,19 @@ export async function GET(req: NextRequest) {
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
     const activeStatuses = ['OPEN', 'IN_PROGRESS'] as const;
-    const taskAccess = seesAll ? {} : { assignedToId: user.id };
+    const taskAccess = seesAll ? {} : taskAssignedWhere(user.id);
     const projectAccess = seesAll ? {} : { ownerId: user.id };
 
     const [today, overdue, open, projects, stageGroups, dataQuality, installations] = await Promise.all([
       prisma.task.findMany({
         where: { ...taskAccess, status: { in: [...activeStatuses] }, dueAt: { gte: dayStart, lt: dayEnd } },
-        include: { client: true, project: true, assignedTo: true },
+        include: { client: true, project: true, assignedTo: true, assistants: { include: { staffUser: true } } },
         orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }],
         take: 12,
       }),
       prisma.task.findMany({
         where: { ...taskAccess, status: { in: [...activeStatuses] }, dueAt: { lt: dayStart } },
-        include: { client: true, project: true, assignedTo: true },
+        include: { client: true, project: true, assignedTo: true, assistants: { include: { staffUser: true } } },
         orderBy: { dueAt: 'asc' },
         take: 12,
       }),

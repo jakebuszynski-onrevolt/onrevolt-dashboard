@@ -342,6 +342,7 @@ model StaffUser {
   companyRoles            StaffUserCompanyRole[]
   ownedProjects           Project[]                   @relation("ProjectOwner")
   assignedTasks           Task[]                      @relation("TaskAssignee")
+  assistedTasks           TaskAssistant[]
   createdTasks            Task[]                      @relation("TaskCreator")
   taskComments            TaskComment[]
   notificationsReceived   PanelNotification[]         @relation("NotificationRecipient")
@@ -676,6 +677,7 @@ model Task {
   createdById    String?
   createdBy      StaffUser?          @relation("TaskCreator", fields: [createdById], references: [id])
   completedAt    DateTime?
+  assistants     TaskAssistant[]
   comments       TaskComment[]
   notifications  PanelNotification[]
   reminders      Reminder[]
@@ -689,6 +691,17 @@ model Task {
   @@index([createdById])
   @@index([priority])
   @@index([status, dueAt])
+}
+
+model TaskAssistant {
+  taskId      String
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  staffUserId String
+  staffUser   StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@id([taskId, staffUserId])
+  @@index([staffUserId])
 }
 
 model TaskComment {
