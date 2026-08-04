@@ -152,7 +152,7 @@ type ProductEditForm = {
 const categoryLabels: Record<string, string> = {
   MAGAZYN_ENERGII: 'Magazyn energii',
   FALOWNIK: 'Falownik',
-  INWERTER: 'Inwerter',
+  INWERTER: 'Falownik',
   FOTOWOLTAIKA: 'Fotowoltaika',
   LICZNIK_GRID: 'Licznik Grid',
   OSPRZET_ELEKTRONIKA: 'Osprzęt / elektronika',
@@ -162,6 +162,8 @@ const categoryLabels: Record<string, string> = {
   SYSTEM_MONITORUJACY: 'System monitorujący',
   INNE: 'Inne',
 };
+
+const hiddenProductCategories = new Set(['INWERTER']);
 
 const clientTypeOptions = ['UNKNOWN', 'B2C', 'B2B', 'B2C_B2B'];
 const availabilityOptions = ['Dostępny', 'Mało', 'W dostawie', 'Niedostępny', 'Na zamówienie'];
@@ -574,7 +576,9 @@ export default function CatalogWorkspace() {
   }
 
   const categories = useMemo(
-    () => Array.from(new Set([...Object.keys(categoryLabels), ...products.map((product) => product.category)])).sort(),
+    () => Array.from(new Set([...Object.keys(categoryLabels), ...products.map((product) => product.category)]))
+      .filter((category) => !hiddenProductCategories.has(category))
+      .sort(),
     [products],
   );
   const clientTypes = useMemo(
