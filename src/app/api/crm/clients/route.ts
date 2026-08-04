@@ -246,6 +246,9 @@ export async function GET(req: NextRequest) {
                     include: { product: true },
                     orderBy: { position: 'asc' },
                   },
+                  _count: {
+                    select: { offers: true, installations: true, stockReservations: true },
+                  },
                 },
                 orderBy: { updatedAt: 'desc' },
               },

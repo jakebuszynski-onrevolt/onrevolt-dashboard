@@ -6,9 +6,20 @@ import {
   defaultSaleVatRateForMode,
   resolveSaleVatRate,
 } from 'lib/onrevolt/configuration-vat';
-import { jsonResponse, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
+import { configurationDeleteBlockReason } from 'lib/onrevolt/configuration-lifecycle';
+import { writeAuditLog } from 'lib/onrevolt/audit';
+import {
+  badRequest,
+  forbidden,
+  jsonResponse,
+  notFound,
+  optionalString,
+  readJsonObject,
+  requireString,
+  serverError,
+} from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
-import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
+import { authorizeStaffRequest, isAdminUser } from 'lib/onrevolt/staff-server';
 
 const nonPricedSupplyModes = new Set(['CLIENT_OWNED_USED', 'CLIENT_SUPPLIED_NEW', 'NOT_INCLUDED']);
 
@@ -193,5 +204,91 @@ export async function POST(req: NextRequest) {
     return jsonResponse({ ok: true, data: configuration }, { status: 201 });
   } catch (error) {
     return serverError('Nie udało się zapisać konfiguracji', error);
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'configurations.manage');
+  if (!access.ok) return access.response;
+  if (!isAdminUser(access.user)) return forbidden('Tylko administrator może archiwizować konfiguracje');
+
+  try {
+    const body = await readJsonObject(req);
+    const id = requireString(body, 'id');
+    if (body.status !== 'ARCHIVED') return badRequest('Dozwolone jest wyłącznie archiwizowanie konfiguracji');
+
+    const existing = await prisma.configuration.findUnique({
+      where: { id },
+      include: {
+        project: { select: { clientId: true } },
+        _count: { select: { offers: true, installations: true, stockReservations: true } },
+      },
+    });
+    if (!existing) return notFound('Nie znaleziono konfiguracji');
+    if (existing.status === 'ARCHIVED') {
+      return jsonResponse({ ok: true, data: existing });
+    }
+
+    const configuration = await prisma.configuration.update({
+      where: { id },
+      data: { status: 'ARCHIVED' },
+      include: {
+        project: { select: { clientId: true } },
+        _count: { select: { offers: true, installations: true, stockReservations: true } },
+      },
+    });
+
+    await writeAuditLog({
+      actorId: access.user.id,
+      clientId: existing.project.clientId,
+      entityType: 'Configuration',
+      entityId: existing.id,
+      action: 'ARCHIVE',
+      before: existing,
+      after: configuration,
+    });
+    return jsonResponse({ ok: true, data: configuration });
+  } catch (error) {
+    return serverError('Nie udało się zarchiwizować konfiguracji', error);
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'configurations.manage');
+  if (!access.ok) return access.response;
+  if (!isAdminUser(access.user)) return forbidden('Tylko administrator może usuwać konfiguracje');
+
+  try {
+    const body = await readJsonObject(req);
+    const id = requireString(body, 'id');
+    const existing = await prisma.configuration.findUnique({
+      where: { id },
+      include: {
+        project: { select: { clientId: true } },
+        _count: { select: { offers: true, installations: true, stockReservations: true } },
+      },
+    });
+    if (!existing) return notFound('Nie znaleziono konfiguracji');
+
+    const blockReason = configurationDeleteBlockReason({
+      status: existing.status,
+      offers: existing._count.offers,
+      installations: existing._count.installations,
+      stockReservations: existing._count.stockReservations,
+    });
+    if (blockReason) return badRequest(blockReason);
+
+    await prisma.configuration.delete({ where: { id } });
+    await writeAuditLog({
+      actorId: access.user.id,
+      clientId: existing.project.clientId,
+      entityType: 'Configuration',
+      entityId: existing.id,
+      action: 'DELETE',
+      before: existing,
+    });
+    return jsonResponse({ ok: true, data: { id: existing.id } });
+  } catch (error) {
+    return serverError('Nie udało się usunąć konfiguracji', error);
   }
 }

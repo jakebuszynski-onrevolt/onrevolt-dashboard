@@ -244,6 +244,9 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
   if (configuration && configuration.projectId !== project.id) {
     throw new Error('Konfiguracja nie należy do wybranego projektu');
   }
+  if (configuration?.status === 'ARCHIVED') {
+    throw new Error('Nie można utworzyć nowej oferty z archiwalnej konfiguracji');
+  }
   if (input.energyScenarioId && !selectedScenario) throw new Error('Nie znaleziono wariantu energetycznego');
   if (selectedScenario && selectedScenario.audit.projectId !== project.id) {
     throw new Error('Wariant energetyczny nie należy do wybranego projektu');

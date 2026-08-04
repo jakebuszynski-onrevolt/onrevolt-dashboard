@@ -35,6 +35,7 @@ async function workspaceData() {
         client: true,
         investmentSite: true,
         configurations: {
+          where: { status: { not: 'ARCHIVED' } },
           include: { items: true },
           orderBy: { updatedAt: 'desc' },
         },
@@ -47,6 +48,7 @@ async function workspaceData() {
       take: 500,
     }),
     prisma.configuration.findMany({
+      where: { status: { not: 'ARCHIVED' } },
       include: {
         project: { include: { client: true } },
         items: { orderBy: { position: 'asc' } },

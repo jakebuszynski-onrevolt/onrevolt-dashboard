@@ -36,7 +36,7 @@ import {
 } from 'lib/onrevolt/energy-tariffs';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { MdAdd, MdAssignment, MdDeleteOutline, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
+import { MdAdd, MdArchive, MdAssignment, MdDeleteOutline, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
 
 type ClientProfileProps = {
   clientId: string;
@@ -537,6 +537,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [offerCreating, setOfferCreating] = useState(false);
   const [offerMessage, setOfferMessage] = useState('');
   const [offerError, setOfferError] = useState('');
+  const [configurationActionId, setConfigurationActionId] = useState('');
+  const [configurationMessage, setConfigurationMessage] = useState('');
+  const [configurationError, setConfigurationError] = useState('');
   const [selectedClientConfigurationId, setSelectedClientConfigurationId] = useState('');
   const [selectedClientOfferId, setSelectedClientOfferId] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('projectId') || '');
@@ -585,10 +588,12 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       setSelectedProjectId(loadedProject?.id || '');
       setForm(formFromClient(clientPayload.data, loadedProject));
       setEnergyAccount(energyAccountFromClient(clientPayload.data, loadedProject?.id));
-      const firstConfiguration = loadedProject?.configurations?.[0];
+      const firstConfiguration = loadedProject?.configurations?.find((configuration: any) => configuration.status !== 'ARCHIVED');
       const firstOffer = loadedProject?.offers?.[0];
       setSelectedClientConfigurationId((current) => (
-        current && loadedProject?.configurations?.some((configuration: any) => configuration.id === current)
+        current && loadedProject?.configurations?.some((configuration: any) => (
+          configuration.id === current && configuration.status !== 'ARCHIVED'
+        ))
           ? current
           : firstConfiguration?.id || ''
       ));
@@ -860,6 +865,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       const configurationId = configurationIdOverride || selectedClientConfigurationId;
       if (configurationId) setSelectedClientConfigurationId(configurationId);
       const configuration = project.configurations?.find((item: any) => item.id === configurationId);
+      if (configuration?.status === 'ARCHIVED') {
+        throw new Error('Nie można utworzyć nowej oferty z archiwalnej konfiguracji.');
+      }
       const validUntil = new Date();
       validUntil.setDate(validUntil.getDate() + 14);
       const offerOperator = energyAccount.operator || 'ENEA';
@@ -894,6 +902,58 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       setOfferError(e instanceof Error ? e.message : String(e));
     } finally {
       setOfferCreating(false);
+    }
+  }
+
+  async function archiveClientConfiguration(configuration: any) {
+    if (!window.confirm(`Zarchiwizować konfigurację „${configuration.name}”? Pozostanie widoczna w historii i przy istniejących ofertach.`)) {
+      return;
+    }
+
+    setConfigurationActionId(configuration.id);
+    setConfigurationError('');
+    setConfigurationMessage('');
+    try {
+      const response = await fetch('/api/configurations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: configuration.id, status: 'ARCHIVED' }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      setConfigurationMessage(`Zarchiwizowano konfigurację „${configuration.name}”.`);
+      await load(true);
+    } catch (e) {
+      setConfigurationError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConfigurationActionId('');
+    }
+  }
+
+  async function deleteClientConfiguration(configuration: any) {
+    if (!window.confirm(`Usunąć konfigurację roboczą „${configuration.name}”? Tej operacji nie można cofnąć.`)) {
+      return;
+    }
+
+    setConfigurationActionId(configuration.id);
+    setConfigurationError('');
+    setConfigurationMessage('');
+    try {
+      const response = await fetch('/api/configurations', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: configuration.id }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      setConfigurationMessage(`Usunięto konfigurację „${configuration.name}”.`);
+      await load(true);
+    } catch (e) {
+      setConfigurationError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConfigurationActionId('');
     }
   }
 
@@ -1006,6 +1066,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const project = activeProject || {};
   const site = project?.investmentSite || client?.investmentSites?.[0] || {};
   const projectConfigurations = project?.configurations || [];
+  const activeProjectConfigurations = projectConfigurations.filter((configuration: any) => configuration.status !== 'ARCHIVED');
   const projectOffers = project?.offers || [];
   const projectInstallations = project?.installations || [];
   const selectedClientOffer = projectOffers.find((offer: any) => offer.id === selectedClientOfferId) || projectOffers[0];
@@ -1389,6 +1450,19 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       </SimpleGrid>
                     </Card>
 
+                    {configurationError ? (
+                      <Alert status="error" borderRadius="8px">
+                        <AlertIcon />
+                        {configurationError}
+                      </Alert>
+                    ) : null}
+                    {configurationMessage ? (
+                      <Alert status="success" borderRadius="8px">
+                        <AlertIcon />
+                        {configurationMessage}
+                      </Alert>
+                    ) : null}
+
                     {projectConfigurations.length === 0 ? (
                       <Card p="22px">
                         <Text color={mutedColor}>
@@ -1399,6 +1473,17 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       <Flex direction="column" gap="16px">
                         {projectConfigurations.map((configuration: any) => {
                           const linkedOffers = projectOffers.filter((offer: any) => offer.configurationId === configuration.id);
+                          const linkedInstallations = projectInstallations.filter((installation: any) => (
+                            installation.configurationId === configuration.id
+                          ));
+                          const offerCount = Number(configuration._count?.offers ?? linkedOffers.length);
+                          const installationCount = Number(configuration._count?.installations ?? linkedInstallations.length);
+                          const stockReservationCount = Number(configuration._count?.stockReservations || 0);
+                          const isArchived = configuration.status === 'ARCHIVED';
+                          const canDelete = configuration.status === 'DRAFT'
+                            && offerCount === 0
+                            && installationCount === 0
+                            && stockReservationCount === 0;
                           const items = configuration.items || [];
                           return (
                             <Card key={configuration.id} p="22px">
@@ -1409,7 +1494,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                       {configurationStatusLabel(configuration.status)}
                                     </Badge>
                                     <Badge colorScheme="blue">{items.length} pozycji</Badge>
-                                    {linkedOffers.length ? <Badge colorScheme="purple">{linkedOffers.length} ofert</Badge> : null}
+                                    {offerCount ? <Badge colorScheme="purple">{offerCount} ofert</Badge> : null}
+                                    {installationCount ? <Badge colorScheme="green">{installationCount} montaży</Badge> : null}
+                                    {stockReservationCount ? <Badge colorScheme="cyan">{stockReservationCount} rezerwacji</Badge> : null}
                                   </Flex>
                                   <Text color={textColor} fontSize="lg" fontWeight="900">{configuration.name}</Text>
                                   <Text color={mutedColor}>
@@ -1417,22 +1504,50 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                   </Text>
                                 </Box>
                                 <Flex gap="10px" wrap="wrap">
-                                  <Button
-                                    size="sm"
-                                    colorScheme="purple"
-                                    leftIcon={<MdAdd />}
-                                    onClick={() => createClientOffer(configuration.id)}
-                                    isLoading={offerCreating && selectedClientConfigurationId === configuration.id}
-                                  >
-                                    Utwórz ofertę
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => setSelectedClientConfigurationId(configuration.id)}
-                                  >
-                                    Wybierz do oferty
-                                  </Button>
+                                  {!isArchived ? (
+                                    <>
+                                      <Button
+                                        size="sm"
+                                        colorScheme="purple"
+                                        leftIcon={<MdAdd />}
+                                        onClick={() => createClientOffer(configuration.id)}
+                                        isLoading={offerCreating && selectedClientConfigurationId === configuration.id}
+                                      >
+                                        Utwórz ofertę
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => setSelectedClientConfigurationId(configuration.id)}
+                                      >
+                                        Wybierz do oferty
+                                      </Button>
+                                    </>
+                                  ) : null}
+                                  {isAdmin && !isArchived && canDelete ? (
+                                    <Tooltip label="Usuń nieużywaną konfigurację roboczą">
+                                      <IconButton
+                                        aria-label="Usuń konfigurację"
+                                        icon={<MdDeleteOutline />}
+                                        size="sm"
+                                        variant="outline"
+                                        colorScheme="red"
+                                        isLoading={configurationActionId === configuration.id}
+                                        onClick={() => deleteClientConfiguration(configuration)}
+                                      />
+                                    </Tooltip>
+                                  ) : null}
+                                  {isAdmin && !isArchived && !canDelete ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      leftIcon={<MdArchive />}
+                                      isLoading={configurationActionId === configuration.id}
+                                      onClick={() => archiveClientConfiguration(configuration)}
+                                    >
+                                      Archiwizuj
+                                    </Button>
+                                  ) : null}
                                 </Flex>
                               </Flex>
 
@@ -1554,7 +1669,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                             onChange={(event) => setSelectedClientConfigurationId(event.target.value)}
                           >
                             <option value="">Bez konfiguracji</option>
-                            {projectConfigurations.map((configuration: any) => (
+                            {activeProjectConfigurations.map((configuration: any) => (
                               <option key={configuration.id} value={configuration.id}>
                                 {configuration.name} - {formatMoney(configuration.totalSaleGross)} PLN
                               </option>
