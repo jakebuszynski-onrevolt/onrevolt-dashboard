@@ -29,6 +29,7 @@ import Card from 'components/card/Card';
 import OfferDocument from 'components/onrevolt/OfferDocument';
 import ClientDocumentsPanel from 'components/onrevolt/ClientDocumentsPanel';
 import ClientSiteAuditPanel from 'components/onrevolt/ClientSiteAuditPanel';
+import ConfiguratorWorkspace from 'components/onrevolt/ConfiguratorWorkspace';
 import {
   energyOperatorOptions,
   getDefaultEnergyTariff,
@@ -37,7 +38,7 @@ import {
 } from 'lib/onrevolt/energy-tariffs';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { MdAdd, MdArchive, MdAssignment, MdDeleteOutline, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
+import { MdAdd, MdArchive, MdAssignment, MdContentCopy, MdDeleteOutline, MdEdit, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
 
 type ClientProfileProps = {
   clientId: string;
@@ -595,6 +596,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [configurationActionId, setConfigurationActionId] = useState('');
   const [configurationMessage, setConfigurationMessage] = useState('');
   const [configurationError, setConfigurationError] = useState('');
+  const [configurationEditorOpen, setConfigurationEditorOpen] = useState(false);
+  const [configurationEditorId, setConfigurationEditorId] = useState('');
   const [selectedClientConfigurationId, setSelectedClientConfigurationId] = useState('');
   const [selectedClientOfferId, setSelectedClientOfferId] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('projectId') || '');
@@ -1012,6 +1015,53 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     } finally {
       setConfigurationActionId('');
     }
+  }
+
+  function openNewClientConfiguration() {
+    setConfigurationError('');
+    setConfigurationMessage('');
+    setConfigurationEditorId('');
+    setConfigurationEditorOpen(true);
+  }
+
+  function editClientConfiguration(configuration: any) {
+    setConfigurationError('');
+    setConfigurationMessage('');
+    setConfigurationEditorId(configuration.id);
+    setConfigurationEditorOpen(true);
+  }
+
+  async function createConfigurationVariant(configuration: any) {
+    setConfigurationActionId(configuration.id);
+    setConfigurationError('');
+    setConfigurationMessage('');
+    try {
+      const response = await fetch('/api/configurations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ copyFromConfigurationId: configuration.id }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      await load(true);
+      setConfigurationEditorId(payload.data.id);
+      setConfigurationEditorOpen(true);
+      setConfigurationMessage(`Utworzono wariant konfiguracji „${payload.data.name}”.`);
+    } catch (e) {
+      setConfigurationError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConfigurationActionId('');
+    }
+  }
+
+  async function finishConfigurationEdit(configuration: any, result?: { createdCount: number }) {
+    await load(true);
+    setConfigurationEditorOpen(false);
+    setConfigurationEditorId('');
+    setConfigurationMessage(result?.createdCount && result.createdCount > 1
+      ? `Utworzono ${result.createdCount} konfiguracje inwestycji.`
+      : `Zapisano konfigurację „${configuration?.name || ''}”.`);
   }
 
   async function syncEnea() {
@@ -1497,13 +1547,12 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                           </Text>
                         </Box>
                         <Button
-                          as="a"
-                          href={`/admin/configurator?projectId=${encodeURIComponent(project?.id || '')}`}
-                          rightIcon={<MdOpenInNew />}
-                          variant="outline"
+                          leftIcon={<MdAdd />}
                           colorScheme="purple"
+                          onClick={openNewClientConfiguration}
+                          isDisabled={!project?.id || configurationEditorOpen}
                         >
-                          Otwórz konfigurator
+                          Nowa konfiguracja
                         </Button>
                       </Flex>
 
@@ -1522,6 +1571,22 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                         </Box>
                       </SimpleGrid>
                     </Card>
+
+                    {configurationEditorOpen && project?.id ? (
+                      <Box>
+                        <ConfiguratorWorkspace
+                          key={`${project.id}:${configurationEditorId || 'new'}`}
+                          projectId={project.id}
+                          embedded
+                          initialConfigurationId={configurationEditorId || undefined}
+                          onSaved={finishConfigurationEdit}
+                          onCancel={() => {
+                            setConfigurationEditorOpen(false);
+                            setConfigurationEditorId('');
+                          }}
+                        />
+                      </Box>
+                    ) : null}
 
                     {configurationError ? (
                       <Alert status="error" borderRadius="8px">
@@ -1557,6 +1622,18 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                             && offerCount === 0
                             && installationCount === 0
                             && stockReservationCount === 0;
+                          const canEdit = ['DRAFT', 'READY'].includes(configuration.status)
+                            && offerCount === 0
+                            && installationCount === 0
+                            && stockReservationCount === 0;
+                          const canCreateOffer = ['DRAFT', 'READY'].includes(configuration.status)
+                            && offerCount === 0
+                            && installationCount === 0
+                            && stockReservationCount === 0;
+                          const canArchive = ['DRAFT', 'READY'].includes(configuration.status)
+                            && offerCount === 0
+                            && installationCount === 0
+                            && stockReservationCount === 0;
                           const items = configuration.items || [];
                           return (
                             <Card key={configuration.id} p="22px">
@@ -1570,6 +1647,11 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                     {offerCount ? <Badge colorScheme="purple">{offerCount} ofert</Badge> : null}
                                     {installationCount ? <Badge colorScheme="green">{installationCount} montaży</Badge> : null}
                                     {stockReservationCount ? <Badge colorScheme="cyan">{stockReservationCount} rezerwacji</Badge> : null}
+                                    <Badge colorScheme={configuration.templateId ? 'teal' : 'gray'}>
+                                      {configuration.templateId
+                                        ? `Szablon v${configuration.sourceTemplateVersion || 1}`
+                                        : 'Wariant własny'}
+                                    </Badge>
                                   </Flex>
                                   <Text color={textColor} fontSize="lg" fontWeight="900">{configuration.name}</Text>
                                   <Text color={mutedColor}>
@@ -1579,22 +1661,48 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                 <Flex gap="10px" wrap="wrap">
                                   {!isArchived ? (
                                     <>
-                                      <Button
-                                        size="sm"
-                                        colorScheme="purple"
-                                        leftIcon={<MdAdd />}
-                                        onClick={() => createClientOffer(configuration.id)}
-                                        isLoading={offerCreating && selectedClientConfigurationId === configuration.id}
-                                      >
-                                        Utwórz ofertę
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => setSelectedClientConfigurationId(configuration.id)}
-                                      >
-                                        Wybierz do oferty
-                                      </Button>
+                                      {canEdit ? (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          leftIcon={<MdEdit />}
+                                          onClick={() => editClientConfiguration(configuration)}
+                                          isDisabled={configurationEditorOpen}
+                                        >
+                                          Edytuj
+                                        </Button>
+                                      ) : (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          leftIcon={<MdContentCopy />}
+                                          onClick={() => createConfigurationVariant(configuration)}
+                                          isLoading={configurationActionId === configuration.id}
+                                          isDisabled={configurationEditorOpen}
+                                        >
+                                          Utwórz wariant
+                                        </Button>
+                                      )}
+                                      {canCreateOffer ? (
+                                        <>
+                                          <Button
+                                            size="sm"
+                                            colorScheme="purple"
+                                            leftIcon={<MdAdd />}
+                                            onClick={() => createClientOffer(configuration.id)}
+                                            isLoading={offerCreating && selectedClientConfigurationId === configuration.id}
+                                          >
+                                            Utwórz ofertę
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => setSelectedClientConfigurationId(configuration.id)}
+                                          >
+                                            Wybierz do oferty
+                                          </Button>
+                                        </>
+                                      ) : null}
                                     </>
                                   ) : null}
                                   {isAdmin && !isArchived && canDelete ? (
@@ -1610,7 +1718,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                       />
                                     </Tooltip>
                                   ) : null}
-                                  {isAdmin && !isArchived && !canDelete ? (
+                                  {isAdmin && !isArchived && canArchive && !canDelete ? (
                                     <Button
                                       size="sm"
                                       variant="outline"

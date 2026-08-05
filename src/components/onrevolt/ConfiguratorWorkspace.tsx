@@ -58,7 +58,14 @@ import {
   vatBreakdown,
 } from 'lib/onrevolt/configuration-vat';
 import { percentFormValueToRate, rateToPercentFormValue } from 'lib/onrevolt/percentage';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  configurationInvestmentScope,
+  groupTemplateVariants,
+  resolveTemplateItemCosts,
+  selectTemplateVariant,
+  type ConfigurationInvestmentScope,
+} from 'lib/onrevolt/configuration-templates';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MdAdd,
   MdBatteryChargingFull,
@@ -73,6 +80,14 @@ import {
   MdSyncAlt,
   MdTune,
 } from 'react-icons/md';
+
+type ConfiguratorWorkspaceProps = {
+  projectId: string;
+  embedded?: boolean;
+  initialConfigurationId?: string;
+  onSaved?: (configuration: any, result?: { createdCount: number }) => void | Promise<void>;
+  onCancel?: () => void;
+};
 
 type PriceRow = {
   purchaseNet: string | number;
@@ -151,6 +166,9 @@ type TemplateItemRow = {
 
 type TemplateRow = {
   id: string;
+  familyKey: string;
+  version: number;
+  isActive: boolean;
   name: string;
   kind: string;
   clientType: string;
@@ -163,6 +181,32 @@ type TemplateRow = {
   sourceSheet?: string | null;
   sourceRange?: string | null;
   items: TemplateItemRow[];
+};
+
+type ConfigurationRow = {
+  id: string;
+  projectId: string;
+  templateId?: string | null;
+  sourceTemplateVersion?: number | null;
+  name: string;
+  kind: string;
+  status: string;
+  clientType: string;
+  goal?: string | null;
+  roofType?: string | null;
+  targetPowerKw?: string | number | null;
+  targetCapacityKwh?: string | number | null;
+  existingAssetsSnapshot?: unknown;
+  saleVatMode: ConfigurationVatMode;
+  vatBasis?: string | null;
+  items: Array<TemplateItemRow & {
+    unitPurchaseNet: string | number;
+    purchaseVatRate: string | number;
+    operatingCostNet: string | number;
+    marginRate: string | number;
+    saleVatRate: string | number;
+  }>;
+  _count?: { offers?: number; installations?: number; stockReservations?: number };
 };
 
 type ConfigItemForm = {
@@ -183,6 +227,9 @@ type ConfigItemForm = {
   sourceRow?: number | null;
   notes: string;
 };
+
+type InvestmentSelection = Record<ConfigurationInvestmentScope, boolean>;
+type InvestmentTemplateSelection = Record<ConfigurationInvestmentScope, string>;
 
 const goalLabels: Record<string, string> = {
   NEW_PV: 'Nowa PV',
@@ -289,6 +336,13 @@ const vatBasisLabels: Record<string, string> = {
   MIXED_RATES: 'Stawki mieszane',
 };
 
+function defaultVatBasisForMode(mode: ConfigurationVatMode) {
+  if (mode === 'REDUCED_8') return 'RESIDENTIAL_INSTALLATION';
+  if (mode === 'STANDARD_23') return 'STANDARD_RATE';
+  if (mode === 'MIXED') return 'MIXED_RATES';
+  return '';
+}
+
 function asNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === '') return 0;
   return Number(value);
@@ -328,6 +382,28 @@ function supplyModeFromRole(role: string) {
 }
 
 function itemFromTemplate(item: TemplateItemRow): ConfigItemForm {
+  const costs = resolveTemplateItemCosts(item);
+  return {
+    productId: item.productId || '',
+    position: item.position,
+    description: item.description || item.product?.name || '',
+    quantity: formValue(item.quantity || 1),
+    role: item.role || roleFromProduct(item.product || undefined),
+    supplyMode: item.supplyMode || 'ONREVOLT_SUPPLIED',
+    unitPurchaseNet: formValue(costs.unitPurchaseNet),
+    purchaseVatRate: rateToPercentFormValue(costs.purchaseVatRate),
+    operatingCostNet: formValue(costs.operatingCostNet),
+    marginRate: rateToPercentFormValue(costs.marginRate),
+    saleVatRate: rateToPercentFormValue(item.saleVatRate),
+    isOptional: Boolean(item.isOptional),
+    requiresReview: Boolean(item.requiresReview),
+    sourceSheet: item.sourceSheet,
+    sourceRow: item.sourceRow,
+    notes: item.notes || '',
+  };
+}
+
+function itemFromConfiguration(item: ConfigurationRow['items'][number]): ConfigItemForm {
   return {
     productId: item.productId || '',
     position: item.position,
@@ -461,7 +537,13 @@ function projectSearchText(project: ProjectRow) {
   ].filter(Boolean).join(' '));
 }
 
-export default function ConfiguratorWorkspace() {
+export default function ConfiguratorWorkspace({
+  projectId: fixedProjectId,
+  embedded = false,
+  initialConfigurationId,
+  onSaved,
+  onCancel,
+}: ConfiguratorWorkspaceProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -469,7 +551,9 @@ export default function ConfiguratorWorkspace() {
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
-  const [projectId, setProjectId] = useState('');
+  const [configurations, setConfigurations] = useState<ConfigurationRow[]>([]);
+  const [projectId, setProjectId] = useState(fixedProjectId);
+  const [configurationName, setConfigurationName] = useState('');
   const [clientType, setClientType] = useState('B2C');
   const [saleVatMode, setSaleVatMode] = useState<ConfigurationVatMode>('REDUCED_8');
   const [vatBasis, setVatBasis] = useState('RESIDENTIAL_INSTALLATION');
@@ -488,6 +572,9 @@ export default function ConfiguratorWorkspace() {
   const [templateSaving, setTemplateSaving] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templateNotes, setTemplateNotes] = useState('');
+  const [investmentSelection, setInvestmentSelection] = useState<InvestmentSelection>({ BATTERY: true, PV: true });
+  const [investmentTemplateIds, setInvestmentTemplateIds] = useState<InvestmentTemplateSelection>({ BATTERY: '', PV: '' });
+  const [showTemplatePicker, setShowTemplatePicker] = useState(embedded && !initialConfigurationId);
   const projectPickerRef = useRef<HTMLDivElement | null>(null);
 
   const textColor = useColorModeValue('secondaryGray.900', 'white');
@@ -522,6 +609,11 @@ export default function ConfiguratorWorkspace() {
     [templateId, templates],
   );
 
+  const editingConfiguration = useMemo(
+    () => configurations.find((configuration) => configuration.id === initialConfigurationId),
+    [configurations, initialConfigurationId],
+  );
+
   const filteredProjects = useMemo(() => {
     const query = normalizeSearch(projectQuery.trim());
     if (!query) return projects;
@@ -539,39 +631,108 @@ export default function ConfiguratorWorkspace() {
     return clientMatches && goalMatches && roofMatches;
   }), [clientType, goal, roofType, templates]);
 
+  const investmentTemplateOptions = useMemo(() => {
+    const options: Record<ConfigurationInvestmentScope, Array<{ familyKey: string; name: string; template: TemplateRow }>> = {
+      BATTERY: [],
+      PV: [],
+    };
+
+    for (const family of groupTemplateVariants(templates)) {
+      const template = selectTemplateVariant(family, clientType);
+      if (!template) continue;
+      const scope = configurationInvestmentScope(template.kind);
+      if (!scope) continue;
+      options[scope].push({ familyKey: family.familyKey, name: family.name, template });
+    }
+
+    return options;
+  }, [clientType, templates]);
+
+  const selectedInvestmentTemplates = useMemo(() => (
+    (['BATTERY', 'PV'] as ConfigurationInvestmentScope[])
+      .filter((scope) => investmentSelection[scope])
+      .map((scope) => ({
+        scope,
+        template: templates.find((entry) => entry.id === investmentTemplateIds[scope]),
+      }))
+      .filter((entry): entry is { scope: ConfigurationInvestmentScope; template: TemplateRow } => Boolean(entry.template))
+  ), [investmentSelection, investmentTemplateIds, templates]);
+
+  const selectedInvestmentCount = useMemo(
+    () => (Object.values(investmentSelection).filter(Boolean).length),
+    [investmentSelection],
+  );
+
   const totals = useMemo(() => calculateItems(items, saleVatMode), [items, saleVatMode]);
   const reviewCount = useMemo(() => items.filter((item) => item.requiresReview).length, [items]);
 
-  async function loadWorkspace() {
+  const applyClientTypeVat = useCallback((nextClientType: string) => {
+    const nextMode = defaultVatModeForClientType(nextClientType);
+    setSaleVatMode(nextMode);
+    setVatBasis(defaultVatBasisForMode(nextMode));
+  }, []);
+
+  const hydrateConfiguration = useCallback((configuration: ConfigurationRow, project: ProjectRow) => {
+    setProjectId(configuration.projectId);
+    setConfigurationName(configuration.name);
+    setTemplateId(configuration.templateId || '');
+    setClientType(configuration.clientType);
+    setSaleVatMode(configuration.saleVatMode);
+    setVatBasis(configuration.vatBasis || defaultVatBasisForMode(configuration.saleVatMode));
+    setGoal(configuration.goal || 'MIXED');
+    setRoofType(configuration.roofType || 'UNKNOWN');
+    setKind(configuration.kind);
+    setTargetPowerKw(formValue(configuration.targetPowerKw));
+    setTargetCapacityKwh(formValue(configuration.targetCapacityKwh));
+    setItems(configuration.items.map(itemFromConfiguration));
+    setAssets(Array.isArray(configuration.existingAssetsSnapshot)
+      ? configuration.existingAssetsSnapshot.map((asset) => cleanAsset(asset as ExistingAssetRow))
+      : (project.existingAssets || []).map(cleanAsset));
+    setShowTemplatePicker(false);
+  }, []);
+
+  const loadWorkspace = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/configurations?workspace=1', { cache: 'no-store' });
+      const response = await fetch(`/api/configurations?workspace=1&projectId=${encodeURIComponent(fixedProjectId)}`, { cache: 'no-store' });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.message || result.error || 'Nie udało się pobrać danych');
 
       setProjects(result.data.projects || []);
       setTemplates(result.data.templates || []);
       setProducts(result.data.products || []);
+      setConfigurations(result.data.configurations || []);
 
-      const firstProject = result.data.projects?.[0];
-      if (firstProject && !projectId) {
-        const firstClientType = firstProject.clientType === 'UNKNOWN' ? firstProject.client?.clientType || 'B2C' : firstProject.clientType;
-        setProjectId(firstProject.id);
-        setClientType(firstClientType);
-        applyClientTypeVat(firstClientType);
-        setAssets((firstProject.existingAssets || []).map(cleanAsset));
+      const project = result.data.projects?.[0] as ProjectRow | undefined;
+      if (!project) throw new Error('Nie znaleziono aktywnego projektu klienta');
+
+      const configuration = initialConfigurationId
+        ? (result.data.configurations || []).find((entry: ConfigurationRow) => entry.id === initialConfigurationId)
+        : undefined;
+      if (initialConfigurationId && !configuration) throw new Error('Nie znaleziono wybranej konfiguracji');
+
+      if (configuration) {
+        hydrateConfiguration(configuration, project);
+      } else {
+        const nextClientType = project.clientType === 'UNKNOWN' ? project.client?.clientType || 'UNKNOWN' : project.clientType;
+        setProjectId(project.id);
+        setClientType(nextClientType);
+        applyClientTypeVat(nextClientType);
+        setAssets((project.existingAssets || []).map(cleanAsset));
+        setConfigurationName(`${project.title} - nowa konfiguracja`);
+        setShowTemplatePicker(embedded);
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
       setLoading(false);
     }
-  }
+  }, [applyClientTypeVat, embedded, fixedProjectId, hydrateConfiguration, initialConfigurationId]);
 
   useEffect(() => {
     loadWorkspace();
-  }, []);
+  }, [loadWorkspace]);
 
   useEffect(() => {
     if (!projectPickerOpen) return undefined;
@@ -599,19 +760,47 @@ export default function ConfiguratorWorkspace() {
     }
   }
 
-  function applyClientTypeVat(nextClientType: string) {
-    const nextMode = defaultVatModeForClientType(nextClientType);
-    setSaleVatMode(nextMode);
-    setVatBasis(nextMode === 'REDUCED_8'
-      ? 'RESIDENTIAL_INSTALLATION'
-      : nextMode === 'STANDARD_23'
-        ? 'STANDARD_RATE'
-        : '');
-  }
-
   function changeClientType(nextClientType: string) {
     setClientType(nextClientType);
     applyClientTypeVat(nextClientType);
+    setInvestmentTemplateIds({ BATTERY: '', PV: '' });
+  }
+
+  function toggleInvestment(scope: ConfigurationInvestmentScope, checked: boolean) {
+    setInvestmentSelection((current) => ({ ...current, [scope]: checked }));
+    if (!checked) {
+      setInvestmentTemplateIds((current) => ({ ...current, [scope]: '' }));
+    }
+  }
+
+  function selectInvestmentTemplate(scope: ConfigurationInvestmentScope, nextTemplateId: string) {
+    setInvestmentTemplateIds((current) => ({ ...current, [scope]: nextTemplateId }));
+    setError('');
+    setNotice('');
+  }
+
+  async function setUnknownProjectClientType(nextClientType: 'B2C' | 'B2B') {
+    setSaving(true);
+    setError('');
+    try {
+      const response = await fetch('/api/configurations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'SET_PROJECT_CLIENT_TYPE', projectId, clientType: nextClientType }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.message || result.error || 'Nie udało się zapisać typu klienta');
+      setProjects((current) => current.map((project) => (
+        project.id === projectId
+          ? { ...project, clientType: nextClientType, client: { ...project.client, clientType: nextClientType } }
+          : project
+      )));
+      changeClientType(nextClientType);
+    } catch (typeError) {
+      setError(typeError instanceof Error ? typeError.message : String(typeError));
+    } finally {
+      setSaving(false);
+    }
   }
 
   function changeSaleVatMode(nextMode: ConfigurationVatMode) {
@@ -723,13 +912,67 @@ export default function ConfiguratorWorkspace() {
     setTemplateId(nextTemplateId);
     if (!template) return;
 
-    setKind(template.kind);
-    setGoal(template.goal || 'MIXED');
-    setRoofType(template.roofType || 'UNKNOWN');
-    setTargetPowerKw(formValue(template.powerKw));
-    setTargetCapacityKwh(formValue(template.capacityKwh));
-    setItems(template.items.map(itemFromTemplate));
-    setNotice('');
+    try {
+      setKind(template.kind);
+      setGoal(template.goal || 'MIXED');
+      setRoofType(template.roofType || 'UNKNOWN');
+      setTargetPowerKw(formValue(template.powerKw));
+      setTargetCapacityKwh(formValue(template.capacityKwh));
+      setItems(template.items.map(itemFromTemplate));
+      setConfigurationName(`${selectedProject?.title || 'Konfiguracja'} - ${template.name}`);
+      setShowTemplatePicker(false);
+      setError('');
+      setNotice('');
+    } catch (templateError) {
+      setTemplateId('');
+      setError(templateError instanceof Error ? templateError.message : String(templateError));
+    }
+  }
+
+  function templateEstimatedGross(template: TemplateRow) {
+    try {
+      const mode = defaultVatModeForClientType(clientType);
+      if (mode === 'REVIEW') return null;
+      return calculateItems(template.items.map(itemFromTemplate), mode).saleGross;
+    } catch {
+      return null;
+    }
+  }
+
+  async function createUnchangedFromTemplates(selectedTemplates: TemplateRow[]) {
+    if (!['B2C', 'B2B'].includes(clientType)) {
+      setError('Przed wyborem szablonu określ typ klienta jako B2C albo B2B w danych klienta lub projektu.');
+      return;
+    }
+    if (selectedTemplates.length === 0) {
+      setError('Wybierz przynajmniej jedną konfigurację inwestycji.');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      const response = await fetch('/api/configurations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CREATE_FROM_TEMPLATES',
+          projectId,
+          templateIds: selectedTemplates.map((template) => template.id),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.message || result.error || 'Nie udało się utworzyć konfiguracji');
+      const created = Array.isArray(result.data) ? result.data : [result.data];
+      setNotice(created.length > 1
+        ? `Utworzono ${created.length} konfiguracje inwestycji.`
+        : `Utworzono konfigurację: ${created[0].name}`);
+      await onSaved?.(created[created.length - 1], { createdCount: created.length });
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : String(createError));
+    } finally {
+      setSaving(false);
+    }
   }
 
   function updateItem(index: number, field: keyof ConfigItemForm, value: string | boolean) {
@@ -834,6 +1077,10 @@ export default function ConfiguratorWorkspace() {
       setError('Dodaj pozycje lub wybierz wariant ODS przed zapisem');
       return;
     }
+    if (!configurationName.trim()) {
+      setError('Podaj nazwę konfiguracji');
+      return;
+    }
     if (saleVatMode === 'REVIEW') {
       setError('Wybierz stawkę VAT sprzedaży przed zapisem konfiguracji');
       return;
@@ -871,12 +1118,13 @@ export default function ConfiguratorWorkspace() {
       }
 
       const response = await fetch('/api/configurations', {
-        method: 'POST',
+        method: editingConfiguration ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: editingConfiguration?.id,
           projectId,
           templateId: templateId || undefined,
-          name: `${selectedProject?.title || 'Konfiguracja'} - ${selectedTemplate?.name || 'wariant własny'}`,
+          name: configurationName.trim(),
           kind,
           status: 'DRAFT',
           clientType,
@@ -897,7 +1145,7 @@ export default function ConfiguratorWorkspace() {
       if (!response.ok || !result.ok) throw new Error(result.message || result.error || 'Nie udało się zapisać konfiguracji');
 
       setNotice(`Zapisano konfigurację: ${result.data.name}`);
-      await loadWorkspace();
+      await onSaved?.(result.data);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
     } finally {
@@ -906,23 +1154,33 @@ export default function ConfiguratorWorkspace() {
   }
 
   return (
-    <Box pt={{ base: '130px', md: '80px', xl: '80px' }}>
+    <Box pt={embedded ? '0' : { base: '130px', md: '80px', xl: '80px' }}>
       <Flex align="center" justify="space-between" gap="16px" mb="18px" wrap="wrap">
         <Box>
-          <Text color={mutedColor} fontSize="sm" fontWeight="700">
-            Pages / Konfigurator
+          {!embedded ? (
+            <Text color={mutedColor} fontSize="sm" fontWeight="700">
+              Pages / Konfigurator
+            </Text>
+          ) : null}
+          <Text color={textColor} fontSize={embedded ? 'xl' : { base: '28px', md: '36px' }} fontWeight="800" lineHeight="1.1">
+            {showTemplatePicker ? 'Nowa konfiguracja' : editingConfiguration ? 'Edytuj konfigurację' : 'Dostosuj konfigurację'}
           </Text>
-          <Text color={textColor} fontSize={{ base: '28px', md: '36px' }} fontWeight="800" lineHeight="1.1">
-            Konfigurator zestawu
-          </Text>
+          {embedded && selectedProject ? (
+            <Text color={mutedColor} fontSize="sm" fontWeight="700" mt="4px">
+              {selectedProject.client.displayName} · {selectedProject.title}
+            </Text>
+          ) : null}
         </Box>
         <HStack spacing="10px" wrap="wrap">
           <Button leftIcon={<Icon as={MdRefresh} />} variant="outline" onClick={loadWorkspace} isDisabled={loading || saving}>
             Odśwież
           </Button>
-          <Button leftIcon={<Icon as={MdSave} />} colorScheme="purple" onClick={saveConfiguration} isLoading={saving}>
-            Zapisz konfigurację
-          </Button>
+          {onCancel ? <Button variant="ghost" onClick={onCancel} isDisabled={saving}>Anuluj</Button> : null}
+          {!showTemplatePicker ? (
+            <Button leftIcon={<Icon as={MdSave} />} colorScheme="purple" onClick={saveConfiguration} isLoading={saving}>
+              Zapisz konfigurację
+            </Button>
+          ) : null}
         </HStack>
       </Flex>
 
@@ -946,14 +1204,205 @@ export default function ConfiguratorWorkspace() {
             <Text color={textColor} fontWeight="700">Ładowanie konfiguratora</Text>
           </Flex>
         </Card>
+      ) : showTemplatePicker ? (
+        <Card p={{ base: '16px', md: '22px' }}>
+          {!['B2C', 'B2B'].includes(clientType) ? (
+            <Alert status="warning" borderRadius="8px" mb="18px" alignItems="center">
+              <AlertIcon />
+              <Box flex="1">
+                <Text fontWeight="800">Najpierw określ typ klienta</Text>
+                <Text fontSize="sm">Na tej podstawie wybierzemy właściwy wariant szablonu i VAT sprzedaży.</Text>
+              </Box>
+              <HStack>
+                <Button size="sm" onClick={() => setUnknownProjectClientType('B2C')} isLoading={saving}>B2C</Button>
+                <Button size="sm" onClick={() => setUnknownProjectClientType('B2B')} isLoading={saving}>B2B</Button>
+              </HStack>
+            </Alert>
+          ) : (
+            <>
+              <Box mb="18px">
+                <Text color={textColor} fontSize="lg" fontWeight="900">Przedmiot projektu</Text>
+                <Text color={mutedColor} fontSize="sm" fontWeight="600" mt="4px">
+                  Wybierz jeden lub oba rodzaje inwestycji, a następnie dopasuj właściwą konfigurację z listy.
+                </Text>
+              </Box>
+
+              <FormLabel color={textColor}>Rodzaj inwestycji</FormLabel>
+              <SimpleGrid columns={{ base: 1, lg: 2 }} spacing="12px" mb="18px">
+                <Box
+                  border="1px solid"
+                  borderColor={investmentSelection.BATTERY ? 'brand.400' : borderColor}
+                  bg={investmentSelection.BATTERY ? subtleBg : 'transparent'}
+                  borderRadius="8px"
+                  p="14px"
+                >
+                  <Checkbox
+                    isChecked={investmentSelection.BATTERY}
+                    onChange={(event) => toggleInvestment('BATTERY', event.target.checked)}
+                    alignItems="flex-start"
+                    w="100%"
+                  >
+                    <Flex align="flex-start" gap="10px" ps="4px">
+                      <Icon as={MdBatteryChargingFull} color="brand.400" boxSize="22px" mt="1px" />
+                      <Box>
+                        <Text color={textColor} fontWeight="900">Magazyn energii</Text>
+                        <Text color={mutedColor} fontSize="sm" fontWeight="600">
+                          Falownik hybrydowy, magazyn i wymagany osprzęt.
+                        </Text>
+                      </Box>
+                    </Flex>
+                  </Checkbox>
+                </Box>
+                <Box
+                  border="1px solid"
+                  borderColor={investmentSelection.PV ? 'brand.400' : borderColor}
+                  bg={investmentSelection.PV ? subtleBg : 'transparent'}
+                  borderRadius="8px"
+                  p="14px"
+                >
+                  <Checkbox
+                    isChecked={investmentSelection.PV}
+                    onChange={(event) => toggleInvestment('PV', event.target.checked)}
+                    alignItems="flex-start"
+                    w="100%"
+                  >
+                    <Flex align="flex-start" gap="10px" ps="4px">
+                      <Icon as={MdSolarPower} color="orange.400" boxSize="22px" mt="1px" />
+                      <Box>
+                        <Text color={textColor} fontWeight="900">Instalacja fotowoltaiczna</Text>
+                        <Text color={mutedColor} fontSize="sm" fontWeight="600">
+                          Panele PV, konstrukcja, zabezpieczenia i montaż.
+                        </Text>
+                      </Box>
+                    </Flex>
+                  </Checkbox>
+                </Box>
+              </SimpleGrid>
+
+              {selectedInvestmentCount === 0 ? (
+                <Alert status="info" borderRadius="8px" mb="18px">
+                  <AlertIcon />
+                  Zaznacz przynajmniej jeden rodzaj inwestycji.
+                </Alert>
+              ) : (
+                <SimpleGrid columns={{ base: 1, lg: 2 }} spacing="14px" mb="20px">
+                  {investmentSelection.BATTERY ? (
+                    <FormControl>
+                      <FormLabel color={textColor}>Konfiguracja magazynu energii</FormLabel>
+                      <SearchableTemplatePicker
+                        value={investmentTemplateIds.BATTERY}
+                        options={investmentTemplateOptions.BATTERY}
+                        onChange={(value) => selectInvestmentTemplate('BATTERY', value)}
+                        placeholder="Wybierz konfigurację magazynu"
+                      />
+                    </FormControl>
+                  ) : null}
+                  {investmentSelection.PV ? (
+                    <FormControl>
+                      <FormLabel color={textColor}>Konfiguracja instalacji PV</FormLabel>
+                      <SearchableTemplatePicker
+                        value={investmentTemplateIds.PV}
+                        options={investmentTemplateOptions.PV}
+                        onChange={(value) => selectInvestmentTemplate('PV', value)}
+                        placeholder="Wybierz konfigurację instalacji PV"
+                      />
+                    </FormControl>
+                  ) : null}
+                </SimpleGrid>
+              )}
+
+              {selectedInvestmentTemplates.length > 0 ? (
+                <>
+                  <Text color={textColor} fontWeight="800" mb="10px">Wybrane konfiguracje</Text>
+                  <SimpleGrid columns={{ base: 1, lg: 2 }} spacing="12px">
+                    {selectedInvestmentTemplates.map(({ scope, template }) => {
+                      const estimatedGross = templateEstimatedGross(template);
+                      return (
+                        <Box key={scope} border="1px solid" borderColor={borderColor} borderRadius="8px" p="16px">
+                          <Flex justify="space-between" gap="12px" align="start">
+                            <Box minW="0">
+                              <Text color={mutedColor} fontSize="xs" fontWeight="800" textTransform="uppercase">
+                                {scope === 'BATTERY' ? 'Magazyn energii' : 'Instalacja PV'}
+                              </Text>
+                              <Text color={textColor} fontWeight="900" noOfLines={2} mt="3px">{template.name}</Text>
+                              <HStack spacing="6px" mt="7px" wrap="wrap">
+                                <Badge colorScheme="purple">{clientType}</Badge>
+                                <Badge colorScheme="blue">{kindLabels[template.kind] || template.kind}</Badge>
+                                <Badge colorScheme="gray">v{template.version}</Badge>
+                              </HStack>
+                            </Box>
+                            <Text color={textColor} fontWeight="900" whiteSpace="nowrap">
+                              {estimatedGross == null ? 'Brak ceny' : formatMoney(estimatedGross)}
+                            </Text>
+                          </Flex>
+                          <HStack spacing="14px" mt="12px" color={mutedColor} fontSize="sm" fontWeight="700" wrap="wrap">
+                            <Text>{template.powerKw ? `${formatNumber(template.powerKw)} kW` : 'Moc nieokreślona'}</Text>
+                            <Text>{template.capacityKwh ? `${formatNumber(template.capacityKwh)} kWh` : 'Pojemność nieokreślona'}</Text>
+                            <Text>{template.items.length} pozycji</Text>
+                          </HStack>
+                          {estimatedGross == null ? (
+                            <Text color="orange.400" fontSize="sm" fontWeight="700" mt="8px">
+                              Szablon wymaga uzupełnienia aktualnej ceny produktu w katalogu.
+                            </Text>
+                          ) : null}
+                          <Flex gap="8px" mt="14px" wrap="wrap">
+                            <Button size="sm" variant="outline" onClick={() => applyTemplate(template.id)} isDisabled={estimatedGross == null}>
+                              Dostosuj konfigurację
+                            </Button>
+                          </Flex>
+                        </Box>
+                      );
+                    })}
+                  </SimpleGrid>
+                </>
+              ) : null}
+
+              <Flex mt="18px" gap="10px" wrap="wrap">
+                <Button
+                  colorScheme="purple"
+                  onClick={() => createUnchangedFromTemplates(selectedInvestmentTemplates.map((entry) => entry.template))}
+                  isLoading={saving}
+                  isDisabled={selectedInvestmentTemplates.length !== selectedInvestmentCount
+                    || selectedInvestmentTemplates.some(({ template }) => templateEstimatedGross(template) == null)}
+                >
+                  {selectedInvestmentCount > 1 ? 'Utwórz wybrane konfiguracje' : 'Utwórz konfigurację bez zmian'}
+                </Button>
+                <Button variant="ghost" onClick={() => {
+                  setTemplateId('');
+                  setItems([]);
+                  setConfigurationName(`${selectedProject?.title || 'Projekt'} - wariant własny`);
+                  setShowTemplatePicker(false);
+                }}>
+                  Zacznij wariant własny
+                </Button>
+              </Flex>
+            </>
+          )}
+        </Card>
       ) : (
         <Grid templateColumns={{ base: '1fr', xl: 'minmax(0, 1.45fr) minmax(360px, 0.55fr)' }} gap="20px">
           <GridItem>
             <VStack spacing="18px" align="stretch">
               <Card>
+                <FormControl mb="16px" isRequired>
+                  <FormLabel color={textColor}>Nazwa konfiguracji</FormLabel>
+                  <Input
+                    value={configurationName}
+                    onChange={(event) => setConfigurationName(event.target.value)}
+                    placeholder="Np. Magazyn 16 kWh - wariant podstawowy"
+                    sx={fieldStyles}
+                  />
+                </FormControl>
                 <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing="14px">
                   <FormControl>
                     <FormLabel color={textColor}>Projekt</FormLabel>
+                    {embedded ? (
+                      <Box border="1px solid" borderColor={borderColor} borderRadius="8px" minH="40px" px="14px" py="9px">
+                        <Text color={fieldColor} fontWeight="700" noOfLines={1}>
+                          {selectedProject ? `${selectedProject.client.displayName} · ${selectedProject.title}` : 'Brak projektu'}
+                        </Text>
+                      </Box>
+                    ) : (
                     <Box ref={projectPickerRef} position="relative">
                       <Button
                         type="button"
@@ -1036,10 +1485,11 @@ export default function ConfiguratorWorkspace() {
                         </Box>
                       ) : null}
                     </Box>
+                    )}
                   </FormControl>
                   <FormControl>
                     <FormLabel color={textColor}>Typ klienta</FormLabel>
-                    <Select value={clientType} onChange={(event) => changeClientType(event.target.value)} sx={fieldStyles}>
+                    <Select value={clientType} onChange={(event) => changeClientType(event.target.value)} sx={fieldStyles} isDisabled={embedded}>
                       {clientTypes.map((entry) => <option key={entry} value={entry}>{clientTypeLabels[entry] || entry}</option>)}
                     </Select>
                   </FormControl>
@@ -1215,14 +1665,16 @@ export default function ConfiguratorWorkspace() {
                     </Text>
                   </Box>
                   <HStack spacing="10px" wrap="wrap">
-                    <Button
-                      leftIcon={<Icon as={MdLibraryAdd} />}
-                      variant="outline"
-                      onClick={openSaveTemplateModal}
-                      isDisabled={items.length === 0}
-                    >
-                      Zapisz jako szablon
-                    </Button>
+                    {!embedded ? (
+                      <Button
+                        leftIcon={<Icon as={MdLibraryAdd} />}
+                        variant="outline"
+                        onClick={openSaveTemplateModal}
+                        isDisabled={items.length === 0}
+                      >
+                        Zapisz jako szablon
+                      </Button>
+                    ) : null}
                     <Button leftIcon={<Icon as={MdAdd} />} variant="outline" onClick={addProductLine}>
                       Dodaj pozycję
                     </Button>
@@ -1231,8 +1683,13 @@ export default function ConfiguratorWorkspace() {
 
                 <SimpleGrid columns={{ base: 1, lg: 4 }} spacing="14px" mb="16px">
                   <FormControl>
-                    <FormLabel color={textColor}>Szablon ODS</FormLabel>
-                    <Select value={templateId} onChange={(event) => applyTemplate(event.target.value)} sx={fieldStyles}>
+                    <FormLabel color={textColor}>Szablon źródłowy</FormLabel>
+                    <Select
+                      value={templateId}
+                      onChange={(event) => applyTemplate(event.target.value)}
+                      sx={fieldStyles}
+                      isDisabled={Boolean(editingConfiguration) || embedded}
+                    >
                       <option value="">Wariant własny</option>
                       {filteredTemplates.map((template) => (
                         <option key={template.id} value={template.id}>
@@ -1453,7 +1910,7 @@ export default function ConfiguratorWorkspace() {
         </Grid>
       )}
 
-      <Modal isOpen={templateModalOpen} onClose={() => setTemplateModalOpen(false)} isCentered size="lg">
+      {!embedded ? <Modal isOpen={templateModalOpen} onClose={() => setTemplateModalOpen(false)} isCentered size="lg">
         <ModalOverlay />
         <ModalContent bg={panelBg} color={textColor} borderRadius="16px">
           <ModalHeader>Zapisz jako szablon</ModalHeader>
@@ -1509,12 +1966,150 @@ export default function ConfiguratorWorkspace() {
             </Button>
           </ModalFooter>
         </ModalContent>
-      </Modal>
+      </Modal> : null}
     </Box>
   );
 }
 
-function SearchableProductPicker({
+function SearchableTemplatePicker({
+  value,
+  options,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  options: Array<{ familyKey: string; name: string; template: TemplateRow }>;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  const [query, setQuery] = useState('');
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const textColor = useColorModeValue('secondaryGray.900', 'white');
+  const mutedColor = useColorModeValue('secondaryGray.600', 'secondaryGray.400');
+  const fieldBg = useColorModeValue('white', 'navy.900');
+  const menuBg = useColorModeValue('white', 'navy.800');
+  const borderColor = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
+  const hoverBg = useColorModeValue('secondaryGray.100', 'whiteAlpha.100');
+  const selected = options.find((option) => option.template.id === value);
+  const queryTokens = normalizeSearch(query).split(/\s+/).filter(Boolean);
+  const visibleOptions = queryTokens.length === 0
+    ? options
+    : options.filter((option) => {
+      const template = option.template;
+      const haystack = normalizeSearch([
+        option.name,
+        kindLabels[template.kind],
+        template.kind,
+        goalLabels[template.goal || ''],
+        roofLabels[template.roofType || ''],
+        template.powerKw,
+        template.capacityKwh,
+      ].filter(Boolean).join(' '));
+      return queryTokens.every((token) => haystack.includes(token));
+    });
+
+  function openMenu() {
+    setQuery('');
+    onOpen();
+  }
+
+  function choose(templateId: string) {
+    onChange(templateId);
+    onClose();
+  }
+
+  return (
+    <Menu isOpen={isOpen} onOpen={openMenu} onClose={onClose} closeOnSelect={false} matchWidth>
+      <MenuButton
+        as={Button}
+        w="100%"
+        minH="44px"
+        h="auto"
+        px="12px"
+        py="10px"
+        justifyContent="space-between"
+        textAlign="left"
+        bg={fieldBg}
+        color={selected ? textColor : mutedColor}
+        border="1px solid"
+        borderColor={borderColor}
+        borderRadius="8px"
+        fontWeight="700"
+        rightIcon={<Icon as={MdKeyboardArrowDown} />}
+        _hover={{ borderColor: 'brand.400' }}
+        _active={{ bg: fieldBg }}
+      >
+        <Text as="span" noOfLines={2}>{selected?.name || placeholder}</Text>
+      </MenuButton>
+      <Portal>
+        <MenuList bg={menuBg} borderColor={borderColor} p="8px" maxH="390px" overflowY="auto" zIndex={2000}>
+          <Box pb="8px" position="sticky" top="-8px" bg={menuBg} zIndex={1}>
+            <Flex align="center" border="1px solid" borderColor={borderColor} borderRadius="8px" px="10px" bg={fieldBg}>
+              <Icon as={MdSearch} color={mutedColor} me="8px" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+                placeholder="Szukaj po nazwie, mocy lub pojemności..."
+                autoFocus
+                border="0"
+                bg="transparent"
+                color={textColor}
+                _focus={{ boxShadow: 'none' }}
+              />
+            </Flex>
+          </Box>
+          <MenuItem
+            onClick={() => choose('')}
+            bg="transparent"
+            color={!value ? textColor : mutedColor}
+            borderRadius="8px"
+            fontWeight={!value ? '800' : '600'}
+            _hover={{ bg: hoverBg }}
+            _focus={{ bg: hoverBg }}
+          >
+            Nie wybrano
+          </MenuItem>
+          {visibleOptions.length === 0 ? (
+            <Box px="12px" py="14px">
+              <Text color={mutedColor} fontSize="sm">Brak pasujących konfiguracji.</Text>
+            </Box>
+          ) : visibleOptions.map((option) => {
+            const template = option.template;
+            const parameters = [
+              template.powerKw ? `${formatNumber(template.powerKw)} kW` : null,
+              template.capacityKwh ? `${formatNumber(template.capacityKwh)} kWh` : null,
+              roofLabels[template.roofType || ''],
+            ].filter(Boolean).join(' · ');
+            return (
+              <MenuItem
+                key={option.familyKey}
+                onClick={() => choose(template.id)}
+                bg="transparent"
+                borderRadius="8px"
+                py="9px"
+                _hover={{ bg: hoverBg }}
+                _focus={{ bg: hoverBg }}
+              >
+                <Box minW="0">
+                  <Text color={textColor} fontWeight={template.id === value ? '900' : '700'} noOfLines={2}>
+                    {option.name}
+                  </Text>
+                  <Text color={mutedColor} fontSize="xs" noOfLines={1} mt="2px">
+                    {parameters || kindLabels[template.kind] || template.kind}
+                  </Text>
+                </Box>
+              </MenuItem>
+            );
+          })}
+        </MenuList>
+      </Portal>
+    </Menu>
+  );
+}
+
+export function SearchableProductPicker({
   value,
   products,
   onChange,

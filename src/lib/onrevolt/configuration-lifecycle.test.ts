@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { configurationDeleteBlockReason } from './configuration-lifecycle';
+import { configurationDeleteBlockReason, configurationEditBlockReason } from './configuration-lifecycle';
 
 test('pozwala usunąć nieużywaną konfigurację roboczą', () => {
   assert.equal(configurationDeleteBlockReason({ status: 'DRAFT' }), undefined);
@@ -26,4 +26,21 @@ test('blokuje usunięcie konfiguracji, która nie jest szkicem', () => {
     configurationDeleteBlockReason({ status: 'READY' }) || '',
     /tylko konfigurację roboczą/,
   );
+});
+
+test('pozwala edytować nieużywany szkic i konfigurację gotową', () => {
+  assert.equal(configurationEditBlockReason({ status: 'DRAFT' }), undefined);
+  assert.equal(configurationEditBlockReason({ status: 'READY' }), undefined);
+});
+
+test('blokuje edycję po utworzeniu pierwszej oferty', () => {
+  assert.match(
+    configurationEditBlockReason({ status: 'DRAFT', offers: 1 }) || '',
+    /Utwórz nowy wariant/,
+  );
+});
+
+test('blokuje edycję konfiguracji przekazanej dalej w procesie', () => {
+  assert.match(configurationEditBlockReason({ status: 'OFFERED' }) || '', /roboczą lub gotową/);
+  assert.match(configurationEditBlockReason({ status: 'ACCEPTED' }) || '', /roboczą lub gotową/);
 });

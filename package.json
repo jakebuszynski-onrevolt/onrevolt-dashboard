@@ -18,6 +18,7 @@
     "crm:email:send": "tsx scripts/process-email-queue.ts",
     "crm:pipeline:reconcile": "tsx scripts/reconcile-pipeline-stages.ts",
     "test:crm": "tsx --test src/lib/onrevolt/*.test.ts",
+    "test:configuration-integration": "node --env-file=.env.local --import tsx scripts/verify-configuration-workflow.ts",
     "lint": "next lint",
     "predeploy": "yarn run build",
     "deploy": "gh-pages -d build"

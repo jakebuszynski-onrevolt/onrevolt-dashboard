@@ -315,10 +315,18 @@ export async function createOfferFromConfiguration(prisma: PrismaClient, input: 
     include: offerInclude,
   });
 
-  await prisma.project.update({
-    where: { id: input.projectId },
-    data: { status: 'OFERTA_PRZYGOTOWANA' },
-  });
+  await Promise.all([
+    prisma.project.update({
+      where: { id: input.projectId },
+      data: { status: 'OFERTA_PRZYGOTOWANA' },
+    }),
+    configurationId
+      ? prisma.configuration.updateMany({
+        where: { id: configurationId, status: { in: ['DRAFT', 'READY'] } },
+        data: { status: 'OFFERED' },
+      })
+      : Promise.resolve(),
+  ]);
 
   return offer;
 }

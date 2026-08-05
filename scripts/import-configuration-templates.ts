@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import process from 'process';
+import { createHash } from 'node:crypto';
 import XLSX from 'xlsx';
 import { PrismaClient } from '@prisma/client';
 
@@ -400,6 +401,7 @@ async function applyTemplates(templates: ParsedTemplate[]) {
   let itemsCreated = 0;
 
   for (const template of templates) {
+    const familyKey = `import-${createHash('sha256').update(template.name.trim().toLocaleLowerCase('pl-PL')).digest('hex')}`;
     await prisma.$transaction(async (tx) => {
       const saved = await tx.configurationTemplate.upsert({
         where: {
@@ -409,6 +411,7 @@ async function applyTemplates(templates: ParsedTemplate[]) {
           },
         } as any,
         update: {
+          familyKey,
           name: template.name,
           kind: template.kind as any,
           clientType: template.clientType as any,
@@ -422,6 +425,7 @@ async function applyTemplates(templates: ParsedTemplate[]) {
           notes: template.notes,
         },
         create: {
+          familyKey,
           name: template.name,
           kind: template.kind as any,
           clientType: template.clientType as any,

@@ -466,6 +466,18 @@ async function resolveSource(body: Record<string, any>, projectId: string) {
 }
 
 function plannedItemsFromSource(configuration: any, offer: any) {
+  if (Array.isArray(offer?.lineItemsSnapshot) && offer.lineItemsSnapshot.length) {
+    return offer.lineItemsSnapshot.map((item: any, index: number) => ({
+      productId: item.productId || null,
+      position: Number(item.position || index + 1),
+      name: String(item.name || item.description || `Pozycja ${index + 1}`),
+      quantity: Number(item.quantity || 1),
+      role: item.role || 'OTHER',
+      supplyMode: item.supplyMode || 'ONREVOLT_SUPPLIED',
+      notes: item.notes || null,
+    }));
+  }
+
   if (configuration?.items?.length) {
     return configuration.items.map((item: any, index: number) => ({
       configurationItemId: item.id,
@@ -476,18 +488,6 @@ function plannedItemsFromSource(configuration: any, offer: any) {
       role: item.role || 'OTHER',
       supplyMode: item.supplyMode || 'ONREVOLT_SUPPLIED',
       notes: item.notes,
-    }));
-  }
-
-  if (Array.isArray(offer?.lineItemsSnapshot) && offer.lineItemsSnapshot.length) {
-    return offer.lineItemsSnapshot.map((item: any, index: number) => ({
-      productId: item.productId || null,
-      position: Number(item.position || index + 1),
-      name: String(item.name || item.description || `Pozycja ${index + 1}`),
-      quantity: Number(item.quantity || 1),
-      role: item.role || 'OTHER',
-      supplyMode: item.supplyMode || 'ONREVOLT_SUPPLIED',
-      notes: item.notes || null,
     }));
   }
 
@@ -619,6 +619,13 @@ export async function POST(req: NextRequest) {
         await tx.project.update({
           where: { id: project.id },
           data: { status: 'ZALICZKA_MONTAZ', installationDate: created.plannedAt },
+        });
+      }
+
+      if (configuration?.id) {
+        await tx.configuration.updateMany({
+          where: { id: configuration.id, status: { not: 'ARCHIVED' } },
+          data: { status: 'INSTALLED' },
         });
       }
 

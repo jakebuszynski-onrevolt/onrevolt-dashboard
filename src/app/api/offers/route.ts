@@ -208,6 +208,10 @@ export async function PATCH(req: NextRequest) {
             metadata: { offerId: updated.id, totalGross: Number(updated.totalGross) },
           },
         }),
+        ...(updated.configurationId ? [prisma.configuration.updateMany({
+          where: { id: updated.configurationId, status: { in: ['DRAFT', 'READY', 'OFFERED'] } },
+          data: { status: 'ACCEPTED' },
+        })] : []),
       ]);
     }
 
