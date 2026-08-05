@@ -399,6 +399,8 @@ model Client {
   displayName            String
   clientType             ClientType              @default(UNKNOWN)
   taxId                  String?
+  clientProblem          String?                 @db.Text
+  expectedResult         String?                 @db.Text
   notes                  String?                 @db.Text
   pipedrivePersonId      String?                 @unique
   contacts               Contact[]

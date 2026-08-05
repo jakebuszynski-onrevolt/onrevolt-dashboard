@@ -24,6 +24,7 @@ import {
   Tooltip,
   useColorModeValue,
 } from '@chakra-ui/react';
+import type { TextareaProps } from '@chakra-ui/react';
 import Card from 'components/card/Card';
 import OfferDocument from 'components/onrevolt/OfferDocument';
 import ClientDocumentsPanel from 'components/onrevolt/ClientDocumentsPanel';
@@ -34,13 +35,61 @@ import {
   getDefaultTargetEnergyTariff,
   getEnergyTariffs,
 } from 'lib/onrevolt/energy-tariffs';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MdAdd, MdArchive, MdAssignment, MdDeleteOutline, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
 
 type ClientProfileProps = {
   clientId: string;
 };
+
+function AutoGrowingTextarea({ onInput, rows = 4, value, ...props }: TextareaProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const minHeightRef = useRef(0);
+  const widthRef = useRef(0);
+
+  const resize = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    if (!minHeightRef.current) minHeightRef.current = textarea.offsetHeight;
+    textarea.style.height = 'auto';
+    const borderHeight = textarea.offsetHeight - textarea.clientHeight;
+    textarea.style.height = `${Math.max(textarea.scrollHeight + borderHeight, minHeightRef.current)}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    resize();
+  }, [resize, value]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width === widthRef.current) return;
+      widthRef.current = entry.contentRect.width;
+      resize();
+    });
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, [resize]);
+
+  return (
+    <Textarea
+      {...props}
+      ref={textareaRef}
+      value={value}
+      rows={rows}
+      overflowY="hidden"
+      resize="none"
+      onInput={(event) => {
+        onInput?.(event);
+        resize();
+      }}
+    />
+  );
+}
 
 type CurrentUser = {
   id?: string | null;
@@ -75,6 +124,8 @@ type ClientFormState = {
   dashboardStation: string;
   dashboardStationNumber: string;
   weatherStationNumber: string;
+  clientProblem: string;
+  expectedResult: string;
   notes: string;
 };
 
@@ -222,6 +273,8 @@ const emptyForm: ClientFormState = {
   dashboardStation: '',
   dashboardStationNumber: '',
   weatherStationNumber: '',
+  clientProblem: '',
+  expectedResult: '',
   notes: '',
 };
 
@@ -506,6 +559,8 @@ function formFromClient(client: any, selectedProject?: any): ClientFormState {
     dashboardStation: project.dashboardStation || '',
     dashboardStationNumber: project.dashboardStationNumber || '',
     weatherStationNumber: project.weatherStationNumber || '',
+    clientProblem: client?.clientProblem || '',
+    expectedResult: client?.expectedResult || '',
     notes: client?.notes || '',
   };
 }
@@ -748,6 +803,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
           displayName: form.displayName,
           clientType: form.clientType,
           taxId: form.taxId,
+          clientProblem: form.clientProblem,
+          expectedResult: form.expectedResult,
           notes: form.notes,
           contact: {
             email: form.email,
@@ -1233,6 +1290,22 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                 <FormControl>
                   <FormLabel>Adres inwestycji</FormLabel>
                   <Input value={form.investmentAddress} onChange={(event) => updateForm('investmentAddress', event.target.value)} />
+                </FormControl>
+              </SimpleGrid>
+              <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px" mt="16px">
+                <FormControl>
+                  <FormLabel>Problematyka klienta</FormLabel>
+                  <AutoGrowingTextarea
+                    value={form.clientProblem}
+                    onChange={(event) => updateForm('clientProblem', event.target.value)}
+                  />
+                </FormControl>
+                <FormControl>
+                  <FormLabel>Oczekiwany rezultat</FormLabel>
+                  <AutoGrowingTextarea
+                    value={form.expectedResult}
+                    onChange={(event) => updateForm('expectedResult', event.target.value)}
+                  />
                 </FormControl>
               </SimpleGrid>
               <FormControl mt="16px">

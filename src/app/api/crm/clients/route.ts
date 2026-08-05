@@ -354,6 +354,8 @@ export async function POST(req: NextRequest) {
           displayName,
           clientType: clientType as any,
           taxId: optionalString(body, 'taxId'),
+          clientProblem: optionalString(body, 'clientProblem'),
+          expectedResult: optionalString(body, 'expectedResult'),
           notes: optionalString(body, 'notes'),
           contacts: contactBody ? { create: contactData(displayName, contactBody)! } : undefined,
         },
@@ -451,6 +453,8 @@ export async function PUT(req: NextRequest) {
           displayName,
           clientType: clientType as any,
           taxId: optionalString(body, 'taxId'),
+          clientProblem: nullableNestedString(body, 'clientProblem'),
+          expectedResult: nullableNestedString(body, 'expectedResult'),
           notes: optionalString(body, 'notes'),
         },
       });
@@ -511,7 +515,14 @@ export async function PUT(req: NextRequest) {
           entityId: id,
           action: 'update',
           before: jsonSnapshot(existing),
-          after: { displayName, clientType, contact: contactBody, project: projectBody },
+          after: {
+            displayName,
+            clientType,
+            clientProblem: nullableNestedString(body, 'clientProblem'),
+            expectedResult: nullableNestedString(body, 'expectedResult'),
+            contact: contactBody,
+            project: projectBody,
+          },
         },
       });
 
