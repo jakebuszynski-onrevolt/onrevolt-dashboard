@@ -1,0 +1,24 @@
+   ▲ Next.js 15.5.20
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.127:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 2.4s
+ ✓ Compiled /middleware in 242ms (115 modules)
+ ○ Compiling /admin/catalog ...
+ ✓ Compiled /admin/catalog in 5.1s (2796 modules)
+ GET /admin/catalog 200 in 6930ms
+ ○ Compiling /api/notifications ...
+ ✓ Compiled /api/notifications in 1499ms (2826 modules)
+ GET /api/auth/me 200 in 2009ms
+ GET /api/auth/me 200 in 1770ms
+ GET /api/auth/me 200 in 2025ms
+ GET /api/notifications 200 in 1790ms
+ GET /api/catalog/products 200 in 2053ms
+ ○ Compiling /api/catalog/media/[id]/file ...
+ ✓ Compiled /api/catalog/media/[id]/file in 725ms (2830 modules)
+ GET /api/catalog/media/cmrb96k3t0007bz8wrxhvpkog/file 200 in 1589ms
+ ✓ Compiled in 927ms (2830 modules)
+ GET /api/auth/me 200 in 155ms
+ GET /api/catalog/products 200 in 167ms

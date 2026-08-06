@@ -47,6 +47,7 @@ import {
   MdArrowDownward,
   MdArrowUpward,
   MdDelete,
+  MdDownload,
   MdEdit,
   MdImage,
   MdOpenInNew,
@@ -336,6 +337,7 @@ export default function CatalogWorkspace() {
   const [productModalError, setProductModalError] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
   const textColor = useColorModeValue('secondaryGray.900', 'white');
   const mutedColor = useColorModeValue('secondaryGray.600', 'secondaryGray.400');
   const subtleBorder = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
@@ -357,6 +359,23 @@ export default function CatalogWorkspace() {
 
   useEffect(() => {
     loadProducts();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((response) => response.json().then((payload) => ({ response, payload })))
+      .then(({ response, payload }) => {
+        if (active) setIsAdmin(response.ok && payload?.data?.systemRole === 'ADMIN');
+      })
+      .catch(() => {
+        if (active) setIsAdmin(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   function closeProductModal() {
@@ -386,6 +405,66 @@ export default function CatalogWorkspace() {
 
   function updateEditField(field: keyof ProductEditForm, value: string) {
     setEditForm((current) => current ? { ...current, [field]: value } : current);
+  }
+
+  function exportProductJson() {
+    if (!isAdmin || productModalMode !== 'edit' || !editingProduct || !editForm) return;
+
+    const exportedProduct = {
+      format: 'onrevolt.catalog.product',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      product: {
+        id: editingProduct.id,
+        name: editForm.name,
+        category: editForm.category,
+        categoryLabel: categoryLabels[editForm.category] || editForm.category,
+        sku: editForm.sku,
+        supplierSku: editForm.supplierSku,
+        producer: editForm.producer,
+        supplier: editForm.supplier,
+        supplierUrl: editForm.supplierUrl,
+        availability: editForm.availability,
+        clientType: editForm.clientType,
+        powerCapacity: editForm.powerCapacity,
+        voltageKind: editForm.voltageKind,
+        sourceSheet: editForm.sourceSheet,
+        sourceRow: editForm.sourceRow,
+        description: editForm.description,
+        notes: editForm.notes,
+        price: {
+          purchaseNet: editForm.purchaseNet,
+          currentPurchaseNet: editForm.currentPurchaseNet,
+          currency: editForm.currency,
+          purchaseVatPercent: editForm.purchaseVatRate,
+          operatingCostNet: editForm.operatingCostNet,
+          marginPercent: editForm.marginRate,
+        },
+        media: sortMediaItems(editingProduct.media || []).map((media) => ({
+          id: media.id,
+          kind: media.kind,
+          kindLabel: mediaKindLabels[media.kind as ProductMediaKind] || media.kind,
+          url: mediaHref(media),
+          altText: media.altText || '',
+          sortOrder: media.sortOrder,
+        })),
+      },
+    };
+
+    const fileBase = (editForm.sku.trim() || editForm.name.trim() || editingProduct.id)
+      .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || editingProduct.id;
+    const blob = new Blob([JSON.stringify(exportedProduct, null, 2)], { type: 'application/json;charset=utf-8' });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = `${fileBase}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(href), 0);
   }
 
   async function saveProduct() {
@@ -1066,16 +1145,25 @@ export default function CatalogWorkspace() {
               </Box>
             ) : null}
           </ModalBody>
-          <ModalFooter gap="10px">
-            <Button
-              variant="ghost"
-              onClick={closeProductModal}
-            >
-              Anuluj
-            </Button>
-            <Button colorScheme="blue" leftIcon={<Icon as={MdSave} />} isLoading={savingProduct} onClick={saveProduct}>
-              {productModalMode === 'edit' ? 'Zapisz' : 'Dodaj towar'}
-            </Button>
+          <ModalFooter justifyContent="space-between" gap="10px">
+            <Box>
+              {isAdmin && productModalMode === 'edit' && editingProduct ? (
+                <Button variant="outline" leftIcon={<Icon as={MdDownload} />} onClick={exportProductJson}>
+                  Export JSON
+                </Button>
+              ) : null}
+            </Box>
+            <Flex gap="10px">
+              <Button
+                variant="ghost"
+                onClick={closeProductModal}
+              >
+                Anuluj
+              </Button>
+              <Button colorScheme="blue" leftIcon={<Icon as={MdSave} />} isLoading={savingProduct} onClick={saveProduct}>
+                {productModalMode === 'edit' ? 'Zapisz' : 'Dodaj towar'}
+              </Button>
+            </Flex>
           </ModalFooter>
         </ModalContent>
       </Modal>
