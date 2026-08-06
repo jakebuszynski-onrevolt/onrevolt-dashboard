@@ -13,7 +13,9 @@ import { requireStaffUser, staffAuthorizationResponse } from 'lib/onrevolt/staff
 const maxUploadBytes = 25 * 1024 * 1024;
 const allowedDocumentTypes = new Set([
   'FAKTURA_PRAD', 'ENEA_ZUZYCIE', 'ENEA_PRODUKCJA', 'OFERTA', 'UMOWA',
-  'PROTOKOL', 'ZDJECIE_MONTAZU', 'DOKUMENT_OSD', 'RE_DOKUMENT', 'INNE',
+  'PROTOKOL', 'ZDJECIE_MONTAZU', 'DOKUMENT_OSD', 'RE_DOKUMENT',
+  'PROJEKT_INSTALACJI', 'DECYZJA_POZWOLENIE', 'FAKTURA_USLUGOWA',
+  'DOKUMENT_TECHNICZNY', 'INNE',
 ]);
 const allowedExtensions = new Set([
   '.pdf', '.png', '.jpg', '.jpeg', '.webp', '.heic', '.heif', '.xlsx', '.xls', '.ods',

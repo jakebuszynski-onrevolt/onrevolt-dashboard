@@ -255,10 +255,19 @@ export async function GET(req: NextRequest) {
               offers: {
                 include: {
                   configuration: true,
-                  contracts: true,
+                  contracts: {
+                    include: { documents: { orderBy: { createdAt: 'desc' } } },
+                  },
                   documents: { orderBy: { createdAt: 'desc' } },
                 },
                 orderBy: { updatedAt: 'desc' },
+              },
+              siteAudits: {
+                include: { documents: { orderBy: { createdAt: 'desc' } } },
+                orderBy: { updatedAt: 'desc' },
+              },
+              odsCase: {
+                include: { documents: { orderBy: { createdAt: 'desc' } } },
               },
               installations: {
                 include: {
@@ -301,6 +310,14 @@ export async function GET(req: NextRequest) {
           documents: { orderBy: { createdAt: 'desc' } },
           energyPortalAccounts: {
             select: energyPortalAccountSelect,
+            orderBy: { updatedAt: 'desc' },
+          },
+          serviceTickets: {
+            include: {
+              assignedTo: { select: { id: true, name: true, email: true, avatarUrl: true, positionTitle: true } },
+              installedDevice: { select: { id: true, name: true, serialNumber: true } },
+              documents: { orderBy: { createdAt: 'desc' } },
+            },
             orderBy: { updatedAt: 'desc' },
           },
           tasks: true,

@@ -4,8 +4,4 @@
    - Environments: .env.local
 
  ✓ Starting...
- ✓ Ready in 2.5s
- ○ Compiling /api/notifications ...
- ✓ Compiled /api/notifications in 2.9s (303 modules)
- GET /api/notifications 200 in 3257ms
- ✓ Compiled /middleware in 201ms (115 modules)
+ ✓ Ready in 2.4s

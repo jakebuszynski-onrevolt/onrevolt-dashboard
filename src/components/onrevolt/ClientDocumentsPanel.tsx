@@ -42,7 +42,7 @@ import {
 } from 'react-icons/md';
 
 type Props = {
-  mode: 'files' | 'invoices';
+  mode: 'files' | 'formal' | 'invoices';
   clientId: string;
   projectId?: string;
   documents: any[];
@@ -70,12 +70,22 @@ type InvoiceRecognitionPayload = {
   duplicate: InvoiceDuplicate | null;
 };
 
-const fileTypes = [
+const workingFileTypes = [
   ['ZDJECIE_MONTAZU', 'Zdjęcie'],
+  ['INNE', 'Inny materiał roboczy'],
+] as const;
+
+const formalDocumentTypes = [
+  ['OFERTA', 'Oferta'],
+  ['UMOWA', 'Umowa'],
   ['PROTOKOL', 'Protokół'],
   ['DOKUMENT_OSD', 'Dokument OSD'],
   ['RE_DOKUMENT', 'Dokument RE'],
-  ['INNE', 'Inny plik'],
+  ['PROJEKT_INSTALACJI', 'Projekt instalacji'],
+  ['DECYZJA_POZWOLENIE', 'Decyzja / pozwolenie'],
+  ['FAKTURA_USLUGOWA', 'Faktura związana z usługą'],
+  ['DOKUMENT_TECHNICZNY', 'Dokument techniczny'],
+  ['INNE', 'Inny dokument'],
 ] as const;
 
 const cycles = [
@@ -157,14 +167,22 @@ export default function ClientDocumentsPanel(props: Props) {
   if (props.mode === 'invoices') {
     return <ClientInvoicesPanel {...props} />;
   }
-  return <ClientFilesPanel {...props} />;
+  return <ClientFilesPanel {...props} documentMode={props.mode} />;
 }
 
-function ClientFilesPanel({ clientId, projectId, documents, onChanged }: PanelProps) {
+function ClientFilesPanel({
+  clientId,
+  projectId,
+  documents,
+  onChanged,
+  documentMode,
+}: PanelProps & { documentMode: 'files' | 'formal' }) {
+  const typeOptions = documentMode === 'formal' ? formalDocumentTypes : workingFileTypes;
+  const defaultType = documentMode === 'formal' ? 'PROJEKT_INSTALACJI' : 'ZDJECIE_MONTAZU';
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [title, setTitle] = useState('');
-  const [type, setType] = useState('ZDJECIE_MONTAZU');
+  const [type, setType] = useState(defaultType);
   const [notes, setNotes] = useState('');
   const [documentDate, setDocumentDate] = useState(new Date().toISOString().slice(0, 10));
   const [tagText, setTagText] = useState('');
@@ -213,16 +231,27 @@ function ClientFilesPanel({ clientId, projectId, documents, onChanged }: PanelPr
     }
   }
 
-  const shown = useMemo(
-    () => documents.filter((document) => !['FAKTURA_PRAD', 'ENEA_ZUZYCIE', 'ENEA_PRODUKCJA'].includes(document.type)),
-    [documents],
-  );
+  const shown = useMemo(() => documents.filter((document) => {
+    if (documentMode === 'files') {
+      return document.type === 'ZDJECIE_MONTAZU'
+        || (document.type === 'INNE' && document.mimeType?.startsWith('image/'));
+    }
+    if (['ENEA_ZUZYCIE', 'ENEA_PRODUKCJA', 'ZDJECIE_MONTAZU'].includes(document.type)) return false;
+    if (document.type === 'INNE' && document.mimeType?.startsWith('image/')) return false;
+    return true;
+  }), [documentMode, documents]);
+
+  const isFormal = documentMode === 'formal';
 
   return (
     <Flex direction="column" gap="20px">
       <Card p="22px">
-        <Text color={textColor} fontSize="lg" fontWeight="800">Dodaj zdjęcie lub plik</Text>
-        <Text color={mutedColor} mb="16px">Plik można opisać, datować, oznaczyć i udostępnić klientowi.</Text>
+        <Text color={textColor} fontSize="lg" fontWeight="800">
+          {isFormal ? 'Dodaj dokument formalny' : 'Dodaj zdjęcie lub plik'}
+        </Text>
+        <Text color={mutedColor} mb="16px">
+          Plik można opisać, datować, oznaczyć i udostępnić klientowi.
+        </Text>
         {error ? <Alert status="error" mb="12px"><AlertIcon />{error}</Alert> : null}
         {message ? <Alert status="success" mb="12px"><AlertIcon />{message}</Alert> : null}
         <SimpleGrid columns={{ base: 1, md: 2 }} gap="12px">
@@ -248,7 +277,7 @@ function ClientFilesPanel({ clientId, projectId, documents, onChanged }: PanelPr
           <FormControl>
             <FormLabel>Rodzaj</FormLabel>
             <Select value={type} onChange={(event) => setType(event.target.value)}>
-              {fileTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              {typeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </Select>
           </FormControl>
           <FormControl>
@@ -278,7 +307,7 @@ function ClientFilesPanel({ clientId, projectId, documents, onChanged }: PanelPr
           Dodaj
         </Button>
       </Card>
-      <DocumentsList mode="files" documents={shown} onChanged={onChanged} />
+      <DocumentsList mode={documentMode} documents={shown} onChanged={onChanged} />
     </Flex>
   );
 }
@@ -709,7 +738,7 @@ function DocumentsList({
   documents,
   onChanged,
 }: {
-  mode: 'files' | 'invoices';
+  mode: 'files' | 'formal' | 'invoices';
   documents: any[];
   onChanged: () => Promise<void> | void;
 }) {
@@ -795,7 +824,9 @@ function DocumentsList({
     <Card p="22px">
       <Flex justify="space-between" mb="14px">
         <Box>
-          <Text color={textColor} fontSize="lg" fontWeight="800">{mode === 'invoices' ? 'Faktury' : 'Zdjęcia i pliki'}</Text>
+          <Text color={textColor} fontSize="lg" fontWeight="800">
+            {mode === 'invoices' ? 'Faktury' : mode === 'formal' ? 'Dokumenty formalne' : 'Zdjęcia i pliki'}
+          </Text>
           <Text color={mutedColor}>{documents.length} dokumentów</Text>
         </Box>
       </Flex>
@@ -815,11 +846,13 @@ function DocumentsList({
                       <FormLabel>Nazwa</FormLabel>
                       <Input value={editing.title} onChange={(event) => setEditing({ ...editing, title: event.target.value })} />
                     </FormControl>
-                    {mode === 'files' ? (
+                    {mode !== 'invoices' ? (
                       <FormControl>
                         <FormLabel>Rodzaj</FormLabel>
                         <Select value={editing.type} onChange={(event) => setEditing({ ...editing, type: event.target.value })}>
-                          {fileTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                          {(mode === 'formal' ? formalDocumentTypes : workingFileTypes).map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
                         </Select>
                       </FormControl>
                     ) : (
