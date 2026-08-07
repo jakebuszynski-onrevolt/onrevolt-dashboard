@@ -266,6 +266,10 @@ export async function GET(req: NextRequest) {
                 include: { documents: { orderBy: { createdAt: 'desc' } } },
                 orderBy: { updatedAt: 'desc' },
               },
+              energyAudits: {
+                include: { scenarios: { orderBy: { createdAt: 'desc' } } },
+                orderBy: { updatedAt: 'desc' },
+              },
               odsCase: {
                 include: { documents: { orderBy: { createdAt: 'desc' } } },
               },

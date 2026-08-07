@@ -556,6 +556,8 @@ model EnergyAudit {
   status               EnergyAuditStatus      @default(DRAFT)
   profileSource        EnergyProfileSource    @default(ANNUAL_DECLARATION)
   annualConsumptionKwh Decimal?               @db.Decimal(12, 3)
+  hasOperatorData      Boolean?
+  hasEnergyInvoices    Boolean?
   connectionPowerKw    Decimal?               @db.Decimal(10, 3)
   phaseCount           Int?
   mainFuseA            Int?

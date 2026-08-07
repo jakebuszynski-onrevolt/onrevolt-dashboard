@@ -6,6 +6,7 @@ import {
   Badge,
   Box,
   Button,
+  Checkbox,
   Flex,
   FormControl,
   FormLabel,
@@ -41,6 +42,7 @@ import {
   calculateClientJourney,
   type ClientJourneyKey,
 } from 'lib/onrevolt/client-journey';
+import { summarizeEnergyInvoices } from 'lib/onrevolt/energy-data';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDeleteOutline, MdEdit, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
@@ -193,6 +195,14 @@ type EnergyUsageProfile = {
   annualKwh: number;
   months: EnergyUsageMonth[];
   warnings: string[];
+};
+
+type EnergyDataSettings = {
+  auditId: string;
+  status: string;
+  hasOperatorData: boolean;
+  hasEnergyInvoices: boolean;
+  annualConsumptionKwh: string;
 };
 
 type ClientTaskRow = {
@@ -423,6 +433,14 @@ const emptyEnergyAccount: EnergyAccountForm = {
   measurementFiles: [],
 };
 
+const emptyEnergyDataSettings: EnergyDataSettings = {
+  auditId: '',
+  status: 'DRAFT',
+  hasOperatorData: false,
+  hasEnergyInvoices: false,
+  annualConsumptionKwh: '',
+};
+
 const clientTypeOptions = [
   ['UNKNOWN', 'Nie określono'],
   ['B2C', 'B2C'],
@@ -599,6 +617,31 @@ function energyAccountFromClient(client: any, projectId?: string): EnergyAccount
   return energyAccountFromRecord(eneaAccount || projectAccounts[0]);
 }
 
+function energyInvoiceDocuments(client: any, projectId?: string) {
+  return (client?.documents || []).filter((document: any) => (
+    document.type === 'FAKTURA_PRAD'
+    && (!projectId || !document.projectId || document.projectId === projectId)
+  ));
+}
+
+function energyDataSettingsFromClient(client: any, project?: any): EnergyDataSettings {
+  if (!project) return { ...emptyEnergyDataSettings };
+
+  const audit = project.energyAudits?.[0];
+  const account = (client?.energyPortalAccounts || []).find((item: any) => item.projectId === project.id)
+    || (client?.energyPortalAccounts || [])[0];
+  const hasDownloadedMeasurements = Boolean(account?.measurementFiles?.some((file: any) => file.status === 'DOWNLOADED'));
+  const invoices = energyInvoiceDocuments(client, project.id);
+
+  return {
+    auditId: audit?.id || '',
+    status: audit?.status || 'DRAFT',
+    hasOperatorData: audit?.hasOperatorData ?? (audit?.profileSource === 'OPERATOR_HOURLY' || hasDownloadedMeasurements),
+    hasEnergyInvoices: audit?.hasEnergyInvoices ?? invoices.length > 0,
+    annualConsumptionKwh: audit?.annualConsumptionKwh == null ? '' : String(audit.annualConsumptionKwh),
+  };
+}
+
 function formatDateTime(value?: string | null) {
   if (!value) return '-';
   return new Intl.DateTimeFormat('pl-PL', {
@@ -713,6 +756,10 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [energyProfileLoading, setEnergyProfileLoading] = useState(false);
   const [energyProfileError, setEnergyProfileError] = useState('');
   const [selectedEnergyProfileMonth, setSelectedEnergyProfileMonth] = useState('');
+  const [energyDataSettings, setEnergyDataSettings] = useState<EnergyDataSettings>(emptyEnergyDataSettings);
+  const [energyDataSaving, setEnergyDataSaving] = useState(false);
+  const [energyDataMessage, setEnergyDataMessage] = useState('');
+  const [energyDataError, setEnergyDataError] = useState('');
   const [stationCreating, setStationCreating] = useState(false);
   const [stationMessage, setStationMessage] = useState('');
   const [stationError, setStationError] = useState('');
@@ -777,6 +824,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       setSelectedProjectId(loadedProject?.id || '');
       setForm(formFromClient(clientPayload.data, loadedProject));
       setEnergyAccount(energyAccountFromClient(clientPayload.data, loadedProject?.id));
+      setEnergyDataSettings(energyDataSettingsFromClient(clientPayload.data, loadedProject));
       const firstConfiguration = loadedProject?.configurations?.find((configuration: any) => configuration.status !== 'ARCHIVED');
       const firstOffer = loadedProject?.offers?.[0];
       setSelectedClientConfigurationId((current) => (
@@ -841,6 +889,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setSelectedProjectId(projectId);
     setForm(formFromClient(client, project));
     setEnergyAccount(energyAccountFromClient(client, projectId));
+    setEnergyDataSettings(energyDataSettingsFromClient(client, project));
   }
 
   async function createProject() {
@@ -919,6 +968,69 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       }
       return { ...current, [key]: value };
     });
+  }
+
+  async function saveEnergyDataSettings() {
+    const project = activeProject;
+    if (!project?.id) {
+      setEnergyDataError('Najpierw utwórz lub wybierz projekt klienta.');
+      return;
+    }
+
+    setEnergyDataSaving(true);
+    setEnergyDataError('');
+    setEnergyDataMessage('');
+    try {
+      const invoiceSummary = summarizeEnergyInvoices(energyInvoiceDocuments(client, project.id));
+      const manualAnnualKwh = Number(energyDataSettings.annualConsumptionKwh);
+      const annualConsumptionKwh = energyDataSettings.hasOperatorData && Number(energyProfile?.annualKwh) > 0
+        ? Number(energyProfile?.annualKwh)
+        : energyDataSettings.hasEnergyInvoices && invoiceSummary.annualizedKwh > 0
+          ? invoiceSummary.annualizedKwh
+          : Number.isFinite(manualAnnualKwh) && manualAnnualKwh > 0
+            ? manualAnnualKwh
+            : undefined;
+
+      if (!energyDataSettings.hasOperatorData && !energyDataSettings.hasEnergyInvoices && !annualConsumptionKwh) {
+        throw new Error('Podaj roczne zużycie energii albo dodaj faktury z rozpoznanym zużyciem.');
+      }
+
+      const profileSource = energyDataSettings.hasOperatorData
+        ? 'OPERATOR_HOURLY'
+        : energyDataSettings.hasEnergyInvoices
+          ? 'MONTHLY_MANUAL'
+          : 'ANNUAL_DECLARATION';
+      const response = await fetch('/api/energy-audits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: energyDataSettings.auditId || undefined,
+          projectId: project.id,
+          status: energyDataSettings.status,
+          profileSource,
+          annualConsumptionKwh,
+          hasOperatorData: energyDataSettings.hasOperatorData,
+          hasEnergyInvoices: energyDataSettings.hasEnergyInvoices,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      setEnergyDataSettings((current) => ({
+        ...current,
+        auditId: payload.data.id,
+        status: payload.data.status || current.status,
+        annualConsumptionKwh: payload.data.annualConsumptionKwh == null
+          ? current.annualConsumptionKwh
+          : String(payload.data.annualConsumptionKwh),
+      }));
+      setEnergyDataMessage('Zapisano źródła danych o zużyciu.');
+      await load(true);
+    } catch (e) {
+      setEnergyDataError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEnergyDataSaving(false);
+    }
   }
 
   async function saveClient() {
@@ -1341,6 +1453,32 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     || energyProfile?.months?.[energyProfile.months.length - 1];
   const maxMonthlyKwh = Math.max(1, ...(energyProfile?.months || []).map((month) => month.totalKwh));
   const maxHourlyKwh = Math.max(1, ...(selectedUsageMonth?.hourly || []).map((value) => value));
+  const projectEnergyInvoices = energyInvoiceDocuments(client, project?.id);
+  const invoiceConsumptionSummary = summarizeEnergyInvoices(projectEnergyInvoices);
+  const manualAnnualConsumptionKwh = Number(energyDataSettings.annualConsumptionKwh);
+  const operatorAnnualConsumptionKwh = energyDataSettings.hasOperatorData && Number(energyProfile?.annualKwh) > 0
+    ? Number(energyProfile?.annualKwh)
+    : 0;
+  const invoiceAnnualConsumptionKwh = energyDataSettings.hasEnergyInvoices && invoiceConsumptionSummary.annualizedKwh > 0
+    ? invoiceConsumptionSummary.annualizedKwh
+    : 0;
+  const shouldShowManualAnnualConsumption = !operatorAnnualConsumptionKwh && !invoiceAnnualConsumptionKwh;
+  const acceptedAnnualConsumptionKwh = operatorAnnualConsumptionKwh
+    || invoiceAnnualConsumptionKwh
+    || (Number.isFinite(manualAnnualConsumptionKwh) && manualAnnualConsumptionKwh > 0
+      ? manualAnnualConsumptionKwh
+      : 0);
+  const acceptedConsumptionSource = operatorAnnualConsumptionKwh > 0
+    ? 'Profil godzinowy OSD'
+    : invoiceAnnualConsumptionKwh > 0
+      ? 'Zużycie rozpoznane z faktur'
+      : acceptedAnnualConsumptionKwh > 0
+        ? 'Deklaracja klienta'
+        : energyDataSettings.hasOperatorData
+          ? 'Oczekiwanie na dane operatora'
+          : energyDataSettings.hasEnergyInvoices
+            ? 'Faktury bez rozpoznanego zużycia'
+            : 'Brak danych do obliczeń';
   const taskCreateParams = new URLSearchParams({ scope: 'all', clientId, create: '1' });
   if (project?.id) taskCreateParams.set('projectId', project.id);
   const taskCreateUrl = `/admin/tasks?${taskCreateParams.toString()}`;
@@ -2632,102 +2770,6 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       </Box>
                     </Card>
 
-                    <Card p="22px">
-                      <Flex justify="space-between" gap="16px" align="start" mb="14px">
-                        <Box>
-                          <Text color={textColor} fontSize="lg" fontWeight="800">Profil zużycia</Text>
-                          <Text color={mutedColor}>
-                            {energyProfile ? `Suma: ${formatKwh(energyProfile.annualKwh)} kWh/rok (profil godzinowy)` : 'Profil godzinowy z plików XLSX'}
-                          </Text>
-                        </Box>
-                        {energyProfileLoading ? <Spinner size="sm" /> : null}
-                      </Flex>
-
-                      {energyProfileError ? (
-                        <Alert status="warning" borderRadius="8px" mb="16px">
-                          <AlertIcon />
-                          {energyProfileError}
-                        </Alert>
-                      ) : null}
-
-                      {energyProfileLoading && !energyProfile ? (
-                        <Text color={mutedColor}>Ładowanie profilu zużycia...</Text>
-                      ) : !energyProfile?.months?.length ? (
-                        <Text color={mutedColor}>Brak pobranych plików XLSX ENEA do profilu zużycia.</Text>
-                      ) : (
-                        <>
-                          <SimpleGrid columns={{ base: 2, md: 4, xl: 6 }} gap="10px">
-                            {energyProfile.months.map((month) => {
-                              const active = selectedUsageMonth?.key === month.key;
-                              const height = Math.max(8, Math.round((month.totalKwh / maxMonthlyKwh) * 100));
-                              return (
-                                <Box
-                                  as="button"
-                                  type="button"
-                                  key={month.key}
-                                  onClick={() => setSelectedEnergyProfileMonth(month.key)}
-                                  textAlign="left"
-                                  border="1px solid"
-                                  borderColor={active ? 'yellow.400' : 'whiteAlpha.200'}
-                                  borderRadius="8px"
-                                  p="10px"
-                                  bg={active ? 'whiteAlpha.100' : 'transparent'}
-                                >
-                                  <Text color={textColor} fontSize="lg" fontWeight="800" textAlign="center">
-                                    {formatKwh(month.totalKwh)}
-                                  </Text>
-                                  <Flex h="92px" align="end" justify="center" bg="blackAlpha.200" borderRadius="6px" overflow="hidden" mt="8px">
-                                    <Box
-                                      w="58%"
-                                      h={`${height}%`}
-                                      bgGradient="linear(to-t, cyan.400, yellow.300)"
-                                      borderTopRadius="6px"
-                                    />
-                                  </Flex>
-                                  <Text color={textColor} fontWeight="800" mt="8px" textAlign="center">
-                                    {month.label}
-                                  </Text>
-                                  <Text color={mutedColor} fontSize="sm" textAlign="center">
-                                    {month.sharePercent}%
-                                  </Text>
-                                </Box>
-                              );
-                            })}
-                          </SimpleGrid>
-
-                          {selectedUsageMonth ? (
-                            <Box mt="22px">
-                              <Text color={textColor} fontWeight="800" mb="12px">
-                                Rozkład zużycia w trakcie dnia - {selectedUsageMonth.label}
-                              </Text>
-                              <SimpleGrid columns={{ base: 12, md: 24 }} gap="6px">
-                                {selectedUsageMonth.hourly.map((value, hour) => {
-                                  const height = Math.max(6, Math.round((value / maxHourlyKwh) * 100));
-                                  return (
-                                    <Box key={hour}>
-                                      <Tooltip label={`${String(hour).padStart(2, '0')}:00 - ${formatKwhPrecise(value)} kWh`}>
-                                        <Flex h="98px" align="end" justify="center" bg="blackAlpha.200" borderRadius="6px" overflow="hidden">
-                                          <Box w="100%" h={`${height}%`} bg="teal.400" />
-                                        </Flex>
-                                      </Tooltip>
-                                      <Text color={mutedColor} fontSize="xs" textAlign="center" mt="6px">
-                                        {String(hour).padStart(2, '0')}
-                                      </Text>
-                                    </Box>
-                                  );
-                                })}
-                              </SimpleGrid>
-                            </Box>
-                          ) : null}
-
-                          {energyProfile.warnings?.length ? (
-                            <Text color={mutedColor} fontSize="sm" mt="14px">
-                              Pominięto część plików: {energyProfile.warnings.slice(0, 2).join('; ')}
-                            </Text>
-                          ) : null}
-                        </>
-                      )}
-                    </Card>
                   </Flex>
                 </TabPanel>
               );
@@ -2737,16 +2779,119 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
               return (
                 <TabPanel key={tab} px="0">
                   <Flex direction="column" gap="20px">
-                  <ClientDocumentsPanel
-                    mode="invoices"
-                    clientId={clientId}
-                    projectId={activeProject?.id}
-                    documents={client?.documents || []}
-                    expectedPpeNumber={energyAccount.id ? energyAccount.ppeNumber : ''}
-                    expectedTariff={energyAccount.id ? energyAccount.tariff : ''}
-                    onChanged={() => load(true)}
-                  />
-                  <Card p="22px">
+                    <Card p="22px">
+                      <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" align={{ lg: 'center' }}>
+                        <Box>
+                          <Text color={textColor} fontSize="lg" fontWeight="800">Źródła danych o zużyciu</Text>
+                          <Text color={mutedColor}>Wybierz dostępne dane. System użyje najdokładniejszego źródła do obliczeń.</Text>
+                        </Box>
+                        <Button colorScheme="purple" onClick={saveEnergyDataSettings} isLoading={energyDataSaving}>
+                          Zapisz źródła danych
+                        </Button>
+                      </Flex>
+
+                      {energyDataError ? (
+                        <Alert status="error" borderRadius="8px" mt="16px">
+                          <AlertIcon />
+                          {energyDataError}
+                        </Alert>
+                      ) : null}
+                      {energyDataMessage ? (
+                        <Alert status="success" borderRadius="8px" mt="16px">
+                          <AlertIcon />
+                          {energyDataMessage}
+                        </Alert>
+                      ) : null}
+
+                      <SimpleGrid columns={{ base: 1, lg: 2 }} gap="12px" mt="18px">
+                        <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="14px">
+                          <Checkbox
+                            isChecked={energyDataSettings.hasOperatorData}
+                            onChange={(event) => setEnergyDataSettings((current) => ({
+                              ...current,
+                              hasOperatorData: event.target.checked,
+                            }))}
+                          >
+                            <Text color={textColor} fontWeight="800">Mam dane od operatora</Text>
+                          </Checkbox>
+                          <Text color={mutedColor} fontSize="sm" mt="6px" pl="24px">
+                            Dostęp do portalu OSD i godzinowych plików pomiarowych.
+                          </Text>
+                        </Box>
+                        <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="14px">
+                          <Checkbox
+                            isChecked={energyDataSettings.hasEnergyInvoices}
+                            onChange={(event) => setEnergyDataSettings((current) => ({
+                              ...current,
+                              hasEnergyInvoices: event.target.checked,
+                            }))}
+                          >
+                            <Text color={textColor} fontWeight="800">Mam faktury za energię</Text>
+                          </Checkbox>
+                          <Text color={mutedColor} fontSize="sm" mt="6px" pl="24px">
+                            Zużycie zostanie odczytane z rozpoznanych okresów rozliczeniowych.
+                          </Text>
+                        </Box>
+                      </SimpleGrid>
+
+                      <SimpleGrid columns={{ base: 1, lg: shouldShowManualAnnualConsumption ? 2 : 1 }} gap="16px" mt="18px" alignItems="end">
+                        <Box>
+                          <Text color={mutedColor} fontSize="sm" fontWeight="700">Źródło przyjęte do obliczeń</Text>
+                          <Flex align="center" gap="8px" mt="5px" wrap="wrap">
+                            <Badge colorScheme={acceptedAnnualConsumptionKwh > 0 ? 'green' : 'orange'} px="9px" py="5px" borderRadius="8px">
+                              {acceptedConsumptionSource}
+                            </Badge>
+                            <Text color={textColor} fontWeight="800">
+                              {acceptedAnnualConsumptionKwh > 0 ? `${formatKwh(acceptedAnnualConsumptionKwh)} kWh/rok` : 'Do uzupełnienia'}
+                            </Text>
+                          </Flex>
+                          {energyDataSettings.hasEnergyInvoices ? (
+                            <Text color={mutedColor} fontSize="sm" mt="8px">
+                              Faktury z rozpoznanym zużyciem: {invoiceConsumptionSummary.invoiceCount}. Suma: {formatKwh(invoiceConsumptionSummary.totalKwh)} kWh
+                              {invoiceConsumptionSummary.coveredMonths > 0 ? ` za około ${invoiceConsumptionSummary.coveredMonths} mies.` : '.'}
+                            </Text>
+                          ) : null}
+                        </Box>
+
+                        {shouldShowManualAnnualConsumption ? (
+                          <FormControl isRequired={!energyDataSettings.hasOperatorData && !energyDataSettings.hasEnergyInvoices}>
+                            <FormLabel>Roczne zużycie przyjęte do obliczeń [kWh]</FormLabel>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={energyDataSettings.annualConsumptionKwh}
+                              onChange={(event) => setEnergyDataSettings((current) => ({
+                                ...current,
+                                annualConsumptionKwh: event.target.value,
+                              }))}
+                              placeholder="np. 6000"
+                            />
+                            <Text color={mutedColor} fontSize="xs" mt="6px">
+                              {energyDataSettings.hasOperatorData
+                                ? 'Dane operatora nie zawierają jeszcze profilu. Tymczasowo możesz podać zużycie roczne ręcznie.'
+                                : energyDataSettings.hasEnergyInvoices
+                                  ? 'Dodaj fakturę z rozpoznanym zużyciem. Do czasu jej dodania możesz podać zużycie roczne ręcznie.'
+                                  : 'Wpisz deklarację klienta, gdy nie mamy danych z OSD ani faktur z rozpoznanym zużyciem.'}
+                            </Text>
+                          </FormControl>
+                        ) : null}
+                      </SimpleGrid>
+                    </Card>
+
+                    {energyDataSettings.hasEnergyInvoices ? (
+                      <ClientDocumentsPanel
+                        mode="invoices"
+                        clientId={clientId}
+                        projectId={activeProject?.id}
+                        documents={projectEnergyInvoices}
+                        expectedPpeNumber={energyAccount.id ? energyAccount.ppeNumber : ''}
+                        expectedTariff={energyAccount.id ? energyAccount.tariff : ''}
+                        onChanged={() => load(true)}
+                      />
+                    ) : null}
+
+                    {energyDataSettings.hasOperatorData ? <Card p="22px">
                     <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" mb="18px">
                       <Box>
                         <Text color={textColor} fontSize="lg" fontWeight="800">{tab}</Text>
@@ -2910,7 +3055,107 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                         <Text color={mutedColor}>Brak pobranych plików ENEA.</Text>
                       )}
                     </Box> : null}
-                  </Card></Flex>
+                    </Card> : null}
+
+                    {energyDataSettings.hasOperatorData ? (
+                      <Card p="22px">
+                        <Flex justify="space-between" gap="16px" align="start" mb="14px">
+                          <Box>
+                            <Text color={textColor} fontSize="lg" fontWeight="800">Profil zużycia</Text>
+                            <Text color={mutedColor}>
+                              {energyProfile ? `Suma: ${formatKwh(energyProfile.annualKwh)} kWh/rok (profil godzinowy)` : 'Profil godzinowy z plików XLSX operatora'}
+                            </Text>
+                          </Box>
+                          {energyProfileLoading ? <Spinner size="sm" /> : null}
+                        </Flex>
+
+                        {energyProfileError ? (
+                          <Alert status="warning" borderRadius="8px" mb="16px">
+                            <AlertIcon />
+                            {energyProfileError}
+                          </Alert>
+                        ) : null}
+
+                        {energyProfileLoading && !energyProfile ? (
+                          <Text color={mutedColor}>Ładowanie profilu zużycia...</Text>
+                        ) : !energyProfile?.months?.length ? (
+                          <Text color={mutedColor}>Brak pobranych plików XLSX operatora do profilu zużycia.</Text>
+                        ) : (
+                          <>
+                            <SimpleGrid columns={{ base: 2, md: 4, xl: 6 }} gap="10px">
+                              {energyProfile.months.map((month) => {
+                                const active = selectedUsageMonth?.key === month.key;
+                                const height = Math.max(8, Math.round((month.totalKwh / maxMonthlyKwh) * 100));
+                                return (
+                                  <Box
+                                    as="button"
+                                    type="button"
+                                    key={month.key}
+                                    onClick={() => setSelectedEnergyProfileMonth(month.key)}
+                                    textAlign="left"
+                                    border="1px solid"
+                                    borderColor={active ? 'yellow.400' : borderColor}
+                                    borderRadius="8px"
+                                    p="10px"
+                                    bg={active ? 'whiteAlpha.100' : 'transparent'}
+                                  >
+                                    <Text color={textColor} fontSize="lg" fontWeight="800" textAlign="center">
+                                      {formatKwh(month.totalKwh)}
+                                    </Text>
+                                    <Flex h="92px" align="end" justify="center" bg="blackAlpha.200" borderRadius="6px" overflow="hidden" mt="8px">
+                                      <Box
+                                        w="58%"
+                                        h={`${height}%`}
+                                        bgGradient="linear(to-t, cyan.400, yellow.300)"
+                                        borderTopRadius="6px"
+                                      />
+                                    </Flex>
+                                    <Text color={textColor} fontWeight="800" mt="8px" textAlign="center">
+                                      {month.label}
+                                    </Text>
+                                    <Text color={mutedColor} fontSize="sm" textAlign="center">
+                                      {month.sharePercent}%
+                                    </Text>
+                                  </Box>
+                                );
+                              })}
+                            </SimpleGrid>
+
+                            {selectedUsageMonth ? (
+                              <Box mt="22px">
+                                <Text color={textColor} fontWeight="800" mb="12px">
+                                  Rozkład zużycia w trakcie dnia - {selectedUsageMonth.label}
+                                </Text>
+                                <SimpleGrid columns={{ base: 12, md: 24 }} gap="6px">
+                                  {selectedUsageMonth.hourly.map((value, hour) => {
+                                    const height = Math.max(6, Math.round((value / maxHourlyKwh) * 100));
+                                    return (
+                                      <Box key={hour}>
+                                        <Tooltip label={`${String(hour).padStart(2, '0')}:00 - ${formatKwhPrecise(value)} kWh`}>
+                                          <Flex h="98px" align="end" justify="center" bg="blackAlpha.200" borderRadius="6px" overflow="hidden">
+                                            <Box w="100%" h={`${height}%`} bg="teal.400" />
+                                          </Flex>
+                                        </Tooltip>
+                                        <Text color={mutedColor} fontSize="xs" textAlign="center" mt="6px">
+                                          {String(hour).padStart(2, '0')}
+                                        </Text>
+                                      </Box>
+                                    );
+                                  })}
+                                </SimpleGrid>
+                              </Box>
+                            ) : null}
+
+                            {energyProfile.warnings?.length ? (
+                              <Text color={mutedColor} fontSize="sm" mt="14px">
+                                Pominięto część plików: {energyProfile.warnings.slice(0, 2).join('; ')}
+                              </Text>
+                            ) : null}
+                          </>
+                        )}
+                      </Card>
+                    ) : null}
+                  </Flex>
                 </TabPanel>
               );
             }

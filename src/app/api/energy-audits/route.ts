@@ -11,6 +11,14 @@ function optionalNumber(value: unknown) {
   return number;
 }
 
+function optionalBoolean(body: Record<string, unknown>, key: string) {
+  if (!Object.prototype.hasOwnProperty.call(body, key)) return undefined;
+  const value = body[key];
+  if (value == null) return null;
+  if (typeof value !== 'boolean') throw new Error(`Nieprawidłowa wartość logiczna: ${key}`);
+  return value;
+}
+
 export async function GET(req: NextRequest) {
   const access = await authorizeStaffRequest(req, 'energy.manage');
   if (!access.ok) return access.response;
@@ -47,6 +55,8 @@ export async function POST(req: NextRequest) {
       status: typeof body.status === 'string' ? body.status as any : 'DRAFT',
       profileSource: typeof body.profileSource === 'string' ? body.profileSource as any : 'ANNUAL_DECLARATION',
       annualConsumptionKwh: optionalNumber(body.annualConsumptionKwh),
+      hasOperatorData: optionalBoolean(body, 'hasOperatorData'),
+      hasEnergyInvoices: optionalBoolean(body, 'hasEnergyInvoices'),
       connectionPowerKw: optionalNumber(body.connectionPowerKw),
       phaseCount: optionalNumber(body.phaseCount),
       mainFuseA: optionalNumber(body.mainFuseA),
