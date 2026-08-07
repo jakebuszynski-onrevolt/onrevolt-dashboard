@@ -9,6 +9,7 @@ import {
   Flex,
   FormControl,
   FormLabel,
+  Icon,
   IconButton,
   Input,
   Select,
@@ -36,9 +37,13 @@ import {
   getDefaultTargetEnergyTariff,
   getEnergyTariffs,
 } from 'lib/onrevolt/energy-tariffs';
+import {
+  calculateClientJourney,
+  type ClientJourneyKey,
+} from 'lib/onrevolt/client-journey';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { MdAdd, MdArchive, MdAssignment, MdContentCopy, MdDeleteOutline, MdEdit, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
+import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDeleteOutline, MdEdit, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
 
 type ClientProfileProps = {
   clientId: string;
@@ -227,18 +232,140 @@ type ActivityRow = {
 const tabs = [
   'Podsumowanie',
   'Dane klienta',
-  'Etap',
   'Zadania',
   'Audyt',
   'Konfiguracje',
   'Oferta / umowa',
   'Montaże',
   'Urządzenia',
-  'Zdjęcia / pliki',
-  'EMS / Audyt',
+  'Zdjęcia i pliki',
+  'EMS',
   'Faktury i OSD',
+  'Dokumenty',
   'Historia',
+  'Serwis',
 ];
+
+const primaryTabs = [
+  ['Podsumowanie', 0],
+  ['Dane klienta', 1],
+  ['Zadania', 2],
+  ['Urządzenia', 7],
+  ['Zdjęcia i pliki', 8],
+  ['EMS', 9],
+  ['Dokumenty', 11],
+  ['Historia', 12],
+  ['Serwis', 13],
+] as const;
+
+const journeyTabs: Array<{ key: ClientJourneyKey; label: string; tabIndex: number }> = [
+  { key: 'billing', label: 'Faktury i OSD', tabIndex: 10 },
+  { key: 'configuration', label: 'Konfiguracje', tabIndex: 4 },
+  { key: 'offer', label: 'Oferta', tabIndex: 5 },
+  { key: 'audit', label: 'Wizja lokalna', tabIndex: 3 },
+  { key: 'contract', label: 'Projekt / umowa', tabIndex: 5 },
+  { key: 'installation', label: 'Montaż', tabIndex: 6 },
+];
+
+const journeyPositions = [
+  { x: 170, y: 18 },
+  { x: 268, y: 18 },
+  { x: 366, y: 18 },
+  { x: 464, y: 18 },
+  { x: 562, y: 18 },
+  { x: 658, y: 18 },
+];
+
+function ClientJourneyNavigation({
+  progress,
+  currentKey,
+  viewedKey,
+  paused,
+  onSelect,
+}: {
+  progress: Record<ClientJourneyKey, number>;
+  currentKey: ClientJourneyKey;
+  viewedKey: ClientJourneyKey | null;
+  paused: boolean;
+  onSelect: (item: (typeof journeyTabs)[number]) => void;
+}) {
+  const trackColor = useColorModeValue('#E2E8F0', 'rgba(255,255,255,0.18)');
+  const surfaceColor = useColorModeValue('#FFFFFF', '#111C44');
+  const labelColor = useColorModeValue('secondaryGray.800', 'whiteAlpha.900');
+  const activeBg = useColorModeValue('purple.50', 'whiteAlpha.100');
+  const linePoints = [
+    '170,0',
+    ...journeyPositions.map(({ x, y }) => `${x},${y + 22}`),
+    '658,0',
+  ].join(' ');
+
+  return (
+    <Box position="relative" w="900px" h="126px" aria-label="Przebieg obsługi projektu">
+        <Box as="svg" position="absolute" inset="0" w="900px" h="68px" viewBox="0 0 900 68" aria-hidden="true">
+          <polyline points={linePoints} fill="none" stroke={trackColor} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        </Box>
+        {journeyTabs.map((item, index) => {
+          const position = journeyPositions[index];
+          const value = progress[item.key];
+          const isCurrent = currentKey === item.key;
+          const isViewed = viewedKey === item.key;
+          const ringColor = paused && isCurrent ? '#ED8936' : '#805AD5';
+          return (
+            <Box
+              as="button"
+              type="button"
+              key={item.key}
+              position="absolute"
+              left={`${position.x - 56}px`}
+              top={`${position.y}px`}
+              w="112px"
+              minH="104px"
+              bg="transparent"
+              border="0"
+              p="0"
+              cursor="pointer"
+              onClick={() => onSelect(item)}
+              aria-current={isViewed ? 'step' : undefined}
+              _focusVisible={{ outline: '2px solid', outlineColor: 'purple.300', borderRadius: '8px' }}
+            >
+              <Flex
+                mx="auto"
+                w="44px"
+                h="44px"
+                borderRadius="50%"
+                align="center"
+                justify="center"
+                bg={`conic-gradient(#805AD5 ${value * 3.6}deg, ${trackColor} 0deg)`}
+                boxShadow={isCurrent ? `0 0 0 4px ${surfaceColor}, 0 0 0 7px ${ringColor}` : 'none'}
+                transition="transform 160ms ease, box-shadow 160ms ease"
+                transform={isViewed ? 'scale(1.08)' : 'scale(1)'}
+              >
+                <Flex w="32px" h="32px" borderRadius="50%" bg={surfaceColor} align="center" justify="center">
+                  {value === 100 ? <Icon as={MdCheck} color="green.400" boxSize="18px" /> : (
+                    <Text color={labelColor} fontSize="xs" fontWeight="800">{value}%</Text>
+                  )}
+                </Flex>
+              </Flex>
+              <Text
+                mt="10px"
+                px="5px"
+                py="3px"
+                minH="28px"
+                color={labelColor}
+                bg={isViewed ? activeBg : 'transparent'}
+                borderRadius="6px"
+                fontSize="sm"
+                fontWeight={isViewed || isCurrent ? '800' : '700'}
+                lineHeight="1.2"
+              >
+                {item.label}
+              </Text>
+            </Box>
+          );
+        })}
+    </Box>
+  );
+}
 
 const projectStatuses = [
   ['LEAD', 'Lead'],
@@ -601,6 +728,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [selectedClientConfigurationId, setSelectedClientConfigurationId] = useState('');
   const [selectedClientOfferId, setSelectedClientOfferId] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('projectId') || '');
+  const [activeTabIndex, setActiveTabIndex] = useState(0);
+  const [activeJourneyKey, setActiveJourneyKey] = useState<ClientJourneyKey | null>(null);
   const [staffUsers, setStaffUsers] = useState<StaffOption[]>([]);
   const [projectCreating, setProjectCreating] = useState(false);
   const [activities, setActivities] = useState<ActivityRow[]>([]);
@@ -608,6 +737,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [activityTitle, setActivityTitle] = useState('');
   const [activityBody, setActivityBody] = useState('');
   const [activitySaving, setActivitySaving] = useState(false);
+  const offerSectionRef = useRef<HTMLDivElement>(null);
+  const contractSectionRef = useRef<HTMLDivElement>(null);
   const textColor = useColorModeValue('secondaryGray.900', 'white');
   const mutedColor = useColorModeValue('secondaryGray.600', 'secondaryGray.400');
   const borderColor = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
@@ -1223,6 +1354,58 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const activeInstallationsCount = projectInstallations.filter((installation: any) => (
     installation.status !== 'COMPLETED' && installation.status !== 'SERVICE_REQUIRED'
   )).length;
+  const relatedDocuments = Array.from(new Map([
+    ...(client?.documents || []),
+    ...(project?.documents || []),
+    ...(project?.siteAudits || []).flatMap((audit: any) => audit.documents || []),
+    ...(project?.odsCase?.documents || []),
+    ...projectOffers.flatMap((offer: any) => [
+      ...(offer.documents || []),
+      ...(offer.contracts || []).flatMap((contract: any) => contract.documents || []),
+    ]),
+    ...projectInstallations.flatMap((installation: any) => installation.documents || []),
+    ...(client?.serviceTickets || []).flatMap((ticket: any) => ticket.documents || []),
+  ].map((document: any) => [document.id, document])).values());
+  const formalDocuments = relatedDocuments.filter((document: any) => (
+    !['FAKTURA_PRAD', 'ENEA_ZUZYCIE', 'ENEA_PRODUKCJA', 'ZDJECIE_MONTAZU'].includes(document.type)
+    && !(document.type === 'INNE' && document.mimeType?.startsWith('image/'))
+  ));
+  const invoiceCount = relatedDocuments.filter((document: any) => document.type === 'FAKTURA_PRAD').length;
+  const activeServiceTickets = (client?.serviceTickets || []).filter((ticket: any) => (
+    !['RESOLVED', 'CLOSED'].includes(ticket.status)
+  ));
+  const serviceAttention = activeServiceTickets.length > 0
+    || projectInstallations.some((installation: any) => installation.status === 'SERVICE_REQUIRED');
+  const journey = calculateClientJourney({
+    displayName: client?.displayName,
+    clientType: project?.clientType || client?.clientType,
+    hasContactChannel: Boolean(contact.phone || contact.email),
+    hasAddress: Boolean(site.fullAddress || site.addressLine || contact.investmentAddress || project.locationAddress),
+    energyAccounts: (client?.energyPortalAccounts || []).filter((account: any) => !project?.id || account.projectId === project.id),
+    invoiceCount,
+    odsCase: project?.odsCase,
+    configurations: projectConfigurations,
+    offers: projectOffers,
+    audits: project?.siteAudits || [],
+    installations: projectInstallations,
+    formalDocumentCount: formalDocuments.length,
+    projectStatus: project?.status || form.status,
+  });
+
+  function selectPrimaryTab(tabIndex: number) {
+    setActiveTabIndex(tabIndex);
+    setActiveJourneyKey(tabIndex === 1 ? 'client' : tabIndex === 11 ? 'documents' : null);
+  }
+
+  function selectJourneyTab(item: (typeof journeyTabs)[number]) {
+    setActiveTabIndex(item.tabIndex);
+    setActiveJourneyKey(item.key);
+    if (item.key !== 'offer' && item.key !== 'contract') return;
+    window.setTimeout(() => {
+      const target = item.key === 'contract' ? contractSectionRef.current : offerSectionRef.current;
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  }
 
   return (
     <Flex direction="column" pt={{ base: '130px', md: '80px', xl: '80px' }} gap="20px">
@@ -1276,9 +1459,72 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
         </Alert>
       ) : null}
 
-      <Tabs colorScheme="purple" variant="soft-rounded">
-        <TabList overflowX="auto" pb="8px">
-          {tabs.map((tab) => <Tab key={tab} whiteSpace="nowrap">{tab}</Tab>)}
+      <Tabs index={activeTabIndex} colorScheme="purple" variant="soft-rounded" isLazy>
+        <Box overflowX="auto" overflowY="hidden" sx={{ scrollbarWidth: 'thin' }}>
+          <Box minW="900px">
+            <Box border="1px solid" borderColor={borderColor} borderRadius="8px" bg="whiteAlpha.50">
+              <Box
+                display="grid"
+                gridTemplateColumns="110px 120px 85px 100px 130px 60px 105px 80px 110px"
+                py="9px"
+                alignItems="center"
+              >
+                {primaryTabs.map(([label, tabIndex]) => {
+                  const selected = activeTabIndex === tabIndex;
+                  const serviceTab = label === 'Serwis';
+                  const processEndpoint = (label === 'Dane klienta' && journey.currentKey === 'client')
+                    || (label === 'Dokumenty' && journey.currentKey === 'documents');
+                  return (
+                    <Button
+                      key={label}
+                      position="relative"
+                      w="100%"
+                      size="sm"
+                      variant={selected ? 'solid' : 'ghost'}
+                      colorScheme={selected ? 'purple' : 'gray'}
+                      color={selected ? undefined : textColor}
+                      whiteSpace="nowrap"
+                      onClick={() => selectPrimaryTab(tabIndex)}
+                      aria-pressed={selected}
+                    >
+                      {serviceTab ? <Icon as={MdBuild} mr="6px" /> : null}
+                      {label}
+                      {processEndpoint ? (
+                        <Box position="absolute" bottom="1px" left="50%" w="26px" h="3px" borderRadius="2px" bg="purple.400" transform="translateX(-50%)" />
+                      ) : null}
+                      {serviceTab && serviceAttention ? (
+                        <Box
+                          position="absolute"
+                          top="4px"
+                          right="4px"
+                          w="8px"
+                          h="8px"
+                          borderRadius="50%"
+                          bg="red.400"
+                          boxShadow="0 0 0 2px var(--chakra-colors-navy-800)"
+                          aria-label="Serwis wymaga uwagi"
+                        />
+                      ) : null}
+                    </Button>
+                  );
+                })}
+              </Box>
+            </Box>
+
+            <Box mt="0" borderBottom="1px solid" borderColor={borderColor}>
+              <ClientJourneyNavigation
+                progress={journey.progress}
+                currentKey={journey.currentKey}
+                viewedKey={activeJourneyKey}
+                paused={journey.paused}
+                onSelect={selectJourneyTab}
+              />
+            </Box>
+          </Box>
+        </Box>
+
+        <TabList display="none" aria-hidden="true">
+          {tabs.map((tab) => <Tab key={tab}>{tab}</Tab>)}
         </TabList>
         <TabPanels>
           <TabPanel px="0">
@@ -1297,7 +1543,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
             </Card>
           </TabPanel>
           <TabPanel px="0">
-            <Card p="22px">
+            <Flex direction="column" gap="20px">
+              <Card p="22px">
               <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px">
                 <FormControl isRequired>
                   <FormLabel>Nazwa / imię i nazwisko</FormLabel>
@@ -1362,61 +1609,64 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                 <FormLabel>Notatki</FormLabel>
                 <Textarea value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} rows={4} />
               </FormControl>
-            </Card>
+              </Card>
+              <Card p="22px">
+                <Box mb="16px">
+                  <Text color={textColor} fontSize="lg" fontWeight="800">Projekt i etap procesu</Text>
+                  <Text color={mutedColor}>Dane operacyjne aktywnego projektu klienta.</Text>
+                </Box>
+                <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px">
+                  <FormControl>
+                    <FormLabel>Nazwa projektu</FormLabel>
+                    <Input value={form.projectTitle} onChange={(event) => updateForm('projectTitle', event.target.value)} />
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>Typ projektu</FormLabel>
+                    <Select value={form.projectClientType} onChange={(event) => updateForm('projectClientType', event.target.value)}>
+                      {clientTypeOptions.map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>Status projektu</FormLabel>
+                    <Input value={projectStatusLabel(form.status)} isReadOnly />
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>Etap</FormLabel>
+                    <Select value={form.stageId} onChange={(event) => selectStage(event.target.value)}>
+                      <option value="">Brak etapu</option>
+                      {stages.map((stage) => (
+                        <option key={stage.id} value={stage.id}>{stage.name}</option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>Właściciel projektu</FormLabel>
+                    <Select value={form.ownerId} onChange={(event) => updateForm('ownerId', event.target.value)}>
+                      <option value="">Nieprzypisany</option>
+                      {staffUsers.map((user) => (
+                        <option key={user.id} value={user.id}>{user.name}</option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>Następne działanie</FormLabel>
+                    <Input value={form.nextActionTitle} onChange={(event) => updateForm('nextActionTitle', event.target.value)} />
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>Termin następnego działania</FormLabel>
+                    <Input type="datetime-local" value={form.nextActionAt} onChange={(event) => updateForm('nextActionAt', event.target.value)} />
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>Adres inwestycji projektu</FormLabel>
+                    <Input value={form.investmentAddress} onChange={(event) => updateForm('investmentAddress', event.target.value)} />
+                  </FormControl>
+                </SimpleGrid>
+              </Card>
+            </Flex>
           </TabPanel>
-          <TabPanel px="0">
-            <Card p="22px">
-              <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px">
-                <FormControl>
-                  <FormLabel>Nazwa projektu</FormLabel>
-                  <Input value={form.projectTitle} onChange={(event) => updateForm('projectTitle', event.target.value)} />
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Typ projektu</FormLabel>
-                  <Select value={form.projectClientType} onChange={(event) => updateForm('projectClientType', event.target.value)}>
-                    {clientTypeOptions.map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </Select>
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Status projektu</FormLabel>
-                  <Input value={projectStatusLabel(form.status)} isReadOnly />
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Etap</FormLabel>
-                  <Select value={form.stageId} onChange={(event) => selectStage(event.target.value)}>
-                    <option value="">Brak etapu</option>
-                    {stages.map((stage) => (
-                      <option key={stage.id} value={stage.id}>{stage.name}</option>
-                    ))}
-                  </Select>
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Właściciel projektu</FormLabel>
-                  <Select value={form.ownerId} onChange={(event) => updateForm('ownerId', event.target.value)}>
-                    <option value="">Nieprzypisany</option>
-                    {staffUsers.map((user) => (
-                      <option key={user.id} value={user.id}>{user.name}</option>
-                    ))}
-                  </Select>
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Następne działanie</FormLabel>
-                  <Input value={form.nextActionTitle} onChange={(event) => updateForm('nextActionTitle', event.target.value)} />
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Termin następnego działania</FormLabel>
-                  <Input type="datetime-local" value={form.nextActionAt} onChange={(event) => updateForm('nextActionAt', event.target.value)} />
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Adres inwestycji projektu</FormLabel>
-                  <Input value={form.investmentAddress} onChange={(event) => updateForm('investmentAddress', event.target.value)} />
-                </FormControl>
-              </SimpleGrid>
-            </Card>
-          </TabPanel>
-          {tabs.slice(3).map((tab) => {
+          {tabs.slice(2).map((tab) => {
             if (tab === 'Zadania') {
               return (
                 <TabPanel key={tab} px="0">
@@ -1798,7 +2048,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
               return (
                 <TabPanel key={tab} px="0">
                   <Flex direction="column" gap="20px">
-                    <Card p="22px">
+                    <Card ref={offerSectionRef} p="22px" scrollMarginTop="120px">
                       <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" align={{ lg: 'center' }} mb="18px">
                         <Box>
                           <Text color={textColor} fontSize="lg" fontWeight="800">Oferta / umowa</Text>
@@ -1911,6 +2161,42 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                         </Card>
                       ) : null}
                     </SimpleGrid>
+
+                    <Card ref={contractSectionRef} p="22px" scrollMarginTop="120px">
+                      <Text color={textColor} fontSize="lg" fontWeight="800" mb="6px">Projekt / umowa</Text>
+                      <Text color={mutedColor} mb="16px">
+                        Umowy powiązane z ofertami projektu. Rozdzielenie projektu technicznego i umowy będzie kolejnym etapem rozwoju.
+                      </Text>
+                      {projectOffers.some((offer: any) => offer.contracts?.length) ? (
+                        <Flex direction="column" gap="10px">
+                          {projectOffers.flatMap((offer: any) => (offer.contracts || []).map((contract: any) => (
+                            <Flex
+                              key={contract.id}
+                              direction={{ base: 'column', md: 'row' }}
+                              justify="space-between"
+                              gap="10px"
+                              border="1px solid"
+                              borderColor={borderColor}
+                              borderRadius="8px"
+                              p="12px"
+                            >
+                              <Box>
+                                <Text color={textColor} fontWeight="800">{contract.number || 'Umowa bez numeru'}</Text>
+                                <Text color={mutedColor} fontSize="sm">Oferta: {offer.number || offer.title || 'bez numeru'}</Text>
+                              </Box>
+                              <Flex gap="8px" align="center" wrap="wrap">
+                                <Badge colorScheme={['SIGNED', 'COMPLETED'].includes(contract.status) ? 'green' : 'purple'}>
+                                  {contract.status === 'SIGNED' ? 'Podpisana' : contract.status === 'COMPLETED' ? 'Zrealizowana' : contract.status === 'CANCELLED' ? 'Anulowana' : 'Robocza'}
+                                </Badge>
+                                <Text color={mutedColor} fontSize="sm">{contract.signedAt ? formatDateTime(contract.signedAt) : 'Niepodpisana'}</Text>
+                              </Flex>
+                            </Flex>
+                          )))}
+                        </Flex>
+                      ) : (
+                        <Text color={mutedColor}>Brak umów przy ofertach tego projektu.</Text>
+                      )}
+                    </Card>
                   </Flex>
                 </TabPanel>
               );
@@ -2212,11 +2498,25 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
               );
             }
 
-            if (tab === 'Zdjęcia / pliki') {
+            if (tab === 'Zdjęcia i pliki') {
               return <TabPanel key={tab} px="0"><ClientDocumentsPanel mode="files" clientId={clientId} projectId={activeProject?.id} documents={client?.documents || []} onChanged={() => load(true)} /></TabPanel>;
             }
 
-            if (tab === 'EMS / Audyt') {
+            if (tab === 'Dokumenty') {
+              return (
+                <TabPanel key={tab} px="0">
+                  <ClientDocumentsPanel
+                    mode="formal"
+                    clientId={clientId}
+                    projectId={activeProject?.id}
+                    documents={relatedDocuments}
+                    onChanged={() => load(true)}
+                  />
+                </TabPanel>
+              );
+            }
+
+            if (tab === 'EMS') {
               return (
                 <TabPanel key={tab} px="0">
                   <Flex direction="column" gap="20px">
@@ -2611,6 +2911,69 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       )}
                     </Box> : null}
                   </Card></Flex>
+                </TabPanel>
+              );
+            }
+
+            if (tab === 'Serwis') {
+              return (
+                <TabPanel key={tab} px="0">
+                  <Flex direction="column" gap="20px">
+                    <Card p="22px">
+                      <Flex direction={{ base: 'column', md: 'row' }} justify="space-between" gap="14px" align={{ md: 'center' }}>
+                        <Box>
+                          <Flex align="center" gap="8px">
+                            <Icon as={MdBuild} />
+                            <Text color={textColor} fontSize="lg" fontWeight="800">Serwis klienta</Text>
+                            {serviceAttention ? <Badge colorScheme="red">Wymaga uwagi</Badge> : null}
+                          </Flex>
+                          <Text color={mutedColor} mt="4px">Zgłoszenia, gwarancje i urządzenia wymagające interwencji.</Text>
+                        </Box>
+                        <Button
+                          as="a"
+                          href={`/admin/service?clientId=${encodeURIComponent(clientId)}`}
+                          rightIcon={<MdOpenInNew />}
+                          colorScheme="purple"
+                          variant="outline"
+                        >
+                          Otwórz dział serwisu
+                        </Button>
+                      </Flex>
+                    </Card>
+                    <Card p="22px">
+                      <Text color={textColor} fontWeight="800" mb="14px">
+                        Zgłoszenia klienta ({client?.serviceTickets?.length || 0})
+                      </Text>
+                      <Flex direction="column" gap="10px">
+                        {(client?.serviceTickets || []).map((ticket: any) => (
+                          <Flex
+                            key={ticket.id}
+                            direction={{ base: 'column', md: 'row' }}
+                            justify="space-between"
+                            gap="12px"
+                            border="1px solid"
+                            borderColor={borderColor}
+                            borderRadius="8px"
+                            p="12px"
+                          >
+                            <Box>
+                              <Flex gap="8px" align="center" wrap="wrap">
+                                <Text color={textColor} fontWeight="800">{ticket.number}</Text>
+                                <Badge colorScheme={['RESOLVED', 'CLOSED'].includes(ticket.status) ? 'green' : 'red'}>{ticket.status}</Badge>
+                                {ticket.warrantyClaim ? <Badge colorScheme="orange">Gwarancja</Badge> : null}
+                              </Flex>
+                              <Text color={textColor} mt="4px">{ticket.title}</Text>
+                              <Text color={mutedColor} fontSize="sm">
+                                {ticket.installedDevice?.name || 'Bez urządzenia'} · {ticket.assignedTo?.name || 'Nieprzypisane'}
+                              </Text>
+                            </Box>
+                            <Text color={mutedColor} fontSize="sm">{formatDateTime(ticket.updatedAt)}</Text>
+                          </Flex>
+                        ))}
+                        {!client?.serviceTickets?.length ? <Text color={mutedColor}>Brak zgłoszeń serwisowych.</Text> : null}
+                      </Flex>
+                    </Card>
+                  </Flex>
                 </TabPanel>
               );
             }

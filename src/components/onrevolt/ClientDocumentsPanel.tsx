@@ -236,7 +236,7 @@ function ClientFilesPanel({
       return document.type === 'ZDJECIE_MONTAZU'
         || (document.type === 'INNE' && document.mimeType?.startsWith('image/'));
     }
-    if (['ENEA_ZUZYCIE', 'ENEA_PRODUKCJA', 'ZDJECIE_MONTAZU'].includes(document.type)) return false;
+    if (['FAKTURA_PRAD', 'ENEA_ZUZYCIE', 'ENEA_PRODUKCJA', 'ZDJECIE_MONTAZU'].includes(document.type)) return false;
     if (document.type === 'INNE' && document.mimeType?.startsWith('image/')) return false;
     return true;
   }), [documentMode, documents]);
