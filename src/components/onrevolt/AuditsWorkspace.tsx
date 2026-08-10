@@ -2,13 +2,11 @@
 
 import { Alert, AlertIcon, Badge, Box, Button, Flex, FormControl, FormLabel, Grid, Input, Link, Select, SimpleGrid, Spinner, Switch, Text, Textarea, useColorModeValue } from '@chakra-ui/react';
 import Card from 'components/card/Card';
-import { defaultHourlyLoadProfile, polishPvHourlyProfiles, polishPvMonthlyDistribution } from 'lib/onrevolt/energy-scenario';
+import { defaultHourlyLoadProfile, distributeAnnualConsumption, polishPvHourlyProfiles, polishPvMonthlyDistribution } from 'lib/onrevolt/energy-scenario';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MdCalculate, MdOpenInNew, MdRefresh, MdSave } from 'react-icons/md';
 
-const consumptionDistribution = [0.11, 0.1, 0.09, 0.08, 0.07, 0.065, 0.065, 0.065, 0.075, 0.085, 0.095, 0.105];
-const consumptionDistributionTotal = consumptionDistribution.reduce((sum, share) => sum + share, 0);
 const monthLabels = ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru'];
 
 const emptyAudit = {
@@ -144,7 +142,7 @@ export default function AuditsWorkspace() {
   function energyInputs() {
     const annual = Number(audit.annualConsumptionKwh || 0);
     if (!(annual > 0)) throw new Error('Podaj roczne zużycie energii');
-    let monthly = consumptionDistribution.map((share) => annual * share / consumptionDistributionTotal);
+    let monthly = distributeAnnualConsumption(annual);
     let hourly = defaultHourlyLoadProfile;
     if (audit.profileSource === 'OPERATOR_HOURLY') {
       if (!energyProfile?.months?.length) throw new Error('Brak wczytanego profilu godzinowego operatora');

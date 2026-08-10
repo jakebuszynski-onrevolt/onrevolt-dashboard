@@ -127,6 +127,7 @@ export default function OffersWorkspace() {
   const [saving, setSaving] = useState(false);
   const [statusSavingId, setStatusSavingId] = useState('');
   const [deletingOfferId, setDeletingOfferId] = useState('');
+  const [recalculatingOfferId, setRecalculatingOfferId] = useState('');
   const [depositPercent, setDepositPercent] = useState('40');
   const [contractSaving, setContractSaving] = useState(false);
   const [error, setError] = useState('');
@@ -334,6 +335,29 @@ export default function OffersWorkspace() {
     }
   }
 
+  async function recalculateOffer(offer: any) {
+    if (!window.confirm(`Przeliczyć ofertę ${offer.number || offer.title || ''} z aktualnych danych klienta, „Faktury i OSD” oraz konfiguracji? Numer i status oferty pozostaną bez zmian.`)) return;
+    setRecalculatingOfferId(offer.id);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch('/api/offers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: offer.id, recalculate: true }),
+      });
+      const updated = await readPayload(response);
+      setOffers((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setSelectedOfferId(updated.id);
+      const annualConsumption = Number(updated.energySnapshot?.scenario?.result?.annualConsumptionKwh || 0);
+      setNotice(`Przeliczono ofertę ${updated.number || ''}${annualConsumption > 0 ? ` dla ${Math.round(annualConsumption)} kWh/rok` : ''}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRecalculatingOfferId('');
+    }
+  }
+
   async function updateStatus(offerId: string, status: string) {
     setStatusSavingId(offerId);
     setError('');
@@ -402,6 +426,17 @@ export default function OffersWorkspace() {
             <Button leftIcon={<Icon as={MdRefresh} />} variant="outline" onClick={load}>
               Odśwież
             </Button>
+            {selectedOffer && selectedOffer.status !== 'ACCEPTED' ? (
+              <Button
+                leftIcon={<Icon as={MdRefresh} />}
+                variant="outline"
+                colorScheme="purple"
+                onClick={() => recalculateOffer(selectedOffer)}
+                isLoading={recalculatingOfferId === selectedOffer.id}
+              >
+                Przelicz ofertę
+              </Button>
+            ) : null}
             {selectedOffer ? (
               <Button
                 as="a"
@@ -692,6 +727,18 @@ export default function OffersWorkspace() {
                           variant="outline"
                         />
                       </Tooltip>
+                      {offer.status !== 'ACCEPTED' ? (
+                        <Tooltip label="Przelicz z aktualnych danych">
+                          <IconButton
+                            aria-label="Przelicz ofertę"
+                            icon={<MdRefresh />}
+                            size="sm"
+                            variant="outline"
+                            isLoading={recalculatingOfferId === offer.id}
+                            onClick={() => recalculateOffer(offer)}
+                          />
+                        </Tooltip>
+                      ) : null}
                       {isAdmin ? (
                         <Tooltip label="Usuń ofertę">
                           <IconButton

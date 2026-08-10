@@ -1,6 +1,16 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { vatBreakdown } from 'lib/onrevolt/configuration-vat';
-import { buildEnergyUsageProfile } from 'lib/onrevolt/energy-profile';
+import { buildEnergyUsageProfile, type EnergyUsageProfile } from 'lib/onrevolt/energy-profile';
+import {
+  calculateEnergyScenario,
+  defaultHourlyLoadProfile,
+  distributeAnnualConsumption,
+  energyScenarioEngineVersion,
+  type EnergyScenarioInput,
+  polishPvHourlyProfiles,
+  polishPvMonthlyDistribution,
+} from 'lib/onrevolt/energy-scenario';
+import { randomUUID } from 'node:crypto';
 
 type OfferCreateInput = {
   projectId: string;
@@ -45,6 +55,133 @@ function optionalDecimalToNumber(value: Prisma.Decimal | number | string | null 
 function optionalText(value?: string) {
   const text = value?.trim();
   return text || undefined;
+}
+
+function objectValue(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function finiteNumber(value: unknown, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+const defaultScenarioAssumptions = {
+  pvSpecificYieldKwhPerKw: 950,
+  batteryRoundTripEfficiency: 0.9,
+  initialBatterySocPercent: 0.2,
+  energyBuyGrossPerKwh: 0.62,
+  distributionGrossPerKwh: 0.48,
+  exportGrossPerKwh: 0.45,
+  fixedMonthlyGross: 30,
+  depositPayoutRate: 0.2,
+};
+
+type OfferScenarioInputOptions = {
+  annualConsumptionKwh: number;
+  profileSource?: string | null;
+  usageProfile?: EnergyUsageProfile | null;
+  configurations: any[];
+  existingPvKw?: unknown;
+  existingBatteryKwh?: unknown;
+  existingInput?: unknown;
+  investmentGross: number;
+};
+
+function sumConfigurationTarget(configurations: any[], field: 'targetPowerKw' | 'targetCapacityKwh') {
+  return configurations.reduce((sum, configuration) => sum + finiteNumber(configuration[field]), 0);
+}
+
+function requireConfigurationTarget(
+  configurations: any[],
+  field: 'targetPowerKw' | 'targetCapacityKwh',
+  label: string,
+) {
+  const missing = configurations.find((configuration) => !(finiteNumber(configuration[field]) > 0));
+  if (missing) {
+    throw new OfferRecalculationError(`Konfiguracja „${missing.name}” nie ma uzupełnionego pola: ${label}.`);
+  }
+}
+
+function usageProfileInputs(profileSource: string | null | undefined, annualConsumptionKwh: number, usageProfile?: EnergyUsageProfile | null) {
+  if (profileSource !== 'OPERATOR_HOURLY') {
+    return {
+      monthlyConsumptionKwh: distributeAnnualConsumption(annualConsumptionKwh),
+      hourlyLoadProfile: defaultHourlyLoadProfile,
+    };
+  }
+
+  if (!usageProfile?.months?.length) {
+    throw new OfferRecalculationError('Wybrano dane godzinowe operatora, ale nie ma wczytanego profilu zużycia.');
+  }
+  const monthlyConsumptionKwh = Array.from({ length: 12 }, (_, index) => usageProfile.months
+    .filter((month) => month.month === index + 1)
+    .reduce((sum, month) => sum + finiteNumber(month.totalKwh), 0));
+  const hourlyTotals = Array.from({ length: 24 }, (_, hour) => usageProfile.months
+    .reduce((sum, month) => sum + finiteNumber(month.hourly?.[hour]), 0));
+  if (!monthlyConsumptionKwh.some((value) => value > 0)) {
+    throw new OfferRecalculationError('Profil operatora nie zawiera dodatniego zużycia energii.');
+  }
+  return {
+    monthlyConsumptionKwh,
+    hourlyLoadProfile: hourlyTotals.some((value) => value > 0) ? hourlyTotals : defaultHourlyLoadProfile,
+  };
+}
+
+export class OfferRecalculationError extends Error {}
+
+export function buildOfferScenarioInput(options: OfferScenarioInputOptions): EnergyScenarioInput {
+  if (!(options.annualConsumptionKwh > 0)) {
+    throw new OfferRecalculationError('Uzupełnij roczne zużycie energii w zakładce „Faktury i OSD”.');
+  }
+
+  const existingInput = objectValue(options.existingInput);
+  const pvConfigurations = options.configurations.filter((configuration) => (
+    ['PV_DACH_PLASKI', 'PV_DACH_SKOSNY', 'MIXED'].includes(configuration.kind)
+  ));
+  const batteryConfigurations = options.configurations.filter((configuration) => (
+    ['MAGAZYN', 'MIXED'].includes(configuration.kind)
+  ));
+  requireConfigurationTarget(pvConfigurations, 'targetPowerKw', 'moc docelowa PV');
+  requireConfigurationTarget(batteryConfigurations, 'targetPowerKw', 'moc falownika / magazynu');
+  requireConfigurationTarget(batteryConfigurations, 'targetCapacityKwh', 'pojemność magazynu');
+
+  const existingPvKw = finiteNumber(options.existingPvKw);
+  const existingBatteryKwh = finiteNumber(options.existingBatteryKwh);
+  const addedPvKw = sumConfigurationTarget(pvConfigurations, 'targetPowerKw');
+  const addedBatteryKwh = sumConfigurationTarget(batteryConfigurations, 'targetCapacityKwh');
+  const batteryPowerKw = sumConfigurationTarget(batteryConfigurations, 'targetPowerKw');
+  const batteryCapacityKwh = existingBatteryKwh + addedBatteryKwh;
+  const profile = usageProfileInputs(options.profileSource, options.annualConsumptionKwh, options.usageProfile);
+  const setting = (key: keyof typeof defaultScenarioAssumptions) => finiteNumber(
+    existingInput[key],
+    defaultScenarioAssumptions[key],
+  );
+
+  return {
+    ...profile,
+    pvPowerKw: existingPvKw + addedPvKw,
+    pvSpecificYieldKwhPerKw: setting('pvSpecificYieldKwhPerKw'),
+    pvMonthlyDistribution: polishPvMonthlyDistribution,
+    pvHourlyProfiles: polishPvHourlyProfiles,
+    batteryCapacityKwh,
+    batteryMaxChargeKw: batteryCapacityKwh > 0
+      ? batteryPowerKw || finiteNumber(existingInput.batteryMaxChargeKw, 5)
+      : 0,
+    batteryMaxDischargeKw: batteryCapacityKwh > 0
+      ? batteryPowerKw || finiteNumber(existingInput.batteryMaxDischargeKw, 5)
+      : 0,
+    batteryRoundTripEfficiency: setting('batteryRoundTripEfficiency'),
+    initialBatterySocPercent: setting('initialBatterySocPercent'),
+    energyBuyGrossPerKwh: setting('energyBuyGrossPerKwh'),
+    distributionGrossPerKwh: setting('distributionGrossPerKwh'),
+    exportGrossPerKwh: setting('exportGrossPerKwh'),
+    fixedMonthlyGross: setting('fixedMonthlyGross'),
+    depositPayoutRate: setting('depositPayoutRate'),
+    investmentGross: options.investmentGross,
+  };
 }
 
 export function toOfferNumber(date = new Date(), sequence = 1) {
@@ -236,7 +373,11 @@ async function energySnapshot(project: any, scenario?: any) {
   };
 }
 
-export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateInput) {
+type BuildOfferDraftOptions = {
+  scenarioOverride?: any;
+};
+
+export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateInput, options: BuildOfferDraftOptions = {}) {
   const configurationIds = normalizeOfferConfigurationIds(input.configurationIds, input.configurationId);
   const [project, configurationRecords, selectedScenario] = await Promise.all([
     prisma.project.findUnique({
@@ -271,7 +412,9 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
         },
       })
       : Promise.resolve([]),
-    input.energyScenarioId
+    options.scenarioOverride
+      ? Promise.resolve(options.scenarioOverride)
+      : input.energyScenarioId
       ? prisma.energyScenario.findUnique({
         where: { id: input.energyScenarioId },
         include: { audit: true },
@@ -408,6 +551,150 @@ export const offerInclude = {
   contracts: true,
   documents: { orderBy: { createdAt: 'desc' as const } },
 };
+
+export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offerId: string, actorId?: string | null) {
+  const existing = await prisma.offer.findUnique({ where: { id: offerId }, include: offerInclude });
+  if (!existing) throw new OfferRecalculationError('Nie znaleziono oferty.');
+  if (existing.status === 'ACCEPTED') {
+    throw new OfferRecalculationError('Zaakceptowana oferta jest zamrożona. Utwórz nowy wariant oferty.');
+  }
+
+  const configurations = existing.configurations.length
+    ? existing.configurations.map((entry) => entry.configuration)
+    : existing.configuration ? [existing.configuration] : [];
+  if (!configurations.length) {
+    throw new OfferRecalculationError('Oferta nie ma powiązanej konfiguracji do ponownego przeliczenia.');
+  }
+
+  const [audit, baseScenario] = await Promise.all([
+    prisma.energyAudit.findUnique({ where: { projectId: existing.projectId } }),
+    existing.energyScenarioId
+      ? prisma.energyScenario.findUnique({ where: { id: existing.energyScenarioId }, include: { audit: true } })
+      : prisma.energyScenario.findFirst({
+        where: { audit: { projectId: existing.projectId }, recommended: true },
+        include: { audit: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+  ]);
+  if (!audit) {
+    throw new OfferRecalculationError('Najpierw zapisz dane zużycia w zakładce „Faktury i OSD”.');
+  }
+
+  const annualConsumptionKwh = finiteNumber(audit.annualConsumptionKwh);
+  let usageProfile: EnergyUsageProfile | null = null;
+  if (audit.profileSource === 'OPERATOR_HOURLY') {
+    const measurementFiles = await prisma.energyMeasurementFile.findMany({
+      where: {
+        projectId: existing.projectId,
+        kind: 'ACTIVE_IMPORT',
+        status: 'DOWNLOADED',
+      },
+      include: { document: true },
+      orderBy: [{ periodYear: 'desc' }, { periodMonth: 'desc' }],
+      take: 12,
+    });
+    usageProfile = await buildEnergyUsageProfile(measurementFiles);
+  }
+
+  const lineItems = mergeConfigurationLineItems(configurations);
+  const currentTotalGross = money(lineItems.reduce((sum, item) => sum + finiteNumber(item.saleGross), 0));
+  const scenarioInput = buildOfferScenarioInput({
+    annualConsumptionKwh,
+    profileSource: audit.profileSource,
+    usageProfile,
+    configurations,
+    existingPvKw: audit.existingPvKw,
+    existingBatteryKwh: audit.existingBatteryKwh,
+    existingInput: baseScenario?.inputSnapshot,
+    investmentGross: currentTotalGross,
+  });
+  const scenarioResult = calculateEnergyScenario(scenarioInput);
+  const scenarioId = randomUUID();
+  const recommended = baseScenario?.recommended ?? true;
+  const scenarioName = `Przeliczenie oferty ${existing.number || existing.title}`;
+  const scenarioOverride = {
+    id: scenarioId,
+    auditId: audit.id,
+    audit,
+    name: scenarioName,
+    engineVersion: energyScenarioEngineVersion,
+    inputSnapshot: scenarioInput,
+    resultSnapshot: scenarioResult,
+    pvPowerKw: scenarioInput.pvPowerKw,
+    batteryCapacityKwh: scenarioInput.batteryCapacityKwh,
+    investmentGross: scenarioInput.investmentGross,
+    recommended,
+    createdById: actorId || null,
+    createdAt: new Date(),
+  };
+  const configurationIds = configurations.map((configuration) => configuration.id);
+  const draft = await buildOfferDraft(prisma, {
+    projectId: existing.projectId,
+    configurationIds,
+    energyScenarioId: scenarioId,
+    title: existing.title,
+    validUntil: existing.validUntil || undefined,
+    subsidyGross: decimalToNumber(existing.subsidyGross),
+    thermoReliefGross: decimalToNumber(existing.thermoReliefGross),
+    currentAnnualBillGross: decimalToNumber(existing.currentAnnualBillGross),
+    projectedAnnualBillGross: decimalToNumber(existing.projectedAnnualBillGross),
+    tariffBefore: existing.tariffBefore || undefined,
+    tariffAfter: existing.tariffAfter || undefined,
+    settlementBefore: existing.settlementBefore || undefined,
+    settlementAfter: existing.settlementAfter || undefined,
+    descriptionBefore: existing.descriptionBefore || undefined,
+    descriptionAfter: existing.descriptionAfter || undefined,
+    notes: existing.notes || undefined,
+  }, { scenarioOverride });
+  const { data } = draft;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    if (recommended) {
+      await tx.energyScenario.updateMany({ where: { auditId: audit.id }, data: { recommended: false } });
+    }
+    await tx.energyScenario.create({
+      data: {
+        id: scenarioId,
+        auditId: audit.id,
+        name: scenarioName,
+        engineVersion: energyScenarioEngineVersion,
+        inputSnapshot: scenarioInput as unknown as Prisma.InputJsonValue,
+        resultSnapshot: scenarioResult as unknown as Prisma.InputJsonValue,
+        pvPowerKw: scenarioInput.pvPowerKw,
+        batteryCapacityKwh: scenarioInput.batteryCapacityKwh,
+        investmentGross: scenarioInput.investmentGross,
+        recommended,
+        createdById: actorId || undefined,
+      },
+    });
+    await tx.energyAudit.update({
+      where: { id: audit.id },
+      data: { status: 'READY', annualConsumptionKwh: scenarioResult.annualConsumptionKwh },
+    });
+    return tx.offer.update({
+      where: { id: existing.id },
+      data: {
+        energyScenarioId: scenarioId,
+        totalNet: data.totalNet,
+        totalGross: data.totalGross,
+        subsidyGross: data.subsidyGross,
+        thermoReliefGross: data.thermoReliefGross,
+        totalAfterSupportGross: data.totalAfterSupportGross,
+        currentAnnualBillGross: data.currentAnnualBillGross,
+        projectedAnnualBillGross: data.projectedAnnualBillGross,
+        annualSavingsGross: data.annualSavingsGross,
+        paybackYears: data.paybackYears,
+        lineItemsSnapshot: data.lineItemsSnapshot as Prisma.InputJsonValue,
+        energySnapshot: data.energySnapshot as Prisma.InputJsonValue,
+        calculationSnapshot: data.calculationSnapshot as Prisma.InputJsonValue,
+        clientSnapshot: data.clientSnapshot as Prisma.InputJsonValue,
+      },
+      include: offerInclude,
+    });
+  });
+
+  return { offer: updated, scenarioId, annualConsumptionKwh: scenarioResult.annualConsumptionKwh };
+}
 
 export function offerDeleteBlockReason(input: {
   contracts: number;

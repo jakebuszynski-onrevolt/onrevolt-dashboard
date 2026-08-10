@@ -766,6 +766,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [offerCreating, setOfferCreating] = useState(false);
   const [offerDeletingId, setOfferDeletingId] = useState('');
+  const [offerRecalculatingId, setOfferRecalculatingId] = useState('');
   const [offerMessage, setOfferMessage] = useState('');
   const [offerError, setOfferError] = useState('');
   const [configurationActionId, setConfigurationActionId] = useState('');
@@ -1582,6 +1583,31 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     }
   }
 
+  async function recalculateClientOffer(offer: any) {
+    if (!window.confirm(`Przeliczyć ofertę ${offer.number || offer.title || ''} z aktualnych danych klienta, „Faktury i OSD” oraz konfiguracji? Numer i status oferty pozostaną bez zmian.`)) return;
+    setOfferRecalculatingId(offer.id);
+    setOfferError('');
+    setOfferMessage('');
+    try {
+      const response = await fetch('/api/offers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: offer.id, recalculate: true }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+      const updated = payload.data;
+      const annualConsumption = Number(updated.energySnapshot?.scenario?.result?.annualConsumptionKwh || 0);
+      setSelectedClientOfferId(updated.id);
+      setOfferMessage(`Przeliczono ofertę ${updated.number || ''}${annualConsumption > 0 ? ` dla ${Math.round(annualConsumption)} kWh/rok` : ''}.`);
+      await load(true);
+    } catch (e) {
+      setOfferError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOfferRecalculatingId('');
+    }
+  }
+
   function selectJourneyTab(item: (typeof journeyTabs)[number]) {
     setActiveTabIndex(item.tabIndex);
     setActiveJourneyKey(item.key);
@@ -2250,6 +2276,17 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                           <Text color={mutedColor}>Oferty tworzone z konfiguracji projektu i zapisane jako wersje historyczne.</Text>
                         </Box>
                         <Flex gap="10px" wrap="wrap">
+                          {selectedClientOffer && selectedClientOffer.status !== 'ACCEPTED' ? (
+                            <Button
+                              leftIcon={<MdRefresh />}
+                              variant="outline"
+                              colorScheme="purple"
+                              onClick={() => recalculateClientOffer(selectedClientOffer)}
+                              isLoading={offerRecalculatingId === selectedClientOffer.id}
+                            >
+                              Przelicz ofertę
+                            </Button>
+                          ) : null}
                           {selectedClientOffer ? (
                             <Button
                               as="a"
@@ -2363,6 +2400,18 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                   </Box>
                                   <Flex gap="8px" align="center" onClick={(event) => event.stopPropagation()}>
                                     <Badge colorScheme={offerStatusColor(offer.status)}>{offerStatusLabel(offer.status)}</Badge>
+                                    {offer.status !== 'ACCEPTED' ? (
+                                      <Tooltip label="Przelicz z aktualnych danych">
+                                        <IconButton
+                                          aria-label="Przelicz ofertę"
+                                          icon={<MdRefresh />}
+                                          size="sm"
+                                          variant="outline"
+                                          isLoading={offerRecalculatingId === offer.id}
+                                          onClick={() => recalculateClientOffer(offer)}
+                                        />
+                                      </Tooltip>
+                                    ) : null}
                                     {isAdmin ? (
                                       <Tooltip label="Usuń ofertę">
                                         <IconButton

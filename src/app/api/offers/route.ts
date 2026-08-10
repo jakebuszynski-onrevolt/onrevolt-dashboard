@@ -2,7 +2,14 @@ import { NextRequest } from 'next/server';
 import { badRequest, forbidden, jsonResponse, notFound, optionalString, parseDate, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { isEnergyOperator } from 'lib/onrevolt/energy-tariffs';
-import { createOfferFromConfiguration, offerDeleteBlockReason, offerInclude, offerStatusDateUpdate } from 'lib/onrevolt/offers';
+import {
+  createOfferFromConfiguration,
+  OfferRecalculationError,
+  offerDeleteBlockReason,
+  offerInclude,
+  offerStatusDateUpdate,
+  recalculateOfferFromCurrentData,
+} from 'lib/onrevolt/offers';
 import { prisma } from 'lib/onrevolt/prisma';
 import { authorizeStaffRequest, isAdminUser } from 'lib/onrevolt/staff-server';
 
@@ -177,6 +184,32 @@ export async function PATCH(req: NextRequest) {
     const id = requireString(body, 'id');
     const existing = await prisma.offer.findUnique({ where: { id }, include: offerInclude });
     if (!existing) return badRequest('Nie znaleziono oferty');
+
+    if (body.recalculate === true) {
+      if (existing.status === 'ACCEPTED') {
+        return badRequest('Zaakceptowana oferta jest zamrożona. Utwórz nowy wariant oferty.');
+      }
+      try {
+        const result = await recalculateOfferFromCurrentData(prisma, id, access.user.id);
+        await writeAuditLog({
+          actorId: access.user.id,
+          clientId: result.offer.project.clientId,
+          entityType: 'Offer',
+          entityId: result.offer.id,
+          action: 'RECALCULATE',
+          before: existing,
+          after: {
+            offer: result.offer,
+            scenarioId: result.scenarioId,
+            annualConsumptionKwh: result.annualConsumptionKwh,
+          },
+        });
+        return jsonResponse({ ok: true, data: result.offer });
+      } catch (error) {
+        if (error instanceof OfferRecalculationError) return badRequest(error.message);
+        throw error;
+      }
+    }
     const data: Record<string, any> = {};
 
     if ('status' in body) {

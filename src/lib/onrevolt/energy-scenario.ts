@@ -218,6 +218,18 @@ export const defaultHourlyLoadProfile = [
   3.82, 3.91, 3.99, 4.25, 6.63, 6.37, 5.78, 5.1, 4.67, 4.25, 3.82, 3.23,
 ];
 
+export const annualConsumptionDistribution = [
+  0.11, 0.1, 0.09, 0.08, 0.07, 0.065, 0.065, 0.065, 0.075, 0.085, 0.095, 0.105,
+];
+
+export function distributeAnnualConsumption(annualConsumptionKwh: number) {
+  if (!Number.isFinite(annualConsumptionKwh) || annualConsumptionKwh <= 0) {
+    throw new Error('Roczne zużycie energii musi być większe od 0');
+  }
+  const total = annualConsumptionDistribution.reduce((sum, share) => sum + share, 0);
+  return annualConsumptionDistribution.map((share) => annualConsumptionKwh * share / total);
+}
+
 export const polishPvMonthlyDistribution = [0.025, 0.045, 0.085, 0.115, 0.135, 0.145, 0.14, 0.125, 0.09, 0.055, 0.025, 0.015];
 
 export const polishPvHourlyProfiles = polishPvMonthlyDistribution.map((_, month) => {
