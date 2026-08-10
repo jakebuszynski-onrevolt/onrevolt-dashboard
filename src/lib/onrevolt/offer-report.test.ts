@@ -1,0 +1,119 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { buildOfferReport, offerReportTemplateVersion } from './offer-report';
+
+function scenario() {
+  const months = Array.from({ length: 12 }, (_, index) => ({
+    month: index + 1,
+    consumptionKwh: 500,
+    pvGenerationKwh: 600,
+    directPvKwh: 220,
+    batteryDischargeToLoadKwh: 120,
+    gridImportKwh: 160,
+    exportKwh: 260,
+  }));
+  return {
+    pvPowerKw: 6,
+    batteryCapacityKwh: 16,
+    input: {
+      energyBuyGrossPerKwh: 0.7,
+      distributionGrossPerKwh: 0.3,
+      exportGrossPerKwh: 0.5,
+      fixedMonthlyGross: 30,
+      pvHourlyProfiles: Array.from({ length: 12 }, () => Array.from({ length: 24 }, (_, hour) => hour >= 7 && hour <= 17 ? 1 : 0)),
+    },
+    result: {
+      months,
+      annualConsumptionKwh: 6000,
+      annualPvGenerationKwh: 7200,
+      annualGridImportKwh: 1920,
+      annualExportKwh: 3120,
+      annualDirectPvKwh: 2640,
+      annualBatteryDischargeKwh: 1440,
+      baselineAnnualCostGross: 6360,
+      scenarioAnnualCostGross: 1900,
+      annualSavingsGross: 4460,
+      savingsPercent: 70.1,
+      finalDepositGross: 600,
+      depositPayoutGross: 180,
+    },
+  };
+}
+
+function offer(clientType: 'B2C' | 'B2B') {
+  return {
+    number: 'ONR/2026/08/0001',
+    clientSnapshot: {
+      clientName: 'Klient testowy',
+      clientType,
+      email: 'klient@example.com',
+      phone: '+48 500 000 000',
+      investmentAddress: 'Poznań',
+    },
+    lineItemsSnapshot: [
+      { position: 1, description: 'Magazyn energii', model: 'PowerBrick', quantity: 1, saleNet: 20000, saleGross: 21600, role: 'MAIN_EQUIPMENT' },
+      { position: 2, description: 'Przewody', quantity: 10, saleNet: 1000, saleGross: 1080, role: 'CABLING', sourceConfigurationName: 'Magazyn 16 kWh' },
+    ],
+    calculationSnapshot: {
+      totalNet: 21000,
+      totalGross: 22680,
+      totalAfterSupportGross: 20000,
+      currentAnnualBillGross: 6360,
+      projectedAnnualBillGross: 1900,
+      annualSavingsGross: 4460,
+      savingsPercent: 70.1,
+      paybackYears: 4.5,
+    },
+    energySnapshot: {
+      measurementMonths: ['2025-09', '2026-08'],
+      audit: { existingPvKw: 0, existingBatteryKwh: 0 },
+      scenario: scenario(),
+      usageProfile: {
+        annualKwh: 6000,
+        warnings: [],
+        months: [{
+          key: '2026-07', year: 2026, month: 7, totalKwh: 500,
+          hourly: Array.from({ length: 24 }, () => 20),
+          weekdayHourly: Array.from({ length: 24 }, () => 1),
+          weekendHourly: Array.from({ length: 24 }, () => 0.8),
+          weekdayDays: 22, weekendDays: 9, sourceFiles: 1,
+        }],
+      },
+    },
+  };
+}
+
+test('buduje ofertę B2C z pięciostronicowego szablonu Reform', () => {
+  const report = buildOfferReport(offer('B2C'));
+  assert.equal(report.templateVersion, offerReportTemplateVersion);
+  assert.equal(report.variant, 'B2C');
+  assert.equal(report.costs.priceLabel, 'brutto');
+  assert.equal(report.costs.rows.length, 2);
+  assert.equal(report.costs.rows[0].description, 'Magazyn energii');
+  assert.equal(report.costs.rows[1].description, 'Montaż, osprzęt i uruchomienie');
+  assert.equal(report.costs.rows[1].value, 1080);
+  assert.equal(report.costs.rows.reduce((total, row) => total + row.value, 0), 22680);
+  assert.equal(report.energy.projectedMonths.length, 12);
+  assert.equal(report.energy.period, 'Wrzesień 2025 - Sierpień 2026');
+  assert.equal(report.deposit.exportKwh, 3120);
+});
+
+test('wariant B2B używa cen netto i rzeczywistych profili dnia roboczego oraz wolnego', () => {
+  const report = buildOfferReport(offer('B2B'));
+  assert.equal(report.variant, 'B2B');
+  assert.equal(report.costs.priceLabel, 'netto');
+  assert.equal(report.costs.systemValue, 21000);
+  assert.equal(report.energy.summerWeekday.available, true);
+  assert.equal(report.energy.summerWeekend.available, true);
+  assert.equal(report.energy.summerWeekday.month, 7);
+  assert.equal(report.energy.summerWeekday.consumption.length, 24);
+});
+
+test('nie tworzy zastępczego wykresu dnia bez danych godzinowych ENEA', () => {
+  const source = offer('B2B');
+  source.energySnapshot.usageProfile.months = [];
+  const report = buildOfferReport(source);
+  assert.equal(report.energy.summerWeekday.available, false);
+  assert.equal(report.energy.winterWeekend.available, false);
+  assert.equal(report.energy.summerWeekday.consumption.every((value) => value === 0), true);
+});

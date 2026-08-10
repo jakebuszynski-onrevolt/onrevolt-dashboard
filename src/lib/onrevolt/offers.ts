@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { vatBreakdown } from 'lib/onrevolt/configuration-vat';
+import { buildEnergyUsageProfile } from 'lib/onrevolt/energy-profile';
 
 type OfferCreateInput = {
   projectId: string;
@@ -35,6 +36,10 @@ function optionalMoney(value: unknown) {
 function decimalToNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
   return money(value);
+}
+
+function optionalDecimalToNumber(value: Prisma.Decimal | number | string | null | undefined) {
+  return value == null ? null : decimalToNumber(value);
 }
 
 function optionalText(value?: string) {
@@ -78,12 +83,18 @@ function projectSnapshot(project: any) {
     clientName: client.displayName || '',
     clientType: project.clientType || client.clientType || 'UNKNOWN',
     projectTitle: project.title || '',
+    taxId: client.taxId || '',
     phone: contact.phone || '',
     email: contact.email || '',
     addressLine: contact.addressLine || '',
     postalCode: contact.postalCode || '',
     city: contact.city || '',
     investmentAddress: site.fullAddress || site.addressLine || project.locationAddress || contact.investmentAddress || '',
+    latitude: optionalDecimalToNumber(site.latitude || contact.latitude),
+    longitude: optionalDecimalToNumber(site.longitude || contact.longitude),
+    clientProblem: client.clientProblem || '',
+    expectedResult: client.expectedResult || '',
+    ownerName: project.owner?.name || '',
   };
 }
 
@@ -160,11 +171,19 @@ function calculationSnapshot(input: OfferCreateInput, lineItems: any[], scenario
   };
 }
 
-function energySnapshot(project: any, scenario?: any) {
+async function energySnapshot(project: any, scenario?: any) {
   const files = project.energyMeasurementFiles || [];
   const downloaded = files.filter((file: any) => file.status === 'DOWNLOADED');
   const months = Array.from(new Set<string>(downloaded.map((file: any) => `${file.periodYear}-${String(file.periodMonth).padStart(2, '0')}`)))
     .sort();
+  const importFiles = downloaded.filter((file: any) => file.kind === 'ACTIVE_IMPORT');
+  const usageProfile = await buildEnergyUsageProfile(importFiles);
+  const siteAudit = project.siteAudits?.[0];
+  const energyAudit = scenario?.audit || project.energyAudits?.[0] || null;
+  const auditImages = (siteAudit?.documents || []).filter((document: any) => document.mimeType?.startsWith('image/'));
+  const coverImage = auditImages.find((document: any) => document.auditFieldKey === 'building.rear')
+    || auditImages.find((document: any) => document.auditFieldKey?.startsWith('building.'))
+    || auditImages[0];
 
   return {
     operatorAccounts: (project.energyPortalAccounts || []).map((account: any) => ({
@@ -176,6 +195,33 @@ function energySnapshot(project: any, scenario?: any) {
     })),
     measurementMonths: months,
     measurementFiles: downloaded.length,
+    usageProfile,
+    siteAudit: siteAudit ? {
+      id: siteAudit.id,
+      title: siteAudit.title,
+      status: siteAudit.status,
+      visitDate: siteAudit.visitDate,
+      progressPercent: siteAudit.progressPercent,
+      formData: siteAudit.formData,
+      auditorName: siteAudit.auditor?.name || '',
+      coverImageDocumentId: coverImage?.id || null,
+      coverImageTitle: coverImage?.title || null,
+    } : null,
+    audit: energyAudit ? {
+      profileSource: energyAudit.profileSource,
+      annualConsumptionKwh: optionalDecimalToNumber(energyAudit.annualConsumptionKwh),
+      connectionPowerKw: optionalDecimalToNumber(energyAudit.connectionPowerKw),
+      phaseCount: energyAudit.phaseCount,
+      mainFuseA: energyAudit.mainFuseA,
+      roofType: energyAudit.roofType,
+      roofAreaM2: optionalDecimalToNumber(energyAudit.roofAreaM2),
+      roofOrientation: energyAudit.roofOrientation,
+      roofTiltDeg: optionalDecimalToNumber(energyAudit.roofTiltDeg),
+      existingPvKw: optionalDecimalToNumber(energyAudit.existingPvKw),
+      existingInverter: energyAudit.existingInverter,
+      existingBatteryKwh: optionalDecimalToNumber(energyAudit.existingBatteryKwh),
+      notes: energyAudit.notes,
+    } : null,
     scenario: scenario ? {
       id: scenario.id,
       name: scenario.name,
@@ -198,10 +244,21 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
       include: {
         client: { include: { contacts: true, investmentSites: { orderBy: { updatedAt: 'desc' } } } },
         investmentSite: true,
+        owner: { select: { id: true, name: true, email: true } },
         energyPortalAccounts: true,
         energyMeasurementFiles: {
+          include: { document: true },
           orderBy: [{ periodYear: 'desc' }, { periodMonth: 'desc' }],
           take: 40,
+        },
+        energyAudits: { orderBy: { updatedAt: 'desc' }, take: 1 },
+        siteAudits: {
+          include: {
+            auditor: { select: { name: true } },
+            documents: { orderBy: { createdAt: 'desc' }, take: 40 },
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: 1,
         },
       },
     }),
@@ -217,11 +274,11 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
     input.energyScenarioId
       ? prisma.energyScenario.findUnique({
         where: { id: input.energyScenarioId },
-        include: { audit: { select: { projectId: true } } },
+        include: { audit: true },
       })
       : prisma.energyScenario.findFirst({
         where: { audit: { projectId: input.projectId }, recommended: true },
-        include: { audit: { select: { projectId: true } } },
+        include: { audit: true },
         orderBy: { createdAt: 'desc' },
       }),
   ]);
@@ -280,7 +337,7 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
       descriptionBefore: optionalText(input.descriptionBefore),
       descriptionAfter: optionalText(input.descriptionAfter),
       lineItemsSnapshot: lineItems,
-      energySnapshot: energySnapshot(project, selectedScenario),
+      energySnapshot: await energySnapshot(project, selectedScenario),
       calculationSnapshot: calculation,
       clientSnapshot: client,
       validUntil: input.validUntil,

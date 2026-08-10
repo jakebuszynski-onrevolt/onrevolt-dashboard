@@ -1,7 +1,6 @@
 'use client';
 
-import { vatBreakdown } from 'lib/onrevolt/configuration-vat';
-import Image from 'next/image';
+import { buildOfferReport, monthNames } from 'lib/onrevolt/offer-report';
 
 type OfferDocumentProps = {
   offer: any;
@@ -10,597 +9,627 @@ type OfferDocumentProps = {
 };
 
 function numberValue(value: unknown) {
-  const number = Number(value ?? 0);
-  return Number.isFinite(number) ? number : 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function money(value: unknown) {
+function money(value: unknown, digits = 0) {
   return new Intl.NumberFormat('pl-PL', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
   }).format(numberValue(value));
 }
 
-function percent(value: unknown) {
-  return new Intl.NumberFormat('pl-PL', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 1,
-  }).format(numberValue(value));
+function quantity(value: unknown) {
+  return new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 3 }).format(numberValue(value));
 }
 
 function dateLabel(value?: string | null) {
   if (!value) return '-';
-  return new Intl.DateTimeFormat('pl-PL').format(new Date(value));
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('pl-PL').format(date) : '-';
 }
 
-function snapshot<T>(value: unknown, fallback: T): T {
-  if (!value) return fallback;
-  if (typeof value === 'string') {
-    try {
-      return JSON.parse(value) as T;
-    } catch {
-      return fallback;
-    }
-  }
-  return value as T;
+function valueOrMissing(value: unknown, suffix = '') {
+  return value == null || value === '' ? 'Brak danych' : `${value}${suffix}`;
 }
 
-function statusLabel(value?: string | null) {
-  const labels: Record<string, string> = {
-    DRAFT: 'Robocza',
-    SENT: 'Wysłana',
-    ACCEPTED: 'Zaakceptowana',
-    REJECTED: 'Odrzucona',
-    EXPIRED: 'Wygasła',
-  };
-  return labels[value || ''] || value || 'Robocza';
+function sum(values: number[]) {
+  return values.reduce((total, value) => total + numberValue(value), 0);
 }
 
-function clientTypeLabel(value?: string | null) {
-  const labels: Record<string, string> = {
-    UNKNOWN: 'Nie określono',
-    B2C: 'B2C',
-    B2B: 'B2B',
-    B2C_B2B: 'B2C/B2B',
-  };
-  return labels[value || ''] || value || 'Nie określono';
-}
-
-function offerLines(offer: any) {
-  const lines = snapshot<any[]>(offer.lineItemsSnapshot, []);
-  if (lines.length) return lines;
-  return (offer.configuration?.items || []).map((item: any, index: number) => ({
-    position: item.position || index + 1,
-    description: item.description || item.product?.name || `Pozycja ${index + 1}`,
-    model: item.product?.sku || item.product?.supplierSku || '',
-    quantity: item.quantity || 0,
-    saleNet: item.saleNet || 0,
-    saleGross: item.saleGross || 0,
-    saleVatRate: item.saleVatRate || 0,
-  }));
-}
-
-function calculation(offer: any) {
-  const saved = snapshot<Record<string, any>>(offer.calculationSnapshot, {});
-  const lines = offerLines(offer);
-  const currentAnnualBillGross = numberValue(saved.currentAnnualBillGross ?? offer.currentAnnualBillGross);
-  const projectedAnnualBillGross = numberValue(saved.projectedAnnualBillGross ?? offer.projectedAnnualBillGross);
-  const annualSavingsGross = numberValue(saved.annualSavingsGross ?? offer.annualSavingsGross);
-  const savingsPercent = currentAnnualBillGross > 0 ? (annualSavingsGross / currentAnnualBillGross) * 100 : numberValue(saved.savingsPercent);
-
-  return {
-    totalNet: numberValue(saved.totalNet ?? offer.totalNet),
-    totalGross: numberValue(saved.totalGross ?? offer.totalGross),
-    totalVat: numberValue(saved.totalVat ?? numberValue(offer.totalGross) - numberValue(offer.totalNet)),
-    vatBreakdown: Array.isArray(saved.vatBreakdown)
-      ? saved.vatBreakdown
-      : vatBreakdown(lines.map((line) => ({
-        saleNet: numberValue(line.saleNet),
-        saleGross: numberValue(line.saleGross),
-        saleVatRate: numberValue(line.saleVatRate),
-      }))),
-    subsidyGross: numberValue(saved.subsidyGross ?? offer.subsidyGross),
-    thermoReliefGross: numberValue(saved.thermoReliefGross ?? offer.thermoReliefGross),
-    totalAfterSupportGross: numberValue(saved.totalAfterSupportGross ?? offer.totalAfterSupportGross ?? offer.totalGross),
-    currentAnnualBillGross,
-    projectedAnnualBillGross,
-    annualSavingsGross,
-    paybackYears: saved.paybackYears ?? offer.paybackYears,
-    savingsPercent,
-  };
-}
-
-function clientSnapshot(offer: any) {
-  const saved = snapshot<Record<string, any>>(offer.clientSnapshot, {});
-  return {
-    clientName: saved.clientName || offer.project?.client?.displayName || '',
-    clientType: saved.clientType || offer.project?.clientType || offer.project?.client?.clientType || 'UNKNOWN',
-    projectTitle: saved.projectTitle || offer.project?.title || '',
-    investmentAddress: saved.investmentAddress || offer.project?.investmentSite?.fullAddress || offer.project?.locationAddress || '',
-    email: saved.email || '',
-    phone: saved.phone || '',
-  };
-}
-
-function energySnapshot(offer: any) {
-  return snapshot<Record<string, any>>(offer.energySnapshot, {
-    measurementMonths: [],
-    measurementFiles: 0,
-    operatorAccounts: [],
-  });
-}
-
-function monthBars(energy: Record<string, any>, field: 'consumptionKwh' | 'gridImportKwh') {
-  const labels = ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru'];
-  const months = energy.scenario?.result?.months || [];
-  const values = months.length === 12
-    ? months.map((month: any) => numberValue(month[field]))
-    : [76, 78, 88, 77, 72, 63, 61, 80, 79, 86, 72, 84];
-  const maximum = Math.max(...values, 1);
-  return values.map((raw: number, index: number) => ({ value: Math.max(4, raw / maximum * 100), raw, label: labels[index] }));
-}
-
-export default function OfferDocument({ offer, compact = false, showActions = false }: OfferDocumentProps) {
-  const lines = offerLines(offer);
-  const calc = calculation(offer);
-  const client = clientSnapshot(offer);
-  const energy = energySnapshot(offer);
-  const visibleLines = compact ? lines.slice(0, 7) : lines;
-  const hasSavings = calc.currentAnnualBillGross > 0 || calc.projectedAnnualBillGross > 0 || calc.annualSavingsGross > 0;
-  const currentBars = monthBars(energy, 'consumptionKwh');
-  const projectedBars = monthBars(energy, 'gridImportKwh');
-
+function Brand({ mode = 'Reform' }: { mode?: 'Report' | 'Reform' | 'Review' }) {
   return (
-    <div className={`offer-doc-root${compact ? ' compact' : ''}`}>
-      <style>{`
-        .offer-doc-root {
-          --ink: #17245d;
-          --muted: #6f7aa5;
-          --line: #dbe3f5;
-          --soft: #eef3fb;
-          --green: #05a85a;
-          --orange: #ff8a00;
-          --red: #ff8e8e;
-          color: var(--ink);
-          font-family: Arial, Helvetica, sans-serif;
-          background: #e9eef7;
-          padding: ${compact ? '12px' : '28px'};
-        }
-        .offer-page {
-          width: ${compact ? '100%' : '210mm'};
-          min-height: ${compact ? 'auto' : '297mm'};
-          margin: 0 auto ${compact ? '14px' : '24px'};
-          background: #f4f7fc;
-          border-radius: ${compact ? '14px' : '0'};
-          padding: ${compact ? '20px' : '15mm'};
-          box-sizing: border-box;
-          box-shadow: ${compact ? 'none' : '0 18px 45px rgba(20, 33, 82, .18)'};
-          page-break-after: always;
-        }
-        .offer-actions {
-          width: ${compact ? '100%' : '210mm'};
-          margin: 0 auto 16px;
-          display: flex;
-          gap: 10px;
-          justify-content: flex-end;
-        }
-        .offer-actions button, .offer-actions a {
-          border: 1px solid #cdd8ef;
-          border-radius: 10px;
-          background: #fff;
-          color: var(--ink);
-          padding: 10px 14px;
-          font-weight: 800;
-          text-decoration: none;
-          cursor: pointer;
-        }
-        .brand {
-          display: flex;
-          align-items: baseline;
-          gap: 8px;
-          margin-bottom: 10px;
-        }
-        .brand-main { font-size: 30px; font-weight: 900; letter-spacing: 0; color: #111827; }
-        .brand-main span { color: #04a855; }
-        .brand-sub { font-size: 15px; font-weight: 800; color: #1a1f37; }
-        .brand-sub span { color: #7b44ff; }
-        .title-strip {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          background: #fff;
-          border-radius: 12px;
-          padding: 9px 14px;
-          font-weight: 900;
-          margin-bottom: 10px;
-        }
-        .panel {
-          background: #fff;
-          border: 1px solid #e1e8f6;
-          border-radius: 13px;
-          margin-bottom: 10px;
-          overflow: hidden;
-        }
-        .panel-inner { padding: 12px; }
-        .hero {
-          height: ${compact ? '180px' : '175px'};
-          background: #fff;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .hero img {
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-          opacity: .96;
-        }
-        .meta-grid {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 8px;
-          margin-bottom: 10px;
-        }
-        .meta-card {
-          background: #fff;
-          border: 1px solid var(--line);
-          border-radius: 10px;
-          padding: 9px 10px;
-        }
-        .meta-label { color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
-        .meta-value { font-size: 12px; font-weight: 900; margin-top: 3px; }
-        table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: ${compact ? '11px' : '10px'};
-        }
-        th, td {
-          border: 1px solid var(--line);
-          padding: 6px 7px;
-          vertical-align: top;
-        }
-        th {
-          background: #f8faff;
-          text-align: left;
-          font-weight: 900;
-        }
-        td.number, th.number { text-align: right; white-space: nowrap; }
-        .line-source { color: var(--muted); font-size: 8px; font-weight: 700; margin-top: 2px; }
-        .table-title {
-          font-weight: 900;
-          padding: 10px 12px 0;
-        }
-        .summary-row td {
-          font-weight: 900;
-          background: #fbfdff;
-        }
-        .green { color: var(--green); }
-        .savings-grid {
-          display: grid;
-          grid-template-columns: 42% 1fr;
-          gap: 20px;
-          padding: 14px;
-        }
-        .bar-chart {
-          height: 170px;
-          display: flex;
-          gap: 28px;
-          align-items: end;
-          border-left: 1px solid #6370a6;
-          border-bottom: 1px solid #6370a6;
-          padding-left: 38px;
-        }
-        .bar { width: 34px; border-radius: 5px 5px 0 0; }
-        .bar.red { background: var(--red); }
-        .bar.green-bg { background: #7ac99d; }
-        .savings-card {
-          background: #f1fbf5;
-          border-radius: 11px;
-          padding: 14px;
-          align-self: center;
-        }
-        .saving-line {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          padding: 8px 0;
-          border-bottom: 1px solid #d7eadf;
-          font-weight: 800;
-        }
-        .compare-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px;
-        }
-        .compare-card {
-          border: 1px solid #ffc0c0;
-          border-radius: 12px;
-          background: #fff;
-          padding: 12px;
-        }
-        .compare-card.after { border-color: #55e59b; }
-        .small-bars {
-          display: flex;
-          align-items: end;
-          gap: 5px;
-          height: 116px;
-          border-bottom: 1px solid #d9e1ef;
-          margin-top: 12px;
-        }
-        .small-bars div {
-          flex: 1;
-          background: linear-gradient(to top, #ffb13c, #ff7a00);
-          border-radius: 4px 4px 0 0;
-        }
-        .energy-bars {
-          height: 210px;
-          display: flex;
-          align-items: end;
-          gap: 10px;
-          border-left: 1px solid #d9e1ef;
-          border-bottom: 1px solid #d9e1ef;
-          padding: 0 10px;
-        }
-        .energy-month {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: end;
-          height: 100%;
-          gap: 5px;
-        }
-        .energy-bar {
-          width: 100%;
-          max-width: 34px;
-          background: linear-gradient(to top, #ffb13c 0 45%, #ff7900 45% 84%, #00a65f 84% 100%);
-          border-radius: 4px 4px 0 0;
-        }
-        .energy-label { font-size: 9px; color: var(--muted); }
-        .text-block {
-          font-size: 11px;
-          line-height: 1.45;
-          color: #26346d;
-          white-space: pre-wrap;
-        }
-        @media print {
-          body { margin: 0; background: #f4f7fc; }
-          .offer-doc-root { padding: 0; background: #f4f7fc; }
-          .offer-page {
-            width: 210mm;
-            min-height: 297mm;
-            margin: 0;
-            box-shadow: none;
-            border-radius: 0;
-            page-break-after: always;
-          }
-          .offer-actions { display: none; }
-        }
-      `}</style>
-
-      {showActions ? (
-        <div className="offer-actions">
-          <a href="/admin/offers">Wróć do ofert</a>
-          <button type="button" onClick={() => window.print()}>Drukuj / zapisz PDF</button>
-        </div>
-      ) : null}
-
-      <section className="offer-page">
-        <div className="brand">
-          <div className="brand-main"><span>Re:</span>form</div>
-          <div className="brand-sub">provided by on<span>Re:</span>volt</div>
-        </div>
-        <div className="title-strip">
-          <span>Oferta</span>
-          <span>Nr {offer.number || '-'}</span>
-        </div>
-
-        <div className="meta-grid">
-          <div className="meta-card"><div className="meta-label">Klient</div><div className="meta-value">{client.clientName || '-'}</div></div>
-          <div className="meta-card"><div className="meta-label">Projekt</div><div className="meta-value">{client.projectTitle || offer.title || '-'}</div></div>
-          <div className="meta-card"><div className="meta-label">Typ</div><div className="meta-value">{clientTypeLabel(client.clientType)}</div></div>
-          <div className="meta-card"><div className="meta-label">Ważna do</div><div className="meta-value">{dateLabel(offer.validUntil)}</div></div>
-        </div>
-
-        <div className="panel hero">
-          <Image
-            src="/img/onrevolt/aniamcja_warstwa_1-min.png"
-            alt="onRevolt system"
-            width={1200}
-            height={750}
-            priority
-            style={{ width: '100%', height: '100%', objectFit: 'contain', opacity: 0.96, transform: 'scale(2.15)' }}
-          />
-        </div>
-
-        <div className="panel">
-          <div className="table-title">Kosztorys</div>
-          <div className="panel-inner">
-            <table>
-              <thead>
-                <tr>
-                  <th>Nr</th>
-                  <th>Pozycja</th>
-                  <th>Model</th>
-                  <th className="number">Ilość</th>
-                  <th className="number">Cena jednostkowa brutto</th>
-                  <th className="number">Wartość brutto</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleLines.map((line, index) => {
-                  const quantity = numberValue(line.quantity);
-                  const gross = numberValue(line.saleGross);
-                  const unit = quantity > 0 ? gross / quantity : gross;
-                  return (
-                    <tr key={`${line.position}-${index}`}>
-                      <td>{line.position || index + 1}</td>
-                      <td>
-                        <div>{line.description || line.name || '-'}</div>
-                        {line.sourceConfigurationName ? (
-                          <div className="line-source">Zakres: {line.sourceConfigurationName}</div>
-                        ) : null}
-                      </td>
-                      <td>{line.model || line.sku || line.producer || '-'}</td>
-                      <td className="number">{quantity}</td>
-                      <td className="number">{money(unit)} PLN</td>
-                      <td className="number">{money(gross)} PLN</td>
-                    </tr>
-                  );
-                })}
-                {lines.length > visibleLines.length ? (
-                  <tr>
-                    <td colSpan={6}>Pozostałe pozycje w pełnym zestawieniu: {lines.length - visibleLines.length}</td>
-                  </tr>
-                ) : null}
-                <tr className="summary-row"><td colSpan={5}>Wartość netto</td><td className="number">{money(calc.totalNet)} PLN</td></tr>
-                {calc.vatBreakdown.map((row: any) => (
-                  <tr className="summary-row" key={row.rate}>
-                    <td colSpan={5}>VAT {numberValue(row.rate) * 100}%</td>
-                    <td className="number">{money(row.vat)} PLN</td>
-                  </tr>
-                ))}
-                <tr className="summary-row"><td colSpan={5}>Koszt systemu brutto</td><td className="number">{money(calc.totalGross)} PLN</td></tr>
-                <tr className="summary-row"><td colSpan={5}>Prognozowana kwota dotacji</td><td className="number">{money(calc.subsidyGross)} PLN</td></tr>
-                <tr className="summary-row"><td colSpan={5}>Prognozowana ulga termomodernizacyjna</td><td className="number">{money(calc.thermoReliefGross)} PLN</td></tr>
-                <tr className="summary-row green"><td colSpan={5}>Prognozowany koszt systemu po dofinansowaniach</td><td className="number">{money(calc.totalAfterSupportGross)} PLN</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="table-title">Twoja prognozowana oszczędność</div>
-          <div className="savings-grid">
-            <div className="bar-chart">
-              <div className="bar red" style={{ height: hasSavings ? '82%' : '12%' }} />
-              <div className="bar green-bg" style={{ height: hasSavings ? `${Math.max(8, Math.min(82, (calc.projectedAnnualBillGross / Math.max(calc.currentAnnualBillGross, 1)) * 82))}%` : '12%' }} />
-            </div>
-            <div className="savings-card">
-              <div className="saving-line"><span>Twój aktualny rachunek roczny</span><span>{money(calc.currentAnnualBillGross)} PLN</span></div>
-              <div className="saving-line"><span>Twój nowy rachunek z systemem</span><span>{money(calc.projectedAnnualBillGross)} PLN</span></div>
-              <div className="saving-line green"><span>Oszczędność {percent(calc.savingsPercent)}%</span><span>{money(calc.annualSavingsGross)} PLN</span></div>
-              <div className="saving-line"><span>Czas zwrotu z inwestycji</span><span>{calc.paybackYears ? `${money(calc.paybackYears)} lat` : '-'}</span></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="offer-page">
-        <div className="brand">
-          <div className="brand-main"><span>Re:</span>form</div>
-          <div className="brand-sub">provided by on<span>Re:</span>volt</div>
-        </div>
-        <div className="title-strip">
-          <span>Porównanie rachunków rocznych</span>
-          <span>Nr {offer.number || '-'}</span>
-        </div>
-
-        <div className="compare-grid">
-          <div className="compare-card">
-            <h3>Aktualna taryfa i system rozliczeniowy</h3>
-            <div className="meta-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-              <div className="meta-card"><div className="meta-label">Taryfa</div><div className="meta-value">{offer.tariffBefore || '-'}</div></div>
-              <div className="meta-card"><div className="meta-label">System</div><div className="meta-value">{offer.settlementBefore || '-'}</div></div>
-            </div>
-            <div className="small-bars">
-              {[35, 52, 72, 64, 45, 84, 68, 55].map((height, index) => <div key={index} style={{ height: `${height}%` }} />)}
-            </div>
-            <div className="saving-line"><span>Aktualny rachunek roczny</span><span>{money(calc.currentAnnualBillGross)} PLN</span></div>
-          </div>
-          <div className="compare-card after">
-            <h3>Nowa taryfa i system rozliczeniowy</h3>
-            <div className="meta-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-              <div className="meta-card"><div className="meta-label">Taryfa</div><div className="meta-value">{offer.tariffAfter || '-'}</div></div>
-              <div className="meta-card"><div className="meta-label">System</div><div className="meta-value">{offer.settlementAfter || '-'}</div></div>
-            </div>
-            <div className="small-bars">
-              {[24, 36, 42, 38, 30, 46, 41, 35].map((height, index) => <div key={index} style={{ height: `${height}%`, background: 'linear-gradient(to top, #88d8a7, #20b86a)' }} />)}
-            </div>
-            <div className="saving-line"><span>Prognozowany rachunek roczny</span><span>{money(calc.projectedAnnualBillGross)} PLN</span></div>
-          </div>
-        </div>
-
-        <div className="panel" style={{ marginTop: 12 }}>
-          <div className="table-title">Opis oferty</div>
-          <div className="panel-inner text-block">
-            <strong>PRZED:</strong> {offer.descriptionBefore || 'Uzupełnij opis aktualnej sytuacji klienta, taryfy, problemów z rozliczeniem i oczekiwań przed wysłaniem oferty.'}
-            {'\n\n'}
-            <strong>PO:</strong> {offer.descriptionAfter || 'Uzupełnij opis proponowanego rozwiązania, sposobu pracy systemu i oczekiwanej poprawy bilansu energii.'}
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="table-title">Status oferty</div>
-          <div className="panel-inner">
-            <div className="meta-grid">
-              <div className="meta-card"><div className="meta-label">Status</div><div className="meta-value">{statusLabel(offer.status)}</div></div>
-              <div className="meta-card"><div className="meta-label">Wersja</div><div className="meta-value">v{offer.version || 1}</div></div>
-              <div className="meta-card"><div className="meta-label">Utworzono</div><div className="meta-value">{dateLabel(offer.createdAt)}</div></div>
-              <div className="meta-card"><div className="meta-label">Adres inwestycji</div><div className="meta-value">{client.investmentAddress || '-'}</div></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="offer-page">
-        <div className="brand">
-          <div className="brand-main"><span>Re:</span>form</div>
-          <div className="brand-sub">provided by on<span>Re:</span>volt</div>
-        </div>
-        <div className="title-strip">
-          <span>Roczny bilans energetyczny</span>
-          <span>Nr {offer.number || '-'}</span>
-        </div>
-
-        <div className="panel">
-          <div className="table-title">Aktualny stan</div>
-          <div className="panel-inner">
-            <div className="energy-bars">
-              {currentBars.map((bar) => (
-                <div className="energy-month" key={bar.label}>
-                  <div className="energy-bar" title={`${money(bar.raw)} kWh`} style={{ height: `${bar.value}%` }} />
-                  <div className="energy-label">{bar.label}</div>
-                </div>
-              ))}
-            </div>
-            <div className="meta-grid" style={{ marginTop: 12 }}>
-              <div className="meta-card"><div className="meta-label">Pliki pomiarowe</div><div className="meta-value">{energy.measurementFiles || 0}</div></div>
-              <div className="meta-card"><div className="meta-label">Miesiące</div><div className="meta-value">{energy.measurementMonths?.length || 0}</div></div>
-              <div className="meta-card"><div className="meta-label">Rachunek roczny</div><div className="meta-value">{money(calc.currentAnnualBillGross)} PLN</div></div>
-              <div className="meta-card"><div className="meta-label">Oferta</div><div className="meta-value">{money(calc.totalAfterSupportGross)} PLN</div></div>
-            </div>
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="table-title">Prognozowany stan z systemem</div>
-          <div className="panel-inner">
-            <div className="energy-bars">
-              {projectedBars.map((bar) => (
-                <div className="energy-month" key={bar.label}>
-                  <div className="energy-bar" title={`${money(bar.raw)} kWh z sieci`} style={{ height: `${bar.value}%`, background: 'linear-gradient(to top, #21b869, #00a3ff)' }} />
-                  <div className="energy-label">{bar.label}</div>
-                </div>
-              ))}
-            </div>
-            <div className="meta-grid" style={{ marginTop: 12 }}>
-              <div className="meta-card"><div className="meta-label">Prognozowany rachunek</div><div className="meta-value">{money(calc.projectedAnnualBillGross)} PLN</div></div>
-              <div className="meta-card"><div className="meta-label">Oszczędność roczna</div><div className="meta-value green">{money(calc.annualSavingsGross)} PLN</div></div>
-              <div className="meta-card"><div className="meta-label">Zwrot</div><div className="meta-value">{calc.paybackYears ? `${money(calc.paybackYears)} lat` : '-'}</div></div>
-              <div className="meta-card"><div className="meta-label">Dane OSD</div><div className="meta-value">{energy.measurementMonths?.join(', ') || 'Do uzupełnienia'}</div></div>
-            </div>
-            {energy.scenario ? (
-              <div className="meta-grid">
-                <div className="meta-card"><div className="meta-label">Wariant</div><div className="meta-value">{energy.scenario.name}</div></div>
-                <div className="meta-card"><div className="meta-label">PV</div><div className="meta-value">{energy.scenario.pvPowerKw} kWp</div></div>
-                <div className="meta-card"><div className="meta-label">Magazyn</div><div className="meta-value">{energy.scenario.batteryCapacityKwh} kWh</div></div>
-                <div className="meta-card"><div className="meta-label">Silnik</div><div className="meta-value">{energy.scenario.engineVersion}</div></div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </section>
+    <div className="re-brand" aria-label={`${mode} dostarczone przez onRevolt`}>
+      <strong><span>Re:</span>{mode.slice(2)}</strong>
+      <small>dostarczone przez on<span>Re:</span>volt</small>
     </div>
   );
 }
+
+function TitleStrip({ children, number }: { children: React.ReactNode; number: string }) {
+  return (
+    <div className="re-title-strip">
+      <strong>{children}</strong>
+      <strong>NR {number}</strong>
+    </div>
+  );
+}
+
+function DataField({ label, value, suffix = '' }: { label: string; value?: unknown; suffix?: string }) {
+  return (
+    <div className="re-field">
+      <span>{label}</span>
+      <strong>{valueOrMissing(value, suffix)}</strong>
+    </div>
+  );
+}
+
+function Panel({ title, children, className = '' }: { title?: string; children: React.ReactNode; className?: string }) {
+  return (
+    <section className={`re-panel ${className}`}>
+      {title ? <h2>{title}</h2> : null}
+      {children}
+    </section>
+  );
+}
+
+function MoneyValue({ value, label }: { value: number; label: string }) {
+  return <span>{money(value, Math.abs(value) < 100 ? 2 : 0)} <em>{label}</em></span>;
+}
+
+function SavingsPanel({ report, extended = false }: { report: ReturnType<typeof buildOfferReport>; extended?: boolean }) {
+  const priceLabel = `PLN ${report.costs.priceLabel}`;
+  const current = report.savings.currentBill;
+  const projected = report.savings.projectedBill;
+  const max = Math.max(current, projected, 1);
+  return (
+    <Panel title="Twoja prognozowana oszczędność" className="re-savings-panel">
+      <div className="re-savings-currency">{priceLabel}</div>
+      <div className="re-savings-layout">
+        <div className="re-savings-chart" aria-label="Porównanie obecnego i prognozowanego rachunku">
+          <div className="re-saving-bar old" style={{ height: `${Math.max(4, current / max * 100)}%` }}><span>{money(current)}</span></div>
+          <div className="re-saving-bar new" style={{ height: `${Math.max(4, projected / max * 100)}%` }}><span>{money(projected)}</span></div>
+        </div>
+        <div className="re-savings-summary">
+          <div className="re-summary-row old"><span>Twój aktualny rachunek roczny</span><strong>{money(current)}</strong></div>
+          <div className="re-summary-row new"><span>Twój nowy rachunek z systemem</span><strong>{money(projected)}</strong></div>
+          <div className="re-summary-row accent"><span>Oszczędność {money(report.savings.percent, 1)}%</span><strong>{money(report.savings.annual)}</strong></div>
+          <div className="re-summary-row"><span>Prognozowany czas zwrotu z inwestycji</span><strong>{report.savings.paybackYears ? `${money(report.savings.paybackYears, 1)} lat` : 'Brak danych'}</strong></div>
+          {extended ? (
+            <div className="re-deposit-details">
+              <div><span>Łączna zgromadzona wartość depozytu</span><strong>{money(report.deposit.generated)}</strong></div>
+              <div><span>Wykorzystane na pokrycie energii pobranej</span><strong>{money(report.deposit.used)}</strong></div>
+              <div><span>Niewykorzystana wartość depozytu</span><strong>{money(report.deposit.remaining)}</strong></div>
+              <div><span>Zwrot części depozytu</span><strong>{money(report.deposit.payout)}</strong></div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function CostTable({ report }: { report: ReturnType<typeof buildOfferReport> }) {
+  return (
+    <Panel title="Kosztorys" className="re-cost-panel">
+      <table className="re-table">
+        <thead>
+          <tr><th>Nr</th><th>Pozycja</th><th>Model</th><th className="num">Ilość</th><th className="num">Cena jednostkowa {report.costs.priceLabel}</th><th className="num">Wartość {report.costs.priceLabel}</th></tr>
+        </thead>
+        <tbody>
+          {report.costs.rows.length ? report.costs.rows.map((row, index) => (
+            <tr key={`${row.description}-${index}`}>
+              <td>{index + 1}</td>
+              <td>{row.description}{row.source ? <small>{row.source}</small> : null}</td>
+              <td><em>{row.model || '-'}</em></td>
+              <td className="num">{quantity(row.quantity)}</td>
+              <td className="num">{money(row.unitValue, 2)} PLN</td>
+              <td className="num">{money(row.value, 2)} PLN</td>
+            </tr>
+          )) : <tr><td colSpan={6}>Brak pozycji kosztorysu w zapisanym snapshotcie oferty.</td></tr>}
+          <tr className="total"><td colSpan={5}>Koszt systemu</td><td className="num">{money(report.costs.systemValue, 2)} PLN</td></tr>
+          {!report.variant.includes('B2B') && report.costs.subsidy > 0 ? <tr className="total"><td colSpan={5}>Prognozowana kwota dotacji</td><td className="num">{money(report.costs.subsidy, 2)} PLN</td></tr> : null}
+          {!report.variant.includes('B2B') && report.costs.thermoRelief > 0 ? <tr className="total"><td colSpan={5}>Prognozowana ulga termomodernizacyjna</td><td className="num">{money(report.costs.thermoRelief, 2)} PLN</td></tr> : null}
+          {!report.variant.includes('B2B') && (report.costs.subsidy > 0 || report.costs.thermoRelief > 0) ? <tr className="total green"><td colSpan={5}>Prognozowany koszt systemu po dofinansowaniach</td><td className="num">{money(report.costs.afterSupport, 2)} PLN</td></tr> : null}
+        </tbody>
+      </table>
+    </Panel>
+  );
+}
+
+function DescriptionPanel({ report }: { report: ReturnType<typeof buildOfferReport> }) {
+  return (
+    <Panel title="Opis oferty" className="re-description">
+      <p><strong className="before">PRZED:</strong> {report.description.before || 'Opis stanu obecnego nie został jeszcze uzupełniony.'}</p>
+      <p><strong className="after">PO:</strong> {report.description.after || 'Opis proponowanego rozwiązania nie został jeszcze uzupełniony.'}</p>
+    </Panel>
+  );
+}
+
+function ReportPage({ report }: { report: ReturnType<typeof buildOfferReport> }) {
+  const b2b = report.variant === 'B2B';
+  const fullAddress = [report.client.address, [report.client.postalCode, report.client.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const currentVariable = report.bills.current.energy + report.bills.current.distribution;
+  return (
+    <section className="offer-page report-page">
+      <Brand mode="Report" />
+      <TitleStrip number={report.number}>{report.client.name}</TitleStrip>
+      <div className="re-report-top">
+        <div className="re-report-person">
+          <Panel title={b2b ? 'Dane firmy' : 'Dane osobowe'}>
+            <DataField label={b2b ? 'Nazwa firmy' : 'Imię i nazwisko'} value={report.client.name} />
+            {report.client.taxId ? <DataField label="NIP" value={report.client.taxId} /> : null}
+            <DataField label="Adres" value={fullAddress || report.client.investmentAddress} />
+          </Panel>
+          <Panel title="Dane kontaktowe">
+            <DataField label="Mail" value={report.client.email} />
+            <DataField label="Telefon" value={report.client.phone} />
+          </Panel>
+        </div>
+        <div className="re-cover-image">
+          {report.client.coverImageDocumentId ? (
+            // The print document needs the original file dimensions without Next.js image transformations.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={`/api/documents/${report.client.coverImageDocumentId}/file`} alt={report.client.coverImageTitle || 'Obiekt inwestycji'} />
+          ) : (
+            <div><strong>Obiekt inwestycji</strong><span>{report.client.investmentAddress || 'Zdjęcie obiektu nie zostało dodane w wizji lokalnej.'}</span></div>
+          )}
+        </div>
+      </div>
+
+      <Panel title="Dane środowiskowe" className="re-grid-panel">
+        <div className="re-data-grid three">
+          <DataField label="Rodzaj terenu" value={report.report.terrain} />
+          <DataField label={b2b ? 'Rodzaj obiektu' : 'Rodzaj dachu'} value={b2b ? report.report.buildingType : report.report.roofType} />
+          <DataField label={b2b ? 'Rodzaj dachu' : 'Typ budynku'} value={b2b ? report.report.roofType : report.report.buildingType} />
+          {b2b ? <DataField label="Profil działalności" value={report.report.activityProfile} /> : null}
+          {b2b ? <DataField label="Cykl pracy - liczba zmian" value={report.report.workCycle} /> : null}
+          {b2b ? <DataField label="Własny transformator" value={report.report.transformer} /> : null}
+        </div>
+      </Panel>
+
+      <Panel title="Dane rozliczeniowe" className="re-grid-panel">
+        <div className="re-data-grid three">
+          <DataField label="Moc przyłączeniowa" value={report.report.connectionPowerKw} suffix=" kW" />
+          <DataField label="System rozliczeniowy" value={report.report.settlement} />
+          <DataField label="Taryfa" value={report.report.tariff} />
+          <DataField label="Operator systemu dystrybucyjnego" value={report.report.operator} />
+          <DataField label="Dostawca energii elektrycznej" value={report.report.supplier} />
+          <DataField label="Rodzaj przyłącza" value={report.report.phaseCount ? `${report.report.phaseCount}-fazowe` : ''} />
+        </div>
+      </Panel>
+
+      <div className="re-report-bottom">
+        <div>
+          {!b2b ? (
+            <Panel title="Energia cieplna" className="re-grid-panel">
+              <div className="re-data-grid two"><DataField label="Źródło ciepła" value={report.report.heatingSource} /><DataField label="Rodzaj źródła ciepła" value={report.report.heatingDetails} /></div>
+            </Panel>
+          ) : null}
+          <Panel title="Urządzenia posiadane/planowane o dużym poborze energii" className="re-grid-panel re-loads">
+            <div className="re-data-grid two"><DataField label="Posiadane urządzenia" value={report.report.currentLoads} /><DataField label="Planowane urządzenia" value={report.report.plannedLoads} /></div>
+          </Panel>
+        </div>
+        <Panel title="Roczny rachunek za energię" className="re-bill-box">
+          <div><small>Opłaty stałe</small><MoneyValue value={report.bills.current.fixed} label={`PLN ${report.costs.priceLabel}`} /></div>
+          <div><small>Zakup i dystrybucja energii</small><MoneyValue value={currentVariable} label={`PLN ${report.costs.priceLabel}`} /></div>
+          <div className="re-current-bill"><small>Twój rachunek</small><MoneyValue value={report.bills.current.total} label={`PLN ${report.costs.priceLabel}`} /></div>
+        </Panel>
+      </div>
+
+      <Panel title="Instalacja fotowoltaiczna" className="re-grid-panel">
+        <div className="re-data-grid three"><DataField label="Instalacja fotowoltaiczna" value={report.report.hasPv ? 'Tak' : 'Nie'} /><DataField label="Moc istniejącej instalacji" value={report.report.existingPvKw} suffix=" kWp" /><DataField label="Miejsce instalacji" value={report.report.pvPlace} /></div>
+      </Panel>
+    </section>
+  );
+}
+
+function SystemPage({ report }: { report: ReturnType<typeof buildOfferReport> }) {
+  const b2b = report.variant === 'B2B';
+  return (
+    <section className="offer-page system-page">
+      <Brand />
+      <TitleStrip number={report.number}>{report.client.name}</TitleStrip>
+      <div className="re-system-hero">
+        {/* The source artwork must stay pixel-identical in the generated PDF. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={b2b ? '/img/onrevolt/offers/reform-b2b-system.png' : '/img/onrevolt/offers/reform-b2c-system.png'} alt={b2b ? 'System Re:form dla obiektu przemysłowego' : 'System Re:form dla domu'} />
+      </div>
+      <CostTable report={report} />
+      {b2b ? <DescriptionPanel report={report} /> : <SavingsPanel report={report} extended />}
+    </section>
+  );
+}
+
+function BillColumn({ report, after }: { report: ReturnType<typeof buildOfferReport>; after?: boolean }) {
+  const tariff = after ? report.tariffs.projected : report.tariffs.current;
+  const bill = after ? report.bills.projected : report.bills.current;
+  const billEnergy = after ? report.bills.projected.energyCash : report.bills.current.energy;
+  return (
+    <div className={`re-bill-column ${after ? 'after' : 'before'}`}>
+      <h2>{after ? 'Nowa taryfa i system rozliczeniowy' : 'Aktualna taryfa i system rozliczeniowy'}</h2>
+      <div className="re-data-grid two">
+        <DataField label="Taryfa" value={after ? report.tariffs.afterName : report.tariffs.before} />
+        <DataField label="System rozliczeniowy" value={after ? report.tariffs.settlementAfter : report.tariffs.settlementBefore} />
+      </div>
+      <h3>Koszt zakupu 1 kWh <em>(PLN {report.costs.priceLabel})</em></h3>
+      <div className="re-rate-list">
+        <div><span>Zakup energii</span><strong>{money(tariff.energyPerKwh, 4)} PLN</strong></div>
+        <div><span>Dystrybucja energii</span><strong>{money(tariff.distributionPerKwh, 4)} PLN</strong></div>
+        <div><span>Opłaty stałe / miesiąc</span><strong>{money(tariff.fixedMonthly, 2)} PLN</strong></div>
+        <div className="total"><span>Całkowity koszt zakupu 1 kWh</span><strong>{money(tariff.totalPerKwh, 4)} PLN</strong></div>
+      </div>
+      <h3>{after ? 'Prognozowany' : 'Aktualny'} rachunek roczny <em>(PLN {report.costs.priceLabel})</em></h3>
+      <div className="re-bill-visual">
+        <div className="re-bill-stack">
+          <i style={{ height: `${Math.max(5, billEnergy / Math.max(numberValue(bill.total), 1) * 100)}%` }} />
+          <i style={{ height: `${Math.max(5, numberValue(bill.distribution) / Math.max(numberValue(bill.total), 1) * 100)}%` }} />
+          <i style={{ height: `${Math.max(5, numberValue(bill.fixed) / Math.max(numberValue(bill.total), 1) * 100)}%` }} />
+        </div>
+        <div className="re-rate-list bill">
+          <div><span>Zużycie energii</span><strong>{money(bill.consumptionKwh)} kWh</strong></div>
+          <div><span>Autokonsumpcja z PV</span><strong>{money(bill.pvDirectKwh)} kWh</strong></div>
+          {after ? <div><span>Autokonsumpcja z magazynu</span><strong>{money(report.bills.projected.batteryKwh)} kWh</strong></div> : null}
+          <div><span>Zakup z sieci</span><strong>{money(bill.gridImportKwh)} kWh</strong></div>
+          <div><span>Zakup energii</span><strong>{money(billEnergy)} PLN</strong></div>
+          <div><span>Dystrybucja energii</span><strong>{money(bill.distribution)} PLN</strong></div>
+          <div><span>Opłaty stałe</span><strong>{money(bill.fixed)} PLN</strong></div>
+          <div className="total"><span>Całkowity rachunek</span><strong>{money(bill.total)} PLN</strong></div>
+          {after ? <div className="green"><span>Oszczędność</span><strong>{money(report.savings.annual)} PLN</strong></div> : null}
+        </div>
+      </div>
+      {after ? (
+        <div className="re-deposit-mini">
+          <strong>Wartość skumulowanego depozytu: {money(report.deposit.generated)} PLN</strong>
+          <span>Energia oddana: {money(report.deposit.exportKwh)} kWh</span>
+          <span>Wykorzystane: {money(report.deposit.used)} PLN / {money(report.deposit.importCoveredKwh)} kWh</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ComparisonPage({ report }: { report: ReturnType<typeof buildOfferReport> }) {
+  const b2b = report.variant === 'B2B';
+  return (
+    <section className="offer-page comparison-page">
+      <Brand />
+      <TitleStrip number={report.number}>Porównanie rachunków rocznych</TitleStrip>
+      <div className="re-comparison-grid"><BillColumn report={report} /><BillColumn report={report} after /></div>
+      {b2b ? <SavingsPanel report={report} extended /> : <DescriptionPanel report={report} />}
+    </section>
+  );
+}
+
+function AnnualChart({ months }: { months: ReturnType<typeof buildOfferReport>['energy']['currentMonths'] }) {
+  const width = 760;
+  const height = 270;
+  const plotTop = 20;
+  const plotBottom = 225;
+  const maximum = Math.max(1, ...months.flatMap((month) => [month.consumptionKwh, month.pvGenerationKwh]));
+  const y = (value: number) => plotBottom - value / maximum * (plotBottom - plotTop);
+  const points = months.map((month, index) => `${42 + index * 61},${y(month.consumptionKwh)}`).join(' ');
+  const pvPoints = months.map((month, index) => `${42 + index * 61},${y(month.pvGenerationKwh)}`).join(' ');
+  return (
+    <svg className="re-annual-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Roczny wykres przepływów energii">
+      {Array.from({ length: 6 }, (_, index) => {
+        const lineY = plotTop + index * (plotBottom - plotTop) / 5;
+        return <line key={index} x1="26" x2="748" y1={lineY} y2={lineY} className="grid" />;
+      })}
+      {months.map((month, index) => {
+        const x = 27 + index * 61;
+        const gridHeight = month.gridImportKwh / maximum * (plotBottom - plotTop);
+        const directHeight = month.directPvKwh / maximum * (plotBottom - plotTop);
+        const batteryHeight = month.batteryKwh / maximum * (plotBottom - plotTop);
+        return (
+          <g key={month.month}>
+            <rect x={x} y={plotBottom - gridHeight} width="30" height={gridHeight} className="grid-import" />
+            <rect x={x} y={plotBottom - gridHeight - directHeight} width="30" height={directHeight} className="direct-pv" />
+            <rect x={x} y={plotBottom - gridHeight - directHeight - batteryHeight} width="30" height={batteryHeight} className="battery" />
+            <text x={x + 15} y="248" textAnchor="middle">{monthNames[month.month - 1]?.slice(0, 3)}</text>
+          </g>
+        );
+      })}
+      <polyline points={points} className="consumption-line" />
+      <polyline points={pvPoints} className="pv-line" />
+    </svg>
+  );
+}
+
+function Legend({ report, projected }: { report: ReturnType<typeof buildOfferReport>; projected: boolean }) {
+  const months = projected ? report.energy.projectedMonths : report.energy.currentMonths;
+  return (
+    <div className="re-energy-legend">
+      <div><i className="line consumption" /><span>Zużycie energii</span><strong>{money(sum(months.map((month) => month.consumptionKwh)))} kWh</strong></div>
+      <div><i className="line pv" /><span>Produkcja z PV</span><strong>{money(sum(months.map((month) => month.pvGenerationKwh)))} kWh</strong></div>
+      <div><i className="dot direct" /><span>Autokonsumpcja z PV</span><strong>{money(sum(months.map((month) => month.directPvKwh)))} kWh</strong></div>
+      <div><i className="dot battery" /><span>Autokonsumpcja z magazynu</span><strong>{money(sum(months.map((month) => month.batteryKwh)))} kWh</strong></div>
+    </div>
+  );
+}
+
+function MonthSummary({ months }: { months: ReturnType<typeof buildOfferReport>['energy']['currentMonths'] }) {
+  const rows = [
+    ['Produkcja z PV', 'pvGenerationKwh', 'pv'],
+    ['Całkowite zużycie energii', 'consumptionKwh', 'consumption'],
+    ['Energia oddana do sieci', 'exportKwh', 'export'],
+    ['Autokonsumpcja z PV', 'directPvKwh', 'direct'],
+    ['Autokonsumpcja z magazynu', 'batteryKwh', 'battery'],
+    ['Energia pobrana z sieci', 'gridImportKwh', 'import'],
+  ] as const;
+  return (
+    <Panel title="Podsumowanie roczne" className="re-month-summary">
+      <div className="re-month-head"><span />{monthNames.map((name) => <strong key={name}>{name.slice(0, 3)}</strong>)}</div>
+      {rows.map(([label, key, tone]) => {
+        const maximum = Math.max(1, ...months.map((month) => numberValue(month[key])));
+        return (
+          <div className="re-month-row" key={key}>
+            <span>{label} (kWh)</span>
+            {months.map((month) => {
+              const value = numberValue(month[key]);
+              return <div key={month.month}><i className={tone} style={{ opacity: value > 0 ? 0.22 + value / maximum * 0.78 : 0.08 }} /><small>{value > 0 ? money(value) : '-'}</small></div>;
+            })}
+          </div>
+        );
+      })}
+    </Panel>
+  );
+}
+
+function Characteristics({ report }: { report: ReturnType<typeof buildOfferReport> }) {
+  const item = (label: string, month: any) => <DataField label={label} value={month ? `${monthNames[month.month - 1]} · ~${money(month.consumptionKwh)} kWh` : ''} />;
+  return (
+    <Panel title="Charakterystyka zużycia" className="re-grid-panel re-characteristics">
+      <div className="re-data-grid three">
+        {item('Miesiąc o największym zużyciu', report.energy.characteristics.high)}
+        {item('Miesiąc o średnim zużyciu', report.energy.characteristics.medium)}
+        {item('Miesiąc o małym zużyciu', report.energy.characteristics.low)}
+      </div>
+    </Panel>
+  );
+}
+
+function AnnualBalancePage({ report, projected }: { report: ReturnType<typeof buildOfferReport>; projected: boolean }) {
+  const months = projected ? report.energy.projectedMonths : report.energy.currentMonths;
+  const borderClass = projected ? 'projected' : 'current';
+  const exportKwh = sum(months.map((month) => month.exportKwh));
+  const importKwh = sum(months.map((month) => month.gridImportKwh));
+  return (
+    <section className="offer-page annual-page">
+      <Brand />
+      <TitleStrip number={report.number}>Roczny bilans energetyczny - {projected ? 'stan po bilansowaniu' : 'stan aktualny'}</TitleStrip>
+      <Panel title={`Okres (${report.energy.period})`} className={`re-annual-panel ${borderClass}`}>
+        {months.length ? <AnnualChart months={months} /> : <div className="re-no-data">Brak zapisanego wyniku RE dla tej oferty.</div>}
+        <h3>Przepływ energii (kWh)</h3>
+        <Legend report={report} projected={projected} />
+        <h3>Rozliczenie energii (PLN {report.costs.priceLabel})</h3>
+        <div className="re-settlement-grid">
+          <DataField label="Energia oddana do sieci" value={exportKwh ? `${money(exportKwh)} kWh` : ''} />
+          <DataField label="Wartość energii oddanej" value={exportKwh ? `${money(projected ? report.deposit.generated : 0)} PLN` : ''} />
+          <DataField label="Średnia cena 1 kWh" value={exportKwh ? `${money(report.energy.averageExportPrice, 2)} PLN/kWh` : ''} />
+          <DataField label="Energia pobrana z sieci" value={importKwh ? `${money(importKwh)} kWh` : ''} />
+          <DataField label="Wartość energii pobranej" value={importKwh ? `${money(projected ? report.bills.projected.energyDue : report.bills.current.energy)} PLN` : ''} />
+          <DataField label="Średnia cena 1 kWh" value={importKwh ? `${money(projected ? report.energy.averageImportPrice : report.tariffs.current.energyPerKwh, 2)} PLN/kWh` : ''} />
+        </div>
+      </Panel>
+      <MonthSummary months={months} />
+      <Characteristics report={report} />
+    </section>
+  );
+}
+
+function DailyChart({ data }: { data: ReturnType<typeof buildOfferReport>['energy']['summerWeekday'] }) {
+  if (!data.available) return <div className="re-no-data">Brak profilu godzinowego ENEA rozdzielonego na ten rodzaj dnia.</div>;
+  const width = 760;
+  const plotBottom = 185;
+  const maximum = Math.max(1, ...data.consumption, ...data.pvGeneration);
+  const y = (value: number) => plotBottom - value / maximum * 155;
+  const consumptionPoints = data.consumption.map((value, hour) => `${25 + hour * 31},${y(value)}`).join(' ');
+  const pvPoints = data.pvGeneration.map((value, hour) => `${25 + hour * 31},${y(value)}`).join(' ');
+  return (
+    <svg className="re-daily-chart" viewBox={`0 0 ${width} 220`} role="img" aria-label="Godzinowy profil dnia">
+      {Array.from({ length: 5 }, (_, index) => <line key={index} x1="18" x2="748" y1={30 + index * 39} y2={30 + index * 39} className="grid" />)}
+      {data.consumption.map((_, hour) => {
+        const direct = data.directPv[hour] / maximum * 155;
+        const grid = data.gridImport[hour] / maximum * 155;
+        return (
+          <g key={hour}>
+            <rect x={14 + hour * 31} y={plotBottom - grid} width="20" height={grid} className="grid-import" />
+            <rect x={14 + hour * 31} y={plotBottom - grid - direct} width="20" height={direct} className="direct-pv" />
+            <text x={24 + hour * 31} y="207" textAnchor="middle">{String(hour).padStart(2, '0')}</text>
+          </g>
+        );
+      })}
+      <polyline points={consumptionPoints} className="consumption-line" />
+      <polyline points={pvPoints} className="pv-line" />
+    </svg>
+  );
+}
+
+function DailyPanel({ title, data }: { title: string; data: ReturnType<typeof buildOfferReport>['energy']['summerWeekday'] }) {
+  const label = data.year ? `${monthNames[data.month - 1]} ${data.year}` : monthNames[data.month - 1];
+  return (
+    <Panel title={`${title} (${label}) - dane przed bilansowaniem`} className="re-daily-panel">
+      <DailyChart data={data} />
+      <div className="re-energy-legend daily">
+        <div><i className="line consumption" /><span>Zużycie energii</span><strong>{data.available ? `${money(sum(data.consumption), 2)} kWh` : '-'}</strong></div>
+        <div><i className="line pv" /><span>Produkcja z PV</span><strong>{data.available ? `${money(sum(data.pvGeneration), 2)} kWh` : '-'}</strong></div>
+        <div><i className="dot direct" /><span>Autokonsumpcja z PV</span><strong>{data.available ? `${money(sum(data.directPv), 2)} kWh` : '-'}</strong></div>
+        <div><i className="dot export" /><span>Energia oddana do sieci</span><strong>{data.available ? `${money(sum(data.export), 2)} kWh` : '-'}</strong></div>
+        <div><i className="dot import" /><span>Energia pobrana z sieci</span><strong>{data.available ? `${money(sum(data.gridImport), 2)} kWh` : '-'}</strong></div>
+      </div>
+    </Panel>
+  );
+}
+
+function DailyReviewPage({ report, season }: { report: ReturnType<typeof buildOfferReport>; season: 'summer' | 'winter' }) {
+  const summer = season === 'summer';
+  return (
+    <section className="offer-page daily-page">
+      <Brand mode="Review" />
+      <TitleStrip number={report.number}>Analiza energetyczna - dzień {summer ? 'letni' : 'zimowy'}</TitleStrip>
+      <DailyPanel title={`Dzień ${summer ? 'letni' : 'zimowy'} - roboczy`} data={summer ? report.energy.summerWeekday : report.energy.winterWeekday} />
+      <DailyPanel title={`Dzień ${summer ? 'letni' : 'zimowy'} - wolny`} data={summer ? report.energy.summerWeekend : report.energy.winterWeekend} />
+    </section>
+  );
+}
+
+export default function OfferDocument({ offer, compact = false, showActions = false }: OfferDocumentProps) {
+  const report = buildOfferReport(offer);
+  const b2b = report.variant === 'B2B';
+  return (
+    <div className={`offer-doc-root${compact ? ' compact' : ''}`}>
+      <style>{styles}</style>
+      {showActions ? (
+        <div className="offer-actions">
+          <a href="/admin/offers">Wróć do ofert</a>
+          <span>Szablon {report.templateVersion}</span>
+          <button type="button" onClick={() => window.print()}>Drukuj / zapisz PDF</button>
+        </div>
+      ) : null}
+      <ReportPage report={report} />
+      <SystemPage report={report} />
+      <ComparisonPage report={report} />
+      <AnnualBalancePage report={report} projected={false} />
+      <AnnualBalancePage report={report} projected />
+      {b2b ? <DailyReviewPage report={report} season="summer" /> : null}
+      {b2b ? <DailyReviewPage report={report} season="winter" /> : null}
+    </div>
+  );
+}
+
+const styles = `
+  .offer-doc-root { --ink:#17245d; --muted:#8190b7; --line:#dbe3f1; --page:#f1f4fa; --green:#00a454; --mint:#58d79d; --orange:#ff7a00; --amber:#ffb52e; --red:#ff6f6f; color:var(--ink); font-family:Arial,Helvetica,sans-serif; background:#e8edf5; padding:24px; overflow-x:auto; }
+  .offer-page { width:210mm; min-height:297mm; margin:0 auto 24px; padding:10mm; box-sizing:border-box; background:var(--page); page-break-after:always; box-shadow:0 18px 45px rgba(20,33,82,.16); overflow:hidden; }
+  .offer-page:last-child { page-break-after:auto; }
+  .offer-actions { width:210mm; margin:0 auto 16px; display:flex; align-items:center; justify-content:flex-end; gap:10px; }
+  .offer-actions a,.offer-actions button { border:1px solid #cdd8ef; border-radius:7px; background:#fff; color:var(--ink); padding:10px 14px; font-weight:800; text-decoration:none; cursor:pointer; }
+  .offer-actions span { margin-right:auto; color:#66749a; font-size:12px; }
+  .re-brand { display:flex; align-items:baseline; gap:8px; margin-bottom:8px; color:#11131b; }
+  .re-brand strong { font-size:30px; font-weight:900; line-height:1; letter-spacing:0; }
+  .re-brand strong span { color:var(--green); }
+  .re-brand small { font-size:14px; font-weight:800; }
+  .re-brand small span { color:#7b44ff; }
+  .re-title-strip { min-height:38px; display:flex; justify-content:space-between; align-items:center; gap:16px; background:#fff; border-radius:9px; padding:7px 14px; margin-bottom:8px; font-size:14px; }
+  .re-panel { background:#fff; border-radius:10px; padding:10px 12px; margin-bottom:8px; box-sizing:border-box; }
+  .re-panel h2 { margin:0 0 7px; font-size:13px; line-height:1.15; }
+  .re-panel h3 { margin:8px 0 5px; font-size:11px; }
+  .re-field { min-width:0; background:#fbfcff; border-radius:7px; padding:7px 9px; }
+  .re-field span { display:block; color:var(--muted); font-size:8px; line-height:1.2; }
+  .re-field strong { display:block; margin-top:3px; font-size:10px; line-height:1.25; overflow-wrap:anywhere; }
+  .re-data-grid { display:grid; gap:6px; }
+  .re-data-grid.two { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .re-data-grid.three { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .re-grid-panel { padding:9px 11px; }
+  .re-report-top { display:grid; grid-template-columns:34% 1fr; gap:8px; }
+  .re-report-person .re-panel { height:calc(50% - 4px); }
+  .re-cover-image { height:278px; border-radius:10px; overflow:hidden; background:#e7ecf5; }
+  .re-cover-image img { width:100%; height:100%; object-fit:cover; }
+  .re-cover-image>div { height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:30px; text-align:center; color:#6f7aa5; }
+  .re-cover-image strong { font-size:18px; margin-bottom:10px; }
+  .re-cover-image span { font-size:11px; }
+  .re-report-bottom { display:grid; grid-template-columns:2fr 1fr; gap:8px; }
+  .re-loads { min-height:118px; }
+  .re-bill-box { display:flex; flex-direction:column; gap:6px; }
+  .re-bill-box>div { display:flex; flex-direction:column; gap:4px; border-bottom:1px solid #edf1f7; padding:5px 3px; }
+  .re-bill-box small { color:var(--muted); font-size:8px; }
+  .re-bill-box span { display:flex; justify-content:space-between; align-items:baseline; font-size:14px; }
+  .re-bill-box em { font-size:9px; font-style:normal; }
+  .re-current-bill { border:1px solid var(--red)!important; border-radius:7px; color:#ff3030; padding:8px!important; }
+  .re-system-hero { height:245px; margin-bottom:8px; background:#fff; border-radius:10px; overflow:hidden; }
+  .re-system-hero img { width:100%; height:100%; object-fit:contain; }
+  .re-cost-panel { padding:8px; }
+  .re-table { width:100%; border-collapse:collapse; font-size:8px; }
+  .re-table th,.re-table td { border:1px solid var(--line); padding:5px 6px; vertical-align:top; }
+  .re-table th { text-align:left; font-weight:900; background:#fbfcff; }
+  .re-table .num { text-align:right; white-space:nowrap; }
+  .re-table td small { display:block; color:#7c87a9; margin-top:3px; }
+  .re-table td em { font-style:italic; }
+  .re-table tr.total td { font-weight:900; }
+  .re-table tr.green td { color:#049447; }
+  .re-savings-panel { position:relative; }
+  .re-savings-currency { position:absolute; right:14px; top:10px; font-size:8px; font-weight:800; }
+  .re-savings-layout { display:grid; grid-template-columns:40% 1fr; gap:22px; min-height:190px; }
+  .re-savings-chart { height:165px; margin:14px 25px 0; border-left:1px solid #7180a8; border-bottom:1px solid #7180a8; display:flex; align-items:flex-end; justify-content:center; gap:38px; }
+  .re-saving-bar { position:relative; width:38px; min-height:5px; }
+  .re-saving-bar.old { background:#ff9292; }
+  .re-saving-bar.new { background:#7ecb9d; }
+  .re-saving-bar span { position:absolute; top:-16px; left:50%; transform:translateX(-50%); font-size:8px; font-weight:900; white-space:nowrap; }
+  .re-savings-summary { align-self:center; }
+  .re-summary-row { display:flex; justify-content:space-between; gap:10px; padding:5px 8px; font-size:9px; }
+  .re-summary-row.old { background:#fff0f0; border-radius:7px 7px 0 0; }
+  .re-summary-row.new { background:#effaf4; }
+  .re-summary-row.accent { color:var(--green); background:#effaf4; font-size:11px; }
+  .re-deposit-details { margin-top:7px; padding:7px 8px; background:#f8f5ff; border-radius:7px; }
+  .re-deposit-details div { display:flex; justify-content:space-between; gap:8px; font-size:8px; padding:2px 0; }
+  .re-description { font-size:9px; line-height:1.38; }
+  .re-description p { margin:0 0 8px; white-space:pre-wrap; }
+  .re-description p:last-child { margin-bottom:0; }
+  .re-description strong.before { color:#ff3b30; }
+  .re-description strong.after { color:var(--green); }
+  .re-comparison-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px; }
+  .re-bill-column { background:#fff; border:1px solid #ff9d9d; border-radius:10px; padding:10px; }
+  .re-bill-column.after { border-color:#4fd894; }
+  .re-bill-column h2 { margin:0 0 7px; font-size:13px; }
+  .re-bill-column h3 { font-size:11px; margin:8px 0 5px; }
+  .re-bill-column h3 em { font-size:8px; font-weight:400; }
+  .re-rate-list>div { display:flex; justify-content:space-between; gap:8px; padding:3px 0; font-size:8px; }
+  .re-rate-list>div.total { border-top:1px solid #26346d; margin-top:3px; padding-top:5px; font-weight:900; font-size:9px; }
+  .re-rate-list>div.green { color:var(--green); }
+  .re-bill-visual { display:grid; grid-template-columns:54px 1fr; gap:10px; }
+  .re-bill-stack { height:220px; display:flex; flex-direction:column-reverse; justify-content:flex-start; background:#f4f6fb; align-self:end; }
+  .re-bill-stack i { display:block; min-height:4px; }
+  .re-bill-stack i:nth-child(1) { background:var(--orange); }
+  .re-bill-stack i:nth-child(2) { background:#ffb463; }
+  .re-bill-stack i:nth-child(3) { background:#9ea8c2; }
+  .re-rate-list.bill { align-self:center; }
+  .re-deposit-mini { display:flex; flex-direction:column; gap:3px; margin-top:7px; padding:7px; border-radius:7px; background:#f8f5ff; font-size:8px; }
+  .re-annual-panel { border:1px solid #ff9d9d; }
+  .re-annual-panel.projected { border-color:#4fd894; }
+  .re-annual-chart,.re-daily-chart { display:block; width:100%; height:auto; }
+  svg .grid { stroke:#dbe2ef; stroke-width:1; }
+  svg text { fill:#17245d; font-size:8px; }
+  svg .grid-import { fill:var(--orange); }
+  svg .direct-pv { fill:var(--amber); }
+  svg .battery { fill:#54d99b; }
+  svg .consumption-line { fill:none; stroke:#99a6ca; stroke-width:2; }
+  svg .pv-line { fill:none; stroke:#ffad19; stroke-width:2; }
+  .re-energy-legend { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+  .re-energy-legend>div { padding:6px 8px; border-right:1px solid var(--line); display:grid; grid-template-columns:10px 1fr; gap:2px 5px; align-items:center; font-size:8px; }
+  .re-energy-legend>div:last-child { border-right:0; }
+  .re-energy-legend strong { grid-column:2; }
+  .re-energy-legend i.line { width:10px; height:2px; }
+  .re-energy-legend i.line.consumption { background:#99a6ca; }
+  .re-energy-legend i.line.pv { background:#ffad19; }
+  .re-energy-legend i.dot { width:7px; height:7px; border-radius:50%; }
+  .re-energy-legend i.direct { background:var(--amber); }
+  .re-energy-legend i.battery { background:#54d99b; }
+  .re-energy-legend i.export { background:var(--green); }
+  .re-energy-legend i.import { background:var(--orange); }
+  .re-settlement-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2px; }
+  .re-month-summary { padding:9px; }
+  .re-month-head,.re-month-row { display:grid; grid-template-columns:145px repeat(12,1fr); gap:2px; align-items:end; }
+  .re-month-head strong { font-size:7px; text-align:center; }
+  .re-month-row { margin-bottom:5px; }
+  .re-month-row>span { font-size:8px; }
+  .re-month-row>div { text-align:center; min-width:0; }
+  .re-month-row i { display:block; height:15px; background:#cbd3e3; }
+  .re-month-row i.pv { background:#ffa000; }
+  .re-month-row i.export { background:#009b4c; }
+  .re-month-row i.direct { background:#ffb52e; }
+  .re-month-row i.battery { background:#54d99b; }
+  .re-month-row i.import { background:#f47700; }
+  .re-month-row small { display:block; margin-top:2px; font-size:6px; }
+  .re-characteristics { margin-bottom:0; }
+  .re-no-data { min-height:170px; display:flex; align-items:center; justify-content:center; color:#7784a8; font-size:11px; text-align:center; }
+  .re-daily-panel { padding:9px 12px; }
+  .re-daily-page .re-daily-panel { min-height:470px; }
+  .re-energy-legend.daily { grid-template-columns:repeat(3,1fr); }
+  .re-energy-legend.daily>div:nth-child(3) { border-right:0; }
+  .re-energy-legend.daily>div:nth-child(n+4) { border-top:1px solid var(--line); }
+  .compact { padding:10px; }
+  .compact .offer-page { width:100%; min-width:760px; min-height:auto; margin-bottom:14px; padding:20px; box-shadow:none; border-radius:8px; }
+  @page { size:A4; margin:0; }
+  @media print { body { margin:0!important; background:var(--page)!important; } .offer-doc-root { padding:0; background:var(--page); overflow:visible; } .offer-actions { display:none; } .offer-page { width:210mm; height:297mm; min-height:297mm; margin:0; padding:10mm; box-shadow:none; } }
+`;
