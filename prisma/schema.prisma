@@ -921,6 +921,7 @@ model Configuration {
   reviewNotes            String?                @db.Text
   items                  ConfigurationItem[]
   offers                 Offer[]
+  offerLinks             OfferConfiguration[]
   installations          Installation[]
   stockReservations      StockReservation[]
   createdAt              DateTime               @default(now())
@@ -990,33 +991,33 @@ model ProjectExistingAsset {
 }
 
 model Offer {
-  id                       String          @id @default(cuid())
+  id                       String               @id @default(cuid())
   projectId                String
-  project                  Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project                  Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
   configurationId          String?
-  configuration            Configuration?  @relation(fields: [configurationId], references: [id], onDelete: SetNull)
+  configuration            Configuration?       @relation(fields: [configurationId], references: [id], onDelete: SetNull)
   energyScenarioId         String?
-  energyScenario           EnergyScenario? @relation(fields: [energyScenarioId], references: [id], onDelete: SetNull)
+  energyScenario           EnergyScenario?      @relation(fields: [energyScenarioId], references: [id], onDelete: SetNull)
   number                   String?
   title                    String?
-  version                  Int             @default(1)
-  status                   OfferStatus     @default(DRAFT)
-  currency                 String          @default("PLN")
-  totalNet                 Decimal         @default(0) @db.Decimal(12, 2)
-  totalGross               Decimal         @default(0) @db.Decimal(12, 2)
-  subsidyGross             Decimal         @default(0) @db.Decimal(12, 2)
-  thermoReliefGross        Decimal         @default(0) @db.Decimal(12, 2)
-  totalAfterSupportGross   Decimal         @default(0) @db.Decimal(12, 2)
-  currentAnnualBillGross   Decimal         @default(0) @db.Decimal(12, 2)
-  projectedAnnualBillGross Decimal         @default(0) @db.Decimal(12, 2)
-  annualSavingsGross       Decimal         @default(0) @db.Decimal(12, 2)
-  paybackYears             Decimal?        @db.Decimal(8, 2)
+  version                  Int                  @default(1)
+  status                   OfferStatus          @default(DRAFT)
+  currency                 String               @default("PLN")
+  totalNet                 Decimal              @default(0) @db.Decimal(12, 2)
+  totalGross               Decimal              @default(0) @db.Decimal(12, 2)
+  subsidyGross             Decimal              @default(0) @db.Decimal(12, 2)
+  thermoReliefGross        Decimal              @default(0) @db.Decimal(12, 2)
+  totalAfterSupportGross   Decimal              @default(0) @db.Decimal(12, 2)
+  currentAnnualBillGross   Decimal              @default(0) @db.Decimal(12, 2)
+  projectedAnnualBillGross Decimal              @default(0) @db.Decimal(12, 2)
+  annualSavingsGross       Decimal              @default(0) @db.Decimal(12, 2)
+  paybackYears             Decimal?             @db.Decimal(8, 2)
   tariffBefore             String?
   tariffAfter              String?
   settlementBefore         String?
   settlementAfter          String?
-  descriptionBefore        String?         @db.Text
-  descriptionAfter         String?         @db.Text
+  descriptionBefore        String?              @db.Text
+  descriptionAfter         String?              @db.Text
   lineItemsSnapshot        Json?
   energySnapshot           Json?
   calculationSnapshot      Json?
@@ -1024,18 +1025,33 @@ model Offer {
   validUntil               DateTime?
   sentAt                   DateTime?
   acceptedAt               DateTime?
-  notes                    String?         @db.Text
+  notes                    String?              @db.Text
+  configurations           OfferConfiguration[]
   contracts                Contract[]
   documents                Document[]
   installations            Installation[]
   purchaseOrders           PurchaseOrder[]
-  createdAt                DateTime        @default(now())
-  updatedAt                DateTime        @updatedAt
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
 
   @@index([projectId])
   @@index([configurationId])
   @@index([energyScenarioId])
   @@index([status])
+}
+
+model OfferConfiguration {
+  id              String        @id @default(cuid())
+  offerId         String
+  offer           Offer         @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  configurationId String
+  configuration   Configuration @relation(fields: [configurationId], references: [id], onDelete: Restrict)
+  sortOrder       Int           @default(0)
+  createdAt       DateTime      @default(now())
+
+  @@unique([offerId, configurationId])
+  @@index([offerId, sortOrder])
+  @@index([configurationId])
 }
 
 model Contract {

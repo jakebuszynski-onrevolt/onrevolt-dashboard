@@ -247,7 +247,7 @@ export async function GET(req: NextRequest) {
                     orderBy: { position: 'asc' },
                   },
                   _count: {
-                    select: { offers: true, installations: true, stockReservations: true },
+                    select: { offers: true, offerLinks: true, installations: true, stockReservations: true },
                   },
                 },
                 orderBy: { updatedAt: 'desc' },
@@ -255,6 +255,10 @@ export async function GET(req: NextRequest) {
               offers: {
                 include: {
                   configuration: true,
+                  configurations: {
+                    include: { configuration: true },
+                    orderBy: { sortOrder: 'asc' },
+                  },
                   contracts: {
                     include: { documents: { orderBy: { createdAt: 'desc' } } },
                   },

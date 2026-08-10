@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
-import { badRequest, jsonResponse, optionalString, parseDate, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
+import { badRequest, forbidden, jsonResponse, notFound, optionalString, parseDate, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { isEnergyOperator } from 'lib/onrevolt/energy-tariffs';
-import { createOfferFromConfiguration, offerInclude, offerStatusDateUpdate } from 'lib/onrevolt/offers';
+import { createOfferFromConfiguration, offerDeleteBlockReason, offerInclude, offerStatusDateUpdate } from 'lib/onrevolt/offers';
 import { prisma } from 'lib/onrevolt/prisma';
-import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
+import { authorizeStaffRequest, isAdminUser } from 'lib/onrevolt/staff-server';
 
 const offerStatuses = new Set(['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED']);
 
@@ -13,6 +13,14 @@ function optionalNumber(value: unknown) {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new Error(`Nieprawidłowa wartość liczbowa: ${value}`);
   return number;
+}
+
+function stringArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function offerWhere(req: NextRequest) {
@@ -79,6 +87,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       data: {
         offers,
+        currentUser: { systemRole: access.user.systemRole },
         ...(await workspaceData()),
       },
     });
@@ -130,6 +139,7 @@ export async function POST(req: NextRequest) {
     const offer = await createOfferFromConfiguration(prisma, {
       projectId,
       configurationId: optionalString(body, 'configurationId'),
+      configurationIds: stringArray(body.configurationIds),
       energyScenarioId: optionalString(body, 'energyScenarioId'),
       title: optionalString(body, 'title'),
       validUntil: parseDate(body.validUntil),
@@ -208,8 +218,16 @@ export async function PATCH(req: NextRequest) {
             metadata: { offerId: updated.id, totalGross: Number(updated.totalGross) },
           },
         }),
-        ...(updated.configurationId ? [prisma.configuration.updateMany({
-          where: { id: updated.configurationId, status: { in: ['DRAFT', 'READY', 'OFFERED'] } },
+        ...((updated.configurations || []).length || updated.configurationId ? [prisma.configuration.updateMany({
+          where: {
+            id: {
+              in: Array.from(new Set([
+                updated.configurationId,
+                ...(updated.configurations || []).map((entry) => entry.configurationId),
+              ].filter((id): id is string => Boolean(id)))),
+            },
+            status: { in: ['DRAFT', 'READY', 'OFFERED'] },
+          },
           data: { status: 'ACCEPTED' },
         })] : []),
       ]);
@@ -227,5 +245,64 @@ export async function PATCH(req: NextRequest) {
     return jsonResponse({ ok: true, data: updated });
   } catch (error) {
     return serverError('Nie udało się zaktualizować oferty', error);
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'offers.manage');
+  if (!access.ok) return access.response;
+  if (!isAdminUser(access.user)) return forbidden('Tylko administrator może usuwać oferty');
+
+  try {
+    const body = await readJsonObject(req);
+    const id = requireString(body, 'id');
+    const existing = await prisma.offer.findUnique({
+      where: { id },
+      include: {
+        ...offerInclude,
+        _count: { select: { contracts: true, installations: true, purchaseOrders: true } },
+      },
+    });
+    if (!existing) return notFound('Nie znaleziono oferty');
+
+    const blockReason = offerDeleteBlockReason(existing._count);
+    if (blockReason) return badRequest(blockReason);
+
+    const configurationIds = Array.from(new Set([
+      existing.configurationId,
+      ...existing.configurations.map((entry) => entry.configurationId),
+    ].filter((configurationId): configurationId is string => Boolean(configurationId))));
+
+    await prisma.$transaction(async (tx) => {
+      await tx.offer.delete({ where: { id } });
+      for (const configurationId of configurationIds) {
+        const remainingOffers = await tx.offer.count({
+          where: {
+            OR: [
+              { configurationId },
+              { configurations: { some: { configurationId } } },
+            ],
+          },
+        });
+        if (remainingOffers === 0) {
+          await tx.configuration.updateMany({
+            where: { id: configurationId, status: 'OFFERED' },
+            data: { status: 'READY' },
+          });
+        }
+      }
+    });
+
+    await writeAuditLog({
+      actorId: access.user.id,
+      clientId: existing.project.clientId,
+      entityType: 'Offer',
+      entityId: existing.id,
+      action: 'DELETE',
+      before: existing,
+    });
+    return jsonResponse({ ok: true, data: { id } });
+  } catch (error) {
+    return serverError('Nie udało się usunąć oferty', error);
   }
 }

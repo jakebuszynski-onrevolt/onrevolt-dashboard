@@ -32,7 +32,7 @@ const configurationInclude = {
     include: { product: true },
     orderBy: { position: 'asc' as const },
   },
-  _count: { select: { offers: true, installations: true, stockReservations: true } },
+  _count: { select: { offers: true, offerLinks: true, installations: true, stockReservations: true } },
 } as const;
 
 const templateWorkspaceInclude = {
@@ -487,7 +487,7 @@ export async function PUT(req: NextRequest) {
 
     const blockReason = configurationEditBlockReason({
       status: existing.status,
-      offers: existing._count.offers,
+      offers: Math.max(existing._count.offers, existing._count.offerLinks),
       installations: existing._count.installations,
       stockReservations: existing._count.stockReservations,
     });
@@ -555,13 +555,14 @@ export async function PATCH(req: NextRequest) {
       where: { id },
       include: {
         project: { select: { clientId: true } },
-        _count: { select: { offers: true, installations: true, stockReservations: true } },
+        _count: { select: { offers: true, offerLinks: true, installations: true, stockReservations: true } },
       },
     });
     if (!existing) return notFound('Nie znaleziono konfiguracji');
     if (existing.status === 'ARCHIVED') return jsonResponse({ ok: true, data: existing });
     if (!['DRAFT', 'READY'].includes(existing.status)
       || existing._count.offers > 0
+      || existing._count.offerLinks > 0
       || existing._count.installations > 0
       || existing._count.stockReservations > 0) {
       return badRequest('Można archiwizować wyłącznie nieużywaną konfigurację roboczą lub gotową');
@@ -572,7 +573,7 @@ export async function PATCH(req: NextRequest) {
       data: { status: 'ARCHIVED' },
       include: {
         project: { select: { clientId: true } },
-        _count: { select: { offers: true, installations: true, stockReservations: true } },
+        _count: { select: { offers: true, offerLinks: true, installations: true, stockReservations: true } },
       },
     });
 
@@ -603,14 +604,14 @@ export async function DELETE(req: NextRequest) {
       where: { id },
       include: {
         project: { select: { clientId: true } },
-        _count: { select: { offers: true, installations: true, stockReservations: true } },
+        _count: { select: { offers: true, offerLinks: true, installations: true, stockReservations: true } },
       },
     });
     if (!existing) return notFound('Nie znaleziono konfiguracji');
 
     const blockReason = configurationDeleteBlockReason({
       status: existing.status,
-      offers: existing._count.offers,
+      offers: Math.max(existing._count.offers, existing._count.offerLinks),
       installations: existing._count.installations,
       stockReservations: existing._count.stockReservations,
     });

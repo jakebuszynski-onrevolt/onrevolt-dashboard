@@ -265,6 +265,7 @@ export default function OfferDocument({ offer, compact = false, showActions = fa
           font-weight: 900;
         }
         td.number, th.number { text-align: right; white-space: nowrap; }
+        .line-source { color: var(--muted); font-size: 8px; font-weight: 700; margin-top: 2px; }
         .table-title {
           font-weight: 900;
           padding: 10px 12px 0;
@@ -434,7 +435,12 @@ export default function OfferDocument({ offer, compact = false, showActions = fa
                   return (
                     <tr key={`${line.position}-${index}`}>
                       <td>{line.position || index + 1}</td>
-                      <td>{line.description || line.name || '-'}</td>
+                      <td>
+                        <div>{line.description || line.name || '-'}</div>
+                        {line.sourceConfigurationName ? (
+                          <div className="line-source">Zakres: {line.sourceConfigurationName}</div>
+                        ) : null}
+                      </td>
                       <td>{line.model || line.sku || line.producer || '-'}</td>
                       <td className="number">{quantity}</td>
                       <td className="number">{money(unit)} PLN</td>

@@ -4,6 +4,7 @@ import { vatBreakdown } from 'lib/onrevolt/configuration-vat';
 type OfferCreateInput = {
   projectId: string;
   configurationId?: string;
+  configurationIds?: string[];
   energyScenarioId?: string;
   title?: string;
   validUntil?: Date;
@@ -50,24 +51,20 @@ export function toOfferNumber(date = new Date(), sequence = 1) {
 export async function nextOfferNumber(prisma: PrismaClient) {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const count = await prisma.offer.count({
-    where: { createdAt: { gte: startOfMonth } },
-  });
+  const count = await prisma.offer.count({ where: { createdAt: { gte: startOfMonth } } });
   return toOfferNumber(now, count + 1);
 }
 
-export async function nextOfferVersion(
-  prisma: PrismaClient,
-  projectId: string,
-  configurationId?: string,
-) {
-  const count = await prisma.offer.count({
-    where: {
-      projectId,
-      configurationId: configurationId || null,
-    },
-  });
+export async function nextOfferVersion(prisma: PrismaClient, projectId: string) {
+  const count = await prisma.offer.count({ where: { projectId } });
   return count + 1;
+}
+
+export function normalizeOfferConfigurationIds(configurationIds?: string[], configurationId?: string) {
+  const values = [configurationId, ...(configurationIds || [])]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  return Array.from(new Set(values));
 }
 
 function projectSnapshot(project: any) {
@@ -90,42 +87,41 @@ function projectSnapshot(project: any) {
   };
 }
 
-function lineItemsSnapshot(configuration: any) {
-  if (!configuration) return [];
-
-  return (configuration.items || [])
-    .slice()
-    .sort((a: any, b: any) => Number(a.position || 0) - Number(b.position || 0))
-    .map((item: any, index: number) => ({
-      position: Number(item.position || index + 1),
-      productId: item.productId || null,
-      sku: item.product?.sku || null,
-      name: item.product?.name || item.description || `Pozycja ${index + 1}`,
-      description: item.description || item.product?.name || `Pozycja ${index + 1}`,
-      model: item.product?.supplierSku || item.product?.sku || item.product?.producer || '',
-      producer: item.product?.producer || '',
-      category: item.product?.category || '',
-      quantity: decimalToNumber(item.quantity),
-      unitPurchaseNet: decimalToNumber(item.unitPurchaseNet),
-      saleNet: decimalToNumber(item.saleNet),
-      saleGross: decimalToNumber(item.saleGross),
-      saleVatRate: decimalToNumber(item.saleVatRate),
-      profitNet: decimalToNumber(item.profitNet),
-      supplyMode: item.supplyMode || 'ONREVOLT_SUPPLIED',
-      role: item.role || 'OTHER',
-      isOptional: Boolean(item.isOptional),
-      requiresReview: Boolean(item.requiresReview),
-      notes: item.notes || '',
-    }));
+export function mergeConfigurationLineItems(configurations: any[]) {
+  return configurations.flatMap((configuration) => (
+    (configuration.items || [])
+      .slice()
+      .sort((a: any, b: any) => Number(a.position || 0) - Number(b.position || 0))
+      .map((item: any, index: number) => ({
+        sourceConfigurationId: configuration.id,
+        sourceConfigurationName: configuration.name,
+        sourceConfigurationKind: configuration.kind,
+        sourcePosition: Number(item.position || index + 1),
+        productId: item.productId || null,
+        sku: item.product?.sku || null,
+        name: item.product?.name || item.description || `Pozycja ${index + 1}`,
+        description: item.description || item.product?.name || `Pozycja ${index + 1}`,
+        model: item.product?.supplierSku || item.product?.sku || item.product?.producer || '',
+        producer: item.product?.producer || '',
+        category: item.product?.category || '',
+        quantity: decimalToNumber(item.quantity),
+        unitPurchaseNet: decimalToNumber(item.unitPurchaseNet),
+        saleNet: decimalToNumber(item.saleNet),
+        saleGross: decimalToNumber(item.saleGross),
+        saleVatRate: decimalToNumber(item.saleVatRate),
+        profitNet: decimalToNumber(item.profitNet),
+        supplyMode: item.supplyMode || 'ONREVOLT_SUPPLIED',
+        role: item.role || 'OTHER',
+        isOptional: Boolean(item.isOptional),
+        requiresReview: Boolean(item.requiresReview),
+        notes: item.notes || '',
+      }))
+  )).map((item, index) => ({ ...item, position: index + 1 }));
 }
 
-function calculationSnapshot(input: OfferCreateInput, configuration: any, lineItems: any[], scenario?: any) {
-  const totalNet = decimalToNumber(configuration?.totalSaleGross)
-    ? lineItems.reduce((sum, item) => sum + decimalToNumber(item.saleNet), 0)
-    : lineItems.reduce((sum, item) => sum + decimalToNumber(item.saleNet), 0);
-  const totalGross = configuration
-    ? decimalToNumber(configuration.totalSaleGross)
-    : lineItems.reduce((sum, item) => sum + decimalToNumber(item.saleGross), 0);
+function calculationSnapshot(input: OfferCreateInput, lineItems: any[], scenario?: any) {
+  const totalNet = lineItems.reduce((sum, item) => sum + decimalToNumber(item.saleNet), 0);
+  const totalGross = lineItems.reduce((sum, item) => sum + decimalToNumber(item.saleGross), 0);
   const subsidyGross = optionalMoney(input.subsidyGross);
   const thermoReliefGross = optionalMoney(input.thermoReliefGross);
   const totalAfterSupportGross = Math.max(0, money(totalGross - subsidyGross - thermoReliefGross));
@@ -137,9 +133,7 @@ function calculationSnapshot(input: OfferCreateInput, configuration: any, lineIt
     ? optionalMoney(result.scenarioAnnualCostGross)
     : optionalMoney(input.projectedAnnualBillGross);
   const annualSavingsGross = Math.max(0, money(currentAnnualBillGross - projectedAnnualBillGross));
-  const paybackYears = annualSavingsGross > 0
-    ? money(totalAfterSupportGross / annualSavingsGross)
-    : null;
+  const paybackYears = annualSavingsGross > 0 ? money(totalAfterSupportGross / annualSavingsGross) : null;
   const saleVatBreakdown = vatBreakdown(lineItems.map((item) => ({
     saleNet: decimalToNumber(item.saleNet),
     saleGross: decimalToNumber(item.saleGross),
@@ -197,16 +191,12 @@ function energySnapshot(project: any, scenario?: any) {
 }
 
 export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateInput) {
-  const [project, configuration, selectedScenario] = await Promise.all([
+  const configurationIds = normalizeOfferConfigurationIds(input.configurationIds, input.configurationId);
+  const [project, configurationRecords, selectedScenario] = await Promise.all([
     prisma.project.findUnique({
       where: { id: input.projectId },
       include: {
-        client: {
-          include: {
-            contacts: true,
-            investmentSites: { orderBy: { updatedAt: 'desc' } },
-          },
-        },
+        client: { include: { contacts: true, investmentSites: { orderBy: { updatedAt: 'desc' } } } },
         investmentSite: true,
         energyPortalAccounts: true,
         energyMeasurementFiles: {
@@ -215,18 +205,15 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
         },
       },
     }),
-    input.configurationId
-      ? prisma.configuration.findUnique({
-        where: { id: input.configurationId },
+    configurationIds.length
+      ? prisma.configuration.findMany({
+        where: { id: { in: configurationIds } },
         include: {
           template: true,
-          items: {
-            include: { product: true },
-            orderBy: { position: 'asc' },
-          },
+          items: { include: { product: true }, orderBy: { position: 'asc' } },
         },
       })
-      : null,
+      : Promise.resolve([]),
     input.energyScenarioId
       ? prisma.energyScenario.findUnique({
         where: { id: input.energyScenarioId },
@@ -240,11 +227,15 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
   ]);
 
   if (!project) throw new Error('Nie znaleziono projektu dla oferty');
-  if (input.configurationId && !configuration) throw new Error('Nie znaleziono konfiguracji dla oferty');
-  if (configuration && configuration.projectId !== project.id) {
-    throw new Error('Konfiguracja nie należy do wybranego projektu');
+  if (configurationRecords.length !== configurationIds.length) {
+    throw new Error('Nie znaleziono jednej z konfiguracji wybranych do oferty');
   }
-  if (configuration?.status === 'ARCHIVED') {
+  const configurationById = new Map(configurationRecords.map((configuration) => [configuration.id, configuration]));
+  const configurations = configurationIds.map((id) => configurationById.get(id)!);
+  if (configurations.some((configuration) => configuration.projectId !== project.id)) {
+    throw new Error('Wszystkie konfiguracje muszą należeć do wybranego projektu');
+  }
+  if (configurations.some((configuration) => configuration.status === 'ARCHIVED')) {
     throw new Error('Nie można utworzyć nowej oferty z archiwalnej konfiguracji');
   }
   if (input.energyScenarioId && !selectedScenario) throw new Error('Nie znaleziono wariantu energetycznego');
@@ -252,22 +243,25 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
     throw new Error('Wariant energetyczny nie należy do wybranego projektu');
   }
 
-  const lineItems = lineItemsSnapshot(configuration);
-  const calculation = calculationSnapshot(input, configuration, lineItems, selectedScenario);
+  const lineItems = mergeConfigurationLineItems(configurations);
+  const calculation = calculationSnapshot(input, lineItems, selectedScenario);
   const client = projectSnapshot(project);
   const title = optionalText(input.title)
-    || configuration?.name
+    || configurations.map((configuration) => configuration.name).join(' + ')
     || `Oferta dla ${client.clientName || project.title}`;
+  const primaryConfiguration = configurations[0];
 
   return {
     project,
-    configuration,
+    configuration: primaryConfiguration,
+    configurations,
     data: {
       projectId: project.id,
-      configurationId: configuration?.id,
+      configurationId: primaryConfiguration?.id,
+      configurationIds,
       energyScenarioId: selectedScenario?.id,
       title,
-      version: await nextOfferVersion(prisma, project.id, configuration?.id),
+      version: await nextOfferVersion(prisma, project.id),
       status: 'DRAFT' as const,
       currency: 'PLN',
       totalNet: calculation.totalNet,
@@ -298,60 +292,76 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
 export async function createOfferFromConfiguration(prisma: PrismaClient, input: OfferCreateInput) {
   const draft = await buildOfferDraft(prisma, input);
   const number = await nextOfferNumber(prisma);
-  const { projectId, configurationId, energyScenarioId, ...offerData } = draft.data;
+  const { projectId, configurationId, configurationIds, energyScenarioId, ...offerData } = draft.data;
 
-  const offer = await prisma.offer.create({
-    data: {
-      ...offerData,
-      number,
-      lineItemsSnapshot: offerData.lineItemsSnapshot as Prisma.InputJsonValue,
-      energySnapshot: offerData.energySnapshot as Prisma.InputJsonValue,
-      calculationSnapshot: offerData.calculationSnapshot as Prisma.InputJsonValue,
-      clientSnapshot: offerData.clientSnapshot as Prisma.InputJsonValue,
-      project: { connect: { id: projectId } },
-      configuration: configurationId ? { connect: { id: configurationId } } : undefined,
-      energyScenario: energyScenarioId ? { connect: { id: energyScenarioId } } : undefined,
-    },
-    include: offerInclude,
-  });
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.offer.create({
+      data: {
+        ...offerData,
+        number,
+        lineItemsSnapshot: offerData.lineItemsSnapshot as Prisma.InputJsonValue,
+        energySnapshot: offerData.energySnapshot as Prisma.InputJsonValue,
+        calculationSnapshot: offerData.calculationSnapshot as Prisma.InputJsonValue,
+        clientSnapshot: offerData.clientSnapshot as Prisma.InputJsonValue,
+        project: { connect: { id: projectId } },
+        configuration: configurationId ? { connect: { id: configurationId } } : undefined,
+        configurations: configurationIds.length ? {
+          create: configurationIds.map((id, sortOrder) => ({
+            configuration: { connect: { id } },
+            sortOrder,
+          })),
+        } : undefined,
+        energyScenario: energyScenarioId ? { connect: { id: energyScenarioId } } : undefined,
+      },
+    });
 
-  await Promise.all([
-    prisma.project.update({
+    await tx.project.update({
       where: { id: input.projectId },
       data: { status: 'OFERTA_PRZYGOTOWANA' },
-    }),
-    configurationId
-      ? prisma.configuration.updateMany({
-        where: { id: configurationId, status: { in: ['DRAFT', 'READY'] } },
+    });
+    if (configurationIds.length) {
+      await tx.configuration.updateMany({
+        where: { id: { in: configurationIds }, status: { in: ['DRAFT', 'READY'] } },
         data: { status: 'OFFERED' },
-      })
-      : Promise.resolve(),
-  ]);
+      });
+    }
 
-  return offer;
+    return tx.offer.findUniqueOrThrow({ where: { id: created.id }, include: offerInclude });
+  });
 }
 
 export const offerInclude = {
-  project: {
-    include: {
-      client: true,
-      investmentSite: true,
-    },
-  },
+  project: { include: { client: true, investmentSite: true } },
   configuration: {
     include: {
-      items: {
-        include: { product: true },
-        orderBy: { position: 'asc' as const },
+      items: { include: { product: true }, orderBy: { position: 'asc' as const } },
+    },
+  },
+  configurations: {
+    include: {
+      configuration: {
+        include: {
+          items: { include: { product: true }, orderBy: { position: 'asc' as const } },
+        },
       },
     },
+    orderBy: { sortOrder: 'asc' as const },
   },
   energyScenario: true,
   contracts: true,
-  documents: {
-    orderBy: { createdAt: 'desc' as const },
-  },
+  documents: { orderBy: { createdAt: 'desc' as const } },
 };
+
+export function offerDeleteBlockReason(input: {
+  contracts: number;
+  installations: number;
+  purchaseOrders: number;
+}) {
+  if (input.contracts > 0) return 'Nie można usunąć oferty, do której utworzono umowę';
+  if (input.installations > 0) return 'Nie można usunąć oferty przekazanej do montażu';
+  if (input.purchaseOrders > 0) return 'Nie można usunąć oferty powiązanej z zamówieniem';
+  return null;
+}
 
 export function offerStatusDateUpdate(status: string) {
   if (status === 'SENT') return { sentAt: new Date() };

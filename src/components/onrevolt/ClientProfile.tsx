@@ -765,6 +765,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [stationError, setStationError] = useState('');
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [offerCreating, setOfferCreating] = useState(false);
+  const [offerDeletingId, setOfferDeletingId] = useState('');
   const [offerMessage, setOfferMessage] = useState('');
   const [offerError, setOfferError] = useState('');
   const [configurationActionId, setConfigurationActionId] = useState('');
@@ -772,7 +773,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [configurationError, setConfigurationError] = useState('');
   const [configurationEditorOpen, setConfigurationEditorOpen] = useState(false);
   const [configurationEditorId, setConfigurationEditorId] = useState('');
-  const [selectedClientConfigurationId, setSelectedClientConfigurationId] = useState('');
+  const [selectedClientConfigurationIds, setSelectedClientConfigurationIds] = useState<string[]>([]);
   const [selectedClientOfferId, setSelectedClientOfferId] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('projectId') || '');
   const [activeTabIndex, setActiveTabIndex] = useState(0);
@@ -827,13 +828,15 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       setEnergyDataSettings(energyDataSettingsFromClient(clientPayload.data, loadedProject));
       const firstConfiguration = loadedProject?.configurations?.find((configuration: any) => configuration.status !== 'ARCHIVED');
       const firstOffer = loadedProject?.offers?.[0];
-      setSelectedClientConfigurationId((current) => (
-        current && loadedProject?.configurations?.some((configuration: any) => (
-          configuration.id === current && configuration.status !== 'ARCHIVED'
-        ))
-          ? current
-          : firstConfiguration?.id || ''
-      ));
+      setSelectedClientConfigurationIds((current) => {
+        const availableIds = new Set(
+          (loadedProject?.configurations || [])
+            .filter((configuration: any) => configuration.status !== 'ARCHIVED')
+            .map((configuration: any) => configuration.id),
+        );
+        const validIds = current.filter((id) => availableIds.has(id));
+        return validIds.length ? validIds : firstConfiguration?.id ? [firstConfiguration.id] : [];
+      });
       setSelectedClientOfferId((current) => (
         current && loadedProject?.offers?.some((offer: any) => offer.id === current)
           ? current
@@ -1165,10 +1168,23 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setOfferError('');
     setOfferMessage('');
     try {
-      const configurationId = configurationIdOverride || selectedClientConfigurationId;
-      if (configurationId) setSelectedClientConfigurationId(configurationId);
-      const configuration = project.configurations?.find((item: any) => item.id === configurationId);
-      if (configuration?.status === 'ARCHIVED') {
+      const availableConfigurationIds = new Set(
+        (project.configurations || [])
+          .filter((item: any) => item.status !== 'ARCHIVED')
+          .map((item: any) => item.id),
+      );
+      const configurationIds = Array.from(new Set(
+        (configurationIdOverride ? [configurationIdOverride] : selectedClientConfigurationIds)
+          .filter((id) => availableConfigurationIds.has(id)),
+      ));
+      if (configurationIdOverride) setSelectedClientConfigurationIds(configurationIds);
+      if (!configurationIds.length) {
+        throw new Error('Wybierz co najmniej jedną konfigurację do oferty.');
+      }
+      const selectedConfigurations = configurationIds
+        .map((id) => project.configurations?.find((item: any) => item.id === id))
+        .filter(Boolean);
+      if (selectedConfigurations.some((configuration: any) => configuration.status === 'ARCHIVED')) {
         throw new Error('Nie można utworzyć nowej oferty z archiwalnej konfiguracji.');
       }
       const validUntil = new Date();
@@ -1181,8 +1197,10 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId: project.id,
-          configurationId: configurationId || undefined,
-          title: configuration?.name || project.title || `Oferta - ${client?.displayName || ''}`,
+          configurationIds,
+          title: selectedConfigurations.map((configuration: any) => configuration.name).join(' + ')
+            || project.title
+            || `Oferta - ${client?.displayName || ''}`,
           validUntil: validUntil.toISOString(),
           energyOperator: offerOperator,
           tariffBefore: offerTariffBefore,
@@ -1533,6 +1551,35 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   function selectPrimaryTab(tabIndex: number) {
     setActiveTabIndex(tabIndex);
     setActiveJourneyKey(tabIndex === 1 ? 'client' : tabIndex === 11 ? 'documents' : null);
+  }
+
+  function toggleClientOfferConfiguration(configurationId: string) {
+    setSelectedClientConfigurationIds((current) => current.includes(configurationId)
+      ? current.filter((id) => id !== configurationId)
+      : [...current, configurationId]);
+  }
+
+  async function deleteClientOffer(offer: any) {
+    if (!window.confirm(`Usunąć ofertę ${offer.number || offer.title || ''}? Tej operacji nie można cofnąć.`)) return;
+    setOfferDeletingId(offer.id);
+    setOfferError('');
+    setOfferMessage('');
+    try {
+      const response = await fetch('/api/offers', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: offer.id }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+      setSelectedClientOfferId('');
+      setOfferMessage(`Usunięto ofertę ${offer.number || ''}.`);
+      await load();
+    } catch (e) {
+      setOfferError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOfferDeletingId('');
+    }
   }
 
   function selectJourneyTab(item: (typeof journeyTabs)[number]) {
@@ -1951,7 +1998,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                         </Box>
                         <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
                           <Text color={mutedColor} fontSize="sm" fontWeight="700">Oferty z konfiguracji</Text>
-                          <Text color={textColor} fontSize="xl" fontWeight="900">{projectOffers.filter((offer: any) => offer.configurationId).length}</Text>
+                          <Text color={textColor} fontSize="xl" fontWeight="900">
+                            {projectOffers.filter((offer: any) => offer.configurationId || offer.configurations?.length).length}
+                          </Text>
                         </Box>
                         <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
                           <Text color={mutedColor} fontSize="sm" fontWeight="700">Zaakceptowana oferta</Text>
@@ -1998,11 +2047,18 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                     ) : (
                       <Flex direction="column" gap="16px">
                         {projectConfigurations.map((configuration: any) => {
-                          const linkedOffers = projectOffers.filter((offer: any) => offer.configurationId === configuration.id);
+                          const linkedOffers = projectOffers.filter((offer: any) => (
+                            offer.configurationId === configuration.id
+                            || offer.configurations?.some((entry: any) => entry.configurationId === configuration.id)
+                          ));
                           const linkedInstallations = projectInstallations.filter((installation: any) => (
                             installation.configurationId === configuration.id
                           ));
-                          const offerCount = Number(configuration._count?.offers ?? linkedOffers.length);
+                          const offerCount = Math.max(
+                            Number(configuration._count?.offers || 0),
+                            Number(configuration._count?.offerLinks || 0),
+                            linkedOffers.length,
+                          );
                           const installationCount = Number(configuration._count?.installations ?? linkedInstallations.length);
                           const stockReservationCount = Number(configuration._count?.stockReservations || 0);
                           const isArchived = configuration.status === 'ARCHIVED';
@@ -2078,16 +2134,17 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                             colorScheme="purple"
                                             leftIcon={<MdAdd />}
                                             onClick={() => createClientOffer(configuration.id)}
-                                            isLoading={offerCreating && selectedClientConfigurationId === configuration.id}
+                                            isLoading={offerCreating && selectedClientConfigurationIds.length === 1 && selectedClientConfigurationIds[0] === configuration.id}
                                           >
                                             Utwórz ofertę
                                           </Button>
                                           <Button
                                             size="sm"
                                             variant="outline"
-                                            onClick={() => setSelectedClientConfigurationId(configuration.id)}
+                                            onClick={() => toggleClientOfferConfiguration(configuration.id)}
+                                            colorScheme={selectedClientConfigurationIds.includes(configuration.id) ? 'purple' : undefined}
                                           >
-                                            Wybierz do oferty
+                                            {selectedClientConfigurationIds.includes(configuration.id) ? 'Usuń z oferty' : 'Dodaj do oferty'}
                                           </Button>
                                         </>
                                       ) : null}
@@ -2210,7 +2267,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                             colorScheme="purple"
                             onClick={() => createClientOffer()}
                             isLoading={offerCreating}
-                            isDisabled={!project?.id}
+                            isDisabled={!project?.id || selectedClientConfigurationIds.length === 0}
                           >
                             Utwórz ofertę
                           </Button>
@@ -2232,18 +2289,38 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
                       <SimpleGrid columns={{ base: 1, xl: 3 }} gap="16px">
                         <FormControl>
-                          <FormLabel>Konfiguracja do nowej oferty</FormLabel>
-                          <Select
-                            value={selectedClientConfigurationId}
-                            onChange={(event) => setSelectedClientConfigurationId(event.target.value)}
+                          <FormLabel>Konfiguracje do nowej oferty</FormLabel>
+                          <Flex
+                            direction="column"
+                            gap="9px"
+                            border="1px solid"
+                            borderColor={borderColor}
+                            borderRadius="8px"
+                            p="12px"
+                            maxH="220px"
+                            overflowY="auto"
                           >
-                            <option value="">Bez konfiguracji</option>
-                            {activeProjectConfigurations.map((configuration: any) => (
-                              <option key={configuration.id} value={configuration.id}>
-                                {configuration.name} - {formatMoney(configuration.totalSaleGross)} PLN
-                              </option>
-                            ))}
-                          </Select>
+                            {activeProjectConfigurations.length ? activeProjectConfigurations.map((configuration: any) => (
+                              <Checkbox
+                                key={configuration.id}
+                                isChecked={selectedClientConfigurationIds.includes(configuration.id)}
+                                onChange={() => toggleClientOfferConfiguration(configuration.id)}
+                                alignItems="start"
+                              >
+                                <Box>
+                                  <Text color={textColor} fontWeight="800">{configuration.name}</Text>
+                                  <Text color={mutedColor} fontSize="xs">
+                                    {configuration.kind || 'Konfiguracja'} · {formatMoney(configuration.totalSaleGross)} PLN
+                                  </Text>
+                                </Box>
+                              </Checkbox>
+                            )) : (
+                              <Text color={mutedColor} fontSize="sm">Brak konfiguracji możliwych do dodania.</Text>
+                            )}
+                          </Flex>
+                          <Text color={mutedColor} fontSize="xs" mt="6px">
+                            Zaznacz magazyn energii, instalację PV albo oba zakresy. Powstanie jedna wspólna oferta.
+                          </Text>
                         </FormControl>
                         <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">
                           <Text color={mutedColor} fontSize="sm" fontWeight="700">Konfiguracje</Text>
@@ -2265,9 +2342,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                           <Flex direction="column" gap="10px">
                             {projectOffers.map((offer: any) => (
                               <Box
-                                as="button"
-                                type="button"
                                 key={offer.id}
+                                role="button"
+                                tabIndex={0}
                                 textAlign="left"
                                 border="1px solid"
                                 borderColor={selectedClientOffer?.id === offer.id ? 'purple.300' : borderColor}
@@ -2275,17 +2352,37 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                 p="12px"
                                 bg={selectedClientOffer?.id === offer.id ? 'whiteAlpha.100' : 'transparent'}
                                 onClick={() => setSelectedClientOfferId(offer.id)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') setSelectedClientOfferId(offer.id);
+                                }}
                               >
                                 <Flex justify="space-between" gap="10px" align="start">
                                   <Box minW="0">
                                     <Text color={textColor} fontWeight="900" noOfLines={1}>{offer.number || 'Bez numeru'}</Text>
                                     <Text color={mutedColor} fontSize="sm" noOfLines={1}>{offer.title || offer.configuration?.name || project.title}</Text>
                                   </Box>
-                                  <Badge colorScheme={offerStatusColor(offer.status)}>{offerStatusLabel(offer.status)}</Badge>
+                                  <Flex gap="8px" align="center" onClick={(event) => event.stopPropagation()}>
+                                    <Badge colorScheme={offerStatusColor(offer.status)}>{offerStatusLabel(offer.status)}</Badge>
+                                    {isAdmin ? (
+                                      <Tooltip label="Usuń ofertę">
+                                        <IconButton
+                                          aria-label="Usuń ofertę"
+                                          icon={<MdDeleteOutline />}
+                                          size="sm"
+                                          variant="outline"
+                                          colorScheme="red"
+                                          isLoading={offerDeletingId === offer.id}
+                                          onClick={() => deleteClientOffer(offer)}
+                                        />
+                                      </Tooltip>
+                                    ) : null}
+                                  </Flex>
                                 </Flex>
                                 <Flex justify="space-between" gap="10px" align="center" mt="10px">
                                   <Text color={textColor} fontWeight="800">{formatMoney(offer.totalGross)} PLN</Text>
-                                  <Text color={mutedColor} fontSize="sm">v{offer.version || 1}</Text>
+                                  <Text color={mutedColor} fontSize="sm">
+                                    {(offer.configurations?.length || (offer.configurationId ? 1 : 0))} konf. · v{offer.version || 1}
+                                  </Text>
                                 </Flex>
                               </Box>
                             ))}

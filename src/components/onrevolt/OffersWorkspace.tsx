@@ -6,6 +6,7 @@ import {
   Badge,
   Box,
   Button,
+  Checkbox,
   Flex,
   FormControl,
   FormLabel,
@@ -29,12 +30,12 @@ import {
   getEnergyTariffs,
 } from 'lib/onrevolt/energy-tariffs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { MdAdd, MdKeyboardArrowDown, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
+import { MdAdd, MdDeleteOutline, MdKeyboardArrowDown, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
 import OfferDocument from './OfferDocument';
 
 type OfferForm = {
   projectId: string;
-  configurationId: string;
+  configurationIds: string[];
   energyScenarioId: string;
   title: string;
   validUntil: string;
@@ -54,7 +55,7 @@ type OfferForm = {
 
 const emptyForm: OfferForm = {
   projectId: '',
-  configurationId: '',
+  configurationIds: [],
   energyScenarioId: '',
   title: '',
   validUntil: '',
@@ -121,13 +122,16 @@ export default function OffersWorkspace() {
   const [form, setForm] = useState<OfferForm>(emptyForm);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState('');
+  const [configurationSearch, setConfigurationSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [statusSavingId, setStatusSavingId] = useState('');
+  const [deletingOfferId, setDeletingOfferId] = useState('');
   const [depositPercent, setDepositPercent] = useState('40');
   const [contractSaving, setContractSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
   const textColor = useColorModeValue('secondaryGray.900', 'white');
   const mutedColor = useColorModeValue('secondaryGray.600', 'secondaryGray.400');
   const borderColor = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
@@ -143,6 +147,7 @@ export default function OffersWorkspace() {
       setOffers(data.offers || []);
       setProjects(data.projects || []);
       setConfigurations(data.configurations || []);
+      setIsAdmin(data.currentUser?.systemRole === 'ADMIN');
       setSelectedOfferId((current) => {
         if ((data.offers || []).some((offer: any) => offer.id === current)) return current;
         return data.offers?.[0]?.id || '';
@@ -194,6 +199,15 @@ export default function OffersWorkspace() {
     () => configurations.filter((configuration) => configuration.projectId === form.projectId),
     [configurations, form.projectId],
   );
+  const filteredProjectConfigurations = useMemo(() => {
+    const query = configurationSearch.trim().toLowerCase();
+    if (!query) return projectConfigurations;
+    return projectConfigurations.filter((configuration) => [
+      configuration.name,
+      configuration.kind,
+      configuration.goal,
+    ].filter(Boolean).join(' ').toLowerCase().includes(query));
+  }, [configurationSearch, projectConfigurations]);
   const projectScenarios = useMemo(
     () => (selectedProject?.energyAudits || []).flatMap((audit: any) => audit.scenarios || []),
     [selectedProject],
@@ -219,7 +233,7 @@ export default function OffersWorkspace() {
         return {
           ...current,
           projectId: value,
-          configurationId: configuration?.id || '',
+          configurationIds: configuration?.id ? [configuration.id] : [],
           energyScenarioId: scenario?.id || '',
           title: configuration?.name || '',
           energyOperator,
@@ -236,14 +250,6 @@ export default function OffersWorkspace() {
           tariffAfter: getDefaultTargetEnergyTariff(value),
         };
       }
-      if (key === 'configurationId') {
-        const configuration = configurations.find((item) => item.id === value);
-        return {
-          ...current,
-          configurationId: value,
-          title: current.title || configuration?.name || '',
-        };
-      }
       if (key === 'energyScenarioId') {
         const scenario = projectScenarios.find((item: any) => item.id === value);
         return { ...current, energyScenarioId: value, ...(scenario ? scenarioValues(scenario) : {}) };
@@ -252,10 +258,32 @@ export default function OffersWorkspace() {
     });
   }
 
+  function toggleConfiguration(configurationId: string) {
+    setForm((current) => {
+      const previousDefaultTitle = current.configurationIds
+        .map((id) => configurations.find((configuration) => configuration.id === id)?.name)
+        .filter(Boolean)
+        .join(' + ');
+      const configurationIds = current.configurationIds.includes(configurationId)
+        ? current.configurationIds.filter((id) => id !== configurationId)
+        : [...current.configurationIds, configurationId];
+      const nextDefaultTitle = configurationIds
+        .map((id) => configurations.find((configuration) => configuration.id === id)?.name)
+        .filter(Boolean)
+        .join(' + ');
+      return {
+        ...current,
+        configurationIds,
+        title: !current.title || current.title === previousDefaultTitle ? nextDefaultTitle : current.title,
+      };
+    });
+  }
+
   function selectProject(projectId: string) {
     updateForm('projectId', projectId);
     setProjectPickerOpen(false);
     setProjectSearch('');
+    setConfigurationSearch('');
   }
 
   async function createOffer() {
@@ -282,6 +310,27 @@ export default function OffersWorkspace() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteOffer(offer: any) {
+    if (!window.confirm(`Usunąć ofertę ${offer.number || offer.title || ''}? Tej operacji nie można cofnąć.`)) return;
+    setDeletingOfferId(offer.id);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch('/api/offers', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: offer.id }),
+      });
+      await readPayload(response);
+      setNotice(`Usunięto ofertę ${offer.number || ''}.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeletingOfferId('');
     }
   }
 
@@ -455,16 +504,41 @@ export default function OffersWorkspace() {
                   ) : null}
                 </Box>
               </FormControl>
-              <FormControl>
-                <FormLabel>Konfiguracja</FormLabel>
-                <Select value={form.configurationId} onChange={(event) => updateForm('configurationId', event.target.value)}>
-                  <option value="">Bez konfiguracji</option>
-                  {projectConfigurations.map((configuration) => (
-                    <option key={configuration.id} value={configuration.id}>
-                      {configuration.name} - {money(configuration.totalSaleGross)} PLN
-                    </option>
-                  ))}
-                </Select>
+              <FormControl isRequired>
+                <FormLabel>Konfiguracje w ofercie</FormLabel>
+                <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="10px">
+                  <Input
+                    value={configurationSearch}
+                    onChange={(event) => setConfigurationSearch(event.target.value)}
+                    placeholder="Szukaj konfiguracji..."
+                    mb="8px"
+                    isDisabled={!form.projectId}
+                  />
+                  <Flex direction="column" gap="8px" maxH="230px" overflowY="auto">
+                    {filteredProjectConfigurations.length ? filteredProjectConfigurations.map((configuration) => (
+                      <Checkbox
+                        key={configuration.id}
+                        isChecked={form.configurationIds.includes(configuration.id)}
+                        onChange={() => toggleConfiguration(configuration.id)}
+                        alignItems="start"
+                      >
+                        <Box>
+                          <Text color={textColor} fontWeight="800">{configuration.name}</Text>
+                          <Text color={mutedColor} fontSize="xs">
+                            {configuration.kind || 'Konfiguracja'} · {money(configuration.totalSaleGross)} PLN
+                          </Text>
+                        </Box>
+                      </Checkbox>
+                    )) : (
+                      <Text color={mutedColor} fontSize="sm" px="4px" py="8px">
+                        {form.projectId ? 'Brak konfiguracji pasujących do wyszukiwania.' : 'Najpierw wybierz projekt.'}
+                      </Text>
+                    )}
+                  </Flex>
+                </Box>
+                <Text color={mutedColor} fontSize="xs" mt="5px">
+                  Możesz połączyć konfigurację magazynu energii i instalacji PV w jednej ofercie.
+                </Text>
               </FormControl>
               <FormControl>
                 <FormLabel>Wariant energetyczny</FormLabel>
@@ -551,7 +625,7 @@ export default function OffersWorkspace() {
                 leftIcon={<Icon as={MdAdd} />}
                 onClick={createOffer}
                 isLoading={saving}
-                isDisabled={!form.projectId}
+                isDisabled={!form.projectId || form.configurationIds.length === 0}
               >
                 Utwórz ofertę
               </Button>
@@ -567,8 +641,8 @@ export default function OffersWorkspace() {
                 {offers.map((offer) => (
                   <Box
                     key={offer.id}
-                    as="button"
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     textAlign="left"
                     border="1px solid"
                     borderColor={selectedOffer?.id === offer.id ? 'purple.300' : borderColor}
@@ -576,12 +650,18 @@ export default function OffersWorkspace() {
                     borderRadius="8px"
                     p="12px"
                     onClick={() => setSelectedOfferId(offer.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') setSelectedOfferId(offer.id);
+                    }}
                   >
                     <Flex justify="space-between" gap="10px" align="start">
                       <Box minW="0">
                         <Text color={textColor} fontWeight="900" noOfLines={1}>{offer.number || 'Bez numeru'}</Text>
                         <Text color={mutedColor} fontSize="sm" noOfLines={1}>
                           {offer.project?.client?.displayName || '-'} - {offer.title || offer.project?.title || '-'}
+                        </Text>
+                        <Text color={mutedColor} fontSize="xs" mt="2px">
+                          {(offer.configurations?.length || (offer.configurationId ? 1 : 0))} konfiguracji
                         </Text>
                       </Box>
                       <Badge colorScheme={statusColor(offer.status)}>{statusLabel(offer.status)}</Badge>
@@ -612,6 +692,19 @@ export default function OffersWorkspace() {
                           variant="outline"
                         />
                       </Tooltip>
+                      {isAdmin ? (
+                        <Tooltip label="Usuń ofertę">
+                          <IconButton
+                            aria-label="Usuń ofertę"
+                            icon={<MdDeleteOutline />}
+                            size="sm"
+                            variant="outline"
+                            colorScheme="red"
+                            isLoading={deletingOfferId === offer.id}
+                            onClick={() => deleteOffer(offer)}
+                          />
+                        </Tooltip>
+                      ) : null}
                     </Flex>
                   </Box>
                 ))}
