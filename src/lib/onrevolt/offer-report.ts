@@ -263,6 +263,9 @@ export function buildOfferReport(offer: any) {
   const result = scenario.result || {};
   const siteForm = energy.siteAudit?.formData || {};
   const audit = energy.audit || {};
+  const settlementBefore = Object.prototype.hasOwnProperty.call(audit, 'settlementSystem')
+    ? settlementSystemLabel(audit.settlementSystem)
+    : settlementSystemLabel(offer.settlementBefore);
   const account = Array.isArray(energy.operatorAccounts) ? energy.operatorAccounts[0] || {} : {};
   const b2b = client.clientType === 'B2B';
   const valueFactor = b2b ? 1 / 1.23 : 1;
@@ -337,7 +340,7 @@ export function buildOfferReport(offer: any) {
       phaseCount: optionalNumber(siteForm.phase_count ?? audit.phaseCount),
       connectionType: connectionTypeLabel(siteForm.connection_type || audit.connectionType),
       tariff: text(account.tariff || offer.tariffBefore),
-      settlement: settlementSystemLabel(offer.settlementBefore || audit.settlementSystem),
+      settlement: settlementBefore,
       operator: text(account.operator),
       supplier: energySupplierLabel(siteForm.energy_supplier || audit.energySupplier),
       heatingSource: energyHeatSourceLabel(siteForm.heating_source || audit.heatingSource),
@@ -368,7 +371,7 @@ export function buildOfferReport(offer: any) {
     tariffs: {
       before: text(offer.tariffBefore || account.tariff),
       afterName: text(offer.tariffAfter),
-      settlementBefore: text(offer.settlementBefore),
+      settlementBefore,
       settlementAfter: text(offer.settlementAfter) || 'net-billing',
       current: {
         energyPerKwh: round(currentEnergyRate * valueFactor, 4),

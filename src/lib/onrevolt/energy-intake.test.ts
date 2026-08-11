@@ -12,7 +12,7 @@ import {
 test('pokazuje właściwe rodzaje kotła dla gazu ziemnego', () => {
   assert.deepEqual(
     getHeatSourceDetailOptions('NATURAL_GAS').map((option) => option.label),
-    ['Kocioł stary', 'Kocioł tradycyjny', 'Kocioł kondensacyjny'],
+    ['Kocioł stary', 'Kocioł tradycyjny', 'Piec kondensacyjny'],
   );
 });
 
@@ -27,8 +27,8 @@ test('pokazuje pompy ciepła wyłącznie dla ogrzewania elektrycznego', () => {
 test('tłumaczy wartości formularza i starsze aliasy na etykiety oferty', () => {
   assert.equal(buildingTypeLabel('SINGLE_FAMILY'), 'Dom jednorodzinny');
   assert.equal(terrainTypeLabel('SUBURBAN'), 'Teren podmiejski');
-  assert.equal(roofShapeLabel('GABLE_BARN'), 'Dwuspadowy typu stodoła');
+  assert.equal(roofShapeLabel('GABLE_BARN'), 'Dwuspadowy');
   assert.equal(heatSourceLabel('NATURAL_GAS'), 'Gaz ziemny');
   assert.equal(heatSourceLabel('GAS'), 'Gaz ziemny');
-  assert.equal(heatSourceDetailLabel('NATURAL_GAS', 'GAS_CONDENSING'), 'Kocioł kondensacyjny');
+  assert.equal(heatSourceDetailLabel('NATURAL_GAS', 'GAS_CONDENSING'), 'Piec kondensacyjny');
 });

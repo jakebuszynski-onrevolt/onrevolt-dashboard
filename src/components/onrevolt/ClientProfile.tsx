@@ -1366,7 +1366,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
           energyOperator: offerOperator,
           tariffBefore: offerTariffBefore,
           tariffAfter: targetTariffForOperator(offerOperator),
-          settlementBefore: energyDataSettings.settlementSystem || 'net-metering',
+          settlementBefore: energyDataSettings.settlementSystem || undefined,
           settlementAfter: 'net-billing',
           subsidyGross: 0,
           thermoReliefGross: 0,

@@ -110,12 +110,23 @@ test('buduje ofertę B2C z pięciostronicowego szablonu Reform', () => {
   assert.equal(report.deposit.exportKwh, 3120);
   assert.equal(report.report.terrain, 'Teren podmiejski');
   assert.equal(report.report.buildingType, 'Dom jednorodzinny');
-  assert.equal(report.report.roofType, 'Dwuspadowy typu stodoła');
+  assert.equal(report.report.roofType, 'Dwuspadowy');
   assert.equal(report.report.connectionType, 'Niskie napięcie');
   assert.equal(report.report.connectionPowerKw, 11);
   assert.equal(report.report.supplier, 'Enea');
   assert.equal(report.report.heatingSource, 'Gaz ziemny');
-  assert.equal(report.report.heatingDetails, 'Kocioł kondensacyjny');
+  assert.equal(report.report.heatingDetails, 'Piec kondensacyjny');
+});
+
+test('nie zakłada net-meteringu, gdy system rozliczeniowy nie został wybrany', () => {
+  const input = offer('B2C');
+  Object.assign(input, { settlementBefore: 'net-metering' });
+  input.energySnapshot.audit.settlementSystem = null;
+
+  const report = buildOfferReport(input);
+
+  assert.equal(report.report.settlement, '');
+  assert.equal(report.tariffs.settlementBefore, '');
 });
 
 test('wariant B2B używa cen netto i rzeczywistych profili dnia roboczego oraz wolnego', () => {

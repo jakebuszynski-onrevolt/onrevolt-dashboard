@@ -66,7 +66,7 @@ const emptyForm: OfferForm = {
   energyOperator: 'ENEA',
   tariffBefore: 'G11',
   tariffAfter: 'G13active',
-  settlementBefore: 'net-metering',
+  settlementBefore: '',
   settlementAfter: 'net-billing',
   descriptionBefore: '',
   descriptionAfter: '',
@@ -227,6 +227,7 @@ export default function OffersWorkspace() {
       if (key === 'projectId') {
         const project = projects.find((item) => item.id === value);
         const energyAccount = project?.energyPortalAccounts?.[0];
+        const energyAudit = project?.energyAudits?.[0];
         const energyOperator = energyAccount?.operator || current.energyOperator || 'ENEA';
         const configuration = configurations.find((item) => item.projectId === value);
         const scenarios = (project?.energyAudits || []).flatMap((audit: any) => audit.scenarios || []);
@@ -240,6 +241,7 @@ export default function OffersWorkspace() {
           energyOperator,
           tariffBefore: energyAccount?.tariff || getDefaultEnergyTariff(energyOperator),
           tariffAfter: getDefaultTargetEnergyTariff(energyOperator),
+          settlementBefore: energyAudit?.settlementSystem || '',
           ...(scenario ? scenarioValues(scenario) : { currentAnnualBillGross: '0', projectedAnnualBillGross: '0' }),
         };
       }

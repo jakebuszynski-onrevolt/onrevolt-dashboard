@@ -19,7 +19,7 @@ export const terrainTypeOptions: EnergyIntakeOption[] = [
 
 export const roofShapeOptions: EnergyIntakeOption[] = [
   { value: 'FLAT', label: 'Płaski' },
-  { value: 'GABLE_BARN', label: 'Dwuspadowy typu stodoła' },
+  { value: 'GABLE_BARN', label: 'Dwuspadowy' },
   { value: 'MULTI_SLOPE', label: 'Wielospadowy' },
 ];
 
@@ -57,7 +57,7 @@ const heatSourceDetails: Record<string, EnergyIntakeOption[]> = {
   NATURAL_GAS: [
     { value: 'GAS_OLD', label: 'Kocioł stary' },
     { value: 'GAS_TRADITIONAL', label: 'Kocioł tradycyjny' },
-    { value: 'GAS_CONDENSING', label: 'Kocioł kondensacyjny' },
+    { value: 'GAS_CONDENSING', label: 'Piec kondensacyjny' },
   ],
   HEATING_OIL: [
     { value: 'OIL_OLD', label: 'Kocioł stary' },
