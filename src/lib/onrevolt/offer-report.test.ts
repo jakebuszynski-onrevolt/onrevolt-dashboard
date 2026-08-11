@@ -66,7 +66,19 @@ function offer(clientType: 'B2C' | 'B2B') {
     },
     energySnapshot: {
       measurementMonths: ['2025-09', '2026-08'],
-      audit: { existingPvKw: 0, existingBatteryKwh: 0 },
+      audit: {
+        existingPvKw: 0,
+        existingBatteryKwh: 0,
+        terrainType: 'SUBURBAN',
+        buildingType: 'SINGLE_FAMILY',
+        roofShape: 'GABLE_BARN',
+        settlementSystem: 'net-billing',
+        energySupplier: 'ENEA',
+        connectionType: 'LOW_VOLTAGE',
+        connectionPowerKw: 11,
+        heatingSource: 'NATURAL_GAS',
+        heatingSourceDetail: 'GAS_CONDENSING',
+      },
       scenario: scenario(),
       usageProfile: {
         annualKwh: 6000,
@@ -96,6 +108,14 @@ test('buduje ofertę B2C z pięciostronicowego szablonu Reform', () => {
   assert.equal(report.energy.projectedMonths.length, 12);
   assert.equal(report.energy.period, 'Wrzesień 2025 - Sierpień 2026');
   assert.equal(report.deposit.exportKwh, 3120);
+  assert.equal(report.report.terrain, 'Teren podmiejski');
+  assert.equal(report.report.buildingType, 'Dom jednorodzinny');
+  assert.equal(report.report.roofType, 'Dwuspadowy typu stodoła');
+  assert.equal(report.report.connectionType, 'Niskie napięcie');
+  assert.equal(report.report.connectionPowerKw, 11);
+  assert.equal(report.report.supplier, 'Enea');
+  assert.equal(report.report.heatingSource, 'Gaz ziemny');
+  assert.equal(report.report.heatingDetails, 'Kocioł kondensacyjny');
 });
 
 test('wariant B2B używa cen netto i rzeczywistych profili dnia roboczego oraz wolnego', () => {

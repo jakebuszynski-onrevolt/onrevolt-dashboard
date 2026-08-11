@@ -1,3 +1,14 @@
+import {
+  buildingTypeLabel,
+  connectionTypeLabel,
+  energySupplierLabel,
+  heatSourceDetailLabel,
+  heatSourceLabel as energyHeatSourceLabel,
+  roofShapeLabel,
+  settlementSystemLabel,
+  terrainTypeLabel,
+} from './energy-intake';
+
 export const offerReportTemplateVersion = 'REFORM_2026_08_V1';
 
 export const monthNames = [
@@ -219,15 +230,15 @@ function periodLabel(measurementMonths: string[]) {
 }
 
 function roofLabel(value: unknown) {
-  return ({ FLAT: 'Dach płaski', SLOPED: 'Dach skośny', GROUND: 'Grunt', OTHER: 'Inny' } as Record<string, string>)[text(value)] || '';
+  const raw = text(value);
+  return ({ SLOPED: 'Dach skośny', GROUND: 'Grunt', OTHER: 'Inny' } as Record<string, string>)[raw]
+    || roofShapeLabel(raw);
 }
 
 function buildingLabel(value: unknown) {
-  return ({ house: 'Budynek jednorodzinny', apartment: 'Budynek wielorodzinny', commercial: 'Obiekt usługowy', industrial: 'Obiekt produkcyjno-magazynowy', farm: 'Gospodarstwo rolne' } as Record<string, string>)[text(value)] || text(value);
-}
-
-function heatSourceLabel(value: unknown) {
-  return ({ gas: 'Gaz', electric: 'Energia elektryczna', heat_pump: 'Pompa ciepła', coal: 'Paliwo stałe', district: 'Sieć ciepłownicza', other: 'Inne' } as Record<string, string>)[text(value)] || text(value);
+  const raw = text(value);
+  return ({ house: 'Budynek jednorodzinny', apartment: 'Budynek wielorodzinny', commercial: 'Obiekt usługowy', industrial: 'Obiekt produkcyjno-magazynowy', farm: 'Gospodarstwo rolne' } as Record<string, string>)[raw]
+    || buildingTypeLabel(raw);
 }
 
 function tariffZoneRates(value: unknown, valueFactor: number) {
@@ -316,20 +327,22 @@ export function buildOfferReport(offer: any) {
       coverImageTitle: text(energy.siteAudit?.coverImageTitle),
     },
     report: {
-      terrain: text(siteForm.terrain_type),
-      buildingType: buildingLabel(siteForm.building_type),
-      roofType: roofLabel(siteForm.roof_type || audit.roofType),
+      terrain: terrainTypeLabel(siteForm.terrain_type || audit.terrainType),
+      buildingType: buildingLabel(siteForm.building_type || audit.buildingType),
+      roofType: roofLabel(siteForm.roof_type || audit.roofShape || audit.roofType),
       activityProfile: text(siteForm.activity_profile),
       workCycle: text(siteForm.work_cycle),
       transformer: text(siteForm.transformer),
-      connectionPowerKw: optionalNumber(siteForm.connection_power_kw ?? audit.connectionPowerKw),
+      connectionPowerKw: optionalNumber(siteForm.connection_power_kw || audit.connectionPowerKw),
       phaseCount: optionalNumber(siteForm.phase_count ?? audit.phaseCount),
+      connectionType: connectionTypeLabel(siteForm.connection_type || audit.connectionType),
       tariff: text(account.tariff || offer.tariffBefore),
-      settlement: text(offer.settlementBefore),
+      settlement: settlementSystemLabel(offer.settlementBefore || audit.settlementSystem),
       operator: text(account.operator),
-      supplier: text(siteForm.energy_supplier),
-      heatingSource: heatSourceLabel(siteForm.heating_source),
-      heatingDetails: text(siteForm.heating_params),
+      supplier: energySupplierLabel(siteForm.energy_supplier || audit.energySupplier),
+      heatingSource: energyHeatSourceLabel(siteForm.heating_source || audit.heatingSource),
+      heatingDetails: text(siteForm.heating_params)
+        || heatSourceDetailLabel(audit.heatingSource, audit.heatingSourceDetail),
       currentLoads: Array.isArray(siteForm.loads) ? siteForm.loads.map((item: any) => text(item.device || item.params)).filter(Boolean).join(', ') : '',
       plannedLoads: text(siteForm.planned_loads),
       hasPv: existingPv > 0,

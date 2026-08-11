@@ -33,11 +33,19 @@ import ClientDocumentsPanel from 'components/onrevolt/ClientDocumentsPanel';
 import ClientSiteAuditPanel from 'components/onrevolt/ClientSiteAuditPanel';
 import ConfiguratorWorkspace from 'components/onrevolt/ConfiguratorWorkspace';
 import {
-  energyOperatorOptions,
   getDefaultEnergyTariff,
   getDefaultTargetEnergyTariff,
-  getEnergyTariffs,
 } from 'lib/onrevolt/energy-tariffs';
+import {
+  buildingTypeOptions,
+  connectionTypeOptions,
+  energySupplierOptions,
+  getHeatSourceDetailOptions,
+  heatSourceOptions,
+  roofShapeOptions,
+  settlementSystemOptions,
+  terrainTypeOptions,
+} from 'lib/onrevolt/energy-intake';
 import {
   calculateClientJourney,
   type ClientJourneyKey,
@@ -204,7 +212,22 @@ type EnergyDataSettings = {
   hasOperatorData: boolean;
   hasEnergyInvoices: boolean;
   annualConsumptionKwh: string;
+  terrainType: string;
+  buildingType: string;
+  roofShape: string;
+  settlementSystem: string;
+  energySupplier: string;
+  connectionType: string;
+  heatingSource: string;
+  heatingSourceDetail: string;
+  connectionPowerKw: string;
 };
+
+type EnergyTariffCatalog = Array<{
+  code: string;
+  label: string;
+  tariffs: Array<{ id: number; code: string; label: string }>;
+}>;
 
 type ClientTaskRow = {
   id: string;
@@ -440,6 +463,15 @@ const emptyEnergyDataSettings: EnergyDataSettings = {
   hasOperatorData: false,
   hasEnergyInvoices: false,
   annualConsumptionKwh: '',
+  terrainType: '',
+  buildingType: '',
+  roofShape: '',
+  settlementSystem: '',
+  energySupplier: '',
+  connectionType: '',
+  heatingSource: '',
+  heatingSourceDetail: '',
+  connectionPowerKw: '',
 };
 
 const clientTypeOptions = [
@@ -640,6 +672,15 @@ function energyDataSettingsFromClient(client: any, project?: any): EnergyDataSet
     hasOperatorData: audit?.hasOperatorData ?? (audit?.profileSource === 'OPERATOR_HOURLY' || hasDownloadedMeasurements),
     hasEnergyInvoices: audit?.hasEnergyInvoices ?? invoices.length > 0,
     annualConsumptionKwh: audit?.annualConsumptionKwh == null ? '' : String(audit.annualConsumptionKwh),
+    terrainType: audit?.terrainType || '',
+    buildingType: audit?.buildingType || '',
+    roofShape: audit?.roofShape || '',
+    settlementSystem: audit?.settlementSystem || '',
+    energySupplier: audit?.energySupplier || '',
+    connectionType: audit?.connectionType || '',
+    heatingSource: audit?.heatingSource || '',
+    heatingSourceDetail: audit?.heatingSourceDetail || '',
+    connectionPowerKw: audit?.connectionPowerKw == null ? '' : String(audit.connectionPowerKw),
   };
 }
 
@@ -761,6 +802,12 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [energyDataSaving, setEnergyDataSaving] = useState(false);
   const [energyDataMessage, setEnergyDataMessage] = useState('');
   const [energyDataError, setEnergyDataError] = useState('');
+  const [energyOverviewSaving, setEnergyOverviewSaving] = useState(false);
+  const [energyOverviewMessage, setEnergyOverviewMessage] = useState('');
+  const [energyOverviewError, setEnergyOverviewError] = useState('');
+  const [energyTariffCatalog, setEnergyTariffCatalog] = useState<EnergyTariffCatalog>([]);
+  const [energyTariffCatalogLoading, setEnergyTariffCatalogLoading] = useState(false);
+  const [energyTariffCatalogError, setEnergyTariffCatalogError] = useState('');
   const [stationCreating, setStationCreating] = useState(false);
   const [stationMessage, setStationMessage] = useState('');
   const [stationError, setStationError] = useState('');
@@ -882,10 +929,27 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     }
   }, [clientId]);
 
+  const loadEnergyTariffCatalog = useCallback(async () => {
+    setEnergyTariffCatalogLoading(true);
+    setEnergyTariffCatalogError('');
+    try {
+      const response = await fetch('/api/energy-tariffs', { cache: 'no-store' });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+      setEnergyTariffCatalog(Array.isArray(payload.data) ? payload.data : []);
+    } catch (e) {
+      setEnergyTariffCatalog([]);
+      setEnergyTariffCatalogError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEnergyTariffCatalogLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     load();
     loadEnergyProfile();
-  }, [load, loadEnergyProfile]);
+    loadEnergyTariffCatalog();
+  }, [load, loadEnergyProfile, loadEnergyTariffCatalog]);
 
   function updateForm(key: keyof ClientFormState, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -961,6 +1025,26 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     }));
   }
 
+  function tariffsForOperator(operator: string) {
+    return energyTariffCatalog.find((item) => item.code === operator)?.tariffs || [];
+  }
+
+  function targetTariffForOperator(operator: string) {
+    const tariffs = tariffsForOperator(operator);
+    return tariffs.find((tariff) => tariff.code === 'G13active')?.code
+      || tariffs.find((tariff) => tariff.code === 'G13')?.code
+      || tariffs[0]?.code
+      || getDefaultTargetEnergyTariff(operator);
+  }
+
+  function updateEnergyOverview(key: keyof EnergyDataSettings, value: string) {
+    setEnergyDataSettings((current) => ({
+      ...current,
+      [key]: value,
+      ...(key === 'heatingSource' ? { heatingSourceDetail: '' } : {}),
+    }));
+  }
+
   function updateEnergyAccount(
     key: 'operator' | 'login' | 'password' | 'tariff' | 'ppeNumber' | 'portalPpeId' | 'meterNumber' | 'notes',
     value: string,
@@ -970,11 +1054,111 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
         return {
           ...current,
           operator: value,
-          tariff: getDefaultEnergyTariff(value),
+          tariff: tariffsForOperator(value)[0]?.code || getDefaultEnergyTariff(value),
         };
       }
       return { ...current, [key]: value };
     });
+  }
+
+  function resolvedEnergySource(requireConsumption: boolean) {
+    const invoiceSummary = summarizeEnergyInvoices(energyInvoiceDocuments(client, activeProject?.id));
+    const manualAnnualKwh = Number(energyDataSettings.annualConsumptionKwh);
+    const annualConsumptionKwh = energyDataSettings.hasOperatorData && Number(energyProfile?.annualKwh) > 0
+      ? Number(energyProfile?.annualKwh)
+      : energyDataSettings.hasEnergyInvoices && invoiceSummary.annualizedKwh > 0
+        ? invoiceSummary.annualizedKwh
+        : Number.isFinite(manualAnnualKwh) && manualAnnualKwh > 0
+          ? manualAnnualKwh
+          : undefined;
+
+    if (requireConsumption && !energyDataSettings.hasOperatorData && !energyDataSettings.hasEnergyInvoices && !annualConsumptionKwh) {
+      throw new Error('Podaj roczne zużycie energii albo dodaj faktury z rozpoznanym zużyciem.');
+    }
+
+    return {
+      annualConsumptionKwh,
+      profileSource: energyDataSettings.hasOperatorData
+        ? 'OPERATOR_HOURLY'
+        : energyDataSettings.hasEnergyInvoices
+          ? 'MONTHLY_MANUAL'
+          : 'ANNUAL_DECLARATION',
+    };
+  }
+
+  function energyOverviewPayload(projectId: string, requireConsumption: boolean) {
+    const source = resolvedEnergySource(requireConsumption);
+    return {
+      id: energyDataSettings.auditId || undefined,
+      projectId,
+      status: energyDataSettings.status,
+      profileSource: source.profileSource,
+      annualConsumptionKwh: source.annualConsumptionKwh,
+      hasOperatorData: energyDataSettings.hasOperatorData,
+      hasEnergyInvoices: energyDataSettings.hasEnergyInvoices,
+      terrainType: energyDataSettings.terrainType,
+      buildingType: energyDataSettings.buildingType,
+      roofShape: energyDataSettings.roofShape,
+      settlementSystem: energyDataSettings.settlementSystem,
+      energySupplier: energyDataSettings.energySupplier,
+      connectionType: energyDataSettings.connectionType,
+      heatingSource: energyDataSettings.heatingSource,
+      heatingSourceDetail: energyDataSettings.heatingSourceDetail,
+      connectionPowerKw: energyDataSettings.connectionPowerKw,
+    };
+  }
+
+  async function saveEnergyOverview() {
+    const project = activeProject;
+    if (!project?.id) {
+      setEnergyOverviewError('Najpierw utwórz lub wybierz projekt klienta.');
+      return;
+    }
+
+    setEnergyOverviewSaving(true);
+    setEnergyOverviewError('');
+    setEnergyOverviewMessage('');
+    try {
+      const auditResponse = await fetch('/api/energy-audits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(energyOverviewPayload(project.id, false)),
+      });
+      const auditPayload = await auditResponse.json();
+      if (!auditResponse.ok || !auditPayload.ok) {
+        throw new Error(auditPayload.message || auditPayload.error || `HTTP ${auditResponse.status}`);
+      }
+
+      const accountResponse = await fetch('/api/crm/clients/energy-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: energyAccount.id || undefined,
+          clientId,
+          projectId: project.id,
+          operator: energyAccount.operator,
+          tariff: energyAccount.tariff,
+          login: energyAccount.login,
+          password: energyAccount.password || undefined,
+          ppeNumber: energyAccount.ppeNumber,
+          portalPpeId: energyAccount.portalPpeId,
+          notes: energyAccount.notes,
+        }),
+      });
+      const accountPayload = await accountResponse.json();
+      if (!accountResponse.ok || !accountPayload.ok) {
+        throw new Error(accountPayload.message || accountPayload.error || `HTTP ${accountResponse.status}`);
+      }
+
+      setEnergyDataSettings((current) => ({ ...current, auditId: auditPayload.data.id }));
+      setEnergyAccount(energyAccountFromRecord(accountPayload.data));
+      setEnergyOverviewMessage('Zapisano dane do oferty.');
+      await load(true);
+    } catch (e) {
+      setEnergyOverviewError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEnergyOverviewSaving(false);
+    }
   }
 
   async function saveEnergyDataSettings() {
@@ -988,37 +1172,10 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setEnergyDataError('');
     setEnergyDataMessage('');
     try {
-      const invoiceSummary = summarizeEnergyInvoices(energyInvoiceDocuments(client, project.id));
-      const manualAnnualKwh = Number(energyDataSettings.annualConsumptionKwh);
-      const annualConsumptionKwh = energyDataSettings.hasOperatorData && Number(energyProfile?.annualKwh) > 0
-        ? Number(energyProfile?.annualKwh)
-        : energyDataSettings.hasEnergyInvoices && invoiceSummary.annualizedKwh > 0
-          ? invoiceSummary.annualizedKwh
-          : Number.isFinite(manualAnnualKwh) && manualAnnualKwh > 0
-            ? manualAnnualKwh
-            : undefined;
-
-      if (!energyDataSettings.hasOperatorData && !energyDataSettings.hasEnergyInvoices && !annualConsumptionKwh) {
-        throw new Error('Podaj roczne zużycie energii albo dodaj faktury z rozpoznanym zużyciem.');
-      }
-
-      const profileSource = energyDataSettings.hasOperatorData
-        ? 'OPERATOR_HOURLY'
-        : energyDataSettings.hasEnergyInvoices
-          ? 'MONTHLY_MANUAL'
-          : 'ANNUAL_DECLARATION';
       const response = await fetch('/api/energy-audits', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: energyDataSettings.auditId || undefined,
-          projectId: project.id,
-          status: energyDataSettings.status,
-          profileSource,
-          annualConsumptionKwh,
-          hasOperatorData: energyDataSettings.hasOperatorData,
-          hasEnergyInvoices: energyDataSettings.hasEnergyInvoices,
-        }),
+        body: JSON.stringify(energyOverviewPayload(project.id, true)),
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
@@ -1208,8 +1365,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
           validUntil: validUntil.toISOString(),
           energyOperator: offerOperator,
           tariffBefore: offerTariffBefore,
-          tariffAfter: getDefaultTargetEnergyTariff(offerOperator),
-          settlementBefore: 'net-metering',
+          tariffAfter: targetTariffForOperator(offerOperator),
+          settlementBefore: energyDataSettings.settlementSystem || 'net-metering',
           settlementAfter: 'net-billing',
           subsidyGross: 0,
           thermoReliefGross: 0,
@@ -2969,6 +3126,151 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
               return (
                 <TabPanel key={tab} px="0">
                   <Flex direction="column" gap="20px">
+                    <Card p={{ base: '16px', md: '18px' }}>
+                      <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="12px" align={{ lg: 'center' }}>
+                        <Box>
+                          <Text color={textColor} fontSize="lg" fontWeight="800">Dane do oferty</Text>
+                          <Text color={mutedColor} fontSize="sm">Podstawowe informacje o obiekcie, rozliczeniu i ogrzewaniu.</Text>
+                        </Box>
+                        <Button colorScheme="purple" size="sm" onClick={saveEnergyOverview} isLoading={energyOverviewSaving}>
+                          Zapisz dane do oferty
+                        </Button>
+                      </Flex>
+
+                      {energyOverviewError ? (
+                        <Alert status="error" borderRadius="8px" mt="12px">
+                          <AlertIcon />
+                          {energyOverviewError}
+                        </Alert>
+                      ) : null}
+                      {energyOverviewMessage ? (
+                        <Alert status="success" borderRadius="8px" mt="12px">
+                          <AlertIcon />
+                          {energyOverviewMessage}
+                        </Alert>
+                      ) : null}
+                      {energyTariffCatalogError ? (
+                        <Alert status="warning" borderRadius="8px" mt="12px">
+                          <AlertIcon />
+                          {energyTariffCatalogError}
+                        </Alert>
+                      ) : null}
+
+                      <Box mt="14px">
+                        <Text color={textColor} fontSize="sm" fontWeight="800" mb="8px">Dane środowiskowe</Text>
+                        <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} gap="10px">
+                          <FormControl>
+                            <FormLabel mb="5px" fontSize="sm">Typ budynku</FormLabel>
+                            <Select size="sm" value={energyDataSettings.buildingType} onChange={(event) => updateEnergyOverview('buildingType', event.target.value)}>
+                              <option value="">Nie określono</option>
+                              {buildingTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </Select>
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel mb="5px" fontSize="sm">Rodzaj terenu</FormLabel>
+                            <Select size="sm" value={energyDataSettings.terrainType} onChange={(event) => updateEnergyOverview('terrainType', event.target.value)}>
+                              <option value="">Nie określono</option>
+                              {terrainTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </Select>
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel mb="5px" fontSize="sm">Rodzaj dachu</FormLabel>
+                            <Select size="sm" value={energyDataSettings.roofShape} onChange={(event) => updateEnergyOverview('roofShape', event.target.value)}>
+                              <option value="">Nie określono</option>
+                              {roofShapeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </Select>
+                          </FormControl>
+                        </SimpleGrid>
+                      </Box>
+
+                      <Box mt="14px" pt="12px" borderTop="1px solid" borderColor={borderColor}>
+                        <Text color={textColor} fontSize="sm" fontWeight="800" mb="8px">Dane rozliczeniowe</Text>
+                        <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} gap="10px">
+                          <FormControl>
+                            <FormLabel mb="5px" fontSize="sm">OSD</FormLabel>
+                            <Select
+                              size="sm"
+                              value={energyAccount.operator}
+                              onChange={(event) => updateEnergyAccount('operator', event.target.value)}
+                              isDisabled={energyTariffCatalogLoading || !energyTariffCatalog.length}
+                            >
+                              {energyTariffCatalogLoading ? <option>Ładowanie...</option> : null}
+                              {energyTariffCatalog.map((operator) => (
+                                <option key={operator.code} value={operator.code}>{operator.label}</option>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel mb="5px" fontSize="sm">Taryfa</FormLabel>
+                            <Select
+                              size="sm"
+                              value={energyAccount.tariff}
+                              onChange={(event) => updateEnergyAccount('tariff', event.target.value)}
+                              isDisabled={energyTariffCatalogLoading || !tariffsForOperator(energyAccount.operator).length}
+                            >
+                              {tariffsForOperator(energyAccount.operator).map((tariff) => (
+                                <option key={tariff.id} value={tariff.code}>{tariff.label}</option>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel mb="5px" fontSize="sm">System rozliczeniowy</FormLabel>
+                            <Select size="sm" value={energyDataSettings.settlementSystem} onChange={(event) => updateEnergyOverview('settlementSystem', event.target.value)}>
+                              <option value="">Nie określono</option>
+                              {settlementSystemOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </Select>
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel mb="5px" fontSize="sm">Moc przyłączeniowa [kW]</FormLabel>
+                            <Input size="sm" type="number" min="0" step="0.1" value={energyDataSettings.connectionPowerKw} onChange={(event) => updateEnergyOverview('connectionPowerKw', event.target.value)} />
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel mb="5px" fontSize="sm">Dostawca energii</FormLabel>
+                            <Select size="sm" value={energyDataSettings.energySupplier} onChange={(event) => updateEnergyOverview('energySupplier', event.target.value)}>
+                              <option value="">Nie określono</option>
+                              {energySupplierOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </Select>
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel mb="5px" fontSize="sm">Rodzaj przyłącza</FormLabel>
+                            <Select size="sm" value={energyDataSettings.connectionType} onChange={(event) => updateEnergyOverview('connectionType', event.target.value)}>
+                              <option value="">Nie określono</option>
+                              {connectionTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </Select>
+                          </FormControl>
+                        </SimpleGrid>
+                      </Box>
+
+                      <Box mt="14px" pt="12px" borderTop="1px solid" borderColor={borderColor}>
+                        <Text color={textColor} fontSize="sm" fontWeight="800" mb="8px">Energia cieplna</Text>
+                        <SimpleGrid columns={{ base: 1, md: 2 }} gap="10px">
+                          <FormControl>
+                            <FormLabel mb="5px" fontSize="sm">Źródło ciepła</FormLabel>
+                            <Select size="sm" value={energyDataSettings.heatingSource} onChange={(event) => updateEnergyOverview('heatingSource', event.target.value)}>
+                              <option value="">Nie określono</option>
+                              {heatSourceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </Select>
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel mb="5px" fontSize="sm">Rodzaj źródła ciepła</FormLabel>
+                            <Select
+                              size="sm"
+                              value={energyDataSettings.heatingSourceDetail}
+                              onChange={(event) => updateEnergyOverview('heatingSourceDetail', event.target.value)}
+                              isDisabled={!getHeatSourceDetailOptions(energyDataSettings.heatingSource).length}
+                            >
+                              <option value="">
+                                {getHeatSourceDetailOptions(energyDataSettings.heatingSource).length ? 'Nie określono' : 'Nie dotyczy'}
+                              </option>
+                              {getHeatSourceDetailOptions(energyDataSettings.heatingSource).map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        </SimpleGrid>
+                      </Box>
+                    </Card>
+
                     <Card p="22px">
                       <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" align={{ lg: 'center' }}>
                         <Box>
@@ -3084,7 +3386,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                     {energyDataSettings.hasOperatorData ? <Card p="22px">
                     <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" mb="18px">
                       <Box>
-                        <Text color={textColor} fontSize="lg" fontWeight="800">{tab}</Text>
+                        <Text color={textColor} fontSize="lg" fontWeight="800">Dostęp do portalu operatora</Text>
                         <Text color={mutedColor}>Ostatnia synchronizacja: {formatDateTime(energyAccount.lastSyncAt)}</Text>
                       </Box>
                       <Flex gap="10px" align="center" wrap="wrap">
@@ -3127,22 +3429,6 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                     ) : null}
 
                     <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px">
-                      <FormControl>
-                        <FormLabel>OSD</FormLabel>
-                        <Select value={energyAccount.operator} onChange={(event) => updateEnergyAccount('operator', event.target.value)}>
-                          {energyOperatorOptions.map(([value, label]) => (
-                            <option key={value} value={value}>{label}</option>
-                          ))}
-                        </Select>
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel>Taryfa</FormLabel>
-                        <Select value={energyAccount.tariff} onChange={(event) => updateEnergyAccount('tariff', event.target.value)}>
-                          {getEnergyTariffs(energyAccount.operator).map((tariff) => (
-                            <option key={tariff.code} value={tariff.code}>{tariff.label}</option>
-                          ))}
-                        </Select>
-                      </FormControl>
                       <FormControl>
                         <FormLabel>Numer PPE</FormLabel>
                         <Input value={energyAccount.ppeNumber} onChange={(event) => updateEnergyAccount('ppeNumber', event.target.value)} />

@@ -196,7 +196,7 @@ function ReportPage({ report }: { report: ReturnType<typeof buildOfferReport> })
           <DataField label="Taryfa" value={report.report.tariff} />
           <DataField label="Operator systemu dystrybucyjnego" value={report.report.operator} />
           <DataField label="Dostawca energii elektrycznej" value={report.report.supplier} />
-          <DataField label="Rodzaj przyłącza" value={report.report.phaseCount ? `${report.report.phaseCount}-fazowe` : ''} />
+          <DataField label="Rodzaj przyłącza" value={report.report.connectionType || (report.report.phaseCount ? `${report.report.phaseCount}-fazowe` : '')} />
         </div>
       </Panel>
 

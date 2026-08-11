@@ -196,6 +196,35 @@ function apiUrl(parameters: Record<string, string>) {
   return url;
 }
 
+export type ReEnergyTariffCatalog = Array<{
+  code: string;
+  label: string;
+  tariffs: Array<{
+    id: number;
+    code: string;
+    label: string;
+  }>;
+}>;
+
+export async function loadEnergyTariffCatalog(): Promise<ReEnergyTariffCatalog> {
+  const osdPayload = await getJson(apiUrl({ action: 'json_osds' }));
+  const osds = Array.isArray(osdPayload.osds) ? osdPayload.osds : [];
+
+  return Promise.all(osds.map(async (osd: any) => {
+    const listPayload = await getJson(apiUrl({ act: 'list', osd_id: String(osd.id) }));
+    const tariffs = Array.isArray(listPayload.data) ? listPayload.data : [];
+    return {
+      code: String(osd.slug || osd.name || '').trim().toUpperCase(),
+      label: String(osd.name || osd.slug || '').trim(),
+      tariffs: tariffs.map((tariff: any) => ({
+        id: Number(tariff.id),
+        code: String(tariff.code || '').trim(),
+        label: String(tariff.name || tariff.code || '').trim(),
+      })),
+    };
+  }));
+}
+
 export async function loadEnergyTariffSnapshots(options: {
   operator: string;
   tariffCodes: string[];

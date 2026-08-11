@@ -558,6 +558,14 @@ model EnergyAudit {
   annualConsumptionKwh Decimal?               @db.Decimal(12, 3)
   hasOperatorData      Boolean?
   hasEnergyInvoices    Boolean?
+  terrainType          String?
+  buildingType         String?
+  roofShape            String?
+  settlementSystem     String?
+  energySupplier       String?
+  connectionType       String?
+  heatingSource        String?
+  heatingSourceDetail  String?
   connectionPowerKw    Decimal?               @db.Decimal(10, 3)
   phaseCount           Int?
   mainFuseA            Int?

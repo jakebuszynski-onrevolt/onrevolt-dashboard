@@ -359,6 +359,14 @@ async function energySnapshot(project: any, scenario?: any) {
     audit: energyAudit ? {
       profileSource: energyAudit.profileSource,
       annualConsumptionKwh: optionalDecimalToNumber(energyAudit.annualConsumptionKwh),
+      terrainType: energyAudit.terrainType,
+      buildingType: energyAudit.buildingType,
+      roofShape: energyAudit.roofShape,
+      settlementSystem: energyAudit.settlementSystem,
+      energySupplier: energyAudit.energySupplier,
+      connectionType: energyAudit.connectionType,
+      heatingSource: energyAudit.heatingSource,
+      heatingSourceDetail: energyAudit.heatingSourceDetail,
       connectionPowerKw: optionalDecimalToNumber(energyAudit.connectionPowerKw),
       phaseCount: energyAudit.phaseCount,
       mainFuseA: energyAudit.mainFuseA,
@@ -624,7 +632,7 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
   const lineItems = mergeConfigurationLineItems(configurations);
   const currentTotalGross = money(lineItems.reduce((sum, item) => sum + finiteNumber(item.saleGross), 0));
   const operator = String(energyAccount?.operator || 'ENEA');
-  const tariffBefore = existing.tariffBefore || energyAccount?.tariff;
+  const tariffBefore = energyAccount?.tariff || existing.tariffBefore;
   const tariffAfter = existing.tariffAfter;
   if (!tariffBefore || !tariffAfter) {
     throw new OfferRecalculationError('Oferta nie ma wybranej taryfy przed i po modernizacji.');
@@ -685,9 +693,9 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
     thermoReliefGross: decimalToNumber(existing.thermoReliefGross),
     currentAnnualBillGross: decimalToNumber(existing.currentAnnualBillGross),
     projectedAnnualBillGross: decimalToNumber(existing.projectedAnnualBillGross),
-    tariffBefore: existing.tariffBefore || undefined,
+    tariffBefore,
     tariffAfter: existing.tariffAfter || undefined,
-    settlementBefore: existing.settlementBefore || undefined,
+    settlementBefore: audit.settlementSystem || existing.settlementBefore || undefined,
     settlementAfter: existing.settlementAfter || undefined,
     descriptionBefore: existing.descriptionBefore || undefined,
     descriptionAfter: existing.descriptionAfter || undefined,
@@ -731,6 +739,8 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
         projectedAnnualBillGross: data.projectedAnnualBillGross,
         annualSavingsGross: data.annualSavingsGross,
         paybackYears: data.paybackYears,
+        tariffBefore: data.tariffBefore,
+        settlementBefore: data.settlementBefore,
         lineItemsSnapshot: data.lineItemsSnapshot as Prisma.InputJsonValue,
         energySnapshot: data.energySnapshot as Prisma.InputJsonValue,
         calculationSnapshot: data.calculationSnapshot as Prisma.InputJsonValue,
