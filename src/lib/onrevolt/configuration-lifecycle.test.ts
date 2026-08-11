@@ -9,23 +9,22 @@ test('pozwala usunąć nieużywaną konfigurację roboczą', () => {
 test('blokuje usunięcie konfiguracji używanej w procesie', () => {
   assert.match(
     configurationDeleteBlockReason({ status: 'DRAFT', offers: 1 }) || '',
-    /Zarchiwizuj ją/,
+    /musi pozostać w historii procesu/,
   );
   assert.match(
     configurationDeleteBlockReason({ status: 'DRAFT', installations: 1 }) || '',
-    /Zarchiwizuj ją/,
+    /musi pozostać w historii procesu/,
   );
   assert.match(
     configurationDeleteBlockReason({ status: 'DRAFT', stockReservations: 1 }) || '',
-    /Zarchiwizuj ją/,
+    /musi pozostać w historii procesu/,
   );
 });
 
-test('blokuje usunięcie konfiguracji, która nie jest szkicem', () => {
-  assert.match(
-    configurationDeleteBlockReason({ status: 'READY' }) || '',
-    /tylko konfigurację roboczą/,
-  );
+test('pozwala usunąć każdą nieużywaną konfigurację, niezależnie od statusu', () => {
+  assert.equal(configurationDeleteBlockReason({ status: 'READY' }), undefined);
+  assert.equal(configurationDeleteBlockReason({ status: 'ARCHIVED' }), undefined);
+  assert.equal(configurationDeleteBlockReason({ status: 'OFFERED' }), undefined);
 });
 
 test('pozwala edytować nieużywany szkic i konfigurację gotową', () => {

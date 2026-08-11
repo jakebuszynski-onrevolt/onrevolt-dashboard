@@ -1254,7 +1254,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   }
 
   async function deleteClientConfiguration(configuration: any) {
-    if (!window.confirm(`Usunąć konfigurację roboczą „${configuration.name}”? Tej operacji nie można cofnąć.`)) {
+    if (!window.confirm(`Usunąć nieużywaną konfigurację „${configuration.name}”? Tej operacji nie można cofnąć.`)) {
       return;
     }
 
@@ -2088,8 +2088,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                           const installationCount = Number(configuration._count?.installations ?? linkedInstallations.length);
                           const stockReservationCount = Number(configuration._count?.stockReservations || 0);
                           const isArchived = configuration.status === 'ARCHIVED';
-                          const canDelete = configuration.status === 'DRAFT'
-                            && offerCount === 0
+                          const canDelete = offerCount === 0
                             && installationCount === 0
                             && stockReservationCount === 0;
                           const canEdit = ['DRAFT', 'READY'].includes(configuration.status)
@@ -2176,8 +2175,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                       ) : null}
                                     </>
                                   ) : null}
-                                  {isAdmin && !isArchived && canDelete ? (
-                                    <Tooltip label="Usuń nieużywaną konfigurację roboczą">
+                                  {isAdmin && canDelete ? (
+                                    <Tooltip label="Usuń nieużywaną konfigurację">
                                       <IconButton
                                         aria-label="Usuń konfigurację"
                                         icon={<MdDeleteOutline />}

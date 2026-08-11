@@ -11,10 +11,7 @@ export function configurationDeleteBlockReason(configuration: ConfigurationUsage
     || Number(configuration.stockReservations || 0) > 0;
 
   if (isUsed) {
-    return 'Konfiguracja jest używana przez ofertę, montaż lub rezerwację. Zarchiwizuj ją zamiast usuwać.';
-  }
-  if (configuration.status !== 'DRAFT') {
-    return 'Usunąć można tylko konfigurację roboczą. Zarchiwizuj ją zamiast usuwać.';
+    return 'Konfiguracja jest używana przez ofertę, montaż lub rezerwację i musi pozostać w historii procesu.';
   }
   return undefined;
 }
