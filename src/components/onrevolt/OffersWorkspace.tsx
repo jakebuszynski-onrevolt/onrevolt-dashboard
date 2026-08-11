@@ -336,7 +336,7 @@ export default function OffersWorkspace() {
   }
 
   async function recalculateOffer(offer: any) {
-    if (!window.confirm(`Przeliczyć ofertę ${offer.number || offer.title || ''} z aktualnych danych klienta, „Faktury i OSD” oraz konfiguracji? Numer i status oferty pozostaną bez zmian.`)) return;
+    if (!window.confirm(`Przeliczyć ofertę ${offer.number || offer.title || ''} z aktualnych danych klienta, „Dane energetyczne” oraz konfiguracji? Numer i status oferty pozostaną bez zmian.`)) return;
     setRecalculatingOfferId(offer.id);
     setError('');
     setNotice('');

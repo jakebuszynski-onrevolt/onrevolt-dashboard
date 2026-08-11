@@ -144,7 +144,7 @@ export class OfferRecalculationError extends Error {}
 
 export function buildOfferScenarioInput(options: OfferScenarioInputOptions): EnergyScenarioInput {
   if (!(options.annualConsumptionKwh > 0)) {
-    throw new OfferRecalculationError('Uzupełnij roczne zużycie energii w zakładce „Faktury i OSD”.');
+    throw new OfferRecalculationError('Uzupełnij roczne zużycie energii w zakładce „Dane energetyczne”.');
   }
 
   const existingInput = objectValue(options.existingInput);
@@ -602,7 +602,7 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
     }),
   ]);
   if (!audit) {
-    throw new OfferRecalculationError('Najpierw zapisz dane zużycia w zakładce „Faktury i OSD”.');
+    throw new OfferRecalculationError('Najpierw zapisz dane zużycia w zakładce „Dane energetyczne”.');
   }
 
   const annualConsumptionKwh = finiteNumber(audit.annualConsumptionKwh);

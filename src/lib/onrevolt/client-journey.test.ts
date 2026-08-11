@@ -14,11 +14,11 @@ test('oblicza postęp danych klienta z czterech jawnych kryteriów', () => {
 
 test('mapuje statusy procesu na właściwe punkty ścieżki', () => {
   assert.equal(calculateClientJourney({ projectStatus: 'LEAD' }).currentKey, 'client');
-  assert.equal(calculateClientJourney({ projectStatus: 'CZEKA_NA_KALKULACJE' }).currentKey, 'configuration');
+  assert.equal(calculateClientJourney({ projectStatus: 'CZEKA_NA_KALKULACJE' }).currentKey, 'offer');
   assert.equal(calculateClientJourney({ projectStatus: 'OFERTA_PRZYGOTOWANA' }).currentKey, 'offer');
   assert.equal(calculateClientJourney({ projectStatus: 'OFERTA_ZAAKCEPTOWANA' }).currentKey, 'contract');
   assert.equal(calculateClientJourney({ projectStatus: 'ZALICZKA_MONTAZ' }).currentKey, 'installation');
-  assert.equal(calculateClientJourney({ projectStatus: 'PROCEDURA_OSD' }).currentKey, 'billing');
+  assert.equal(calculateClientJourney({ projectStatus: 'PROCEDURA_OSD' }).currentKey, 'formalities');
   assert.equal(calculateClientJourney({ projectStatus: 'ZAKONCZONY' }).currentKey, 'documents');
 });
 
@@ -28,13 +28,25 @@ test('rozróżnia postęp konfiguracji, oferty, umowy i montażu', () => {
     offers: [{ status: 'ACCEPTED', contracts: [{ status: 'SIGNED' }] }],
     installations: [{ status: 'IN_PROGRESS' }],
   });
-  assert.equal(result.progress.configuration, 75);
   assert.equal(result.progress.offer, 100);
   assert.equal(result.progress.contract, 100);
   assert.equal(result.progress.installation, 65);
 });
 
-test('zamyka etap faktur i OSD dopiero po zakończeniu sprawy', () => {
+test('włącza postęp konfiguracji do wspólnego kroku oferty', () => {
+  const result = calculateClientJourney({ configurations: [{ status: 'READY' }] });
+  assert.equal(result.progress.offer, 75);
+});
+
+test('pokazuje formalności po rozpoczęciu procedury OSD', () => {
+  const inProgress = calculateClientJourney({ odsCase: { status: 'SUBMITTED' } });
+  assert.equal(inProgress.progress.formalities, 60);
+
+  const completed = calculateClientJourney({ odsCase: { status: 'COMPLETED' } });
+  assert.equal(completed.progress.formalities, 100);
+});
+
+test('zamyka etap danych energetycznych dopiero po zakończeniu sprawy', () => {
   const inProgress = calculateClientJourney({
     energyAccounts: [{ ppeNumber: '590', measurementFiles: [{}] }],
     invoiceCount: 2,

@@ -44,6 +44,7 @@ import {
 } from 'lib/onrevolt/client-journey';
 import { summarizeEnergyInvoices } from 'lib/onrevolt/energy-data';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDeleteOutline, MdEdit, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
 
@@ -244,37 +245,37 @@ const tabs = [
   'Dane klienta',
   'Zadania',
   'Audyt',
-  'Konfiguracje',
   'Oferta / umowa',
   'Montaże',
   'Urządzenia',
   'Zdjęcia i pliki',
   'EMS',
-  'Faktury i OSD',
+  'Dane energetyczne',
   'Dokumenty',
   'Historia',
   'Serwis',
+  'Formalności',
 ];
 
 const primaryTabs = [
   ['Podsumowanie', 0],
   ['Dane klienta', 1],
   ['Zadania', 2],
-  ['Urządzenia', 7],
-  ['Zdjęcia i pliki', 8],
-  ['EMS', 9],
-  ['Dokumenty', 11],
-  ['Historia', 12],
-  ['Serwis', 13],
+  ['Urządzenia', 6],
+  ['Zdjęcia i pliki', 7],
+  ['EMS', 8],
+  ['Dokumenty', 10],
+  ['Historia', 11],
+  ['Serwis', 12],
 ] as const;
 
 const journeyTabs: Array<{ key: ClientJourneyKey; label: string; tabIndex: number }> = [
-  { key: 'billing', label: 'Faktury i OSD', tabIndex: 10 },
-  { key: 'configuration', label: 'Konfiguracje', tabIndex: 4 },
-  { key: 'offer', label: 'Oferta', tabIndex: 5 },
+  { key: 'billing', label: 'Dane energetyczne', tabIndex: 9 },
+  { key: 'offer', label: 'Oferta', tabIndex: 4 },
   { key: 'audit', label: 'Wizja lokalna', tabIndex: 3 },
-  { key: 'contract', label: 'Projekt / umowa', tabIndex: 5 },
-  { key: 'installation', label: 'Montaż', tabIndex: 6 },
+  { key: 'contract', label: 'Projekt / umowa', tabIndex: 4 },
+  { key: 'installation', label: 'Montaż', tabIndex: 5 },
+  { key: 'formalities', label: 'Formalności', tabIndex: 13 },
 ];
 
 const journeyPositions = [
@@ -1551,7 +1552,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
   function selectPrimaryTab(tabIndex: number) {
     setActiveTabIndex(tabIndex);
-    setActiveJourneyKey(tabIndex === 1 ? 'client' : tabIndex === 11 ? 'documents' : null);
+    setActiveJourneyKey(tabIndex === 1 ? 'client' : tabIndex === 10 ? 'documents' : null);
   }
 
   function toggleClientOfferConfiguration(configurationId: string) {
@@ -1584,7 +1585,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   }
 
   async function recalculateClientOffer(offer: any) {
-    if (!window.confirm(`Przeliczyć ofertę ${offer.number || offer.title || ''} z aktualnych danych klienta, „Faktury i OSD” oraz konfiguracji? Numer i status oferty pozostaną bez zmian.`)) return;
+    if (!window.confirm(`Przeliczyć ofertę ${offer.number || offer.title || ''} z aktualnych danych klienta, „Dane energetyczne” oraz konfiguracji? Numer i status oferty pozostaną bez zmian.`)) return;
     setOfferRecalculatingId(offer.id);
     setOfferError('');
     setOfferMessage('');
@@ -1995,11 +1996,11 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
               );
             }
 
-            if (tab === 'Konfiguracje') {
-              return (
-                <TabPanel key={tab} px="0">
+            let configurationContent: ReactNode = null;
+            if (tab === 'Oferta / umowa') {
+              configurationContent = (
                   <Flex direction="column" gap="20px">
-                    <Card p="22px">
+                    <Card ref={offerSectionRef} p="22px" scrollMarginTop="120px">
                       <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" align={{ lg: 'center' }} mb="18px">
                         <Box>
                           <Text color={textColor} fontSize="lg" fontWeight="800">Konfiguracje projektu</Text>
@@ -2260,7 +2261,6 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       </Flex>
                     )}
                   </Flex>
-                </TabPanel>
               );
             }
 
@@ -2268,10 +2268,11 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
               return (
                 <TabPanel key={tab} px="0">
                   <Flex direction="column" gap="20px">
-                    <Card ref={offerSectionRef} p="22px" scrollMarginTop="120px">
+                    {configurationContent}
+                    <Card p="22px">
                       <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" align={{ lg: 'center' }} mb="18px">
                         <Box>
-                          <Text color={textColor} fontSize="lg" fontWeight="800">Oferta / umowa</Text>
+                          <Text color={textColor} fontSize="lg" fontWeight="800">Oferta</Text>
                           <Text color={mutedColor}>Oferty tworzone z konfiguracji projektu i zapisane jako wersje historyczne.</Text>
                         </Box>
                         <Flex gap="10px" wrap="wrap">
@@ -2920,7 +2921,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
               );
             }
 
-            if (tab === 'Faktury i OSD') {
+            if (tab === 'Dane energetyczne') {
               return (
                 <TabPanel key={tab} px="0">
                   <Flex direction="column" gap="20px">
@@ -3395,6 +3396,21 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       </Flex>
                     </Card>
                   </SimpleGrid>
+                </TabPanel>
+              );
+            }
+
+            if (tab === 'Formalności') {
+              return (
+                <TabPanel key={tab} px="0">
+                  <Card p="22px">
+                    <Badge colorScheme="purple" mb="12px">Etap po montażu</Badge>
+                    <Text color={textColor} fontSize="lg" fontWeight="800" mb="8px">Formalności OZE</Text>
+                    <Text color={mutedColor} maxW="820px">
+                      Tutaj będą prowadzone formalności związane z zakończeniem inwestycji: pozwolenia i zgłoszenia,
+                      dokumenty dla OSD, wnioski o zmianę taryfy, odbiory oraz terminy wymagające kontroli.
+                    </Text>
+                  </Card>
                 </TabPanel>
               );
             }

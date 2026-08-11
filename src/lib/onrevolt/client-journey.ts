@@ -1,21 +1,21 @@
 export type ClientJourneyKey =
   | 'client'
   | 'billing'
-  | 'configuration'
   | 'offer'
   | 'audit'
   | 'contract'
   | 'installation'
+  | 'formalities'
   | 'documents';
 
 export const clientJourneyKeys: ClientJourneyKey[] = [
   'client',
   'billing',
-  'configuration',
   'offer',
   'audit',
   'contract',
   'installation',
+  'formalities',
   'documents',
 ];
 
@@ -90,6 +90,14 @@ function billingProgress(input: ClientJourneyInput) {
   return progress;
 }
 
+function formalitiesProgress(input: ClientJourneyInput) {
+  let progress = Number(input.formalDocumentCount) > 0 ? 25 : 0;
+  if (input.odsCase && input.odsCase.status !== 'CANCELLED') progress = Math.max(progress, 60);
+  if (input.odsCase?.status === 'COMPLETED') progress = 100;
+  if (input.projectStatus === 'ZAKONCZONY') progress = 100;
+  return progress;
+}
+
 function inferredCurrent(progress: Record<ClientJourneyKey, number>) {
   return clientJourneyKeys.find((key) => progress[key] < 100) || 'documents';
 }
@@ -97,12 +105,12 @@ function inferredCurrent(progress: Record<ClientJourneyKey, number>) {
 function statusCurrent(status: string | null | undefined, progress: Record<ClientJourneyKey, number>) {
   const direct: Partial<Record<string, ClientJourneyKey>> = {
     LEAD: 'client',
-    CZEKA_NA_KALKULACJE: 'configuration',
+    CZEKA_NA_KALKULACJE: 'offer',
     OFERTA_PRZYGOTOWANA: 'offer',
     OFERTA_ZAAKCEPTOWANA: 'contract',
     ZALICZKA_MONTAZ: 'installation',
-    PROCEDURA_OSD: 'billing',
-    ODBIOR: 'documents',
+    PROCEDURA_OSD: 'formalities',
+    ODBIOR: 'formalities',
     ZAKONCZONY: 'documents',
   };
   if (status && direct[status]) return direct[status];
@@ -118,12 +126,12 @@ export function calculateClientJourney(input: ClientJourneyInput): ClientJourney
   ];
   const contracts = (input.offers || []).flatMap((offer) => offer.contracts || []);
   const hasAcceptedOffer = input.offers?.some((offer) => offer.status === 'ACCEPTED');
+  const configuration = maximum((input.configurations || []).map((item) => configurationProgress(item.status)));
 
   const progress: Record<ClientJourneyKey, number> = {
     client: clamp((contactChecks.filter(Boolean).length / contactChecks.length) * 100),
     billing: billingProgress(input),
-    configuration: maximum((input.configurations || []).map((item) => configurationProgress(item.status))),
-    offer: maximum((input.offers || []).map((item) => offerProgress(item.status))),
+    offer: Math.max(configuration, maximum((input.offers || []).map((item) => offerProgress(item.status)))),
     audit: maximum((input.audits || []).map((item) => (
       item.status === 'COMPLETED' ? 100 : clamp(Number(item.progressPercent || 0))
     ))),
@@ -132,6 +140,7 @@ export function calculateClientJourney(input: ClientJourneyInput): ClientJourney
       maximum(contracts.map((item) => contractProgress(item.status))),
     ),
     installation: maximum((input.installations || []).map((item) => installationProgress(item.status))),
+    formalities: formalitiesProgress(input),
     documents: Number(input.formalDocumentCount) > 0 ? 100 : 0,
   };
 
