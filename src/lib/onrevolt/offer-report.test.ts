@@ -117,3 +117,21 @@ test('nie tworzy zastępczego wykresu dnia bez danych godzinowych ENEA', () => {
   assert.equal(report.energy.winterWeekend.available, false);
   assert.equal(report.energy.summerWeekday.consumption.every((value) => value === 0), true);
 });
+
+test('pokazuje wszystkie strefy taryfy G13active ze snapshotu RE', () => {
+  const source = offer('B2C');
+  (source.energySnapshot.scenario.input as any).targetTariff = {
+    source: 'WINDYONE_RE',
+    sourceUrl: 'https://windyone.pl/re/setup.php',
+    fetchedAt: '2026-08-11T00:00:00.000Z',
+    zoneRates: [
+      { code: 'high', label: 'Wysoka', energyGrossPerKwh: 0.7915, distributionGrossPerKwh: 0.426441, totalGrossPerKwh: 1.217941 },
+      { code: 'mid', label: 'Średnia', energyGrossPerKwh: 0.6089, distributionGrossPerKwh: 0.355593, totalGrossPerKwh: 0.964493 },
+      { code: 'low', label: 'Niska', energyGrossPerKwh: 0.341, distributionGrossPerKwh: 0.143295, totalGrossPerKwh: 0.484295 },
+    ],
+  };
+  const report = buildOfferReport(source);
+  assert.equal(report.tariffs.projected.zoneRates.length, 3);
+  assert.equal(report.tariffs.projected.zoneRates[2].label, 'Niska');
+  assert.equal(report.tariffs.projected.zoneRates[2].totalPerKwh, 0.4843);
+});

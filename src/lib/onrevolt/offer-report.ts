@@ -230,6 +230,18 @@ function heatSourceLabel(value: unknown) {
   return ({ gas: 'Gaz', electric: 'Energia elektryczna', heat_pump: 'Pompa ciepła', coal: 'Paliwo stałe', district: 'Sieć ciepłownicza', other: 'Inne' } as Record<string, string>)[text(value)] || text(value);
 }
 
+function tariffZoneRates(value: unknown, valueFactor: number) {
+  const tariff = value && typeof value === 'object' ? value as Record<string, any> : {};
+  const rates = Array.isArray(tariff.zoneRates) ? tariff.zoneRates : [];
+  return rates.map((rate: any) => ({
+    code: text(rate.code),
+    label: text(rate.label || rate.code),
+    energyPerKwh: round(numberValue(rate.energyGrossPerKwh) * valueFactor, 4),
+    distributionPerKwh: round(numberValue(rate.distributionGrossPerKwh) * valueFactor, 4),
+    totalPerKwh: round(numberValue(rate.totalGrossPerKwh) * valueFactor, 4),
+  }));
+}
+
 export function buildOfferReport(offer: any) {
   const client = snapshot<Record<string, any>>(offer.clientSnapshot, {});
   const energy = snapshot<Record<string, any>>(offer.energySnapshot, {});
@@ -255,18 +267,25 @@ export function buildOfferReport(offer: any) {
   const energyBuy = numberValue(input.energyBuyGrossPerKwh);
   const distribution = numberValue(input.distributionGrossPerKwh);
   const fixedMonthly = numberValue(input.fixedMonthlyGross);
+  const currentTariffSnapshot = input.currentTariff || null;
+  const targetTariffSnapshot = input.targetTariff || null;
   const exportRate = numberValue(input.exportGrossPerKwh);
   const depositGenerated = annualExport * exportRate;
   const depositFinal = numberValue(result.finalDepositGross);
   const depositUsed = Math.max(0, depositGenerated - depositFinal);
   const depositPayout = numberValue(result.depositPayoutGross);
-  const currentPurchase = annualConsumption * energyBuy;
-  const currentDistribution = annualConsumption * distribution;
-  const currentFixed = fixedMonthly * 12;
-  const projectedPurchaseDue = annualImport * energyBuy;
-  const projectedPurchaseCash = Math.max(0, projectedPurchaseDue - depositUsed);
-  const projectedDistribution = annualImport * distribution;
-  const projectedFixed = currentFixed;
+  const currentPurchase = optionalNumber(result.baselineAnnualEnergyCostGross) ?? annualConsumption * energyBuy;
+  const currentDistribution = optionalNumber(result.baselineAnnualDistributionCostGross) ?? annualConsumption * distribution;
+  const currentFixed = optionalNumber(result.baselineAnnualFixedCostGross) ?? fixedMonthly * 12;
+  const projectedPurchaseDue = optionalNumber(result.scenarioAnnualEnergyDueGross) ?? annualImport * energyBuy;
+  const projectedPurchaseCash = optionalNumber(result.scenarioAnnualEnergyCashGross)
+    ?? Math.max(0, projectedPurchaseDue - depositUsed);
+  const projectedDistribution = optionalNumber(result.scenarioAnnualDistributionCostGross) ?? annualImport * distribution;
+  const projectedFixed = optionalNumber(result.scenarioAnnualFixedCostGross) ?? currentFixed;
+  const currentEnergyRate = annualConsumption > 0 ? currentPurchase / annualConsumption : energyBuy;
+  const currentDistributionRate = annualConsumption > 0 ? currentDistribution / annualConsumption : distribution;
+  const projectedEnergyRate = annualImport > 0 ? projectedPurchaseDue / annualImport : energyBuy;
+  const projectedDistributionRate = annualImport > 0 ? projectedDistribution / annualImport : distribution;
   const totalNet = numberValue(calculation.totalNet || offer.totalNet);
   const totalGross = numberValue(calculation.totalGross || offer.totalGross);
   const totalAfterSupportGross = numberValue(calculation.totalAfterSupportGross || offer.totalAfterSupportGross || totalGross);
@@ -339,16 +358,22 @@ export function buildOfferReport(offer: any) {
       settlementBefore: text(offer.settlementBefore),
       settlementAfter: text(offer.settlementAfter) || 'net-billing',
       current: {
-        energyPerKwh: round(energyBuy * valueFactor, 4),
-        distributionPerKwh: round(distribution * valueFactor, 4),
-        totalPerKwh: round((energyBuy + distribution) * valueFactor, 4),
-        fixedMonthly: round(fixedMonthly * valueFactor),
+        energyPerKwh: round(currentEnergyRate * valueFactor, 4),
+        distributionPerKwh: round(currentDistributionRate * valueFactor, 4),
+        totalPerKwh: round((currentEnergyRate + currentDistributionRate) * valueFactor, 4),
+        fixedMonthly: round(currentFixed / 12 * valueFactor, 2),
+        zoneRates: tariffZoneRates(currentTariffSnapshot, valueFactor),
+        sourceUrl: text(currentTariffSnapshot?.sourceUrl),
+        fetchedAt: text(currentTariffSnapshot?.fetchedAt),
       },
       projected: {
-        energyPerKwh: round(energyBuy * valueFactor, 4),
-        distributionPerKwh: round(distribution * valueFactor, 4),
-        totalPerKwh: round((energyBuy + distribution) * valueFactor, 4),
-        fixedMonthly: round(fixedMonthly * valueFactor),
+        energyPerKwh: round(projectedEnergyRate * valueFactor, 4),
+        distributionPerKwh: round(projectedDistributionRate * valueFactor, 4),
+        totalPerKwh: round((projectedEnergyRate + projectedDistributionRate) * valueFactor, 4),
+        fixedMonthly: round(projectedFixed / 12 * valueFactor, 2),
+        zoneRates: tariffZoneRates(targetTariffSnapshot, valueFactor),
+        sourceUrl: text(targetTariffSnapshot?.sourceUrl),
+        fetchedAt: text(targetTariffSnapshot?.fetchedAt),
       },
     },
     bills: {
@@ -379,7 +404,7 @@ export function buildOfferReport(offer: any) {
       remaining: round(depositFinal * valueFactor),
       payout: round(depositPayout * valueFactor),
       exportKwh: annualExport,
-      importCoveredKwh: energyBuy > 0 ? round(depositUsed / energyBuy) : 0,
+      importCoveredKwh: projectedEnergyRate > 0 ? round(depositUsed / projectedEnergyRate) : 0,
     },
     energy: {
       period: periodLabel(Array.isArray(energy.measurementMonths) ? energy.measurementMonths : []),

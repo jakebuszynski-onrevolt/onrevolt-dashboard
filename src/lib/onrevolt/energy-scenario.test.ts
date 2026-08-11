@@ -49,3 +49,50 @@ test('depozyt nie pokrywa kosztu dystrybucji', () => {
   const minimumDistribution = result.annualGridImportKwh * baseInput.distributionGrossPerKwh;
   assert.ok(result.scenarioAnnualCostGross >= minimumDistribution - result.depositPayoutGross);
 });
+
+test('liczy taryfę przed i po według właściwej strefy godzinowej', () => {
+  const allHours = Array.from({ length: 12 }, () => Array.from({ length: 24 }, () => 'all'));
+  const targetHours = Array.from({ length: 12 }, () => Array.from({ length: 24 }, (_, hour) => hour === 12 ? 'high' : 'low'));
+  const tariffBase = {
+    source: 'WINDYONE_RE' as const,
+    sourceUrl: 'https://windyone.pl/re/setup.php',
+    fetchedAt: '2026-08-11T00:00:00.000Z',
+    operator: 'ENEA',
+    name: 'G11',
+    zoneModel: 'all',
+    fixedCosts: [],
+    billingCycleMonths: 1,
+  };
+  const result = calculateEnergyScenario({
+    ...baseInput,
+    monthlyConsumptionKwh: Array.from({ length: 12 }, () => 100),
+    hourlyLoadProfile: Array.from({ length: 24 }, (_, hour) => hour === 12 ? 1 : 0),
+    pvPowerKw: 0,
+    currentTariff: {
+      ...tariffBase,
+      code: 'G11',
+      monthlyZoneCodes: allHours,
+      zoneRates: [{ code: 'all', label: 'Cała doba', energyGrossPerKwh: 0.6, distributionGrossPerKwh: 0.3, totalGrossPerKwh: 0.9 }],
+      fixedMonthlyGross: 20,
+    },
+    targetTariff: {
+      ...tariffBase,
+      code: 'G13active',
+      name: 'G13active',
+      zoneModel: 'highmidlow',
+      monthlyZoneCodes: targetHours,
+      zoneRates: [
+        { code: 'high', label: 'Wysoka', energyGrossPerKwh: 0.8, distributionGrossPerKwh: 0.4, totalGrossPerKwh: 1.2 },
+        { code: 'low', label: 'Niska', energyGrossPerKwh: 0.3, distributionGrossPerKwh: 0.1, totalGrossPerKwh: 0.4 },
+      ],
+      fixedMonthlyGross: 30,
+    },
+  });
+
+  assert.equal(result.baselineAnnualEnergyCostGross, 720);
+  assert.equal(result.baselineAnnualDistributionCostGross, 360);
+  assert.equal(result.baselineAnnualFixedCostGross, 240);
+  assert.equal(result.scenarioAnnualEnergyDueGross, 960);
+  assert.equal(result.scenarioAnnualDistributionCostGross, 480);
+  assert.equal(result.scenarioAnnualFixedCostGross, 360);
+});

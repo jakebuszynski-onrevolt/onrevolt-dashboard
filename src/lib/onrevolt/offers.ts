@@ -10,6 +10,7 @@ import {
   polishPvHourlyProfiles,
   polishPvMonthlyDistribution,
 } from 'lib/onrevolt/energy-scenario';
+import { loadEnergyTariffSnapshots } from 'lib/onrevolt/energy-tariff-pricing';
 import { randomUUID } from 'node:crypto';
 
 type OfferCreateInput = {
@@ -88,6 +89,8 @@ type OfferScenarioInputOptions = {
   existingBatteryKwh?: unknown;
   existingInput?: unknown;
   investmentGross: number;
+  currentTariff?: EnergyScenarioInput['currentTariff'];
+  targetTariff?: EnergyScenarioInput['targetTariff'];
 };
 
 function sumConfigurationTarget(configurations: any[], field: 'targetPowerKw' | 'targetCapacityKwh') {
@@ -121,12 +124,19 @@ function usageProfileInputs(profileSource: string | null | undefined, annualCons
     .reduce((sum, month) => sum + finiteNumber(month.totalKwh), 0));
   const hourlyTotals = Array.from({ length: 24 }, (_, hour) => usageProfile.months
     .reduce((sum, month) => sum + finiteNumber(month.hourly?.[hour]), 0));
+  const monthlyHourlyLoadProfiles = Array.from({ length: 12 }, (_, monthIndex) => {
+    const values = Array.from({ length: 24 }, (_, hour) => usageProfile.months
+      .filter((month) => month.month === monthIndex + 1)
+      .reduce((sum, month) => sum + finiteNumber(month.hourly?.[hour]), 0));
+    return values.some((value) => value > 0) ? values : defaultHourlyLoadProfile;
+  });
   if (!monthlyConsumptionKwh.some((value) => value > 0)) {
     throw new OfferRecalculationError('Profil operatora nie zawiera dodatniego zużycia energii.');
   }
   return {
     monthlyConsumptionKwh,
     hourlyLoadProfile: hourlyTotals.some((value) => value > 0) ? hourlyTotals : defaultHourlyLoadProfile,
+    monthlyHourlyLoadProfiles,
   };
 }
 
@@ -179,6 +189,8 @@ export function buildOfferScenarioInput(options: OfferScenarioInputOptions): Ene
     distributionGrossPerKwh: setting('distributionGrossPerKwh'),
     exportGrossPerKwh: setting('exportGrossPerKwh'),
     fixedMonthlyGross: setting('fixedMonthlyGross'),
+    currentTariff: options.currentTariff,
+    targetTariff: options.targetTariff,
     depositPayoutRate: setting('depositPayoutRate'),
     investmentGross: options.investmentGross,
   };
@@ -566,7 +578,7 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
     throw new OfferRecalculationError('Oferta nie ma powiązanej konfiguracji do ponownego przeliczenia.');
   }
 
-  const [audit, baseScenario] = await Promise.all([
+  const [audit, baseScenario, energyAccount, invoiceWithCycle] = await Promise.all([
     prisma.energyAudit.findUnique({ where: { projectId: existing.projectId } }),
     existing.energyScenarioId
       ? prisma.energyScenario.findUnique({ where: { id: existing.energyScenarioId }, include: { audit: true } })
@@ -575,6 +587,19 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
         include: { audit: true },
         orderBy: { createdAt: 'desc' },
       }),
+    prisma.energyPortalAccount.findFirst({
+      where: { projectId: existing.projectId },
+      orderBy: { updatedAt: 'desc' },
+    }),
+    prisma.document.findFirst({
+      where: {
+        projectId: existing.projectId,
+        type: 'FAKTURA_PRAD',
+        billingCycleMonths: { not: null },
+      },
+      select: { billingCycleMonths: true },
+      orderBy: [{ documentDate: 'desc' }, { createdAt: 'desc' }],
+    }),
   ]);
   if (!audit) {
     throw new OfferRecalculationError('Najpierw zapisz dane zużycia w zakładce „Faktury i OSD”.');
@@ -598,6 +623,26 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
 
   const lineItems = mergeConfigurationLineItems(configurations);
   const currentTotalGross = money(lineItems.reduce((sum, item) => sum + finiteNumber(item.saleGross), 0));
+  const operator = String(energyAccount?.operator || 'ENEA');
+  const tariffBefore = existing.tariffBefore || energyAccount?.tariff;
+  const tariffAfter = existing.tariffAfter;
+  if (!tariffBefore || !tariffAfter) {
+    throw new OfferRecalculationError('Oferta nie ma wybranej taryfy przed i po modernizacji.');
+  }
+  let tariffSnapshots: Awaited<ReturnType<typeof loadEnergyTariffSnapshots>>;
+  try {
+    tariffSnapshots = await loadEnergyTariffSnapshots({
+      operator,
+      tariffCodes: [tariffBefore, tariffAfter],
+      annualUsageKwh: annualConsumptionKwh,
+      billingCycleMonths: invoiceWithCycle?.billingCycleMonths || 1,
+      connectionPowerKw: finiteNumber(audit.connectionPowerKw),
+    });
+  } catch (error) {
+    throw new OfferRecalculationError(
+      `Nie udało się pobrać aktualnych taryf z RE: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   const scenarioInput = buildOfferScenarioInput({
     annualConsumptionKwh,
     profileSource: audit.profileSource,
@@ -607,6 +652,8 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
     existingBatteryKwh: audit.existingBatteryKwh,
     existingInput: baseScenario?.inputSnapshot,
     investmentGross: currentTotalGross,
+    currentTariff: tariffSnapshots[tariffBefore],
+    targetTariff: tariffSnapshots[tariffAfter],
   });
   const scenarioResult = calculateEnergyScenario(scenarioInput);
   const scenarioId = randomUUID();

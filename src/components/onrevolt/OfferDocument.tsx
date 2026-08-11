@@ -246,6 +246,13 @@ function BillColumn({ report, after }: { report: ReturnType<typeof buildOfferRep
   const tariff = after ? report.tariffs.projected : report.tariffs.current;
   const bill = after ? report.bills.projected : report.bills.current;
   const billEnergy = after ? report.bills.projected.energyCash : report.bills.current.energy;
+  const zoneRates = tariff.zoneRates || [];
+  const lowestZoneRate = after && zoneRates.length > 1
+    ? zoneRates.reduce((lowest, rate) => rate.totalPerKwh < lowest.totalPerKwh ? rate : lowest)
+    : null;
+  const displayedEnergyRate = lowestZoneRate?.energyPerKwh ?? tariff.energyPerKwh;
+  const displayedDistributionRate = lowestZoneRate?.distributionPerKwh ?? tariff.distributionPerKwh;
+  const displayedTotalRate = lowestZoneRate?.totalPerKwh ?? tariff.totalPerKwh;
   return (
     <div className={`re-bill-column ${after ? 'after' : 'before'}`}>
       <h2>{after ? 'Nowa taryfa i system rozliczeniowy' : 'Aktualna taryfa i system rozliczeniowy'}</h2>
@@ -253,13 +260,19 @@ function BillColumn({ report, after }: { report: ReturnType<typeof buildOfferRep
         <DataField label="Taryfa" value={after ? report.tariffs.afterName : report.tariffs.before} />
         <DataField label="System rozliczeniowy" value={after ? report.tariffs.settlementAfter : report.tariffs.settlementBefore} />
       </div>
-      <h3>Koszt zakupu 1 kWh <em>(PLN {report.costs.priceLabel})</em></h3>
+      <h3>{lowestZoneRate ? 'Koszt zakupu 1 kWh w najtańszej strefie' : 'Koszt zakupu 1 kWh'} <em>(PLN {report.costs.priceLabel})</em></h3>
       <div className="re-rate-list">
-        <div><span>Zakup energii</span><strong>{money(tariff.energyPerKwh, 4)} PLN</strong></div>
-        <div><span>Dystrybucja energii</span><strong>{money(tariff.distributionPerKwh, 4)} PLN</strong></div>
+        {lowestZoneRate ? <div><span>Strefa taryfowa</span><strong>{lowestZoneRate.label}</strong></div> : null}
+        <div><span>Zakup energii</span><strong>{money(displayedEnergyRate, 4)} PLN</strong></div>
+        <div><span>Dystrybucja energii</span><strong>{money(displayedDistributionRate, 4)} PLN</strong></div>
         <div><span>Opłaty stałe / miesiąc</span><strong>{money(tariff.fixedMonthly, 2)} PLN</strong></div>
-        <div className="total"><span>Całkowity koszt zakupu 1 kWh</span><strong>{money(tariff.totalPerKwh, 4)} PLN</strong></div>
+        <div className="total"><span>Całkowity koszt zakupu 1 kWh</span><strong>{money(displayedTotalRate, 4)} PLN</strong></div>
       </div>
+      {tariff.sourceUrl ? (
+        <a className="re-tariff-source" href={tariff.sourceUrl} target="_blank" rel="noreferrer">
+          Stawki RE · {dateLabel(tariff.fetchedAt)}
+        </a>
+      ) : null}
       <h3>{after ? 'Prognozowany' : 'Aktualny'} rachunek roczny <em>(PLN {report.costs.priceLabel})</em></h3>
       <div className="re-bill-visual">
         <div className="re-bill-stack">
@@ -577,6 +590,7 @@ const styles = `
   .re-rate-list>div { display:flex; justify-content:space-between; gap:8px; padding:3px 0; font-size:8px; }
   .re-rate-list>div.total { border-top:1px solid #26346d; margin-top:3px; padding-top:5px; font-weight:900; font-size:9px; }
   .re-rate-list>div.green { color:var(--green); }
+  .re-tariff-source { display:block; margin-top:3px; color:#52618c; font-size:6px; text-decoration:none; }
   .re-bill-visual { display:grid; grid-template-columns:54px 1fr; gap:10px; }
   .re-bill-stack { height:220px; display:flex; flex-direction:column-reverse; justify-content:flex-start; background:#f4f6fb; align-self:end; }
   .re-bill-stack i { display:block; min-height:4px; }
