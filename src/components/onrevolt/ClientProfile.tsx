@@ -46,7 +46,7 @@ import { summarizeEnergyInvoices } from 'lib/onrevolt/energy-data';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDeleteOutline, MdEdit, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
+import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDeleteOutline, MdEdit, MdExpandLess, MdExpandMore, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
 
 type ClientProfileProps = {
   clientId: string;
@@ -768,6 +768,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [offerCreating, setOfferCreating] = useState(false);
   const [offerDeletingId, setOfferDeletingId] = useState('');
   const [offerRecalculatingId, setOfferRecalculatingId] = useState('');
+  const [offerStatusSavingId, setOfferStatusSavingId] = useState('');
   const [offerMessage, setOfferMessage] = useState('');
   const [offerError, setOfferError] = useState('');
   const [configurationActionId, setConfigurationActionId] = useState('');
@@ -775,6 +776,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [configurationError, setConfigurationError] = useState('');
   const [configurationEditorOpen, setConfigurationEditorOpen] = useState(false);
   const [configurationEditorId, setConfigurationEditorId] = useState('');
+  const [expandedConfigurationIds, setExpandedConfigurationIds] = useState<string[]>([]);
   const [selectedClientConfigurationIds, setSelectedClientConfigurationIds] = useState<string[]>([]);
   const [selectedClientOfferId, setSelectedClientOfferId] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('projectId') || '');
@@ -1561,6 +1563,36 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       : [...current, configurationId]);
   }
 
+  function toggleConfigurationItems(configurationId: string) {
+    setExpandedConfigurationIds((current) => current.includes(configurationId)
+      ? current.filter((id) => id !== configurationId)
+      : [...current, configurationId]);
+  }
+
+  async function updateClientOfferStatus(offer: any, status: string) {
+    if (offer.status === status) return;
+    setOfferStatusSavingId(offer.id);
+    setOfferError('');
+    setOfferMessage('');
+    try {
+      const response = await fetch('/api/offers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: offer.id, status }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      setSelectedClientOfferId(payload.data?.id || offer.id);
+      setOfferMessage(`Zmieniono status oferty ${payload.data?.number || offer.number || ''} na „${offerStatusLabel(status)}”.`);
+      await load(true);
+    } catch (e) {
+      setOfferError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOfferStatusSavingId('');
+    }
+  }
+
   async function deleteClientOffer(offer: any) {
     if (!window.confirm(`Usunąć ofertę ${offer.number || offer.title || ''}? Tej operacji nie można cofnąć.`)) return;
     setOfferDeletingId(offer.id);
@@ -2105,6 +2137,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                             && installationCount === 0
                             && stockReservationCount === 0;
                           const items = configuration.items || [];
+                          const itemsExpanded = expandedConfigurationIds.includes(configuration.id);
                           return (
                             <Card key={configuration.id} p="22px">
                               <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="14px" align={{ lg: 'start' }} mb="14px">
@@ -2219,7 +2252,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                 </Flex>
                               ) : null}
 
-                              {items.length ? (
+                              {items.length && itemsExpanded ? (
                                 <Box overflowX="auto" border="1px solid" borderColor={borderColor} borderRadius="8px">
                                   <Box minW="720px">
                                     <Flex px="12px" py="9px" bg="whiteAlpha.100" fontSize="sm" fontWeight="900" color={textColor}>
@@ -2252,9 +2285,22 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                     ))}
                                   </Box>
                                 </Box>
-                              ) : (
+                              ) : !items.length ? (
                                 <Text color={mutedColor}>Konfiguracja nie ma pozycji.</Text>
-                              )}
+                              ) : null}
+                              {items.length ? (
+                                <Flex justify="flex-end" mt={itemsExpanded ? '10px' : '2px'}>
+                                  <Tooltip label={itemsExpanded ? 'Ukryj pozycje konfiguracji' : 'Pokaż wszystkie pozycje konfiguracji'}>
+                                    <IconButton
+                                      aria-label={itemsExpanded ? 'Ukryj pozycje konfiguracji' : 'Pokaż wszystkie pozycje konfiguracji'}
+                                      icon={itemsExpanded ? <MdExpandLess /> : <MdExpandMore />}
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => toggleConfigurationItems(configuration.id)}
+                                    />
+                                  </Tooltip>
+                                </Flex>
+                              ) : null}
                             </Card>
                           );
                         })}
@@ -2427,6 +2473,20 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                     ) : null}
                                   </Flex>
                                 </Flex>
+                                <FormControl mt="10px" onClick={(event) => event.stopPropagation()}>
+                                  <FormLabel mb="4px" color={mutedColor} fontSize="xs">Status oferty</FormLabel>
+                                  <Select
+                                    size="sm"
+                                    value={offer.status || 'DRAFT'}
+                                    onChange={(event) => updateClientOfferStatus(offer, event.target.value)}
+                                    isDisabled={offerStatusSavingId === offer.id}
+                                    maxW={{ base: '100%', md: '240px' }}
+                                  >
+                                    {offerStatuses.map(([value, label]) => (
+                                      <option key={value} value={value}>{label}</option>
+                                    ))}
+                                  </Select>
+                                </FormControl>
                                 <Flex justify="space-between" gap="10px" align="center" mt="10px">
                                   <Text color={textColor} fontWeight="800">{formatMoney(offer.totalGross)} PLN</Text>
                                   <Text color={mutedColor} fontSize="sm">
