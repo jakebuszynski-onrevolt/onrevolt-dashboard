@@ -2029,7 +2029,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
             }
 
             let configurationContent: ReactNode = null;
-            if (tab === 'Oferta / umowa') {
+            if (tab === 'Oferta / umowa' && activeJourneyKey !== 'contract') {
               configurationContent = (
                   <Flex direction="column" gap="20px">
                     <Card ref={offerSectionRef} p="22px" scrollMarginTop="120px">
@@ -2311,6 +2311,21 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
             }
 
             if (tab === 'Oferta / umowa') {
+              if (activeJourneyKey === 'contract') {
+                return (
+                  <TabPanel key={tab} px="0">
+                    <Card ref={contractSectionRef} p={{ base: '20px', md: '26px' }} scrollMarginTop="120px">
+                      <Badge colorScheme="purple" mb="10px">Etap po wizji lokalnej</Badge>
+                      <Text color={textColor} fontSize="xl" fontWeight="900" mb="8px">Projekt / umowa</Text>
+                      <Text color={mutedColor} maxW="820px">
+                        W tym miejscu, po zakończeniu wizji lokalnej, będziemy przygotowywać pełny projekt techniczny
+                        instalacji dla klienta oraz umowę określającą uzgodniony zakres prac i realizacji.
+                      </Text>
+                    </Card>
+                  </TabPanel>
+                );
+              }
+
               return (
                 <TabPanel key={tab} px="0">
                   <Flex direction="column" gap="20px">
@@ -2506,41 +2521,6 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       ) : null}
                     </SimpleGrid>
 
-                    <Card ref={contractSectionRef} p="22px" scrollMarginTop="120px">
-                      <Text color={textColor} fontSize="lg" fontWeight="800" mb="6px">Projekt / umowa</Text>
-                      <Text color={mutedColor} mb="16px">
-                        Umowy powiązane z ofertami projektu. Rozdzielenie projektu technicznego i umowy będzie kolejnym etapem rozwoju.
-                      </Text>
-                      {projectOffers.some((offer: any) => offer.contracts?.length) ? (
-                        <Flex direction="column" gap="10px">
-                          {projectOffers.flatMap((offer: any) => (offer.contracts || []).map((contract: any) => (
-                            <Flex
-                              key={contract.id}
-                              direction={{ base: 'column', md: 'row' }}
-                              justify="space-between"
-                              gap="10px"
-                              border="1px solid"
-                              borderColor={borderColor}
-                              borderRadius="8px"
-                              p="12px"
-                            >
-                              <Box>
-                                <Text color={textColor} fontWeight="800">{contract.number || 'Umowa bez numeru'}</Text>
-                                <Text color={mutedColor} fontSize="sm">Oferta: {offer.number || offer.title || 'bez numeru'}</Text>
-                              </Box>
-                              <Flex gap="8px" align="center" wrap="wrap">
-                                <Badge colorScheme={['SIGNED', 'COMPLETED'].includes(contract.status) ? 'green' : 'purple'}>
-                                  {contract.status === 'SIGNED' ? 'Podpisana' : contract.status === 'COMPLETED' ? 'Zrealizowana' : contract.status === 'CANCELLED' ? 'Anulowana' : 'Robocza'}
-                                </Badge>
-                                <Text color={mutedColor} fontSize="sm">{contract.signedAt ? formatDateTime(contract.signedAt) : 'Niepodpisana'}</Text>
-                              </Flex>
-                            </Flex>
-                          )))}
-                        </Flex>
-                      ) : (
-                        <Text color={mutedColor}>Brak umów przy ofertach tego projektu.</Text>
-                      )}
-                    </Card>
                   </Flex>
                 </TabPanel>
               );
