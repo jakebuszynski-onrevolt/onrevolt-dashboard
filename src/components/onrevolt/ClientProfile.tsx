@@ -2139,8 +2139,14 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                           const items = configuration.items || [];
                           const itemsExpanded = expandedConfigurationIds.includes(configuration.id);
                           return (
-                            <Card key={configuration.id} p="22px">
-                              <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="14px" align={{ lg: 'start' }} mb="14px">
+                            <Card key={configuration.id} p={{ base: '16px', md: '18px' }}>
+                              <Flex
+                                direction={{ base: 'column', lg: 'row' }}
+                                justify="space-between"
+                                gap="14px"
+                                align={{ lg: 'start' }}
+                                mb={itemsExpanded || linkedOffers.length ? '12px' : '0'}
+                              >
                                 <Box minW="0">
                                   <Flex gap="8px" wrap="wrap" mb="8px">
                                     <Badge colorScheme={configurationStatusColor(configuration.status)}>
@@ -2233,11 +2239,22 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                       Archiwizuj
                                     </Button>
                                   ) : null}
+                                  {items.length ? (
+                                    <Tooltip label={itemsExpanded ? 'Ukryj pozycje konfiguracji' : 'Pokaż wszystkie pozycje konfiguracji'}>
+                                      <IconButton
+                                        aria-label={itemsExpanded ? 'Ukryj pozycje konfiguracji' : 'Pokaż wszystkie pozycje konfiguracji'}
+                                        icon={itemsExpanded ? <MdExpandLess /> : <MdExpandMore />}
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => toggleConfigurationItems(configuration.id)}
+                                      />
+                                    </Tooltip>
+                                  ) : null}
                                 </Flex>
                               </Flex>
 
                               {linkedOffers.length ? (
-                                <Flex gap="8px" wrap="wrap" mb="14px">
+                                <Flex gap="8px" wrap="wrap" mb={itemsExpanded ? '12px' : '0'}>
                                   {linkedOffers.map((offer: any) => (
                                     <Button
                                       key={offer.id}
@@ -2287,19 +2304,6 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                 </Box>
                               ) : !items.length ? (
                                 <Text color={mutedColor}>Konfiguracja nie ma pozycji.</Text>
-                              ) : null}
-                              {items.length ? (
-                                <Flex justify="flex-end" mt={itemsExpanded ? '10px' : '2px'}>
-                                  <Tooltip label={itemsExpanded ? 'Ukryj pozycje konfiguracji' : 'Pokaż wszystkie pozycje konfiguracji'}>
-                                    <IconButton
-                                      aria-label={itemsExpanded ? 'Ukryj pozycje konfiguracji' : 'Pokaż wszystkie pozycje konfiguracji'}
-                                      icon={itemsExpanded ? <MdExpandLess /> : <MdExpandMore />}
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => toggleConfigurationItems(configuration.id)}
-                                    />
-                                  </Tooltip>
-                                </Flex>
                               ) : null}
                             </Card>
                           );
