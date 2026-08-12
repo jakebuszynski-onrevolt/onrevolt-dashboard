@@ -164,7 +164,13 @@ const categoryLabels: Record<string, string> = {
   INNE: 'Inne',
 };
 
-const hiddenProductCategories = new Set(['INWERTER']);
+const hiddenProductCategories = new Set(['INWERTER', 'MONITOROWANIE']);
+
+function compareProductCategories(left: string, right: string) {
+  if (left === 'INNE') return 1;
+  if (right === 'INNE') return -1;
+  return (categoryLabels[left] || left).localeCompare(categoryLabels[right] || right, 'pl');
+}
 
 const clientTypeOptions = ['UNKNOWN', 'B2C', 'B2B', 'B2C_B2B'];
 const availabilityOptions = ['Dostępny', 'Mało', 'W dostawie', 'Niedostępny', 'Na zamówienie'];
@@ -330,6 +336,7 @@ export default function CatalogWorkspace() {
   const [editForm, setEditForm] = useState<ProductEditForm | null>(null);
   const [productModalMode, setProductModalMode] = useState<'create' | 'edit'>('edit');
   const [savingProduct, setSavingProduct] = useState(false);
+  const [deletingProductId, setDeletingProductId] = useState('');
   const [deletingMediaId, setDeletingMediaId] = useState('');
   const [sortingMediaId, setSortingMediaId] = useState('');
   const [updatingMediaKindId, setUpdatingMediaKindId] = useState('');
@@ -528,6 +535,36 @@ export default function CatalogWorkspace() {
     }
   }
 
+  async function deleteProduct(product: ProductRow, showErrorInModal = false) {
+    if (!isAdmin || deletingProductId) return;
+    const confirmed = window.confirm(
+      `Trwale usunąć produkt „${product.name}” z katalogu?\n\nOperacji nie można cofnąć. Produkt używany w szablonie, konfiguracji, zamówieniu lub montażu nie zostanie usunięty.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingProductId(product.id);
+    setError('');
+    setNotice('');
+    if (showErrorInModal) setProductModalError('');
+    try {
+      const response = await fetch('/api/catalog/products', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: product.id }),
+      });
+      await readApiPayload(response);
+      setProducts((current) => current.filter((item) => item.id !== product.id));
+      if (editingProduct?.id === product.id) closeProductModal();
+      setNotice(`Usunięto produkt: ${product.name}`);
+    } catch (deleteError) {
+      const message = deleteError instanceof Error ? deleteError.message : String(deleteError);
+      if (showErrorInModal) setProductModalError(message);
+      else setError(message);
+    } finally {
+      setDeletingProductId('');
+    }
+  }
+
   async function deleteMedia(media: ProductMedia) {
     if (!editingProduct) return;
     const confirmed = window.confirm(`Usunąć załącznik ${mediaLabel(media)} z produktu ${editingProduct.name}?`);
@@ -657,7 +694,7 @@ export default function CatalogWorkspace() {
   const categories = useMemo(
     () => Array.from(new Set([...Object.keys(categoryLabels), ...products.map((product) => product.category)]))
       .filter((category) => !hiddenProductCategories.has(category))
-      .sort(),
+      .sort(compareProductCategories),
     [products],
   );
   const clientTypes = useMemo(
@@ -916,9 +953,25 @@ export default function CatalogWorkspace() {
                       </Flex>
                     </Td>
                     <Td>
-                      <Button size="sm" variant="outline" leftIcon={<Icon as={MdEdit} />} onClick={() => openEdit(product)}>
-                        Edytuj
-                      </Button>
+                      <Flex gap="8px" align="center">
+                        <Button size="sm" variant="outline" leftIcon={<Icon as={MdEdit} />} onClick={() => openEdit(product)}>
+                          Edytuj
+                        </Button>
+                        {isAdmin ? (
+                          <Tooltip label="Usuń produkt">
+                            <IconButton
+                              aria-label={`Usuń produkt ${product.name}`}
+                              icon={<Icon as={MdDelete} />}
+                              size="sm"
+                              variant="outline"
+                              colorScheme="red"
+                              isLoading={deletingProductId === product.id}
+                              isDisabled={Boolean(deletingProductId) && deletingProductId !== product.id}
+                              onClick={() => deleteProduct(product)}
+                            />
+                          </Tooltip>
+                        ) : null}
+                      </Flex>
                     </Td>
                   </Tr>
                 );
@@ -1146,13 +1199,24 @@ export default function CatalogWorkspace() {
             ) : null}
           </ModalBody>
           <ModalFooter justifyContent="space-between" gap="10px">
-            <Box>
+            <Flex gap="10px" wrap="wrap">
               {isAdmin && productModalMode === 'edit' && editingProduct ? (
                 <Button variant="outline" leftIcon={<Icon as={MdDownload} />} onClick={exportProductJson}>
                   Export JSON
                 </Button>
               ) : null}
-            </Box>
+              {isAdmin && productModalMode === 'edit' && editingProduct ? (
+                <Button
+                  variant="outline"
+                  colorScheme="red"
+                  leftIcon={<Icon as={MdDelete} />}
+                  isLoading={deletingProductId === editingProduct.id}
+                  onClick={() => deleteProduct(editingProduct, true)}
+                >
+                  Usuń produkt
+                </Button>
+              ) : null}
+            </Flex>
             <Flex gap="10px">
               <Button
                 variant="ghost"

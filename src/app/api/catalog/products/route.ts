@@ -1,7 +1,10 @@
 import { NextRequest } from 'next/server';
-import { badRequest, jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
+import fs from 'fs/promises';
+import { badRequest, forbidden, jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
+import { resolveCatalogMediaPath } from 'lib/onrevolt/catalog-media';
 import { prisma } from 'lib/onrevolt/prisma';
-import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
+import { productDeleteBlockReason } from 'lib/onrevolt/product-lifecycle';
+import { authorizeStaffRequest, isAdminUser } from 'lib/onrevolt/staff-server';
 
 type ProductPriceInput = {
   purchaseNet: number;
@@ -207,5 +210,62 @@ export async function PATCH(req: NextRequest) {
   } catch (error) {
     if (error instanceof Error) return badRequest(error.message);
     return serverError('Nie udało się zaktualizować produktu', error);
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'catalog.manage');
+  if (!access.ok) return access.response;
+  if (!isAdminUser(access.user)) return forbidden('Tylko administrator może usuwać produkty z katalogu');
+
+  try {
+    const body = await readJsonObject(req);
+    const id = requireString(body, 'id');
+    const existing = await prisma.product.findUnique({
+      where: { id },
+      include: {
+        prices: { orderBy: { validFrom: 'desc' } },
+        media: { orderBy: { sortOrder: 'asc' } },
+        _count: {
+          select: {
+            templateItems: true,
+            configItems: true,
+            existingAssets: true,
+            installationPlannedItems: true,
+            installed: true,
+            purchaseOrderItems: true,
+            stockReservations: true,
+          },
+        },
+      },
+    });
+    if (!existing) return notFound('Produkt nie istnieje');
+
+    const blockReason = productDeleteBlockReason(existing._count);
+    if (blockReason) return badRequest(blockReason);
+
+    const mediaPaths = existing.media
+      .map((media) => resolveCatalogMediaPath(media))
+      .filter((filePath): filePath is string => Boolean(filePath));
+
+    await prisma.$transaction(async (tx) => {
+      await tx.product.delete({ where: { id } });
+      await tx.auditLog.create({
+        data: {
+          actorId: access.user.id,
+          entityType: 'Product',
+          entityId: existing.id,
+          action: 'DELETE',
+          before: JSON.parse(JSON.stringify(existing)),
+        },
+      });
+    });
+
+    const fileResults = await Promise.allSettled(mediaPaths.map((filePath) => fs.unlink(filePath)));
+    const filesDeleted = fileResults.filter((result) => result.status === 'fulfilled').length;
+
+    return jsonResponse({ ok: true, data: { id: existing.id, filesDeleted } });
+  } catch (error) {
+    return serverError('Nie udało się usunąć produktu', error);
   }
 }
