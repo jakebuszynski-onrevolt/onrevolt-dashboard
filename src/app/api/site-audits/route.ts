@@ -10,8 +10,12 @@ import {
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
 import { authorizeStaffRequest, isAdminUser } from 'lib/onrevolt/staff-server';
+import {
+  normalizeSiteAuditFormData,
+  SITE_AUDIT_SCHEMA_VERSION,
+  siteAuditCompletionErrors,
+} from 'lib/onrevolt/site-audit';
 
-const currentSchemaVersion = 1;
 const totalSteps = 7;
 const statuses = new Set(Object.values(SiteAuditStatus));
 const auditInclude = {
@@ -74,19 +78,8 @@ function roofType(value: unknown): ConfigurationRoofType | undefined {
     : undefined;
 }
 
-function validateCompletion(data: Record<string, unknown>, auditorId?: string) {
-  const required = [
-    ['visit_date', 'data wizyty'],
-    ['client_name', 'nazwa klienta'],
-    ['client_address', 'adres inwestycji'],
-    ['audit_result', 'wynik audytu'],
-    ['audit_next_action', 'następny krok'],
-    ['final_summary_notes', 'wniosek końcowy'],
-  ] as const;
-  const missing: string[] = required
-    .filter(([key]) => !optionalText(data[key]))
-    .map(([, label]) => label);
-  if (!auditorId) missing.push('audytor');
+function validateCompletion(data: Record<string, any>, auditorId?: string) {
+  const missing = siteAuditCompletionErrors(data, auditorId);
   if (missing.length) {
     throw new Error(`Przed zakończeniem uzupełnij: ${missing.join(', ')}`);
   }
@@ -102,9 +95,13 @@ async function syncTechnicalEnergyAudit(projectId: string, data: Record<string, 
     roofOrientation: optionalText(data.roof_orientation),
     roofTiltDeg: optionalNonNegativeNumber(data.roof_angle_deg),
     shadingNotes: optionalText(data.shading_notes),
-    existingPvKw: optionalNonNegativeNumber(data.existing_pv_kw),
-    existingInverter: optionalText(data.existing_pv_device),
+    existingPvKw: optionalNonNegativeNumber(data.existing_pv_total_kw ?? data.existing_pv_kw),
+    existingInverter: optionalText(data.existing_pv_inverter_model ?? data.existing_pv_device),
     existingBatteryKwh: optionalNonNegativeNumber(data.existing_battery_kwh),
+    heatingSource: optionalText(data.heating_source),
+    heatingSourceDetail: optionalText(data.heating_params),
+    buildingType: optionalText(data.building_type) || optionalText(data.facility_type),
+    connectionType: optionalText(data.connection_type),
   };
   const meaningful = Object.fromEntries(
     Object.entries(update).filter(([, value]) => value !== undefined),
@@ -159,7 +156,7 @@ export async function POST(req: NextRequest) {
       throw new Error('Audyt nie należy do wybranego projektu');
     }
 
-    const data = formData(body.formData);
+    const data = normalizeSiteAuditFormData(formData(body.formData));
     const status = statuses.has(body.status as SiteAuditStatus)
       ? body.status as SiteAuditStatus
       : SiteAuditStatus.DRAFT;
@@ -189,7 +186,7 @@ export async function POST(req: NextRequest) {
       projectId,
       title: title.slice(0, 191),
       status,
-      schemaVersion: currentSchemaVersion,
+      schemaVersion: SITE_AUDIT_SCHEMA_VERSION,
       visitDate,
       auditorId,
       currentStep: boundedStep(body.currentStep),
