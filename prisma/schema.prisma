@@ -1009,6 +1009,8 @@ model Offer {
   number                   String?
   title                    String?
   version                  Int                  @default(1)
+  documentTemplateKey      String?
+  documentTemplateVersion  String?
   status                   OfferStatus          @default(DRAFT)
   currency                 String               @default("PLN")
   totalNet                 Decimal              @default(0) @db.Decimal(12, 2)

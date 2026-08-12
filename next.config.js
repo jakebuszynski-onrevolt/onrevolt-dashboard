@@ -4,7 +4,7 @@ const nextConfig = {
   basePath: process.env.NEXT_PUBLIC_BASE_PATH,
   assetPrefix: process.env.NEXT_PUBLIC_BASE_PATH,
   reactStrictMode: false, // changed this to false
-  serverExternalPackages: ['heic-convert', 'pdf-parse'],
+  serverExternalPackages: ['@xmldom/xmldom', 'heic-convert', 'opentype.js', 'pdf-parse', 'playwright'],
   images: {
     domains: [
       'images.unsplash.com',

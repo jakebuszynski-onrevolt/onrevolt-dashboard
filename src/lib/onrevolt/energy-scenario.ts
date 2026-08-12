@@ -18,6 +18,11 @@ export type EnergyTariffCostSnapshot = {
   zoneModel: string;
   monthlyZoneCodes: string[][];
   zoneRates: EnergyTariffZoneRate[];
+  variableCosts?: Array<{
+    label: string;
+    zoneCode: string;
+    amountGrossPerKwh: number;
+  }>;
   fixedMonthlyGross: number;
   fixedCosts: Array<{ label: string; amountGross: number }>;
   billingCycleMonths: number;

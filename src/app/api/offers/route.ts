@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { badRequest, forbidden, jsonResponse, notFound, optionalString, parseDate, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { isEnergyOperator } from 'lib/onrevolt/energy-tariffs';
+import { prepareOfferPdfArchive, removePreparedOfferPdf } from 'lib/onrevolt/offer-pdf';
+import { buildOfferReport } from 'lib/onrevolt/offer-report';
 import {
   createOfferFromConfiguration,
   OfferRecalculationError,
@@ -228,11 +230,57 @@ export async function PATCH(req: NextRequest) {
 
     if (!Object.keys(data).length) return badRequest('Brak pól oferty do aktualizacji');
 
-    const updated = await prisma.offer.update({
-      where: { id },
-      data,
-      include: offerInclude,
-    });
+    const shouldArchiveB2c = data.status === 'SENT'
+      && existing.status !== 'SENT'
+      && buildOfferReport(existing).variant === 'B2C';
+    let updated;
+    if (shouldArchiveB2c) {
+      const prepared = await prepareOfferPdfArchive({ ...existing, ...data });
+      try {
+        updated = await prisma.$transaction(async (tx) => {
+          await tx.offer.update({
+            where: { id },
+            data: {
+              ...data,
+              documentTemplateKey: prepared.templateKey,
+              documentTemplateVersion: prepared.templateVersion,
+            },
+          });
+          await tx.document.create({
+            data: {
+              type: 'OFERTA',
+              title: `Oferta ${existing.number || existing.title || existing.id} - wersja ${existing.version}`,
+              fileName: prepared.fileName,
+              mimeType: prepared.mimeType,
+              sizeBytes: prepared.sizeBytes,
+              sha256: prepared.sha256,
+              storagePath: prepared.storagePath,
+              clientId: existing.project.clientId,
+              projectId: existing.projectId,
+              offerId: existing.id,
+              uploadedById: access.user.id,
+              documentDate: new Date(),
+              tags: {
+                generated: true,
+                offerVersion: existing.version,
+                templateKey: prepared.templateKey,
+                templateVersion: prepared.templateVersion,
+              },
+            },
+          });
+          return tx.offer.findUniqueOrThrow({ where: { id }, include: offerInclude });
+        });
+      } catch (error) {
+        await removePreparedOfferPdf(prepared);
+        throw error;
+      }
+    } else {
+      updated = await prisma.offer.update({
+        where: { id },
+        data,
+        include: offerInclude,
+      });
+    }
 
     if (updated.status === 'ACCEPTED' && existing.status !== 'ACCEPTED') {
       const stage = await prisma.pipelineStage.findFirst({ where: { code: 'CRM_OFERTA_ZAAKCEPTOWANA', isActive: true } });

@@ -1,0 +1,513 @@
+<svg width="595" height="843" viewBox="0 0 595 843" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Reform_3_-_B2C">
+<rect width="595" height="842.034" fill="#EEF1F9"/>
+<g id="_naglowek">
+<rect x="30" y="60" width="535" height="29" rx="10" fill="white"/>
+<text id="_nazwa" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="79.092">Roczny bilans energetyczny - stan aktualny</tspan></text>
+<text id="_numer" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" font-weight="bold" letter-spacing="-0.02em"><tspan x="458.061" y="79.092">NR 06/08/26/01/P</tspan></text>
+</g>
+<g id="_charakterystyka_zuzycia_aktualna">
+<rect x="30" y="748" width="535" height="64" rx="10" fill="url(#paint0_linear_2243_9296)"/>
+<text id="_charakterystyka_zuzycia_aktualna_tytul" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="766.41">Charakterystyka zużycia</tspan></text>
+<g id="_miesiac_o_najwiekszym_zuzyciu_aktualne_pole">
+<g id="Education">
+<rect x="36" y="773" width="170" height="32" rx="5" fill="white"/>
+<text id="_miesiac_o_najwiekszym_zuzyciu_aktualne_tytul" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="41" y="783.887">Miesiąc o największym zużyciu</tspan></text>
+<text id="_miesiac_o_najwiekszym_zuzyciu_aktualne_data" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="41" y="797.41">Marzec</tspan></text>
+</g>
+<text id="_miesiac_o_najwiekszym_zuzyciu_aktualne_kwh" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="153.588" y="797.41">~490 kWh</tspan></text>
+</g>
+<g id="_miesiac_o_srednim_zuzyciu_aktualne_pole">
+<g id="_miesiac_o_srednim_zuzyciu_aktualne_pole_2">
+<rect x="209" y="773" width="170" height="32" rx="5" fill="white"/>
+<text id="_miesiac_o_srednim_zuzyciu_aktualne_tytul" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="214" y="783.887">Miesiąc o średnim zużyciu</tspan></text>
+</g>
+<text id="_miesiac_o_srednim_zuzyciu_aktualne_kwh" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="327.691" y="797.41">~435 kWh</tspan></text>
+<text id="_miesiac_o_srednim_zuzyciu_aktualne_data" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="214" y="797.41">Czerwiec</tspan></text>
+</g>
+<g id="_miesiac_o_najnizszym_zuzyciu_aktualne_pole">
+<g id="_miesiac_o_srednim_zuzyciu_aktualne_pole_3">
+<rect x="382" y="773" width="170" height="32" rx="5" fill="white"/>
+<text id="_miesiac_o_srednim_zuzyciu_aktualne_tytul_2" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="387" y="783.887">Miesiąc o małym zużyciu</tspan></text>
+</g>
+<text id="_miesiac_o_srednim_zuzyciu_aktualne_kwh_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="499.754" y="797.41">~360 kWh</tspan></text>
+<text id="_miesiac_o_srednim_zuzyciu_aktualne_data_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="387" y="797.41">Sierpień</tspan></text>
+</g>
+</g>
+<g id="_reform_logo">
+<path id="Vector" d="M51.4004 35.3373C49.2208 35.3373 47.4111 36.0465 46.024 37.4261C44.637 38.8058 43.9237 40.5594 43.9237 42.6095C43.9237 44.6596 44.637 46.4519 46.0505 47.8186C47.4639 49.1854 49.3397 49.8817 51.625 49.8817C54.3462 49.8817 56.4333 48.863 57.8335 46.8645L57.8864 46.7871L55.3105 45.3172L55.2312 45.2785L55.1784 45.3559C54.399 46.4519 53.2101 47.0063 51.6514 47.0063C50.5286 47.0063 49.551 46.7356 48.7717 46.194C48.0187 45.6783 47.53 44.9304 47.3054 43.9891H58.3883V43.9118C58.4808 43.3831 58.5204 42.9834 58.5204 42.674C58.5204 40.6625 57.8467 38.9218 56.5258 37.5035C55.1916 36.0594 53.4743 35.3373 51.4004 35.3373ZM48.6396 39.0895C49.3661 38.5092 50.2776 38.2127 51.374 38.2127C52.3383 38.2127 53.1837 38.4834 53.897 39.0379C54.5839 39.5536 55.0463 40.3402 55.2576 41.3717H47.279C47.4903 40.4175 47.9527 39.6439 48.6396 39.0895Z" fill="#009A44"/>
+<path id="Vector_2" d="M40.4885 41.2687C40.6866 41.1655 40.8848 41.0495 41.0565 40.9205C41.2811 40.7529 41.5056 40.5853 41.7038 40.3919C41.7963 40.3016 41.8887 40.1985 41.9812 40.1082C42.1397 39.9406 42.285 39.7601 42.4303 39.5667C42.4832 39.4893 42.536 39.4119 42.6021 39.3346C42.9983 38.7415 43.289 38.071 43.4343 37.3618C43.4343 37.3231 43.4607 37.2715 43.4607 37.2329C43.5267 36.8847 43.5796 36.5237 43.5796 36.1498V36.0853C43.5796 35.7243 43.5267 35.3632 43.4607 35.0022C43.4607 34.9635 43.4343 34.912 43.4343 34.8733C43.2758 34.1641 42.9983 33.4936 42.6021 32.9005C42.5492 32.8231 42.4964 32.7458 42.4303 32.6684C42.285 32.475 42.1397 32.3074 41.9812 32.1269C41.8887 32.0366 41.8095 31.9335 41.7038 31.8432C41.5056 31.6498 41.2811 31.4822 41.0565 31.3146C40.8716 31.1856 40.6866 31.0825 40.4885 30.9664C40.4489 30.9406 40.4225 30.9406 40.3828 30.9148L40.33 30.8891C39.4846 30.4378 38.5467 30.167 37.5295 30.167H30V49.495H33.4081V42.0681H36.3935L40.7791 49.4434L40.8055 49.495H44.9798L40.1715 41.4234C40.1715 41.4234 40.2904 41.3718 40.33 41.346M37.5427 38.8962H33.4213V33.326H37.5427C39.0751 33.326 40.3168 34.5767 40.3432 36.1111C40.3168 37.6584 39.0883 38.8962 37.5427 38.8962Z" fill="#009A44"/>
+<path id="Vector_3" d="M62.6149 43.1383V43.0351C62.6149 41.3976 64.1208 40.624 64.1208 39.1669C64.1208 38.0452 63.1829 37.1297 62.0337 37.1297C60.8844 37.1297 59.9465 38.0452 59.9465 39.1669C59.9465 40.5853 61.4524 41.3718 61.4524 43.0351V43.1383C61.4524 44.8016 59.9465 45.1884 59.9465 47.0064C59.9465 48.1282 60.8844 49.0437 62.0337 49.0437C63.1829 49.0437 64.1208 48.1282 64.1208 47.0064C64.1208 45.2916 62.6149 44.7758 62.6149 43.1383Z" fill="#009A44"/>
+<g id="form">
+<path id="Vector_4" d="M115.285 35.5257C116.845 35.5257 118.101 36.0302 119.055 37.0392C120.009 38.0482 120.486 39.4057 120.486 41.1118V49.6423H117.514V41.3044C117.514 40.3505 117.276 39.6167 116.799 39.103C116.322 38.571 115.671 38.305 114.845 38.305C113.928 38.305 113.194 38.6077 112.644 39.2131C112.112 39.8185 111.846 40.7266 111.846 41.9373V49.6423H108.874V41.3044C108.874 40.3505 108.644 39.6167 108.186 39.103C107.746 38.571 107.113 38.305 106.287 38.305C105.388 38.305 104.654 38.6169 104.086 39.2406C103.517 39.846 103.233 40.7449 103.233 41.9373V49.6423H100.261V35.8835H103.233V37.5345C104.113 36.1953 105.425 35.5257 107.168 35.5257C108.929 35.5257 110.231 36.2504 111.075 37.6996C111.992 36.2504 113.396 35.5257 115.285 35.5257Z" fill="#1A1A1A"/>
+<path id="Vector_5" d="M94.3775 38.195C95.1297 36.489 96.5423 35.6359 98.6152 35.6359V38.8555C97.4779 38.7821 96.4872 39.0573 95.6433 39.681C94.7995 40.2864 94.3775 41.2954 94.3775 42.7079V49.6424H91.4056V35.8836H94.3775V38.195Z" fill="#1A1A1A"/>
+<path id="Vector_6" d="M82.0038 50C79.9858 50 78.2706 49.3029 76.858 47.9087C75.4454 46.5144 74.7391 44.7992 74.7391 42.7629C74.7391 40.7266 75.4454 39.0113 76.858 37.6171C78.2706 36.2229 79.9858 35.5257 82.0038 35.5257C84.0401 35.5257 85.7553 36.2229 87.1496 37.6171C88.5621 39.0113 89.2684 40.7266 89.2684 42.7629C89.2684 44.7992 88.5621 46.5144 87.1496 47.9087C85.7553 49.3029 84.0401 50 82.0038 50ZM78.9493 45.8724C79.7749 46.6979 80.793 47.1107 82.0038 47.1107C83.2146 47.1107 84.2327 46.6979 85.0582 45.8724C85.8838 45.0468 86.2965 44.0103 86.2965 42.7629C86.2965 41.5154 85.8838 40.4789 85.0582 39.6534C84.2327 38.8279 83.2146 38.4151 82.0038 38.4151C80.793 38.4151 79.7749 38.8279 78.9493 39.6534C78.1238 40.4789 77.711 41.5154 77.711 42.7629C77.711 44.0103 78.1238 45.0468 78.9493 45.8724Z" fill="#1A1A1A"/>
+<path id="Vector_7" d="M74.9664 32.8839C72.8017 32.6821 71.7194 33.5902 71.7194 35.6082V35.8834H74.9664V38.7452H71.7194V49.6421H68.7475V38.7452H66.6561V35.8834H68.7475V35.6082C68.7475 33.7186 69.2703 32.2877 70.316 31.3154C71.38 30.3248 72.9301 29.8937 74.9664 30.0221V32.8839Z" fill="#1A1A1A"/>
+</g>
+</g>
+<g id="_dostarczone_przez">
+<path id="Vector_8" d="M240.003 48.4927H243.594V50H237.831V48.936L241.289 44.1184H237.979V42.6111H243.446V43.6751L240.003 48.4927Z" fill="#1A1A1A"/>
+<path id="Vector_9" d="M231.423 46.9853C231.541 47.5469 231.812 47.9804 232.235 48.2858C232.659 48.5813 233.176 48.7291 233.787 48.7291C234.634 48.7291 235.27 48.4237 235.693 47.8129L237.009 48.5813C236.28 49.6552 235.201 50.1921 233.772 50.1921C232.57 50.1921 231.6 49.8276 230.861 49.0986C230.122 48.3597 229.753 47.4287 229.753 46.3055C229.753 45.2021 230.117 44.281 230.846 43.5421C231.575 42.7934 232.511 42.419 233.654 42.419C234.738 42.419 235.624 42.7983 236.314 43.5569C237.014 44.3155 237.363 45.2366 237.363 46.3203C237.363 46.4878 237.344 46.7095 237.304 46.9853H231.423ZM231.408 45.6849H235.752C235.644 45.0839 235.393 44.6307 234.999 44.3253C234.615 44.0199 234.161 43.8672 233.639 43.8672C233.048 43.8672 232.556 44.0298 232.161 44.3549C231.767 44.68 231.516 45.1233 231.408 45.6849Z" fill="#1A1A1A"/>
+<path id="Vector_10" d="M225.831 48.4927H229.422V50H223.659V48.936L227.117 44.1184H223.806V42.6111H229.274V43.6751L225.831 48.4927Z" fill="#1A1A1A"/>
+<path id="Vector_11" d="M220.765 43.8524C221.169 42.9362 221.928 42.4781 223.041 42.4781V44.2071C222.43 44.1677 221.898 44.3155 221.445 44.6504C220.992 44.9755 220.765 45.5174 220.765 46.276V50H219.169V42.6111H220.765V43.8524Z" fill="#1A1A1A"/>
+<path id="Vector_12" d="M214.339 42.419C215.353 42.419 216.22 42.7983 216.94 43.5569C217.659 44.3056 218.018 45.2218 218.018 46.3055C218.018 47.3991 217.659 48.3203 216.94 49.069C216.22 49.8177 215.353 50.1921 214.339 50.1921C213.216 50.1921 212.353 49.7783 211.753 48.9508V52.9556H210.156V42.6111H211.753V43.6751C212.353 42.8377 213.216 42.419 214.339 42.419ZM212.418 48.005C212.861 48.4483 213.417 48.67 214.087 48.67C214.757 48.67 215.314 48.4483 215.757 48.005C216.201 47.5518 216.422 46.9853 216.422 46.3055C216.422 45.6258 216.201 45.0642 215.757 44.6209C215.314 44.1677 214.757 43.9411 214.087 43.9411C213.417 43.9411 212.861 44.1677 212.418 44.6209C211.974 45.0642 211.753 45.6258 211.753 46.3055C211.753 46.9853 211.974 47.5518 212.418 48.005Z" fill="#1A1A1A"/>
+<path id="Vector_13" d="M199.708 46.9853C199.826 47.5469 200.097 47.9804 200.521 48.2858C200.945 48.5813 201.462 48.7291 202.073 48.7291C202.92 48.7291 203.555 48.4237 203.979 47.8129L205.294 48.5813C204.565 49.6552 203.486 50.1921 202.058 50.1921C200.856 50.1921 199.885 49.8276 199.147 49.0986C198.408 48.3597 198.038 47.4287 198.038 46.3055C198.038 45.2021 198.403 44.281 199.132 43.5421C199.861 42.7934 200.797 42.419 201.94 42.419C203.023 42.419 203.91 42.7983 204.6 43.5569C205.299 44.3155 205.649 45.2366 205.649 46.3203C205.649 46.4878 205.629 46.7095 205.59 46.9853H199.708ZM199.693 45.6849H204.038C203.93 45.0839 203.678 44.6307 203.284 44.3253C202.9 44.0199 202.447 43.8672 201.925 43.8672C201.334 43.8672 200.841 44.0298 200.447 44.3549C200.053 44.68 199.802 45.1233 199.693 45.6849Z" fill="#1A1A1A"/>
+<path id="Vector_14" d="M194.192 42.419C195.039 42.419 195.724 42.6899 196.246 43.2318C196.768 43.7736 197.029 44.5174 197.029 45.4632V50H195.433V45.6258C195.433 45.0741 195.285 44.6504 194.99 44.3549C194.694 44.0593 194.29 43.9115 193.778 43.9115C193.216 43.9115 192.763 44.0889 192.418 44.4435C192.073 44.7884 191.901 45.3204 191.901 46.0395V50H190.305V42.6111H191.901V43.5569C192.384 42.7983 193.147 42.419 194.192 42.419Z" fill="#1A1A1A"/>
+<path id="Vector_15" d="M185.256 50.1921C184.172 50.1921 183.251 49.8177 182.493 49.069C181.734 48.3203 181.355 47.3991 181.355 46.3055C181.355 45.212 181.734 44.2908 182.493 43.5421C183.251 42.7934 184.172 42.419 185.256 42.419C186.35 42.419 187.271 42.7934 188.02 43.5421C188.778 44.2908 189.158 45.212 189.158 46.3055C189.158 47.3991 188.778 48.3203 188.02 49.069C187.271 49.8177 186.35 50.1921 185.256 50.1921ZM183.616 47.9754C184.059 48.4188 184.606 48.6404 185.256 48.6404C185.906 48.6404 186.453 48.4188 186.897 47.9754C187.34 47.5321 187.562 46.9755 187.562 46.3055C187.562 45.6356 187.34 45.079 186.897 44.6357C186.453 44.1923 185.906 43.9707 185.256 43.9707C184.606 43.9707 184.059 44.1923 183.616 44.6357C183.173 45.079 182.951 45.6356 182.951 46.3055C182.951 46.9755 183.173 47.5321 183.616 47.9754Z" fill="#1A1A1A"/>
+<path id="Vector_16" d="M177.433 48.4927H181.024V50H175.261V48.936L178.719 44.1184H175.409V42.6111H180.876V43.6751L177.433 48.4927Z" fill="#1A1A1A"/>
+<path id="Vector_17" d="M171.445 50.1921C170.331 50.1921 169.4 49.8177 168.652 49.069C167.913 48.3203 167.543 47.3991 167.543 46.3055C167.543 45.2021 167.913 44.281 168.652 43.5421C169.4 42.7934 170.331 42.419 171.445 42.419C172.164 42.419 172.819 42.5914 173.41 42.9362C174.001 43.281 174.445 43.7441 174.74 44.3253L173.366 45.1233C173.198 44.7687 172.942 44.4928 172.597 44.2958C172.262 44.0889 171.873 43.9854 171.43 43.9854C170.78 43.9854 170.233 44.2071 169.79 44.6504C169.356 45.0938 169.139 45.6455 169.139 46.3055C169.139 46.9656 169.356 47.5173 169.79 47.9607C170.233 48.404 170.78 48.6257 171.43 48.6257C171.863 48.6257 172.253 48.5222 172.597 48.3153C172.952 48.1084 173.218 47.8326 173.395 47.4878L174.77 48.271C174.454 48.8621 174.001 49.3301 173.41 49.6749C172.819 50.0197 172.164 50.1921 171.445 50.1921Z" fill="#1A1A1A"/>
+<path id="Vector_18" d="M165.144 43.8524C165.548 42.9362 166.307 42.4781 167.42 42.4781V44.2071C166.809 44.1677 166.277 44.3155 165.824 44.6504C165.371 44.9755 165.144 45.5174 165.144 46.276V50H163.548V42.6111H165.144V43.8524Z" fill="#1A1A1A"/>
+<path id="Vector_19" d="M160.387 42.6111H161.983V50H160.387V48.936C159.786 49.7734 158.924 50.1921 157.801 50.1921C156.787 50.1921 155.92 49.8177 155.2 49.069C154.481 48.3104 154.122 47.3893 154.122 46.3055C154.122 45.212 154.481 44.2908 155.2 43.5421C155.92 42.7934 156.787 42.419 157.801 42.419C158.924 42.419 159.786 42.8328 160.387 43.6603V42.6111ZM156.383 48.005C156.826 48.4483 157.383 48.67 158.052 48.67C158.722 48.67 159.279 48.4483 159.722 48.005C160.166 47.5518 160.387 46.9853 160.387 46.3055C160.387 45.6258 160.166 45.0642 159.722 44.6209C159.279 44.1677 158.722 43.9411 158.052 43.9411C157.383 43.9411 156.826 44.1677 156.383 44.6209C155.939 45.0642 155.718 45.6258 155.718 46.3055C155.718 46.9853 155.939 47.5518 156.383 48.005Z" fill="#1A1A1A"/>
+<path id="Vector_20" d="M153.686 44.148H151.854V47.6947C151.854 48.0001 151.923 48.2217 152.061 48.3597C152.199 48.4877 152.401 48.5616 152.667 48.5813C152.943 48.5912 153.282 48.5863 153.686 48.5666V50C152.465 50.1478 151.588 50.0443 151.056 49.6897C150.524 49.3251 150.258 48.6601 150.258 47.6947V44.148H148.898V42.6111H150.258V41.0151L151.854 40.5422V42.6111H153.686V44.148Z" fill="#1A1A1A"/>
+<path id="Vector_21" d="M144.769 44.6504C144.769 44.8967 144.902 45.0938 145.168 45.2415C145.444 45.3795 145.774 45.5026 146.158 45.611C146.553 45.7095 146.947 45.8277 147.341 45.9657C147.735 46.1036 148.065 46.34 148.331 46.675C148.607 47.0001 148.745 47.4139 148.745 47.9163C148.745 48.6257 148.469 49.1823 147.917 49.5862C147.375 49.9901 146.69 50.1921 145.863 50.1921C145.134 50.1921 144.508 50.0394 143.986 49.734C143.464 49.4286 143.085 49.005 142.848 48.4631L144.223 47.6651C144.479 48.3744 145.026 48.7291 145.863 48.7291C146.7 48.7291 147.119 48.4533 147.119 47.9015C147.119 47.6651 146.981 47.473 146.705 47.3252C146.439 47.1774 146.109 47.0543 145.715 46.9558C145.331 46.8474 144.942 46.7242 144.548 46.5863C144.154 46.4484 143.819 46.2218 143.543 45.9065C143.277 45.5814 143.144 45.1726 143.144 44.68C143.144 44.0002 143.4 43.4534 143.912 43.0396C144.434 42.6259 145.08 42.419 145.848 42.419C146.459 42.419 147.001 42.5569 147.474 42.8328C147.956 43.0988 148.326 43.4731 148.582 43.9559L147.237 44.7095C146.981 44.148 146.518 43.8672 145.848 43.8672C145.543 43.8672 145.287 43.9362 145.08 44.0741C144.873 44.2022 144.769 44.3943 144.769 44.6504Z" fill="#1A1A1A"/>
+<path id="Vector_22" d="M138.431 50.1921C137.348 50.1921 136.426 49.8177 135.668 49.069C134.909 48.3203 134.53 47.3991 134.53 46.3055C134.53 45.212 134.909 44.2908 135.668 43.5421C136.426 42.7934 137.348 42.419 138.431 42.419C139.525 42.419 140.446 42.7934 141.195 43.5421C141.953 44.2908 142.333 45.212 142.333 46.3055C142.333 47.3991 141.953 48.3203 141.195 49.069C140.446 49.8177 139.525 50.1921 138.431 50.1921ZM136.791 47.9754C137.234 48.4188 137.781 48.6404 138.431 48.6404C139.081 48.6404 139.628 48.4188 140.072 47.9754C140.515 47.5321 140.737 46.9755 140.737 46.3055C140.737 45.6356 140.515 45.079 140.072 44.6357C139.628 44.1923 139.081 43.9707 138.431 43.9707C137.781 43.9707 137.234 44.1923 136.791 44.6357C136.348 45.079 136.126 45.6356 136.126 46.3055C136.126 46.9755 136.348 47.5321 136.791 47.9754Z" fill="#1A1A1A"/>
+<path id="Vector_23" d="M131.783 39.6555H133.379V50H131.783V48.936C131.182 49.7734 130.32 50.1921 129.197 50.1921C128.182 50.1921 127.315 49.8177 126.596 49.069C125.877 48.3104 125.517 47.3893 125.517 46.3055C125.517 45.212 125.877 44.2908 126.596 43.5421C127.315 42.7934 128.182 42.419 129.197 42.419C130.32 42.419 131.182 42.8328 131.783 43.6603V39.6555ZM127.778 48.005C128.222 48.4483 128.778 48.67 129.448 48.67C130.118 48.67 130.675 48.4483 131.118 48.005C131.561 47.5518 131.783 46.9853 131.783 46.3055C131.783 45.6258 131.561 45.0642 131.118 44.6209C130.675 44.1677 130.118 43.9411 129.448 43.9411C128.778 43.9411 128.222 44.1677 127.778 44.6209C127.335 45.0642 127.113 45.6258 127.113 46.3055C127.113 46.9853 127.335 47.5518 127.778 48.005Z" fill="#1A1A1A"/>
+</g>
+<g id="_onrevolt_logo" clip-path="url(#clip0_2243_9296)">
+<path id="Vector_24" d="M306.114 43.9893V42.3554H304.264V40.2928H302.547V42.3517H301.172V43.9857H302.547V47.4807C302.547 48.4552 302.826 49.1366 303.376 49.5029C303.766 49.7631 304.334 49.8913 305.081 49.8913C305.382 49.8913 305.761 49.8693 306.118 49.829V48.294C305.717 48.316 305.319 48.3196 305.044 48.305C304.784 48.2903 304.587 48.2207 304.457 48.0998C304.331 47.9789 304.264 47.7701 304.264 47.4843V43.9893H306.114Z" fill="#1A1A1A"/>
+<path id="Vector_25" d="M281.44 46.4808V46.4259C281.44 45.5429 282.239 45.1326 282.239 44.345C282.239 43.7405 281.741 43.2496 281.128 43.2496C280.515 43.2496 280.017 43.7405 280.017 44.345C280.017 45.1107 280.816 45.532 280.816 46.4259V46.4808C280.816 47.3747 280.017 47.5872 280.017 48.5617C280.017 49.1662 280.515 49.6571 281.128 49.6571C281.741 49.6571 282.239 49.1662 282.239 48.5617C282.239 47.6385 281.44 47.3637 281.44 46.4808Z" fill="#8A47FF"/>
+<path id="Vector_26" d="M275.658 42.1911C274.495 42.1911 273.529 42.5684 272.79 43.3158C272.046 44.0631 271.671 45.001 271.671 46.1074C271.671 47.2138 272.054 48.1773 272.804 48.9137C273.555 49.65 274.558 50.0237 275.777 50.0237C277.23 50.0237 278.344 49.4778 279.084 48.3971L279.117 48.3495L277.742 47.5582L277.702 47.5325L277.676 47.5728C277.259 48.1626 276.628 48.463 275.795 48.463C275.194 48.463 274.677 48.3165 274.261 48.0234C273.863 47.745 273.6 47.3457 273.477 46.8328H279.388L279.396 46.7888C279.437 46.5067 279.455 46.2869 279.455 46.1184C279.455 45.034 279.099 44.0961 278.389 43.3341C277.683 42.5721 276.762 42.1911 275.658 42.1911ZM274.187 44.206C274.573 43.891 275.064 43.7334 275.643 43.7334C276.156 43.7334 276.609 43.8836 276.988 44.1767C277.356 44.4588 277.598 44.8838 277.709 45.437H273.455C273.566 44.9204 273.811 44.5101 274.183 44.206H274.187Z" fill="#8A47FF"/>
+<path id="Vector_27" d="M269.805 45.4039C269.909 45.3453 270.014 45.2867 270.11 45.2171C270.233 45.1292 270.348 45.0339 270.456 44.9313C270.508 44.8837 270.552 44.8288 270.601 44.7775C270.686 44.6859 270.764 44.587 270.838 44.4881C270.868 44.4478 270.898 44.4038 270.928 44.3635C271.139 44.0411 271.292 43.6821 271.373 43.3011C271.377 43.2791 271.385 43.2534 271.388 43.2315C271.425 43.041 271.451 42.8468 271.451 42.649V42.6123C271.451 42.4145 271.425 42.2203 271.388 42.0298C271.385 42.0078 271.377 41.9822 271.373 41.9602C271.292 41.5792 271.139 41.2202 270.928 40.8978C270.898 40.8538 270.868 40.8135 270.838 40.7732C270.764 40.6707 270.686 40.5754 270.601 40.4838C270.552 40.4325 270.508 40.3776 270.456 40.3299C270.348 40.2274 270.233 40.1321 270.11 40.0442C270.014 39.9746 269.909 39.916 269.805 39.8573C269.783 39.8427 269.772 39.8427 269.75 39.828L269.724 39.8134C269.274 39.5716 268.772 39.425 268.23 39.425H264.21V49.8368H266.03V45.8362H267.621L269.958 49.8112L269.973 49.8368H272.202L269.638 45.4882C269.664 45.4735 269.698 45.4626 269.724 45.4479M268.23 44.129H266.03V41.1249H268.23C269.047 41.1249 269.709 41.799 269.72 42.627C269.709 43.4586 269.047 44.129 268.23 44.129Z" fill="#8A47FF"/>
+<path id="Vector_28" d="M251.732 42.1911C250.629 42.1911 249.681 42.5721 248.908 43.3231C248.136 44.0741 247.745 45.012 247.745 46.1074C247.745 47.2028 248.136 48.1407 248.908 48.8917C249.681 49.6427 250.629 50.0237 251.732 50.0237C252.836 50.0237 253.798 49.6427 254.564 48.8917C255.329 48.1407 255.719 47.2028 255.719 46.1074C255.719 45.012 255.329 44.0741 254.564 43.3231C253.798 42.5721 252.843 42.1911 251.732 42.1911ZM253.352 47.7303C252.918 48.159 252.375 48.3751 251.736 48.3751C251.097 48.3751 250.554 48.159 250.12 47.7303C249.685 47.3017 249.466 46.7558 249.466 46.1074C249.466 45.4589 249.685 44.9131 250.12 44.4844C250.554 44.0558 251.097 43.8397 251.736 43.8397C252.375 43.8397 252.918 44.0558 253.352 44.4844C253.787 44.9131 254.006 45.4589 254.006 46.1074C254.006 46.7558 253.787 47.3017 253.352 47.7303Z" fill="#1A1A1A"/>
+<path id="Vector_29" d="M260.316 42.1911C259.317 42.1911 258.559 42.5318 258.057 43.2059V42.3816H256.34V49.8369H258.057V45.8473C258.057 45.1512 258.228 44.6273 258.562 44.2903C258.897 43.9532 259.346 43.7847 259.896 43.7847C260.398 43.7847 260.795 43.9276 261.081 44.2097C261.368 44.4918 261.512 44.9058 261.512 45.437V49.8405H263.229V45.2758C263.229 44.3269 262.958 43.5649 262.423 43.019C261.888 42.4732 261.178 42.1947 260.312 42.1947H260.316V42.1911Z" fill="#1A1A1A"/>
+<path id="Vector_30" d="M294.111 42.1911C293.007 42.1911 292.056 42.5721 291.287 43.3231C290.514 44.0741 290.124 45.012 290.124 46.1074C290.124 47.2028 290.514 48.1407 291.287 48.8917C292.06 49.6427 293.007 50.0237 294.111 50.0237C295.214 50.0237 296.177 49.6427 296.942 48.8917C297.711 48.1407 298.098 47.2028 298.098 46.1074C298.098 45.012 297.708 44.0741 296.942 43.3231C296.177 42.5721 295.222 42.1911 294.111 42.1911ZM295.727 47.7303C295.292 48.159 294.75 48.3751 294.111 48.3751C293.472 48.3751 292.929 48.159 292.495 47.7303C292.06 47.3017 291.841 46.7558 291.841 46.1074C291.841 45.4589 292.06 44.9131 292.495 44.4844C292.929 44.0558 293.472 43.8397 294.111 43.8397C294.75 43.8397 295.292 44.0558 295.727 44.4844C296.162 44.9131 296.381 45.4589 296.381 46.1074C296.381 46.7558 296.162 47.3017 295.727 47.7303Z" fill="#1A1A1A"/>
+<path id="Vector_31" d="M300.496 40.2643H298.85V49.8335H300.496V40.2643Z" fill="#1A1A1A"/>
+<path id="Vector_32" d="M286.488 47.8838L284.448 42.4105L284.437 42.3775L282.453 42.3739L285.499 49.8072L285.511 49.8401H287.45L290.478 42.4471L290.508 42.3739L288.524 42.3775L286.488 47.8838Z" fill="#1A1A1A"/>
+</g>
+<g id="_okres_aktualny">
+<rect x="30.5" y="94.5" width="534" height="355.5" rx="9.5" fill="white"/>
+<rect x="30.5" y="94.5" width="534" height="355.5" rx="9.5" stroke="#FFBFBF"/>
+<g id="_okres_aktualny_tytul">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="112.41">Okres </tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" font-weight="300" letter-spacing="-0.02em"><tspan x="70.1281" y="112.41">(Czerwiec 2025 - Maj 2026)</tspan></text>
+</g>
+<g id="_przeplyw_energii_aktualny_tytul">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="339.41">Przepływ energii </tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" font-weight="300" letter-spacing="-0.02em"><tspan x="119.823" y="339.41">(kWh)</tspan></text>
+</g>
+<g id="_rozliczenie_energii_aktualny_tytul">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="384.41">Rozliczenie energii </tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" font-weight="300" letter-spacing="-0.02em"><tspan x="128.676" y="384.41">(PLN brutto)</tspan></text>
+</g>
+<g id="_energia_oddana_do_sieci_aktualny_pole">
+<path d="M45 390.5H212.5V414.5H40.5V395C40.5 392.515 42.5147 390.5 45 390.5Z" fill="white"/>
+<path d="M45 390.5H212.5V414.5H40.5V395C40.5 392.515 42.5147 390.5 45 390.5Z" stroke="#E9EDF7"/>
+<g id="_energia_oddana_do_sieci_aktualny_pole_2">
+<rect id="_energia_oddana_do_sieci_aktualny_znacznik" x="47" y="396.6" width="6.133" height="6.133" rx="3.0665" fill="#009A44"/>
+<text id="_energia_oddana_do_sieci_aktualny_tytul" transform="translate(59.7992 392)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8.17766" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="8.15495">Energia oddana do sieci</tspan></text>
+<text id="_energia_oddana_do_sieci_aktualny_kwh" transform="translate(59.7996 402)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.15545" font-weight="300" letter-spacing="0.025em"><tspan x="0" y="7.80638">Brak</tspan></text>
+</g>
+</g>
+<g id="_energia_pobrana_z_sieci_aktualny_pole">
+<path d="M212.5 414.5V438.5H45C42.5147 438.5 40.5 436.485 40.5 434V414.5H212.5Z" fill="white"/>
+<path d="M212.5 414.5V438.5H45C42.5147 438.5 40.5 436.485 40.5 434V414.5H212.5Z" stroke="#E9EDF7"/>
+<g id="_energia_pobrana_z_sieci_aktualny_pole_2">
+<rect id="_energia_pobrana_z_sieci_aktualny_znacznik" x="47" y="420.6" width="6.133" height="6.133" rx="3.0665" fill="#FC7C00"/>
+<text id="_energia_pobrana_z_sieci_aktualny_tytul" transform="translate(59.7994 416)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8.17766" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="8.15495">Energia pobrana z sieci</tspan></text>
+<text id="_energia_pobrana_z_sieci_aktualny_kwh" transform="translate(59.7999 426)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.15545" font-weight="300" letter-spacing="0.025em"><tspan x="0" y="7.80638">5 221 kWh</tspan></text>
+</g>
+</g>
+<g id="_wartosc_energii_oddanej_aktualny_pole">
+<rect x="212.5" y="390.5" width="169" height="24" fill="white"/>
+<rect x="212.5" y="390.5" width="169" height="24" stroke="#E9EDF7"/>
+<g id="_wartosc_energii_oddanej_aktualny_pole_2">
+<text id="_wartosc_energii_oddanej_aktualny_tytul" transform="translate(215 391)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8.17766" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="8.15495">Wartość energii oddanej</tspan></text>
+<text id="_wartosc_energii_oddanej_aktualny_kwh" transform="translate(215 402)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.15545" font-weight="300" letter-spacing="0.025em"><tspan x="0" y="7.80638">Brak</tspan></text>
+</g>
+</g>
+<g id="_wartosc_energii_pobranej_aktualny_pole">
+<rect x="212.5" y="414.5" width="169" height="24" fill="white"/>
+<rect x="212.5" y="414.5" width="169" height="24" stroke="#E9EDF7"/>
+<g id="_wartosc_energii_pobranej_aktualny_pole_2">
+<text id="_wartosc_energii_pobranej_aktualny_tytul" transform="translate(215 415)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8.17766" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="8.15495">Wartość energii pobranej</tspan></text>
+<text id="_wartosc_energii_pobranej_aktualny_kwh" transform="translate(215 426)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.15545" font-weight="300" letter-spacing="0.025em"><tspan x="0" y="7.80638">2 637 PLN</tspan></text>
+</g>
+</g>
+<g id="_srednia_cana_oddanej_aktualny_pole">
+<path d="M549 390.5C551.485 390.5 553.5 392.515 553.5 395V414.5H381.5V390.5H549Z" fill="white"/>
+<path d="M549 390.5C551.485 390.5 553.5 392.515 553.5 395V414.5H381.5V390.5H549Z" stroke="#E9EDF7"/>
+<g id="_srednia_cana_oddanej_aktualny_pole_2">
+<text id="_srednia_cana_oddanej_aktualny_tytul" transform="translate(386 392)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8.17766" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="8.15495">Średnia cena 1 kWh/PLN</tspan></text>
+<text id="_srednia_cana_oddanej_aktualny_pln" transform="translate(386 402)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.15545" font-weight="300" letter-spacing="0.025em"><tspan x="0" y="7.80638">Brak</tspan></text>
+</g>
+</g>
+<g id="_srednia_cana_pobranej_aktualny_pole">
+<path d="M553.5 414.5V434C553.5 436.485 551.485 438.5 549 438.5H381.5V414.5H553.5Z" fill="white"/>
+<path d="M553.5 414.5V434C553.5 436.485 551.485 438.5 549 438.5H381.5V414.5H553.5Z" stroke="#E9EDF7"/>
+<g id="_srednia_cana_pobranej_aktualny_pole_2">
+<text id="_srednia_cana_pobranej_aktualny_tytul" transform="translate(386 416)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8.17766" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="8.15495">Średnia cena 1kWh/PLN</tspan></text>
+<text id="_srednia_cana_pobranej_aktualny_pln" transform="translate(386 426)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.15545" font-weight="300" letter-spacing="0.025em"><tspan x="0" y="7.80638">0,51 PLN/kWh</tspan></text>
+</g>
+</g>
+<g id="_przeplyw_energii_aktualny_tabela">
+<g id="_zuzycie_energii_aktualny_pole">
+<path d="M45 345.5H162.82V369.5H45C42.5147 369.5 40.5 367.485 40.5 365V350C40.5 347.515 42.5147 345.5 45 345.5Z" fill="white"/>
+<path d="M45 345.5H162.82V369.5H45C42.5147 369.5 40.5 367.485 40.5 365V350C40.5 347.515 42.5147 345.5 45 345.5Z" stroke="#E9EDF7"/>
+<g id="_zuzycie_energii_aktualny_pole_2">
+<g id="_zuzycie_energii_aktualny_pole_3">
+<text id="_zuzycie_energii_aktualny_tytul" transform="translate(61.2531 347.234)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8.17766" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="8.15495">Zużycie energii</tspan></text>
+<text id="_zuzycie_energii_aktualny_kwh" transform="translate(61.2535 358)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.15545" font-weight="300" letter-spacing="0.025em"><tspan x="0" y="7.80638">5 221 kWh</tspan></text>
+</g>
+<path id="_zuzycie_energii_aktualny_znacznik" d="M45.9999 354.941H57.0393" stroke="#A3AED0" stroke-width="1.53325"/>
+</g>
+</g>
+<g id="_autokonsumpcja_pv_aktualny_pole">
+<rect x="285.168" y="345.5" width="122.321" height="24" fill="white"/>
+<rect x="285.168" y="345.5" width="122.321" height="24" stroke="#E9EDF7"/>
+<g id="_autokonsumpcja_pv_aktualny_pole_2">
+<rect id="_autokonsumpcja_pv_aktualny_znacznik" x="294.668" y="351.671" width="5.99166" height="5.99166" rx="2.99583" fill="#FEB633"/>
+<text id="_autokonsumpcja_pv_aktualny_tytul" transform="translate(306.839 347)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8.17766" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="8.15495">Autokonsumpcja z PV</tspan></text>
+<text id="_autokonsumpcja_pv_aktualny_kwh" transform="translate(306.839 358)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.15545" font-weight="300" letter-spacing="0.025em"><tspan x="0" y="7.80638">Brak</tspan></text>
+</g>
+</g>
+<g id="_produkcja_pv_aktaulny_pole">
+<rect x="162.834" y="345.5" width="122.321" height="24" fill="white"/>
+<rect x="162.834" y="345.5" width="122.321" height="24" stroke="#E9EDF7"/>
+<g id="_produkcja_pv_aktaulny_pole_2">
+<g id="_produkcja_pv_aktaulny_pole_3">
+<text id="_produkcja_pv_aktaulny_tytul" transform="translate(185.073 347.001)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8.17766" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="8.15495">Produkcja z PV</tspan></text>
+<text id="_produkcja_pv_aktaulny_kwh" transform="translate(184.587 358)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.15545" font-weight="300" letter-spacing="0.025em"><tspan x="0" y="7.80638">Brak</tspan></text>
+</g>
+<path id="_produkcja_pv_aktaulny_znacznik" d="M169.334 354.902H180.373" stroke="#FEB633" stroke-width="1.53325"/>
+</g>
+</g>
+<g id="_autokonsumpcja_magazyn_aktualny_pole">
+<path d="M549 345.5C551.485 345.5 553.5 347.515 553.5 350V365C553.5 367.485 551.485 369.5 549 369.5H407.502V345.5H549Z" fill="white"/>
+<path d="M549 345.5C551.485 345.5 553.5 347.515 553.5 350V365C553.5 367.485 551.485 369.5 549 369.5H407.502V345.5H549Z" stroke="#E9EDF7"/>
+<g id="_autokonsumpcja_magazyn_aktualny_pole_2">
+<rect id="_autokonsumpcja_magazyn_aktualny_znacznik" x="416.002" y="351.671" width="5.99166" height="5.99166" rx="2.99583" fill="#00D477"/>
+<text id="_autokonsumpcja_magazyn_aktualny_tytul" transform="translate(427.002 347)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8.17766" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="8.15495">Autokonsumpcja z magazynu</tspan></text>
+<text id="_autokonsumpcja_magazyn_aktualny_kwh" transform="translate(427.173 358)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.15545" font-weight="300" letter-spacing="0.025em"><tspan x="0" y="7.80638">Brak</tspan></text>
+</g>
+</g>
+</g>
+<g id="Aktualny_rachunek">
+<path d="M560 321.123C560 324.292 557.431 326.861 554.262 326.861L40.7377 326.861C37.5688 326.861 35 324.292 35 321.123L35 121.738C35 118.569 37.5689 116 40.7377 116L554.262 116C557.431 116 560 118.569 560 121.738L560 321.123Z" fill="white"/>
+<g id="_jednostki_wykres_aktualny">
+<text id="_0" transform="translate(41 300.938)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="19.9016" y="9.28207">0</tspan></text>
+<text id="_200" transform="translate(41 284.08)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="12.6586" y="9.28207">100</tspan></text>
+<text id="_400" transform="translate(41 267.221)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="10.7985" y="9.28207">200</tspan></text>
+<text id="_600" transform="translate(41 251.165)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="10.6543" y="9.28207">300</tspan></text>
+<text id="_800" transform="translate(41 234.307)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="10.5926" y="9.28207">400</tspan></text>
+<text id="_1000" transform="translate(41 218.251)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="10.4896" y="9.28207">500</tspan></text>
+<text id="_1200" transform="translate(41 201.392)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="10.3592" y="9.28207">600</tspan></text>
+<text id="_1400" transform="translate(41 182.928)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="11.1211" y="9.28207">700</tspan></text>
+<text id="_1400_2" transform="translate(41 150.056)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="10.3523" y="9.28207">900</tspan></text>
+<text id="_1400_3" transform="translate(41 166.872)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="10.5376" y="9.28207">800</tspan></text>
+<text id="_1400_4" transform="translate(41 134)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="5.601" y="9.28207">1 000</tspan></text>
+</g>
+<g id="_linie_wykres_aktualny">
+<g id="_linia_bazowa_wykres_aktualny">
+<path id="_linia_bazowa_wykres_aktualny_2" d="M72.2954 308.466H551.681" stroke="#E0E4F0" stroke-width="0.286885"/>
+</g>
+<g id="_linie_wykres_aktualny_7">
+<path id="_linie_wykres_aktualny_7_2" d="M72.2954 291.802H551.681" stroke="#E0E4F0" stroke-width="0.286885"/>
+</g>
+<g id="_linie_wykres_aktualny_6">
+<path id="_linie_wykres_aktualny_6_2" d="M72.2954 275.139H551.681" stroke="#E0E4F0" stroke-width="0.286885"/>
+</g>
+<g id="_linie_wykres_aktualny_5">
+<path id="_linie_wykres_aktualny_5_2" d="M72.2955 258.475H551.681" stroke="#E0E4F0" stroke-width="0.286885"/>
+</g>
+<g id="_linie_wykres_aktualny_4">
+<path id="_linie_wykres_aktualny_4_2" d="M72.2955 241.812H551.681" stroke="#E0E4F0" stroke-width="0.286885"/>
+</g>
+<g id="_linie_wykres_aktualny_3">
+<path id="_linie_wykres_aktualny_3_2" d="M72.2955 225.149H551.681" stroke="#E0E4F0" stroke-width="0.286885"/>
+</g>
+<g id="_linie_wykres_aktualny_2">
+<path id="_linie_wykres_aktualny_2_2" d="M72.9999 190.288H552.385" stroke="#E0E4F0" stroke-width="0.286885"/>
+</g>
+<g id="_linie_wykres_aktualny_2_3">
+<path id="_linie_wykres_aktualny_2_4" d="M72.9999 157.416H552.385" stroke="#E0E4F0" stroke-width="0.286885"/>
+</g>
+<g id="_linie_wykres_aktualny_1">
+<path id="_linie_wykres_aktualny_1_2" d="M72.2957 208.383H551.681" stroke="#E0E4F0" stroke-width="0.286885"/>
+<path id="_linie_wykres_aktualny_1_3" d="M73 172.491H552.385" stroke="#E0E4F0" stroke-width="0.286885"/>
+<path id="_linie_wykres_aktualny_1_4" d="M73 139.62H552.385" stroke="#E0E4F0" stroke-width="0.286885"/>
+</g>
+</g>
+<g id="_miesiace_wykres_aktualny">
+<text id="_Listopad" transform="translate(475.497 310.906)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="2.98875" y="9.28207">Listopad</tspan></text>
+<text id="_Maj" transform="translate(231.167 310.906)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="11.6993" y="9.28207">Maj</tspan></text>
+<text id="_Luty" transform="translate(109.001 310.906)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="10.1699" y="9.28207">Luty</tspan></text>
+<text id="_Styczen" transform="translate(68.2274 310.921)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="4.34303" y="9.28207">Styczeń</tspan></text>
+<text id="_Lipiec" transform="translate(312.61 310.906)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="7.47511" y="9.28207">Lipiec</tspan></text>
+<text id="_Grudzien" transform="translate(516.22 310.906)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="2.44992" y="9.28207">Grudzień</tspan></text>
+<text id="_Czerwiec" transform="translate(271.888 310.906)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="2.16163" y="9.28207">Czerwiec</tspan></text>
+<text id="_Marzec" transform="translate(149.722 310.906)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="5.4605" y="9.28207">Marzec</tspan></text>
+<text id="_Sierpien" transform="translate(353.331 310.906)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="3.86392" y="9.28207">Sierpień</tspan></text>
+<text id="_Kwiecien" transform="translate(190.445 310.906)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="2.83774" y="9.28207">Kwiecień</tspan></text>
+<text id="_Wrzesien" transform="translate(394.054 310.906)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="2.26459" y="9.28207">Wrzesień</tspan></text>
+<text id="_Pazdziernik" transform="translate(428.611 310.921)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="5.90632" y="9.28207">Październik</tspan></text>
+</g>
+<g id="_jednostka_wykres_aktualny">
+<text id="_jednostka_wykres_aktualny_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.0288" font-weight="300" letter-spacing="0.025em"><tspan x="51.2219" y="125.003">kWh</tspan></text>
+</g>
+<path id="_linia_zmiany_daty_aktualny" d="M269 308L269 137" stroke="#A3AED0" stroke-opacity="0.5" stroke-width="0.5" stroke-dasharray="2 2"/>
+<text id="_rok_wykres_aktualny" transform="translate(150 125)" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="300" letter-spacing="0.025em"><tspan x="8.61752" y="9.24403">2026</tspan></text>
+<text id="_rok_wykres_aktualny_2" transform="translate(391 125)" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="300" letter-spacing="0.025em"><tspan x="8.68246" y="9.24403">2025</tspan></text>
+</g>
+</g>
+<g id="_podsumowanie_roczne_aktualne">
+<rect x="566" y="742" width="536" height="287" rx="9.9996" transform="rotate(-180 566 742)" fill="white"/>
+<text id="_podsumowanie_roczne_aktualne_tytul" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="472.41">Podsumowanie roczne</tspan></text>
+<g id="_podsumowanie_roczne_aktualne_miesiace">
+<g id="_styczen_aktualny">
+<rect width="43" height="15" transform="translate(41 478)" fill="white"/>
+<text id="_styczen_aktualny_2" transform="translate(48.5 478.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="600" letter-spacing="0.025em"><tspan x="0.0492191" y="9.24403">Styczeń</tspan></text>
+</g>
+<g id="_czerwiec_aktualny">
+<rect width="43" height="15" transform="translate(255 478)" fill="white"/>
+<text id="_czerwiec_aktualny_2" transform="translate(260 478.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="600" letter-spacing="0.025em"><tspan x="0.287891" y="9.24403">Czerwiec</tspan></text>
+</g>
+<g id="_luty_aktualny">
+<rect width="43" height="15" transform="translate(84 478)" fill="white"/>
+<text id="_luty_aktualny_2" transform="translate(97.5 478.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="600" letter-spacing="0.025em"><tspan x="0.166699" y="9.24403">Luty</tspan></text>
+</g>
+<g id="_lipiec_aktualny">
+<rect width="44" height="15" transform="translate(298 478)" fill="white"/>
+<text id="_lipiec_aktualny_2" transform="translate(309 478.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="600" letter-spacing="0.025em"><tspan x="0.376953" y="9.24403">Lipiec</tspan></text>
+</g>
+<g id="_marzec_aktualny">
+<rect width="43" height="15" transform="translate(127 478)" fill="white"/>
+<text id="_marzec_aktualny_2" transform="translate(135.5 478.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="600" letter-spacing="0.025em"><tspan x="0.264648" y="9.24403">Marzec</tspan></text>
+</g>
+<g id="_sierpien_aktualny">
+<rect width="43" height="15" transform="translate(342 478)" fill="white"/>
+<text id="_sierpien_aktualny_2" transform="translate(349 478.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="600" letter-spacing="0.025em"><tspan x="0.0447264" y="9.24403">Sierpień</tspan></text>
+</g>
+<g id="_kwiecien_aktualny">
+<rect width="42" height="15" transform="translate(170 478)" fill="white"/>
+<text id="_kwiecien_aktualny_2" transform="translate(175 478.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="600" letter-spacing="0.025em"><tspan x="0.283496" y="9.24403">Kwiecień</tspan></text>
+</g>
+<g id="_wrzesien_aktualny">
+<rect width="43" height="15" transform="translate(385 478)" fill="white"/>
+<text id="_wrzesien_aktualny_2" transform="translate(390 478.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="600" letter-spacing="0.025em"><tspan x="0.325489" y="9.24403">Wrzesień</tspan></text>
+</g>
+<g id="_maj_aktualny">
+<rect width="43" height="15" transform="translate(212 478)" fill="white"/>
+<text id="_maj_aktualny_2" transform="translate(227 478.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="600" letter-spacing="0.025em"><tspan x="0.333301" y="9.24403">Maj</tspan></text>
+</g>
+<g id="_pazdziernik_aktualny">
+<rect width="43" height="15" transform="translate(428 478)" fill="white"/>
+<text id="_pazdziernik_aktualny_2" transform="translate(429.5 478.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="600" letter-spacing="0.025em"><tspan x="0.11084" y="9.24403">Październik</tspan></text>
+</g>
+<g id="_listopad_aktualny">
+<rect width="42" height="15" transform="translate(471 478)" fill="white"/>
+<text id="_listopad_aktualny_2" transform="translate(476.5 478.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="600" letter-spacing="0.025em"><tspan x="0.190234" y="9.24403">Listopad</tspan></text>
+</g>
+<g id="_grudzien_aktualny">
+<rect width="43" height="15" transform="translate(513 478)" fill="white"/>
+<text id="_grudzien_aktualny_2" transform="translate(518.5 478.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="600" letter-spacing="0.025em"><tspan x="0.126269" y="9.24403">Grudzień</tspan></text>
+</g>
+</g>
+<g id="_produkcja_pv_aktualny_tytul">
+<text transform="translate(41 495)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="7.97779">Produkcja z PV </tspan></text>
+<text transform="translate(41 495)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" font-weight="300" letter-spacing="0.025em"><tspan x="60.3281" y="7.97779">(kWh)</tspan></text>
+</g>
+<g id="_energia_oddana_aktualny_tytul">
+<text transform="translate(41 574.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="7.97779">Energia oddana do sieci </tspan></text>
+<text transform="translate(41 574.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" font-weight="300" letter-spacing="0.025em"><tspan x="96.6828" y="7.97779">(kWh)</tspan></text>
+</g>
+<g id="_zuzycie_aktualny_tytul">
+<text transform="translate(41 534.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="7.97779">Całkowite zużycie energii </tspan></text>
+<text transform="translate(41 534.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" font-weight="300" letter-spacing="0.025em"><tspan x="101.442" y="7.97779">(kWh)</tspan></text>
+</g>
+<g id="_energia_pobrana_aktualny_tytul">
+<text transform="translate(41 693)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="7.97779">Energia pobrana z sieci </tspan></text>
+<text transform="translate(41 693)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" font-weight="300" letter-spacing="0.025em"><tspan x="93.5891" y="7.97779">(kWh)</tspan></text>
+</g>
+<g id="_autokonsumpcja_pv_aktualny_tytul_2">
+<text transform="translate(41 613.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="7.97779">Autokonsumpcja z PV </tspan></text>
+<text transform="translate(41 613.5)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" font-weight="300" letter-spacing="0.025em"><tspan x="87.6562" y="7.97779">(kWh)</tspan></text>
+</g>
+<g id="_autokonsumpcja_magazyn_aktualny_tytul_2">
+<text transform="translate(41 652)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-weight="500" letter-spacing="0.025em"><tspan x="0" y="7.97779">Autokonsumpcja z magazynu </tspan></text>
+<text transform="translate(41 652)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" font-weight="300" letter-spacing="0.025em"><tspan x="117.122" y="7.97779">(kWh)</tspan></text>
+</g>
+<g id="_autokonsumpcja_magazyn_aktualny_dane">
+<path id="_autokonsumpcja_magazyn_aktualny_styczen_kolor" d="M80 664.5H39V677.5H80V664.5Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_styczen_wartosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="52.8462" y="687.387">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_luty_kolor" d="M123 664.5H82V677.5H123V664.5Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_luty_wartosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="95.3462" y="687.387">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_marzec_kolor" d="M166 664.5H125V677.5H166V664.5Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_marzec_wartosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="138.846" y="687.387">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_kwiecien_kolor" d="M209 664.5H168V677.5H209V664.5Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_kwiecien_wartosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="181.346" y="687.387">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_maj_kolor" d="M252 664.5H211V677.5H252V664.5Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_maj_wartosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="224.846" y="687.387">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_czerwiec_kolor" d="M295 664.5H254V677.5H295V664.5Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_czerwiec_wartosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="267.846" y="687.387">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_lipiec_kolor" d="M338 664.5H297V677.5H338V664.5Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_lipiec_wartosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="310.846" y="687.387">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_sierpien_kolor" d="M381 664.5H340V677.5H381V664.5Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_sierpien_wartosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="353.846" y="687.387">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_wrzesien_kolor" d="M424 664.5H383V677.5H424V664.5Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_wrzesien_wartosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="396.846" y="687.387">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_pazdziernik_kolor" d="M467 664.5H426V677.5H467V664.5Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_pazdziernik_wartosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="439.346" y="687.387">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_listopad_kolor" d="M510 664.5H469V677.5H510V664.5Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_listopad_wartosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="482.846" y="687.387">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_grudzien_kolor" d="M553 664.5H512V677.5H553V664.5Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_grudzien_wartosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="525.346" y="687.387">brak</tspan></text>
+</g>
+<g id="_autokonsumpcja_magazyn_aktualny_dane_2">
+<path id="_autokonsumpcja_magazyn_aktualny_styczen_kolor_2" d="M80 508H39V521H80V508Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_styczen_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="52.8462" y="530.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_luty_kolor_2" d="M123 508H82V521H123V508Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_luty_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="95.3462" y="530.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_marzec_kolor_2" d="M166 508H125V521H166V508Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_marzec_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="138.846" y="530.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_kwiecien_kolor_2" d="M209 508H168V521H209V508Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_kwiecien_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="181.346" y="530.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_maj_kolor_2" d="M252 508H211V521H252V508Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_maj_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="224.846" y="530.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_czerwiec_kolor_2" d="M295 508H254V521H295V508Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_czerwiec_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="267.846" y="530.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_lipiec_kolor_2" d="M338 508H297V521H338V508Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_lipiec_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="310.846" y="530.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_sierpien_kolor_2" d="M381 508H340V521H381V508Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_sierpien_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="353.846" y="530.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_wrzesien_kolor_2" d="M424 508H383V521H424V508Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_wrzesien_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="396.846" y="530.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_pazdziernik_kolor_2" d="M467 508H426V521H467V508Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_pazdziernik_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="439.346" y="530.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_listopad_kolor_2" d="M510 508H469V521H510V508Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_listopad_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="482.846" y="530.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_grudzien_kolor_2" d="M553 508H512V521H553V508Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_grudzien_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="525.346" y="530.887">brak</tspan></text>
+</g>
+<g id="_autokonsumpcja_magazyn_aktualny_dane_3">
+<path id="_autokonsumpcja_magazyn_aktualny_styczen_kolor_3" d="M80 586H39V599H80V586Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_styczen_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="52.8462" y="608.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_luty_kolor_3" d="M123 586H82V599H123V586Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_luty_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="95.3462" y="608.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_marzec_kolor_3" d="M166 586H125V599H166V586Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_marzec_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="138.846" y="608.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_kwiecien_kolor_3" d="M209 586H168V599H209V586Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_kwiecien_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="181.346" y="608.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_maj_kolor_3" d="M252 586H211V599H252V586Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_maj_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="224.846" y="608.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_czerwiec_kolor_3" d="M295 586H254V599H295V586Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_czerwiec_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="267.846" y="608.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_lipiec_kolor_3" d="M338 586H297V599H338V586Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_lipiec_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="310.846" y="608.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_sierpien_kolor_3" d="M381 586H340V599H381V586Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_sierpien_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="353.846" y="608.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_wrzesien_kolor_3" d="M424 586H383V599H424V586Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_wrzesien_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="396.846" y="608.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_pazdziernik_kolor_3" d="M467 586H426V599H467V586Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_pazdziernik_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="439.346" y="608.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_listopad_kolor_3" d="M510 586H469V599H510V586Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_listopad_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="482.846" y="608.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_grudzien_kolor_3" d="M553 586H512V599H553V586Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_grudzien_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="525.346" y="608.887">brak</tspan></text>
+</g>
+<g id="_autokonsumpcja_magazyn_aktualny_dane_4">
+<path id="_autokonsumpcja_magazyn_aktualny_styczen_kolor_4" d="M80 625H39V638H80V625Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_styczen_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="52.8462" y="647.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_luty_kolor_4" d="M123 625H82V638H123V625Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_luty_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="95.3462" y="647.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_marzec_kolor_4" d="M166 625H125V638H166V625Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_marzec_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="138.846" y="647.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_kwiecien_kolor_4" d="M209 625H168V638H209V625Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_kwiecien_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="181.346" y="647.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_maj_kolor_4" d="M252 625H211V638H252V625Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_maj_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="224.846" y="647.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_czerwiec_kolor_4" d="M295 625H254V638H295V625Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_czerwiec_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="267.846" y="647.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_lipiec_kolor_4" d="M338 625H297V638H338V625Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_lipiec_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="310.846" y="647.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_sierpien_kolor_4" d="M381 625H340V638H381V625Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_sierpien_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="353.846" y="647.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_wrzesien_kolor_4" d="M424 625H383V638H424V625Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_wrzesien_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="396.846" y="647.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_pazdziernik_kolor_4" d="M467 625H426V638H467V625Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_pazdziernik_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="439.346" y="647.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_listopad_kolor_4" d="M510 625H469V638H510V625Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_listopad_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="482.846" y="647.887">brak</tspan></text>
+<path id="_autokonsumpcja_magazyn_aktualny_grudzien_kolor_4" d="M553 625H512V638H553V625Z" fill="#F7F7F7"/>
+<text id="_autokonsumpcja_magazyn_aktualny_grudzien_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="0em"><tspan x="525.346" y="647.887">brak</tspan></text>
+</g>
+<g id="Group_15">
+<path id="Vector_33" d="M80 547H39V560H80V547Z" fill="#8D96AA"/>
+<text id="489" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="52.9136" y="569.545">489</tspan></text>
+<path id="Vector_34" d="M123 547H82V560H123V547Z" fill="#919AAD"/>
+<text id="472" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="96.6357" y="569.545">472</tspan></text>
+<path id="Vector_35" d="M166 547H125V560H166V547Z" fill="#8D96AA"/>
+<text id="490" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="138.383" y="569.545">490</tspan></text>
+<path id="Vector_36" d="M209 547H168V560H209V547Z" fill="#939BAE"/>
+<text id="463" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="181.842" y="569.545">463</tspan></text>
+<path id="Vector_37" d="M252 547H211V560H252V547Z" fill="#959DB0"/>
+<text id="453" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="224.896" y="569.545">453</tspan></text>
+<path id="Vector_38" d="M295 547H254V560H295V547Z" fill="#9AA2B4"/>
+<text id="430" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="267.338" y="569.545">430</tspan></text>
+<path id="Vector_39" d="M338 547H297V560H338V547Z" fill="#A1A9B9"/>
+<text id="398" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="310.931" y="569.545">398</tspan></text>
+<path id="Vector_40" d="M381 547H340V560H381V547Z" fill="#A9B0BF"/>
+<text id="360" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="353.4" y="569.545">360</tspan></text>
+<path id="Vector_41" d="M424 547H383V560H424V547Z" fill="#A4ABBC"/>
+<text id="384" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="396.869" y="569.545">384</tspan></text>
+<path id="Vector_42" d="M467 547H426V560H467V547Z" fill="#9EA6B7"/>
+<text id="411" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="441.535" y="569.545">411</tspan></text>
+<path id="Vector_43" d="M510 547H469V560H510V547Z" fill="#9EA6B7"/>
+<text id="412" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="483.042" y="569.545">412</tspan></text>
+<path id="Vector_44" d="M553 547H512V560H553V547Z" fill="#949CAF"/>
+<text id="460" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="525.383" y="569.545">460</tspan></text>
+</g>
+<g id="Group_14">
+<path id="Vector_45" d="M80 705H39V718H80V705Z" fill="#DA6B00"/>
+<text id="489_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="52.9136" y="727.545">489</tspan></text>
+<path id="Vector_46" d="M123 705H82V718H123V705Z" fill="#DB7008"/>
+<text id="472_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="96.6357" y="727.545">472</tspan></text>
+<path id="Vector_47" d="M166 705H125V718H166V705Z" fill="#DA6B00"/>
+<text id="490_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="138.383" y="727.545">490</tspan></text>
+<path id="Vector_48" d="M209 705H168V718H209V705Z" fill="#DC720D"/>
+<text id="463_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="181.842" y="727.545">463</tspan></text>
+<path id="Vector_49" d="M252 705H211V718H252V705Z" fill="#DD7511"/>
+<text id="453_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="224.896" y="727.545">453</tspan></text>
+<path id="Vector_50" d="M295 705H254V718H295V705Z" fill="#DF7C1C"/>
+<text id="430_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="267.338" y="727.545">430</tspan></text>
+<path id="Vector_51" d="M338 705H297V718H338V705Z" fill="#E1842B"/>
+<text id="398_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="310.931" y="727.545">398</tspan></text>
+<path id="Vector_52" d="M381 705H340V718H381V705Z" fill="#E48F3D"/>
+<text id="360_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="353.4" y="727.545">360</tspan></text>
+<path id="Vector_53" d="M424 705H383V718H424V705Z" fill="#E28832"/>
+<text id="384_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="396.869" y="727.545">384</tspan></text>
+<path id="Vector_54" d="M467 705H426V718H467V705Z" fill="#E08125"/>
+<text id="411_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="441.535" y="727.545">411</tspan></text>
+<path id="Vector_55" d="M510 705H469V718H510V705Z" fill="#E08025"/>
+<text id="412_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="483.042" y="727.545">412</tspan></text>
+<path id="Vector_56" d="M553 705H512V718H553V705Z" fill="#DC730E"/>
+<text id="460_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="Inter" font-size="7" letter-spacing="0em"><tspan x="525.383" y="727.545">460</tspan></text>
+</g>
+</g>
+<g id="Group_16">
+<g id="Group">
+<path id="Vector_57" d="M94.4286 221.877H76V308.273H94.4286V221.877Z" fill="#FC7C00"/>
+<path id="Vector_58" d="M135.381 224.881H116.952V308.273H135.381V224.881Z" fill="#FC7C00"/>
+<path id="Vector_59" d="M176.333 221.701H157.905V308.273H176.333V221.701Z" fill="#FC7C00"/>
+<path id="Vector_60" d="M217.286 226.471H198.857V308.273H217.286V226.471Z" fill="#FC7C00"/>
+<path id="Vector_61" d="M258.238 228.238H239.81V308.273H258.238V228.238Z" fill="#FC7C00"/>
+<path id="Vector_62" d="M299.191 232.301H280.762V308.273H299.191V232.301Z" fill="#FC7C00"/>
+<path id="Vector_63" d="M340.143 237.955H321.714V308.273H340.143V237.955Z" fill="#FC7C00"/>
+<path id="Vector_64" d="M381.095 244.669H362.667V308.273H381.095V244.669Z" fill="#FC7C00"/>
+<path id="Vector_65" d="M422.047 240.428H403.619V308.273H422.047V240.428Z" fill="#FC7C00"/>
+<path id="Vector_66" d="M463 235.658H444.572V308.273H463V235.658Z" fill="#FC7C00"/>
+<path id="Vector_67" d="M503.953 235.481H485.524V308.273H503.953V235.481Z" fill="#FC7C00"/>
+<path id="Vector_68" d="M544.905 227.001H526.476V308.273H544.905V227.001Z" fill="#FC7C00"/>
+</g>
+<path id="Vector_69" d="M72 222.177H90.7013H102.13V225.185H132.26H143.688V222H173.818H185.247V226.777H215.377H226.805V228.546H256.935H268.364V232.615H298.494H309.922V238.277H340.052H351.481V245H381.61H393.039V240.754H423.169H434.597V235.977H464.727H476.156V235.8H506.286H517.714V227.308H552" stroke="#A3AED0" stroke-width="1.5"/>
+</g>
+</g>
+<defs>
+<linearGradient id="paint0_linear_2243_9296" x1="297.5" y1="748" x2="297.5" y2="812" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="#F2F5FB"/>
+</linearGradient>
+<clipPath id="clip0_2243_9296">
+<rect width="61" height="11" fill="white" transform="translate(246 39)"/>
+</clipPath>
+</defs>
+</svg>

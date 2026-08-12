@@ -11,6 +11,7 @@ import {
   polishPvMonthlyDistribution,
 } from 'lib/onrevolt/energy-scenario';
 import { loadEnergyTariffSnapshots } from 'lib/onrevolt/energy-tariff-pricing';
+import { offerReportTemplateKey, offerReportTemplateVersion } from 'lib/onrevolt/offer-report';
 import { randomUUID } from 'node:crypto';
 
 type OfferCreateInput = {
@@ -482,6 +483,8 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
       energyScenarioId: selectedScenario?.id,
       title,
       version: await nextOfferVersion(prisma, project.id),
+      documentTemplateKey: client.clientType === 'B2B' ? undefined : offerReportTemplateKey,
+      documentTemplateVersion: client.clientType === 'B2B' ? undefined : offerReportTemplateVersion,
       status: 'DRAFT' as const,
       currency: 'PLN',
       totalNet: calculation.totalNet,
@@ -745,6 +748,13 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
         energySnapshot: data.energySnapshot as Prisma.InputJsonValue,
         calculationSnapshot: data.calculationSnapshot as Prisma.InputJsonValue,
         clientSnapshot: data.clientSnapshot as Prisma.InputJsonValue,
+        ...(existing.status === 'SENT' ? {
+          version: { increment: 1 },
+          status: 'DRAFT',
+          sentAt: null,
+          documentTemplateKey: offerReportTemplateKey,
+          documentTemplateVersion: offerReportTemplateVersion,
+        } : {}),
       },
       include: offerInclude,
     });

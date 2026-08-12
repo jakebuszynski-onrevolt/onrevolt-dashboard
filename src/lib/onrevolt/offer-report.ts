@@ -9,7 +9,8 @@ import {
   terrainTypeLabel,
 } from './energy-intake';
 
-export const offerReportTemplateVersion = 'REFORM_2026_08_V1';
+export const offerReportTemplateKey = 'REFORM_B2C';
+export const offerReportTemplateVersion = '2026_08_V2';
 
 export const monthNames = [
   'Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec',
@@ -83,36 +84,76 @@ function lineValue(line: any, b2b: boolean) {
   return numberValue(b2b ? line.saleNet : line.saleGross);
 }
 
-function groupOfferLines(lines: any[], b2b: boolean) {
-  const sorted = lines.slice().sort((a, b) => numberValue(a.position) - numberValue(b.position));
-  const primary = sorted.filter((line) => ['MAIN_EQUIPMENT', 'MONITORING'].includes(line.role));
-  const selected = primary.slice(0, 6);
-  const selectedLines = new Set(selected);
-  const rows = selected.map((line) => {
-    const quantity = numberValue(line.quantity) || 1;
-    const value = lineValue(line, b2b);
+type CommercialPackageKey = 'STORAGE' | 'INVERTER' | 'EMS' | 'PV';
+
+const commercialPackageOrder: CommercialPackageKey[] = ['STORAGE', 'INVERTER', 'EMS', 'PV'];
+
+const commercialPackageLabels: Record<CommercialPackageKey, string> = {
+  STORAGE: 'Zakup magazynu energii wraz z montażem',
+  INVERTER: 'Zakup inwertera hybrydowego wraz z montażem',
+  EMS: 'Zakup i wdrożenie systemu EMS Re:Flow',
+  PV: 'Instalacja PV z montażem wraz z osprzętem',
+};
+
+function primaryPackage(line: any): CommercialPackageKey | null {
+  const category = text(line.category).toUpperCase();
+  const kind = text(line.sourceConfigurationKind).toUpperCase();
+  const role = text(line.role).toUpperCase();
+  const haystack = `${line.name || ''} ${line.description || ''} ${line.model || ''}`.toLowerCase();
+
+  if (category === 'MAGAZYN_ENERGII' || /magazyn|battery|akumulator|powerbrick|stack/.test(haystack)) return 'STORAGE';
+  if (category === 'FALOWNIK' || category === 'INWERTER' || /falownik|inverter|inwerter/.test(haystack)) return 'INVERTER';
+  if (['MONITOROWANIE', 'SYSTEM_MONITORUJACY'].includes(category) || role === 'MONITORING' || kind === 'EMS') return 'EMS';
+  if (category === 'FOTOWOLTAIKA' || (/^PV_/.test(kind) && role === 'MAIN_EQUIPMENT') || /panel|fotowolta|moduł pv/.test(haystack)) return 'PV';
+  return null;
+}
+
+function defaultPackage(line: any): CommercialPackageKey {
+  const kind = text(line.sourceConfigurationKind).toUpperCase();
+  const source = text(line.sourceConfigurationName).toLowerCase();
+  if (/magazyn|battery|akumulator/.test(source)) return 'STORAGE';
+  if (/ems|re:flow|monitor/.test(source)) return 'EMS';
+  if (/pv|fotowolta/.test(source)) return 'PV';
+  if (kind === 'EMS') return 'EMS';
+  if (/^PV_/.test(kind)) return 'PV';
+  if (kind === 'MAGAZYN' || kind === 'MIXED') return 'STORAGE';
+  return 'PV';
+}
+
+export function groupOfferLines(lines: any[], b2b: boolean) {
+  const buckets = new Map<CommercialPackageKey, any[]>();
+  commercialPackageOrder.forEach((key) => buckets.set(key, []));
+
+  lines
+    .slice()
+    .sort((a, b) => numberValue(a.position) - numberValue(b.position))
+    .forEach((line) => buckets.get(primaryPackage(line) || defaultPackage(line))!.push(line));
+
+  return commercialPackageOrder.map((key) => {
+    const packageLines = buckets.get(key)!;
+    const equipment = packageLines.filter((line) => primaryPackage(line) === key && line.role === 'MAIN_EQUIPMENT');
+    const modelLines = equipment.length ? equipment : packageLines.filter((line) => primaryPackage(line) === key);
+    const model = Array.from(new Set(modelLines
+      .map((line) => text(line.model || line.name || line.description))
+      .filter(Boolean)))
+      .slice(0, 2)
+      .join(' + ');
+    const quantity = key === 'PV'
+      ? Math.max(1, sum(equipment.map((line) => numberValue(line.quantity))))
+      : 1;
+    const value = round(sum(packageLines.map((line) => lineValue(line, b2b))));
+
     return {
-      description: text(line.description || line.name) || 'Element systemu',
-      model: text(line.model || line.sku || line.producer),
+      key,
+      description: commercialPackageLabels[key],
+      model: model || 'Brak danych',
       quantity,
       unitValue: round(value / quantity),
-      value: round(value),
-      source: text(line.sourceConfigurationName),
+      value,
+      source: Array.from(new Set(packageLines.map((line) => text(line.sourceConfigurationName)).filter(Boolean))).join(' + '),
+      available: packageLines.length > 0,
     };
   });
-  const remaining = sorted.filter((line) => !selectedLines.has(line));
-  if (remaining.length) {
-    const sourceNames = Array.from(new Set(remaining.map((line) => text(line.sourceConfigurationName)).filter(Boolean)));
-    rows.push({
-      description: 'Montaż, osprzęt i uruchomienie',
-      model: sourceNames.join(' + '),
-      quantity: 1,
-      unitValue: round(remaining.reduce((total, line) => total + lineValue(line, b2b), 0)),
-      value: round(remaining.reduce((total, line) => total + lineValue(line, b2b), 0)),
-      source: '',
-    });
-  }
-  return rows;
 }
 
 function existingMonthlyBalance(resultMonths: any[], energy: any): MonthlyBalance[] {
@@ -253,6 +294,23 @@ function tariffZoneRates(value: unknown, valueFactor: number) {
   }));
 }
 
+function tariffComponents(value: unknown, valueFactor: number) {
+  const tariff = value && typeof value === 'object' ? value as Record<string, any> : {};
+  const variable = Array.isArray(tariff.variableCosts) ? tariff.variableCosts : [];
+  const fixed = Array.isArray(tariff.fixedCosts) ? tariff.fixedCosts : [];
+  return {
+    variable: variable.map((row: any) => ({
+      label: text(row.label),
+      zoneCode: text(row.zoneCode),
+      amountPerKwh: round(numberValue(row.amountGrossPerKwh) * valueFactor, 4),
+    })),
+    fixed: fixed.map((row: any) => ({
+      label: text(row.label),
+      amountMonthly: round(numberValue(row.amountGross) * valueFactor, 2),
+    })),
+  };
+}
+
 export function buildOfferReport(offer: any) {
   const client = snapshot<Record<string, any>>(offer.clientSnapshot, {});
   const energy = snapshot<Record<string, any>>(offer.energySnapshot, {});
@@ -306,10 +364,17 @@ export function buildOfferReport(offer: any) {
   const currentBill = numberValue(calculation.currentAnnualBillGross || offer.currentAnnualBillGross || result.baselineAnnualCostGross);
   const projectedBill = numberValue(calculation.projectedAnnualBillGross || offer.projectedAnnualBillGross || result.scenarioAnnualCostGross);
   const annualSavings = numberValue(calculation.annualSavingsGross || offer.annualSavingsGross || result.annualSavingsGross);
+  const visibleAnnualSavings = currentBill > 0
+    ? Math.max(0, currentBill - projectedBill)
+    : annualSavings;
+  const visibleSavingsPercent = currentBill > 0
+    ? round(visibleAnnualSavings / currentBill * 100, 1)
+    : numberValue(calculation.savingsPercent || result.savingsPercent);
   const configurations = Array.from(new Set(lines.map((line) => text(line.sourceConfigurationName)).filter(Boolean)));
   const existingPv = numberValue(audit.existingPvKw);
 
   return {
+    templateKey: offerReportTemplateKey,
     templateVersion: offerReportTemplateVersion,
     variant: b2b ? 'B2B' as const : 'B2C' as const,
     number: text(offer.number) || '-',
@@ -364,8 +429,8 @@ export function buildOfferReport(offer: any) {
     savings: {
       currentBill: round(currentBill * valueFactor),
       projectedBill: round(projectedBill * valueFactor),
-      annual: round(annualSavings * valueFactor),
-      percent: numberValue(calculation.savingsPercent || result.savingsPercent),
+      annual: round(visibleAnnualSavings * valueFactor),
+      percent: visibleSavingsPercent,
       paybackYears: optionalNumber(calculation.paybackYears || offer.paybackYears || result.simplePaybackYears),
     },
     tariffs: {
@@ -379,6 +444,7 @@ export function buildOfferReport(offer: any) {
         totalPerKwh: round((currentEnergyRate + currentDistributionRate) * valueFactor, 4),
         fixedMonthly: round(currentFixed / 12 * valueFactor, 2),
         zoneRates: tariffZoneRates(currentTariffSnapshot, valueFactor),
+        components: tariffComponents(currentTariffSnapshot, valueFactor),
         sourceUrl: text(currentTariffSnapshot?.sourceUrl),
         fetchedAt: text(currentTariffSnapshot?.fetchedAt),
       },
@@ -388,6 +454,7 @@ export function buildOfferReport(offer: any) {
         totalPerKwh: round((projectedEnergyRate + projectedDistributionRate) * valueFactor, 4),
         fixedMonthly: round(projectedFixed / 12 * valueFactor, 2),
         zoneRates: tariffZoneRates(targetTariffSnapshot, valueFactor),
+        components: tariffComponents(targetTariffSnapshot, valueFactor),
         sourceUrl: text(targetTariffSnapshot?.sourceUrl),
         fetchedAt: text(targetTariffSnapshot?.fetchedAt),
       },

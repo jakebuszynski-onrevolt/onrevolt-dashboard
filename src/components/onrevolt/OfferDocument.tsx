@@ -1,5 +1,7 @@
 'use client';
 
+import { useRef } from 'react';
+import { FiArrowLeft, FiDownload, FiMaximize2, FiPrinter } from 'react-icons/fi';
 import { buildOfferReport, monthNames } from 'lib/onrevolt/offer-report';
 
 type OfferDocumentProps = {
@@ -488,9 +490,48 @@ function DailyReviewPage({ report, season }: { report: ReturnType<typeof buildOf
   );
 }
 
+function SvgOfferDocument({ offer, compact, showActions }: OfferDocumentProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const printUrl = `/admin/offers/${offer.id}/print`;
+  const pdfUrl = `/api/offers/${offer.id}/pdf?download=1`;
+  const printOffer = () => {
+    if (showActions) window.print();
+    else window.open(printUrl, '_blank', 'noopener,noreferrer');
+  };
+  const fullScreen = async () => {
+    if (rootRef.current?.requestFullscreen) await rootRef.current.requestFullscreen();
+  };
+
+  return (
+    <div ref={rootRef} className={`offer-svg-root${compact ? ' compact' : ''}`}>
+      <style>{svgStyles}</style>
+      <div className="offer-svg-actions">
+        {showActions ? <a className="offer-svg-back" href="/admin/offers"><FiArrowLeft aria-hidden /> Wróć do ofert</a> : null}
+        <span>Szablon REFORM B2C · 2026_08_V2</span>
+        <button type="button" onClick={fullScreen} title="Pełny ekran" aria-label="Pełny ekran"><FiMaximize2 /></button>
+        <button type="button" onClick={printOffer} title="Drukuj" aria-label="Drukuj"><FiPrinter /></button>
+        <a href={pdfUrl} title="Pobierz PDF" aria-label="Pobierz PDF"><FiDownload /></a>
+      </div>
+      <div className="offer-svg-pages">
+        {Array.from({ length: 5 }, (_, page) => (
+          <img
+            key={page}
+            src={`/api/offers/${offer.id}/pages/${page}`}
+            alt={`Oferta ${offer.number || offer.title || ''}, strona ${page + 1} z 5`}
+            loading={page > 0 ? 'lazy' : 'eager'}
+            width={595}
+            height={843}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function OfferDocument({ offer, compact = false, showActions = false }: OfferDocumentProps) {
   const report = buildOfferReport(offer);
   const b2b = report.variant === 'B2B';
+  if (!b2b) return <SvgOfferDocument offer={offer} compact={compact} showActions={showActions} />;
   return (
     <div className={`offer-doc-root${compact ? ' compact' : ''}`}>
       <style>{styles}</style>
@@ -511,6 +552,33 @@ export default function OfferDocument({ offer, compact = false, showActions = fa
     </div>
   );
 }
+
+const svgStyles = `
+  .offer-svg-root { --offer-ink:#17245d; min-height:100%; color:var(--offer-ink); background:#e8edf5; padding:20px; overflow:auto; }
+  .offer-svg-actions { position:sticky; top:0; z-index:4; width:min(100%,795px); margin:0 auto 14px; display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:8px; box-sizing:border-box; border:1px solid #dbe3f1; border-radius:8px; background:rgba(255,255,255,.96); box-shadow:0 8px 24px rgba(20,33,82,.08); }
+  .offer-svg-actions span { margin-right:auto; color:#66749a; font-size:12px; font-weight:700; }
+  .offer-svg-actions a,.offer-svg-actions button { min-width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; gap:7px; border:1px solid #cdd8ef; border-radius:7px; background:#fff; color:var(--offer-ink); padding:0 10px; font:inherit; font-weight:800; text-decoration:none; cursor:pointer; }
+  .offer-svg-actions .offer-svg-back { margin-right:4px; white-space:nowrap; }
+  .offer-svg-actions svg { width:17px; height:17px; }
+  .offer-svg-pages { display:flex; flex-direction:column; align-items:center; gap:20px; }
+  .offer-svg-pages img { display:block; width:min(100%,795px); height:auto; aspect-ratio:595/843; background:#f1f4fa; box-shadow:0 18px 45px rgba(20,33,82,.16); }
+  .offer-svg-root.compact { padding:8px; border-radius:8px; }
+  .offer-svg-root.compact .offer-svg-actions { width:100%; position:relative; margin-bottom:8px; box-shadow:none; }
+  .offer-svg-root.compact .offer-svg-actions span { display:none; }
+  .offer-svg-root.compact .offer-svg-pages { gap:12px; }
+  .offer-svg-root.compact .offer-svg-pages img { width:100%; box-shadow:none; border:1px solid #dbe3f1; }
+  .offer-svg-root:fullscreen { padding:20px; background:#dfe5ef; }
+  @page { size:A4; margin:0; }
+  @media (max-width:640px) {
+    .offer-svg-root { padding:8px; }
+    .offer-svg-actions { top:118px; }
+    .offer-svg-pages { padding-top:130px; }
+    .offer-svg-actions span,.offer-svg-back { display:none!important; }
+    .offer-svg-root.compact .offer-svg-actions { top:auto; }
+    .offer-svg-root.compact .offer-svg-pages { padding-top:0; }
+  }
+  @media print { body { margin:0!important; background:#f1f4fa!important; } .offer-svg-root { padding:0; background:#f1f4fa; overflow:visible; } .offer-svg-actions { display:none; } .offer-svg-pages { gap:0; } .offer-svg-pages img { width:210mm; height:297mm; box-shadow:none; page-break-after:always; break-after:page; } .offer-svg-pages img:last-child { page-break-after:auto; } }
+`;
 
 const styles = `
   .offer-doc-root { --ink:#17245d; --muted:#8190b7; --line:#dbe3f1; --page:#f1f4fa; --green:#00a454; --mint:#58d79d; --orange:#ff7a00; --amber:#ffb52e; --red:#ff6f6f; color:var(--ink); font-family:Arial,Helvetica,sans-serif; background:#e8edf5; padding:24px; overflow-x:auto; }

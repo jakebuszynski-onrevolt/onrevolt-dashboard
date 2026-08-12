@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildOfferReport, offerReportTemplateVersion } from './offer-report';
+import { buildOfferReport, offerReportTemplateKey, offerReportTemplateVersion } from './offer-report';
 
 function scenario() {
   const months = Array.from({ length: 12 }, (_, index) => ({
@@ -51,8 +51,8 @@ function offer(clientType: 'B2C' | 'B2B') {
       investmentAddress: 'Poznań',
     },
     lineItemsSnapshot: [
-      { position: 1, description: 'Magazyn energii', model: 'PowerBrick', quantity: 1, saleNet: 20000, saleGross: 21600, role: 'MAIN_EQUIPMENT' },
-      { position: 2, description: 'Przewody', quantity: 10, saleNet: 1000, saleGross: 1080, role: 'CABLING', sourceConfigurationName: 'Magazyn 16 kWh' },
+      { position: 1, description: 'Magazyn energii', model: 'PowerBrick', category: 'MAGAZYN_ENERGII', quantity: 1, saleNet: 20000, saleGross: 21600, role: 'MAIN_EQUIPMENT', sourceConfigurationName: 'Magazyn 16 kWh', sourceConfigurationKind: 'MAGAZYN' },
+      { position: 2, description: 'Przewody', quantity: 10, saleNet: 1000, saleGross: 1080, role: 'CABLING', sourceConfigurationName: 'Magazyn 16 kWh', sourceConfigurationKind: 'MAGAZYN' },
     ],
     calculationSnapshot: {
       totalNet: 21000,
@@ -97,13 +97,17 @@ function offer(clientType: 'B2C' | 'B2B') {
 
 test('buduje ofertę B2C z pięciostronicowego szablonu Reform', () => {
   const report = buildOfferReport(offer('B2C'));
+  assert.equal(report.templateKey, offerReportTemplateKey);
   assert.equal(report.templateVersion, offerReportTemplateVersion);
   assert.equal(report.variant, 'B2C');
   assert.equal(report.costs.priceLabel, 'brutto');
-  assert.equal(report.costs.rows.length, 2);
-  assert.equal(report.costs.rows[0].description, 'Magazyn energii');
-  assert.equal(report.costs.rows[1].description, 'Montaż, osprzęt i uruchomienie');
-  assert.equal(report.costs.rows[1].value, 1080);
+  assert.equal(report.costs.rows.length, 4);
+  assert.equal(report.costs.rows[0].description, 'Zakup magazynu energii wraz z montażem');
+  assert.equal(report.costs.rows[0].model, 'PowerBrick');
+  assert.equal(report.costs.rows[0].value, 22680);
+  assert.equal(report.costs.rows[1].available, false);
+  assert.equal(report.costs.rows[2].available, false);
+  assert.equal(report.costs.rows[3].available, false);
   assert.equal(report.costs.rows.reduce((total, row) => total + row.value, 0), 22680);
   assert.equal(report.energy.projectedMonths.length, 12);
   assert.equal(report.energy.period, 'Wrzesień 2025 - Sierpień 2026');
@@ -127,6 +131,19 @@ test('nie zakłada net-meteringu, gdy system rozliczeniowy nie został wybrany',
 
   assert.equal(report.report.settlement, '');
   assert.equal(report.tariffs.settlementBefore, '');
+});
+
+test('procent oszczędności wynika z kwot widocznych w raporcie', () => {
+  const input = offer('B2C');
+  input.calculationSnapshot.annualSavingsGross = 999;
+  input.calculationSnapshot.savingsPercent = 99;
+
+  const report = buildOfferReport(input);
+
+  assert.equal(report.savings.currentBill, 6360);
+  assert.equal(report.savings.projectedBill, 1900);
+  assert.equal(report.savings.annual, 4460);
+  assert.equal(report.savings.percent, 70.1);
 });
 
 test('wariant B2B używa cen netto i rzeczywistych profili dnia roboczego oraz wolnego', () => {

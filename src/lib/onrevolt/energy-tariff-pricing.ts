@@ -172,6 +172,11 @@ export function buildEnergyTariffCostSnapshot(options: {
     zoneModel: String(options.tariff.zone_model || 'all'),
     monthlyZoneCodes: monthlyZoneCodes(options.tariff),
     zoneRates,
+    variableCosts: variable.map((row) => ({
+      label: String(row.label || 'Opłata zmienna'),
+      zoneCode: String(row.window_code || 'all').toLowerCase(),
+      amountGrossPerKwh: numberValue(row.price),
+    })),
     fixedMonthlyGross: fixedCosts.reduce((sum, row) => sum + row.amountGross, 0),
     fixedCosts,
     billingCycleMonths,
