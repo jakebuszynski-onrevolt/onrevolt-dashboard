@@ -123,6 +123,55 @@ test('strona taryf pokazuje koszt 1 kWh z najtańszej strefy', () => {
   assert.match(page, />0,4843</);
 });
 
+test('wartości strony taryf mają wspólne prawe krawędzie kolumn', () => {
+  const page = renderOfferSvgPage(fixtureOffer(), 2);
+  const columns = [
+    {
+      x: 285,
+      ids: [
+        '_zakup_energii_aktualny_cena',
+        '_oplata_zmienna_sieciowa_aktualna_cena',
+        '_zuzycie_energii_rachunek_aktualny_kwh',
+        '_zakup_energii_aktualny_rachunek_cena',
+        '_vat_aktualna_cena_2',
+      ],
+    },
+    {
+      x: 555,
+      ids: [
+        '_zakup_energii_aktualny_cena_2',
+        '_oplata_zmienna_sieciowa_nowy_cena',
+        '_zuzycie_energii_rachunek_nowy_kwh',
+        '_oszczednosc_nowy_rachunek_cena',
+        '_wartosc_skumulowanego_depozytu_nowy_rachunek_cena',
+      ],
+    },
+  ];
+
+  columns.forEach(({ x, ids }) => ids.forEach((id) => {
+    const element = page.match(new RegExp(`<text[^>]*id="${id}"[^>]*>[\\s\\S]*?<\\/text>`))?.[0];
+    assert.ok(element, `Brak pola ${id}`);
+    assert.match(element, /text-anchor="end"/);
+    assert.match(element, new RegExp(`<tspan x="${x}"`));
+  }));
+
+  ['_koszt_zakupu_1kwh_aktualny_cena', '_calkowity_rachunek_brutto_aktualny_rachunek_cena']
+    .forEach((id) => {
+      const group = page.match(new RegExp(`<g id="${id}">[\\s\\S]*?<\\/g>`))?.[0];
+      assert.ok(group, `Brak grupy ${id}`);
+      assert.match(group, /text-anchor="end"/);
+      assert.match(group, /<tspan x="285"[^>]*>PLN<\/tspan>/);
+    });
+
+  ['_koszt_zakupu_1kwh_nowy_cena', '_rachunek_po_zwrocie_z_depozytu_nowy_rachunek_cena']
+    .forEach((id) => {
+      const group = page.match(new RegExp(`<g id="${id}">[\\s\\S]*?<\\/g>`))?.[0];
+      assert.ok(group, `Brak grupy ${id}`);
+      assert.match(group, /text-anchor="end"/);
+      assert.match(group, /<tspan x="555"[^>]*>PLN<\/tspan>/);
+    });
+});
+
 test('kwoty podsumowania oszczędności są wyrównane do prawej krawędzi', () => {
   const page = renderOfferSvgPage(fixtureOffer(), 1);
   const ids = [

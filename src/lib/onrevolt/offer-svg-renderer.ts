@@ -145,28 +145,41 @@ function setText(document: XmlDocument, field: SvgTextField) {
   const container = byId(document, field.id);
   const target = textElement(container, field.textIndex);
   if (!target) throw new Error(`Brak pola SVG ${field.id}`);
-  const siblingText = container && container !== target
-    ? Array.from(container.getElementsByTagName('text'))
-      .filter((element) => element !== target)
-      .map((element) => element.textContent || '')
-      .join(' ')
-    : '';
+  const siblingElements = container && container !== target
+    ? Array.from(container.getElementsByTagName('text')).filter((element) => element !== target)
+    : [];
+  const suffixElements = siblingElements.filter((element) => /\bPLN\b/i.test(element.textContent || ''));
+  const siblingText = siblingElements.map((element) => element.textContent || '').join(' ');
   const value = /\bPLN\b/i.test(siblingText)
     ? field.value.replace(/\s*PLN\s*$/i, '')
     : field.value;
-  if (/\bPLN\b/i.test(siblingText) && container) {
-    Array.from(container.getElementsByTagName('text'))
-      .filter((element) => element !== target && /\bPLN\b/i.test(element.textContent || ''))
-      .forEach((element) => {
-        const tspan = element.getElementsByTagName('tspan')[0];
-        if (!tspan) return;
-        const x = Number(tspan.getAttribute('x'));
-        if (Number.isFinite(x)) tspan.setAttribute('x', String(x + 8));
-      });
+  let alignedX = field.x;
+  if (suffixElements.length && field.textAnchor === 'end' && field.x != null) {
+    const suffixGap = 4;
+    const suffixWidths = suffixElements.map((element) => {
+      const suffix = (element.textContent || '').trim();
+      const fontSize = numberValue(element.getAttribute('font-size')) || 7;
+      element.setAttribute('text-anchor', 'end');
+      const tspan = element.getElementsByTagName('tspan')[0];
+      if (tspan) {
+        tspan.setAttribute('x', String(field.x));
+        while (tspan.firstChild) tspan.removeChild(tspan.firstChild);
+        tspan.appendChild(document.createTextNode(suffix));
+      }
+      return textWidth(element, suffix, fontSize);
+    });
+    alignedX = field.x - Math.max(...suffixWidths) - suffixGap;
+  } else if (suffixElements.length) {
+    suffixElements.forEach((element) => {
+      const tspan = element.getElementsByTagName('tspan')[0];
+      if (!tspan) return;
+      const x = Number(tspan.getAttribute('x'));
+      if (Number.isFinite(x)) tspan.setAttribute('x', String(x + 8));
+    });
   }
   const originalTspan = target.getElementsByTagName('tspan')[0];
-  const x = field.x != null
-    ? String(field.x)
+  const x = alignedX != null
+    ? String(alignedX)
     : originalTspan?.getAttribute('x') || target.getAttribute('x') || '0';
   const y = originalTspan?.getAttribute('y') || target.getAttribute('y');
   const { fontSize, lines } = fitText(target, { ...field, value });
@@ -339,61 +352,65 @@ function tariffDetailFields(
 ): SvgTextField[] {
   const current = suffix === 'aktualna';
   const id = (currentId: string, newId: string) => current ? currentId : newId;
+  const alignment = { x: current ? 285 : 555, textAnchor: 'end' as const };
   return [
-    { id: id('_oplata_zmienna_sieciowa_aktualna_cena', '_oplata_zmienna_sieciowa_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'variable', /zmienna.*sieci|sieciowa.*zmienna/), 4) },
-    { id: id('_oplata_jakosciowa_aktualna_cena', '_oplata_jakosciowa_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'variable', /jakosci/), 4) },
-    { id: id('_oplata_oze_aktualna_cena', '_oplata_oze_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'variable', /\boze\b/), 4) },
-    { id: id('_oplata_kogeneracyjna_aktualna_cena', '_oplata_kogeneracyjna_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'variable', /kogener/), 4) },
-    { id: id('_vat_aktualna_cena', '_vat_nowy_cena'), value: 'w cenie' },
-    { id: id('_oplata_handlowa_aktualna_cena', '_oplata_handlowa_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'fixed', /handlow/)) },
-    { id: id('_skladnik_staly_sieciowy_aktualny_cena', '_skladnik_staly_sieciowy_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'fixed', /skladnik.*staly|staly.*sieci/)) },
-    { id: id('oplata_mocowa_aktualne_cena', 'oplata_mocowa_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'fixed', /mocow/)) },
-    { id: id('_stala_cena_abonementu_aktualna_cena', '_stala_cena_abonementu_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'fixed', /abon/)) },
+    { id: id('_oplata_zmienna_sieciowa_aktualna_cena', '_oplata_zmienna_sieciowa_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'variable', /zmienna.*sieci|sieciowa.*zmienna/), 4), ...alignment },
+    { id: id('_oplata_jakosciowa_aktualna_cena', '_oplata_jakosciowa_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'variable', /jakosci/), 4), ...alignment },
+    { id: id('_oplata_oze_aktualna_cena', '_oplata_oze_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'variable', /\boze\b/), 4), ...alignment },
+    { id: id('_oplata_kogeneracyjna_aktualna_cena', '_oplata_kogeneracyjna_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'variable', /kogener/), 4), ...alignment },
+    { id: id('_vat_aktualna_cena', '_vat_nowy_cena'), value: 'w cenie', ...alignment },
+    { id: id('_oplata_handlowa_aktualna_cena', '_oplata_handlowa_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'fixed', /handlow/)), ...alignment },
+    { id: id('_skladnik_staly_sieciowy_aktualny_cena', '_skladnik_staly_sieciowy_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'fixed', /skladnik.*staly|staly.*sieci/)), ...alignment },
+    { id: id('oplata_mocowa_aktualne_cena', 'oplata_mocowa_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'fixed', /mocow/)), ...alignment },
+    { id: id('_stala_cena_abonementu_aktualna_cena', '_stala_cena_abonementu_nowy_cena'), value: componentMoney(tariffComponent(tariff, 'fixed', /abon/)), ...alignment },
   ];
 }
 
 function page2Fields(report: OfferReport): SvgTextField[] {
+  const left = { x: 285, textAnchor: 'end' as const };
+  const right = { x: 555, textAnchor: 'end' as const };
   return [
     ...headerFields(report),
     { id: '_taryfa', value: report.tariffs.before },
     { id: '_system_rozliczeniowy', value: report.tariffs.settlementBefore },
     { id: '_taryfa_2', value: report.tariffs.afterName },
     { id: '_system_rozliczeniowy_2', value: report.tariffs.settlementAfter },
-    { id: '_koszt_zakupu_1kwh_aktualny_cena', value: formatMoney(report.tariffs.current.totalPerKwh, 4) },
-    { id: '_zakup_energii_aktualny_cena', value: formatMoney(report.tariffs.current.energyPerKwh, 4) },
-    { id: '_dystrybucja_energii_aktualna_cena', value: formatMoney(report.tariffs.current.distributionPerKwh, 4) },
-    { id: '_oplaty_stale_aktuale_cena', value: formatMoney(report.tariffs.current.fixedMonthly, 2) },
+    { id: '_koszt_zakupu_1kwh_aktualny_cena', value: formatMoney(report.tariffs.current.totalPerKwh, 4), ...left },
+    { id: '_zakup_energii_aktualny_cena', value: formatMoney(report.tariffs.current.energyPerKwh, 4), ...left },
+    { id: '_dystrybucja_energii_aktualna_cena', value: formatMoney(report.tariffs.current.distributionPerKwh, 4), ...left },
+    { id: '_oplaty_stale_aktuale_cena', value: formatMoney(report.tariffs.current.fixedMonthly, 2), ...left },
     ...tariffDetailFields(report.tariffs.current, 'aktualna'),
-    { id: '_koszt_zakupu_1kwh_nowy_cena', value: formatMoney(report.tariffs.projected.totalPerKwh, 4) },
-    { id: '_zakup_energii_aktualny_cena_2', value: formatMoney(report.tariffs.projected.energyPerKwh, 4) },
-    { id: '_dystrybucja_energii_aktualna_cena_2', value: formatMoney(report.tariffs.projected.distributionPerKwh, 4) },
-    { id: '_oplaty_stale_nowy_cena', value: formatMoney(report.tariffs.projected.fixedMonthly, 2) },
+    { id: '_koszt_zakupu_1kwh_nowy_cena', value: formatMoney(report.tariffs.projected.totalPerKwh, 4), ...right },
+    { id: '_zakup_energii_aktualny_cena_2', value: formatMoney(report.tariffs.projected.energyPerKwh, 4), ...right },
+    { id: '_dystrybucja_energii_aktualna_cena_2', value: formatMoney(report.tariffs.projected.distributionPerKwh, 4), ...right },
+    { id: '_oplaty_stale_nowy_cena', value: formatMoney(report.tariffs.projected.fixedMonthly, 2), ...right },
     ...tariffDetailFields(report.tariffs.projected, 'nowy'),
-    { id: '_zuzycie_energii_rachunek_aktualny_kwh', value: formatKwh(report.bills.current.consumptionKwh) },
-    { id: '_calkowity_rachunek_brutto_aktualny_rachunek_cena', value: formatMoney(report.bills.current.total, 0) },
-    { id: '_zakup_z_sieci_aktualny_rachunek_kwh', value: formatKwh(report.bills.current.gridImportKwh) },
-    { id: '_zakup_energii_aktualny_rachunek_cena', value: formatMoney(report.bills.current.energy, 0) },
-    { id: '_dystrybucja_energii_aktualny_rachunek_cena', value: formatMoney(report.bills.current.distribution, 0) },
-    { id: '_oplaty_stale_aktualny_rachunek_cena', value: formatMoney(report.bills.current.fixed, 0) },
-    { id: '_energia_zakupiona_z_sieci_aktualny_rachunek_cena', value: formatMoney(report.bills.current.energy, 0) },
-    { id: '_pokryte_z_depozytu_aktualny_rachunek_cena', value: formatMoney(0, 0) },
-    { id: '_vat_aktualna_cena_2', value: 'w cenie' },
-    { id: '_zuzycie_energii_rachunek_nowy_kwh', value: formatKwh(report.bills.projected.consumptionKwh) },
-    { id: '_oszczednosc_nowy_rachunek_cena', value: formatMoney(report.savings.annual, 0) },
-    { id: '_calkowity_rachunek_brutto_nowy_rachunek_cena', value: formatMoney(report.bills.projected.total, 0) },
-    { id: '_rachunek_po_zwrocie_z_depozytu_nowy_rachunek_cena', value: formatMoney(Math.max(0, report.bills.projected.total - report.deposit.payout), 0) },
-    { id: '_energia_zakupiona_z_sieci_nowy_rachunek_cena', value: formatMoney(report.bills.projected.energyDue, 0) },
-    { id: '_autokonsumpcja_pv_aktualny_rachunek_kwh_2', value: formatKwh(report.bills.projected.pvDirectKwh) },
-    { id: '_autokonsumpcja_magazyn_nowy_rachunek_kwh', value: formatKwh(report.bills.projected.batteryKwh) },
-    { id: '_zakup_z_sieci_nowy_rachunek_kwh', value: formatKwh(report.bills.projected.gridImportKwh) },
-    { id: '_energia_oddana_do_depozytu_nowy_rachunek_cena', value: `${formatMoney(report.deposit.generated, 0)} / ${formatKwh(report.deposit.exportKwh)}` },
-    { id: '_energia_wykorzystana_z_depozytu_nowy_rachunek_cena', value: formatMoney(report.deposit.used, 0) },
-    { id: '_pokryte_z_depozytu_nowy_rachunek_cena', value: formatMoney(report.deposit.used, 0) },
-    { id: '_wartosc_skumulowanego_depozytu_nowy_rachunek_cena', value: formatMoney(report.deposit.remaining, 0) },
-    { id: '_zakup_energii_nowy_rachunek_cena', value: formatMoney(report.bills.projected.energyCash, 0) },
-    { id: '_dystrybucja_energii_nowy_rachunek_cena', value: formatMoney(report.bills.projected.distribution, 0) },
-    { id: '_oplaty_stale_nowy_rachunek_cena', value: formatMoney(report.bills.projected.fixed, 0) },
-    { id: '_vat_nowy_cena_2', value: 'w cenie' },
+    { id: '_zuzycie_energii_rachunek_aktualny_kwh', value: formatKwh(report.bills.current.consumptionKwh), ...left },
+    { id: '_autokonsumpcja_pv_aktualny_rachunek_kwh', value: formatKwh(0), ...left },
+    { id: '_calkowity_rachunek_brutto_aktualny_rachunek_cena', value: formatMoney(report.bills.current.total, 0), ...left },
+    { id: '_zakup_z_sieci_aktualny_rachunek_kwh', value: formatKwh(report.bills.current.gridImportKwh), ...left },
+    { id: '_zakup_energii_aktualny_rachunek_cena', value: formatMoney(report.bills.current.energy, 0), ...left },
+    { id: '_dystrybucja_energii_aktualny_rachunek_cena', value: formatMoney(report.bills.current.distribution, 0), ...left },
+    { id: '_oplaty_stale_aktualny_rachunek_cena', value: formatMoney(report.bills.current.fixed, 0), ...left },
+    { id: '_energia_zakupiona_z_sieci_aktualny_rachunek_cena', value: formatMoney(report.bills.current.energy, 0), ...left },
+    { id: '_pokryte_z_depozytu_aktualny_rachunek_cena', value: formatMoney(0, 0), ...left },
+    { id: '_vat_aktualna_cena_2', value: 'w cenie', ...left },
+    { id: '_zuzycie_energii_rachunek_nowy_kwh', value: formatKwh(report.bills.projected.consumptionKwh), ...right },
+    { id: '_oszczednosc_nowy_rachunek_cena', value: formatMoney(report.savings.annual, 0), ...right },
+    { id: '_calkowity_rachunek_brutto_nowy_rachunek_cena', value: formatMoney(report.bills.projected.total, 0), ...right },
+    { id: '_rachunek_po_zwrocie_z_depozytu_nowy_rachunek_cena', value: formatMoney(Math.max(0, report.bills.projected.total - report.deposit.payout), 0), ...right },
+    { id: '_energia_zakupiona_z_sieci_nowy_rachunek_cena', value: formatMoney(report.bills.projected.energyDue, 0), ...right },
+    { id: '_autokonsumpcja_pv_aktualny_rachunek_kwh_2', value: formatKwh(report.bills.projected.pvDirectKwh), ...right },
+    { id: '_autokonsumpcja_magazyn_nowy_rachunek_kwh', value: formatKwh(report.bills.projected.batteryKwh), ...right },
+    { id: '_zakup_z_sieci_nowy_rachunek_kwh', value: formatKwh(report.bills.projected.gridImportKwh), ...right },
+    { id: '_energia_oddana_do_depozytu_nowy_rachunek_cena', value: `${formatMoney(report.deposit.generated, 0)} / ${formatKwh(report.deposit.exportKwh)}`, ...right },
+    { id: '_energia_wykorzystana_z_depozytu_nowy_rachunek_cena', value: formatMoney(report.deposit.used, 0), ...right },
+    { id: '_pokryte_z_depozytu_nowy_rachunek_cena', value: formatMoney(report.deposit.used, 0), ...right },
+    { id: '_wartosc_skumulowanego_depozytu_nowy_rachunek_cena', value: formatMoney(report.deposit.remaining, 0), ...right },
+    { id: '_zakup_energii_nowy_rachunek_cena', value: formatMoney(report.bills.projected.energyCash, 0), ...right },
+    { id: '_dystrybucja_energii_nowy_rachunek_cena', value: formatMoney(report.bills.projected.distribution, 0), ...right },
+    { id: '_oplaty_stale_nowy_rachunek_cena', value: formatMoney(report.bills.projected.fixed, 0), ...right },
+    { id: '_vat_nowy_cena_2', value: 'w cenie', ...right },
   ];
 }
 
