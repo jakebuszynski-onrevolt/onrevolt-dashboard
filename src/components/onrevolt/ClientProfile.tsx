@@ -29,6 +29,7 @@ import {
 import type { TextareaProps } from '@chakra-ui/react';
 import Card from 'components/card/Card';
 import OfferDocument from 'components/onrevolt/OfferDocument';
+import InvestmentLocationPicker from 'components/onrevolt/InvestmentLocationPicker';
 import ClientDocumentsPanel from 'components/onrevolt/ClientDocumentsPanel';
 import ClientSiteAuditPanel from 'components/onrevolt/ClientSiteAuditPanel';
 import ConfiguratorWorkspace from 'components/onrevolt/ConfiguratorWorkspace';
@@ -131,6 +132,9 @@ type ClientFormState = {
   postalCode: string;
   city: string;
   investmentAddress: string;
+  latitude: string;
+  longitude: string;
+  mapProvider: string;
   projectTitle: string;
   projectClientType: string;
   status: string;
@@ -425,6 +429,9 @@ const emptyForm: ClientFormState = {
   postalCode: '',
   city: '',
   investmentAddress: '',
+  latitude: '',
+  longitude: '',
+  mapProvider: 'GOOGLE',
   projectTitle: '',
   projectClientType: 'UNKNOWN',
   status: 'LEAD',
@@ -762,6 +769,9 @@ function formFromClient(client: any, selectedProject?: any): ClientFormState {
     postalCode: contact.postalCode || '',
     city: contact.city || '',
     investmentAddress: site.fullAddress || site.addressLine || contact.investmentAddress || project.locationAddress || '',
+    latitude: site.latitude == null ? '' : String(site.latitude),
+    longitude: site.longitude == null ? '' : String(site.longitude),
+    mapProvider: site.mapProvider || 'GOOGLE',
     projectTitle: project.title || '',
     projectClientType: project.clientType || client?.clientType || 'UNKNOWN',
     status: project.status || 'LEAD',
@@ -953,6 +963,10 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
   function updateForm(key: keyof ClientFormState, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateInvestmentAddress(value: string) {
+    setForm((current) => ({ ...current, investmentAddress: value, latitude: '', longitude: '' }));
   }
 
   function selectProject(projectId: string) {
@@ -1236,6 +1250,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
             dashboardStationNumber: form.dashboardStationNumber,
             weatherStationNumber: form.weatherStationNumber,
             locationAddress: form.investmentAddress,
+            latitude: form.latitude || null,
+            longitude: form.longitude || null,
+            mapProvider: form.mapProvider,
             source: project?.source || 'manual',
           },
         }),
@@ -1368,7 +1385,6 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
           tariffAfter: targetTariffForOperator(offerOperator),
           settlementBefore: energyDataSettings.settlementSystem || undefined,
           settlementAfter: 'net-billing',
-          subsidyGross: 0,
           thermoReliefGross: 0,
           currentAnnualBillGross: 0,
           projectedAnnualBillGross: 0,
@@ -1985,10 +2001,20 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                     <Input value={form.city} onChange={(event) => updateForm('city', event.target.value)} />
                   </FormControl>
                 </Flex>
-                <FormControl>
-                  <FormLabel>Adres inwestycji</FormLabel>
-                  <Input value={form.investmentAddress} onChange={(event) => updateForm('investmentAddress', event.target.value)} />
-                </FormControl>
+                <InvestmentLocationPicker
+                  address={form.investmentAddress}
+                  latitude={form.latitude}
+                  longitude={form.longitude}
+                  mapProvider={form.mapProvider}
+                  onAddressChange={updateInvestmentAddress}
+                  onMapProviderChange={(value) => updateForm('mapProvider', value)}
+                  onSelect={(result) => setForm((current) => ({
+                    ...current,
+                    investmentAddress: result.address,
+                    latitude: String(result.latitude),
+                    longitude: String(result.longitude),
+                  }))}
+                />
               </SimpleGrid>
               <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px" mt="16px">
                 <FormControl>
@@ -2061,7 +2087,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                   </FormControl>
                   <FormControl>
                     <FormLabel>Adres inwestycji projektu</FormLabel>
-                    <Input value={form.investmentAddress} onChange={(event) => updateForm('investmentAddress', event.target.value)} />
+                    <Input value={form.investmentAddress} onChange={(event) => updateInvestmentAddress(event.target.value)} />
                   </FormControl>
                 </SimpleGrid>
               </Card>

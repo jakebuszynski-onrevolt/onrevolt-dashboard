@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildOfferReport, offerReportTemplateKey, offerReportTemplateVersion } from './offer-report';
+import {
+  buildOfferReport,
+  calculateHomeEnergyStorageSubsidy,
+  calculateThermomodernizationRelief,
+  offerReportTemplateKey,
+  offerReportTemplateVersion,
+} from './offer-report';
 
 function scenario() {
   const months = Array.from({ length: 12 }, (_, index) => ({
@@ -51,8 +57,8 @@ function offer(clientType: 'B2C' | 'B2B') {
       investmentAddress: 'Poznań',
     },
     lineItemsSnapshot: [
-      { position: 1, description: 'Magazyn energii', model: 'PowerBrick', category: 'MAGAZYN_ENERGII', quantity: 1, saleNet: 20000, saleGross: 21600, role: 'MAIN_EQUIPMENT', sourceConfigurationName: 'Magazyn 16 kWh', sourceConfigurationKind: 'MAGAZYN' },
-      { position: 2, description: 'Przewody', quantity: 10, saleNet: 1000, saleGross: 1080, role: 'CABLING', sourceConfigurationName: 'Magazyn 16 kWh', sourceConfigurationKind: 'MAGAZYN' },
+      { position: 1, description: 'Magazyn energii', model: 'PowerBrick', category: 'MAGAZYN_ENERGII', quantity: 1, saleNet: 20000, saleGross: 21600, role: 'MAIN_EQUIPMENT', sourceConfigurationId: 'storage', sourceConfigurationName: 'Magazyn 16 kWh', sourceConfigurationKind: 'MAGAZYN', sourceConfigurationCapacityKwh: 16 },
+      { position: 2, description: 'Przewody', quantity: 10, saleNet: 1000, saleGross: 1080, role: 'CABLING', sourceConfigurationId: 'storage', sourceConfigurationName: 'Magazyn 16 kWh', sourceConfigurationKind: 'MAGAZYN', sourceConfigurationCapacityKwh: 16 },
     ],
     calculationSnapshot: {
       totalNet: 21000,
@@ -109,6 +115,9 @@ test('buduje ofertę B2C z pięciostronicowego szablonu Reform', () => {
   assert.equal(report.costs.rows[2].available, false);
   assert.equal(report.costs.rows[3].available, false);
   assert.equal(report.costs.rows.reduce((total, row) => total + row.value, 0), 22680);
+  assert.equal(report.costs.subsidy, 6804);
+  assert.equal(report.costs.thermoRelief, 1905.12);
+  assert.equal(report.costs.afterSupport, 13970.88);
   assert.equal(report.energy.projectedMonths.length, 12);
   assert.equal(report.energy.period, 'Wrzesień 2025 - Sierpień 2026');
   assert.equal(report.deposit.exportKwh, 3120);
@@ -120,6 +129,26 @@ test('buduje ofertę B2C z pięciostronicowego szablonu Reform', () => {
   assert.equal(report.report.supplier, 'Enea');
   assert.equal(report.report.heatingSource, 'Gaz ziemny');
   assert.equal(report.report.heatingDetails, 'Piec kondensacyjny');
+});
+
+test('dotacja do magazynu jest ograniczona do 800 PLN/kWh i 30% wartości magazynu', () => {
+  const lowValueStorage = [
+    { category: 'MAGAZYN_ENERGII', role: 'MAIN_EQUIPMENT', saleGross: 20000, sourceConfigurationKind: 'MAGAZYN' },
+    { description: 'Montaż magazynu', role: 'INSTALLATION', saleGross: 5000, sourceConfigurationKind: 'MAGAZYN' },
+  ];
+  const highValueStorage = [
+    { category: 'MAGAZYN_ENERGII', role: 'MAIN_EQUIPMENT', saleGross: 40000, sourceConfigurationKind: 'MAGAZYN' },
+    { description: 'Montaż magazynu', role: 'INSTALLATION', saleGross: 10000, sourceConfigurationKind: 'MAGAZYN' },
+  ];
+
+  assert.equal(calculateHomeEnergyStorageSubsidy(lowValueStorage, 16), 7500);
+  assert.equal(calculateHomeEnergyStorageSubsidy(highValueStorage, 16), 12800);
+  assert.equal(calculateHomeEnergyStorageSubsidy(highValueStorage, 16, true), 0);
+});
+
+test('ulga termomodernizacyjna wynosi 12% kosztu systemu po odjęciu dotacji', () => {
+  assert.equal(calculateThermomodernizationRelief(50000, 10000), 4800);
+  assert.equal(calculateThermomodernizationRelief(50000, 10000, true), 0);
 });
 
 test('nie zakłada net-meteringu, gdy system rozliczeniowy nie został wybrany', () => {
@@ -181,5 +210,8 @@ test('pokazuje wszystkie strefy taryfy G13active ze snapshotu RE', () => {
   const report = buildOfferReport(source);
   assert.equal(report.tariffs.projected.zoneRates.length, 3);
   assert.equal(report.tariffs.projected.zoneRates[2].label, 'Niska');
+  assert.equal(report.tariffs.projected.energyPerKwh, 0.341);
+  assert.equal(report.tariffs.projected.distributionPerKwh, 0.1433);
   assert.equal(report.tariffs.projected.zoneRates[2].totalPerKwh, 0.4843);
+  assert.equal(report.tariffs.projected.totalPerKwh, 0.4843);
 });

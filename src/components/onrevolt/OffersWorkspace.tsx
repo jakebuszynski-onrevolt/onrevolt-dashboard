@@ -39,8 +39,6 @@ type OfferForm = {
   energyScenarioId: string;
   title: string;
   validUntil: string;
-  subsidyGross: string;
-  thermoReliefGross: string;
   currentAnnualBillGross: string;
   projectedAnnualBillGross: string;
   energyOperator: string;
@@ -59,8 +57,6 @@ const emptyForm: OfferForm = {
   energyScenarioId: '',
   title: '',
   validUntil: '',
-  subsidyGross: '0',
-  thermoReliefGross: '0',
   currentAnnualBillGross: '0',
   projectedAnnualBillGross: '0',
   energyOperator: 'ENEA',
@@ -299,8 +295,6 @@ export default function OffersWorkspace() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
-          subsidyGross: Number(form.subsidyGross || 0),
-          thermoReliefGross: Number(form.thermoReliefGross || 0),
           currentAnnualBillGross: Number(form.currentAnnualBillGross || 0),
           projectedAnnualBillGross: Number(form.projectedAnnualBillGross || 0),
         }),
@@ -603,12 +597,10 @@ export default function OffersWorkspace() {
                   <Input type="date" value={form.validUntil} onChange={(event) => updateForm('validUntil', event.target.value)} />
                 </FormControl>
                 <FormControl>
-                  <FormLabel>Dotacja brutto</FormLabel>
-                  <Input type="number" value={form.subsidyGross} onChange={(event) => updateForm('subsidyGross', event.target.value)} />
-                </FormControl>
-                <FormControl>
                   <FormLabel>Ulga termomodernizacyjna</FormLabel>
-                  <Input type="number" value={form.thermoReliefGross} onChange={(event) => updateForm('thermoReliefGross', event.target.value)} />
+                  <Text color={mutedColor} fontSize="sm" py="10px">
+                    Wyliczana automatycznie: 12% kosztu systemu po odjęciu dotacji.
+                  </Text>
                 </FormControl>
                 <FormControl>
                   <FormLabel>Aktualny rachunek roczny</FormLabel>

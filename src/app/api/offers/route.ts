@@ -152,8 +152,6 @@ export async function POST(req: NextRequest) {
       energyScenarioId: optionalString(body, 'energyScenarioId'),
       title: optionalString(body, 'title'),
       validUntil: parseDate(body.validUntil),
-      subsidyGross: optionalNumber(body.subsidyGross),
-      thermoReliefGross: optionalNumber(body.thermoReliefGross),
       currentAnnualBillGross: optionalNumber(body.currentAnnualBillGross),
       projectedAnnualBillGross: optionalNumber(body.projectedAnnualBillGross),
       tariffBefore,
@@ -223,8 +221,6 @@ export async function PATCH(req: NextRequest) {
     if ('title' in body) data.title = optionalString(body, 'title');
     if ('validUntil' in body) data.validUntil = parseDate(body.validUntil);
     if ('notes' in body) data.notes = optionalString(body, 'notes');
-    if ('subsidyGross' in body) data.subsidyGross = optionalNumber(body.subsidyGross) ?? 0;
-    if ('thermoReliefGross' in body) data.thermoReliefGross = optionalNumber(body.thermoReliefGross) ?? 0;
     if ('currentAnnualBillGross' in body) data.currentAnnualBillGross = optionalNumber(body.currentAnnualBillGross) ?? 0;
     if ('projectedAnnualBillGross' in body) data.projectedAnnualBillGross = optionalNumber(body.projectedAnnualBillGross) ?? 0;
 

@@ -457,6 +457,7 @@ model InvestmentSite {
   fullAddress     String?
   latitude        Decimal?  @db.Decimal(10, 7)
   longitude       Decimal?  @db.Decimal(10, 7)
+  mapProvider     String    @default("GOOGLE")
   source          String?
   pipedriveOrgId  String?
   pipedriveDealId String?   @unique

@@ -1,10 +1,21 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { buildOfferReport } from './offer-report';
+import { fetchLocationMapImage } from './location-map-images';
 import { prisma } from './prisma';
 
 export async function loadOfferCoverImageDataUrl(offer: any) {
-  const documentId = buildOfferReport(offer).client.coverImageDocumentId;
+  const report = buildOfferReport(offer);
+  const liveSite = offer.status === 'DRAFT' ? offer.project?.investmentSite : null;
+  const latitude = liveSite?.latitude == null ? report.client.latitude : Number(liveSite.latitude);
+  const longitude = liveSite?.longitude == null ? report.client.longitude : Number(liveSite.longitude);
+  if (latitude != null && longitude != null) {
+    const mapProvider = liveSite?.mapProvider || report.client.mapProvider;
+    const image = await fetchLocationMapImage(mapProvider, latitude, longitude);
+    return `data:${image.contentType};base64,${image.bytes.toString('base64')}`;
+  }
+
+  const documentId = report.client.coverImageDocumentId;
   if (!documentId) return null;
   const document = await prisma.document.findFirst({
     where: {

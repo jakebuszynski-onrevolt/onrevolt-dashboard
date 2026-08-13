@@ -156,6 +156,41 @@ export function groupOfferLines(lines: any[], b2b: boolean) {
   });
 }
 
+export function calculateHomeEnergyStorageSubsidy(
+  lines: any[],
+  storageCapacityKwh: number,
+  b2b = false,
+) {
+  if (b2b || storageCapacityKwh <= 0) return 0;
+
+  const storagePackage = groupOfferLines(lines, false).find((row) => row.key === 'STORAGE');
+  if (!storagePackage?.available || storagePackage.value <= 0) return 0;
+
+  const capacityLimit = storageCapacityKwh * 800;
+  const valueLimit = storagePackage.value * 0.3;
+  return round(Math.min(capacityLimit, valueLimit));
+}
+
+export function calculateThermomodernizationRelief(
+  systemValueGross: number,
+  subsidyGross: number,
+  b2b = false,
+) {
+  if (b2b) return 0;
+  return round(Math.max(0, systemValueGross - subsidyGross) * 0.12);
+}
+
+function storageCapacityFromLines(lines: any[]) {
+  const configurations = new Map<string, number>();
+  lines.forEach((line, index) => {
+    const capacity = numberValue(line.sourceConfigurationCapacityKwh);
+    if (capacity <= 0) return;
+    const key = text(line.sourceConfigurationId) || text(line.sourceConfigurationName) || `line-${index}`;
+    configurations.set(key, capacity);
+  });
+  return sum(Array.from(configurations.values()));
+}
+
 function existingMonthlyBalance(resultMonths: any[], energy: any): MonthlyBalance[] {
   const audit = energy.audit || {};
   const scenario = energy.scenario || {};
@@ -360,7 +395,20 @@ export function buildOfferReport(offer: any) {
   const projectedDistributionRate = annualImport > 0 ? projectedDistribution / annualImport : distribution;
   const totalNet = numberValue(calculation.totalNet || offer.totalNet);
   const totalGross = numberValue(calculation.totalGross || offer.totalGross);
-  const totalAfterSupportGross = numberValue(calculation.totalAfterSupportGross || offer.totalAfterSupportGross || totalGross);
+  const configuredStorageCapacityKwh = storageCapacityFromLines(lines);
+  const scenarioStorageCapacityKwh = Math.max(
+    0,
+    numberValue(scenario.batteryCapacityKwh) - numberValue(audit.existingBatteryKwh),
+  );
+  const eligibleStorageCapacityKwh = configuredStorageCapacityKwh || scenarioStorageCapacityKwh;
+  const storedSubsidyGross = numberValue(calculation.subsidyGross || offer.subsidyGross);
+  const subsidyGross = b2b
+    ? 0
+    : eligibleStorageCapacityKwh > 0
+      ? calculateHomeEnergyStorageSubsidy(lines, eligibleStorageCapacityKwh)
+      : storedSubsidyGross;
+  const thermoReliefGross = calculateThermomodernizationRelief(totalGross, subsidyGross, b2b);
+  const totalAfterSupportGross = Math.max(0, totalGross - subsidyGross - thermoReliefGross);
   const currentBill = numberValue(calculation.currentAnnualBillGross || offer.currentAnnualBillGross || result.baselineAnnualCostGross);
   const projectedBill = numberValue(calculation.projectedAnnualBillGross || offer.projectedAnnualBillGross || result.scenarioAnnualCostGross);
   const annualSavings = numberValue(calculation.annualSavingsGross || offer.annualSavingsGross || result.annualSavingsGross);
@@ -372,6 +420,13 @@ export function buildOfferReport(offer: any) {
     : numberValue(calculation.savingsPercent || result.savingsPercent);
   const configurations = Array.from(new Set(lines.map((line) => text(line.sourceConfigurationName)).filter(Boolean)));
   const existingPv = numberValue(audit.existingPvKw);
+  const currentZoneRates = tariffZoneRates(currentTariffSnapshot, valueFactor);
+  const projectedZoneRates = tariffZoneRates(targetTariffSnapshot, valueFactor);
+  const lowestProjectedZone = projectedZoneRates
+    .filter((rate) => rate.totalPerKwh > 0)
+    .reduce<(typeof projectedZoneRates)[number] | null>((lowest, rate) => (
+      !lowest || rate.totalPerKwh < lowest.totalPerKwh ? rate : lowest
+    ), null);
 
   return {
     templateKey: offerReportTemplateKey,
@@ -388,6 +443,9 @@ export function buildOfferReport(offer: any) {
       postalCode: text(client.postalCode),
       city: text(client.city),
       investmentAddress: text(client.investmentAddress),
+      latitude: optionalNumber(client.latitude),
+      longitude: optionalNumber(client.longitude),
+      mapProvider: text(client.mapProvider) || 'GOOGLE',
       email: text(client.email),
       phone: text(client.phone),
       ownerName: text(client.ownerName),
@@ -422,8 +480,8 @@ export function buildOfferReport(offer: any) {
       priceLabel: b2b ? 'netto' : 'brutto',
       rows: groupOfferLines(lines, b2b),
       systemValue: round(b2b ? totalNet : totalGross),
-      subsidy: round(numberValue(calculation.subsidyGross || offer.subsidyGross) * valueFactor),
-      thermoRelief: round(numberValue(calculation.thermoReliefGross || offer.thermoReliefGross) * valueFactor),
+      subsidy: round(subsidyGross * valueFactor),
+      thermoRelief: round(thermoReliefGross * valueFactor),
       afterSupport: round(totalAfterSupportGross * valueFactor),
     },
     savings: {
@@ -443,17 +501,17 @@ export function buildOfferReport(offer: any) {
         distributionPerKwh: round(currentDistributionRate * valueFactor, 4),
         totalPerKwh: round((currentEnergyRate + currentDistributionRate) * valueFactor, 4),
         fixedMonthly: round(currentFixed / 12 * valueFactor, 2),
-        zoneRates: tariffZoneRates(currentTariffSnapshot, valueFactor),
+        zoneRates: currentZoneRates,
         components: tariffComponents(currentTariffSnapshot, valueFactor),
         sourceUrl: text(currentTariffSnapshot?.sourceUrl),
         fetchedAt: text(currentTariffSnapshot?.fetchedAt),
       },
       projected: {
-        energyPerKwh: round(projectedEnergyRate * valueFactor, 4),
-        distributionPerKwh: round(projectedDistributionRate * valueFactor, 4),
-        totalPerKwh: round((projectedEnergyRate + projectedDistributionRate) * valueFactor, 4),
+        energyPerKwh: lowestProjectedZone?.energyPerKwh ?? round(projectedEnergyRate * valueFactor, 4),
+        distributionPerKwh: lowestProjectedZone?.distributionPerKwh ?? round(projectedDistributionRate * valueFactor, 4),
+        totalPerKwh: lowestProjectedZone?.totalPerKwh ?? round((projectedEnergyRate + projectedDistributionRate) * valueFactor, 4),
         fixedMonthly: round(projectedFixed / 12 * valueFactor, 2),
-        zoneRates: tariffZoneRates(targetTariffSnapshot, valueFactor),
+        zoneRates: projectedZoneRates,
         components: tariffComponents(targetTariffSnapshot, valueFactor),
         sourceUrl: text(targetTariffSnapshot?.sourceUrl),
         fetchedAt: text(targetTariffSnapshot?.fetchedAt),

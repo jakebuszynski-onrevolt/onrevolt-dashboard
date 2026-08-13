@@ -1,0 +1,2 @@
+ALTER TABLE `InvestmentSite`
+  ADD COLUMN `mapProvider` VARCHAR(191) NOT NULL DEFAULT 'GOOGLE';

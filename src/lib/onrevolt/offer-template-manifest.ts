@@ -18,6 +18,8 @@ export type SvgTextField = {
   id: string;
   value: string;
   textIndex?: number;
+  x?: number;
+  textAnchor?: 'start' | 'middle' | 'end';
   maxWidth?: number;
   maxLines?: number;
   minFontSize?: number;

@@ -11,7 +11,12 @@ import {
   polishPvMonthlyDistribution,
 } from 'lib/onrevolt/energy-scenario';
 import { loadEnergyTariffSnapshots } from 'lib/onrevolt/energy-tariff-pricing';
-import { offerReportTemplateKey, offerReportTemplateVersion } from 'lib/onrevolt/offer-report';
+import {
+  calculateHomeEnergyStorageSubsidy,
+  calculateThermomodernizationRelief,
+  offerReportTemplateKey,
+  offerReportTemplateVersion,
+} from 'lib/onrevolt/offer-report';
 import { randomUUID } from 'node:crypto';
 
 type OfferCreateInput = {
@@ -21,8 +26,6 @@ type OfferCreateInput = {
   energyScenarioId?: string;
   title?: string;
   validUntil?: Date;
-  subsidyGross?: number;
-  thermoReliefGross?: number;
   currentAnnualBillGross?: number;
   projectedAnnualBillGross?: number;
   tariffBefore?: string;
@@ -242,6 +245,7 @@ function projectSnapshot(project: any) {
     investmentAddress: site.fullAddress || site.addressLine || project.locationAddress || contact.investmentAddress || '',
     latitude: optionalDecimalToNumber(site.latitude || contact.latitude),
     longitude: optionalDecimalToNumber(site.longitude || contact.longitude),
+    mapProvider: site.mapProvider || 'GOOGLE',
     clientProblem: client.clientProblem || '',
     expectedResult: client.expectedResult || '',
     ownerName: project.owner?.name || '',
@@ -257,6 +261,7 @@ export function mergeConfigurationLineItems(configurations: any[]) {
         sourceConfigurationId: configuration.id,
         sourceConfigurationName: configuration.name,
         sourceConfigurationKind: configuration.kind,
+        sourceConfigurationCapacityKwh: decimalToNumber(configuration.targetCapacityKwh),
         sourcePosition: Number(item.position || index + 1),
         productId: item.productId || null,
         sku: item.product?.sku || null,
@@ -280,11 +285,28 @@ export function mergeConfigurationLineItems(configurations: any[]) {
   )).map((item, index) => ({ ...item, position: index + 1 }));
 }
 
-function calculationSnapshot(input: OfferCreateInput, lineItems: any[], scenario?: any) {
+function calculationSnapshot(
+  input: OfferCreateInput,
+  lineItems: any[],
+  configurations: any[],
+  clientType: string,
+  scenario?: any,
+) {
   const totalNet = lineItems.reduce((sum, item) => sum + decimalToNumber(item.saleNet), 0);
   const totalGross = lineItems.reduce((sum, item) => sum + decimalToNumber(item.saleGross), 0);
-  const subsidyGross = optionalMoney(input.subsidyGross);
-  const thermoReliefGross = optionalMoney(input.thermoReliefGross);
+  const storageCapacityKwh = configurations
+    .filter((configuration) => ['MAGAZYN', 'MIXED'].includes(String(configuration.kind)))
+    .reduce((total, configuration) => total + finiteNumber(configuration.targetCapacityKwh), 0);
+  const subsidyGross = calculateHomeEnergyStorageSubsidy(
+    lineItems,
+    storageCapacityKwh,
+    clientType === 'B2B',
+  );
+  const thermoReliefGross = calculateThermomodernizationRelief(
+    totalGross,
+    subsidyGross,
+    clientType === 'B2B',
+  );
   const totalAfterSupportGross = Math.max(0, money(totalGross - subsidyGross - thermoReliefGross));
   const result = scenario?.resultSnapshot || {};
   const currentAnnualBillGross = scenario
@@ -465,8 +487,8 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
   }
 
   const lineItems = mergeConfigurationLineItems(configurations);
-  const calculation = calculationSnapshot(input, lineItems, selectedScenario);
   const client = projectSnapshot(project);
+  const calculation = calculationSnapshot(input, lineItems, configurations, client.clientType, selectedScenario);
   const title = optionalText(input.title)
     || configurations.map((configuration) => configuration.name).join(' + ')
     || `Oferta dla ${client.clientName || project.title}`;
@@ -692,8 +714,6 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
     energyScenarioId: scenarioId,
     title: existing.title,
     validUntil: existing.validUntil || undefined,
-    subsidyGross: decimalToNumber(existing.subsidyGross),
-    thermoReliefGross: decimalToNumber(existing.thermoReliefGross),
     currentAnnualBillGross: decimalToNumber(existing.currentAnnualBillGross),
     projectedAnnualBillGross: decimalToNumber(existing.projectedAnnualBillGross),
     tariffBefore,

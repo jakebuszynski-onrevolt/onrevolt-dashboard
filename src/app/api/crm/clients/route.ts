@@ -4,9 +4,11 @@ import { forbidden, jsonResponse, notFound, optionalString, readJsonObject, requ
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
 import { isOperationalPipelineStageCode, projectStatusStageCode } from 'lib/onrevolt/pipeline-stages';
+import { locationMapProviderValues } from 'lib/onrevolt/location-maps';
 import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser } from 'lib/onrevolt/staff-server';
 
 const clientTypes = new Set(['UNKNOWN', 'B2C', 'B2B', 'B2C_B2B']);
+const locationMapProviderSet = new Set<string>(locationMapProviderValues);
 const projectStatuses = new Set([
   'LEAD',
   'CZEKA_NA_KALKULACJE',
@@ -82,6 +84,22 @@ function nullableNestedString(source: Record<string, any> | undefined, key: stri
   return value.trim() || null;
 }
 
+function nullableNestedCoordinate(
+  source: Record<string, any> | undefined,
+  key: string,
+  min: number,
+  max: number,
+) {
+  if (!source || !Object.prototype.hasOwnProperty.call(source, key)) return undefined;
+  const value = source[key];
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    throw new Error(`Nieprawidłowa wartość pola ${key}`);
+  }
+  return parsed;
+}
+
 function optionalNestedDate(source: Record<string, any> | undefined, key: string) {
   if (!source || !Object.prototype.hasOwnProperty.call(source, key)) return undefined;
   const value = source[key];
@@ -141,6 +159,16 @@ function validateClientType(value: unknown, fallback = 'UNKNOWN') {
   return value;
 }
 
+function optionalLocationMapProvider(source: Record<string, any> | undefined, key: string) {
+  if (!source || !Object.prototype.hasOwnProperty.call(source, key)) return undefined;
+  const value = source[key];
+  if (value == null || value === '') return 'GOOGLE';
+  if (typeof value !== 'string' || !locationMapProviderSet.has(value)) {
+    throw new Error('Nieprawidłowe źródło obrazu mapy');
+  }
+  return value;
+}
+
 function contactData(displayName: string, contactBody: Record<string, any> | undefined) {
   if (!contactBody) return undefined;
   return {
@@ -170,6 +198,9 @@ function investmentSiteData(
     name: optionalNestedString(projectBody, 'siteName') || optionalNestedString(projectBody, 'title') || `Punkt - ${displayName}`,
     addressLine: fullAddress,
     fullAddress,
+    latitude: nullableNestedCoordinate(projectBody, 'latitude', -90, 90),
+    longitude: nullableNestedCoordinate(projectBody, 'longitude', -180, 180),
+    mapProvider: optionalLocationMapProvider(projectBody, 'mapProvider'),
     source: optionalNestedString(projectBody, 'source') || 'manual',
     notes: optionalNestedString(projectBody, 'siteNotes'),
   };

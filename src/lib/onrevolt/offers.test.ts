@@ -20,6 +20,7 @@ test('pozycje kilku konfiguracji tworzą jeden uporządkowany snapshot', () => {
       id: 'battery',
       name: 'Magazyn 32 kWh',
       kind: 'ENERGY_STORAGE',
+      targetCapacityKwh: 32,
       items: [
         { position: 2, description: 'Falownik', quantity: 1, saleNet: 1000, saleGross: 1080, saleVatRate: 0.08 },
         { position: 1, description: 'Magazyn', quantity: 1, saleNet: 2000, saleGross: 2160, saleVatRate: 0.08 },
@@ -38,6 +39,7 @@ test('pozycje kilku konfiguracji tworzą jeden uporządkowany snapshot', () => {
   assert.deepEqual(lines.map((line) => line.position), [1, 2, 3]);
   assert.deepEqual(lines.map((line) => line.description), ['Magazyn', 'Falownik', 'Panele PV']);
   assert.deepEqual(lines.map((line) => line.sourceConfigurationId), ['battery', 'battery', 'pv']);
+  assert.equal(lines[0].sourceConfigurationCapacityKwh, 32);
   assert.equal(lines[2].sourceConfigurationName, 'Instalacja PV 6 kWp');
 });
 

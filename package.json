@@ -59,6 +59,7 @@
     "pdf-parse": "2.2.16",
     "pipedrive": "33.4.3",
     "playwright": "^1.62.1",
+    "proj4": "2.19.10",
     "react": "19.0.7",
     "react-apexcharts": "^1.4.0",
     "react-calendar": "^3.7.0",

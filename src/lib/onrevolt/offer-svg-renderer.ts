@@ -165,10 +165,13 @@ function setText(document: XmlDocument, field: SvgTextField) {
       });
   }
   const originalTspan = target.getElementsByTagName('tspan')[0];
-  const x = originalTspan?.getAttribute('x') || target.getAttribute('x') || '0';
+  const x = field.x != null
+    ? String(field.x)
+    : originalTspan?.getAttribute('x') || target.getAttribute('x') || '0';
   const y = originalTspan?.getAttribute('y') || target.getAttribute('y');
   const { fontSize, lines } = fitText(target, { ...field, value });
   target.setAttribute('font-size', String(fontSize));
+  if (field.textAnchor) target.setAttribute('text-anchor', field.textAnchor);
   while (target.firstChild) target.removeChild(target.firstChild);
 
   lines.forEach((line, index) => {
@@ -229,14 +232,14 @@ function address(report: OfferReport) {
 function headerFields(report: OfferReport): SvgTextField[] {
   return [
     { id: '_nazwa', value: report.client.name, maxWidth: 360, minFontSize: 8 },
-    { id: '_numer', value: `NR ${report.number}`, maxWidth: 145, minFontSize: 7 },
+    { id: '_numer', value: `NR ${report.number}`, x: 550, textAnchor: 'end', maxWidth: 145, minFontSize: 7 },
   ];
 }
 
 function page0Fields(report: OfferReport): SvgTextField[] {
   return [
     { id: '#tytul', value: report.client.name, maxWidth: 365, minFontSize: 8 },
-    { id: '#numer_oferty', value: `NR ${report.number}`, maxWidth: 135, minFontSize: 7 },
+    { id: '#numer_oferty', value: `NR ${report.number}`, x: 550, textAnchor: 'end', maxWidth: 135, minFontSize: 7 },
     { id: '#imie_nazwisko', value: report.client.name, maxWidth: 155, minFontSize: 7 },
     { id: '#adres', value: address(report), maxWidth: 155, maxLines: 2, minFontSize: 6.5 },
     { id: '#mail', value: report.client.email, maxWidth: 155, minFontSize: 5.5 },
@@ -271,6 +274,7 @@ const packageFieldIds = [
 ];
 
 function page1Fields(report: OfferReport): SvgTextField[] {
+  const rightAlignedSummary = { x: 556, textAnchor: 'end' as const };
   const rows = report.costs.rows.flatMap((row, index) => {
     const ids = packageFieldIds[index];
     return [
@@ -294,12 +298,12 @@ function page1Fields(report: OfferReport): SvgTextField[] {
     { id: '_liczba_lat', value: report.savings.paybackYears ? `${formatNumber(report.savings.paybackYears, 1)} lat` : 'Brak danych' },
     { id: '_oszczednosc_2', value: `Oszczędność ${formatNumber(report.savings.percent, 0)}%`, textIndex: 0 },
     { id: '_oszczednosc_', value: `+${formatNumber(report.savings.percent, 0)}%` },
-    { id: '_laczna_zgromadzona_wartosc_depozytu_kwota', value: formatNumber(report.deposit.generated, 0) },
-    { id: '_oplaty_stale_i_dystrybucyjne_kwota', value: `- ${formatNumber(report.bills.projected.distribution + report.bills.projected.fixed, 0)}` },
-    { id: '_laczna_wykorzystana_wartosc_depozytu_na_pokrycie_energii_pobranej_kwota', value: formatNumber(report.deposit.used, 0) },
-    { id: '_niewykorzystana_wartosc_depozytu_kwota', value: formatNumber(report.deposit.remaining, 0) },
-    { id: '_zwrot_30_wartosci_kwota', value: formatNumber(report.deposit.remaining * 0.3, 0) },
-    { id: '_wartosc_energii_obranej_niepokrytej_z_depozytu_kwota', value: formatNumber(report.bills.projected.energyCash, 0) },
+    { id: '_laczna_zgromadzona_wartosc_depozytu_kwota', value: formatNumber(report.deposit.generated, 0), ...rightAlignedSummary },
+    { id: '_oplaty_stale_i_dystrybucyjne_kwota', value: `- ${formatNumber(report.bills.projected.distribution + report.bills.projected.fixed, 0)}`, ...rightAlignedSummary },
+    { id: '_laczna_wykorzystana_wartosc_depozytu_na_pokrycie_energii_pobranej_kwota', value: formatNumber(report.deposit.used, 0), ...rightAlignedSummary },
+    { id: '_niewykorzystana_wartosc_depozytu_kwota', value: formatNumber(report.deposit.remaining, 0), ...rightAlignedSummary },
+    { id: '_zwrot_30_wartosci_kwota', value: formatNumber(report.deposit.remaining * 0.3, 0), ...rightAlignedSummary },
+    { id: '_wartosc_energii_obranej_niepokrytej_z_depozytu_kwota', value: formatNumber(report.bills.projected.energyCash, 0), ...rightAlignedSummary },
   ];
 }
 
