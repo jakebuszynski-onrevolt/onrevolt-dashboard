@@ -187,8 +187,41 @@ test('kwoty podsumowania oszczędności są wyrównane do prawej krawędzi', () 
     const element = page.match(new RegExp(`<text[^>]*id="${id}"[^>]*>[\\s\\S]*?<\\/text>`))?.[0];
     assert.ok(element, `Brak pola ${id}`);
     assert.match(element, /text-anchor="end"/);
-    assert.match(element, /<tspan x="556"/);
+    assert.match(element, /<tspan x="550"/);
   });
+});
+
+test('kosztorys ma wspólne prawe osie i czytelne nazwy modeli', () => {
+  const offer = fixtureOffer();
+  offer.lineItemsSnapshot[0].model = 'ODS-Produkty-1';
+  const page = renderOfferSvgPage(offer, 1);
+  const columns = [
+    { x: 350, ids: ['_ilosc_1_2', '_ilosc_2_2', '_ilosc_3_2', '_ilosc_3_4'] },
+    { x: 450, ids: ['_cena_jednostkowa_brutto_1_2', '_cena_jednostkowa_brutto_2_2', '_cena_jednostkowa_brutto_3_2', '_cena_jednostkowa_brutto_3_4'] },
+    { x: 550, ids: ['_wartosc_brutto_1_2', '_wartosc_brutto_2_2', '_wartosc_brutto_3_2', '_wartosc_brutto_3_4', '_kwota_koszt_systemu_2', '_kwota_po_dofinansowaniach_2'] },
+  ];
+
+  columns.forEach(({ x, ids }) => ids.forEach((id) => {
+    const element = page.match(new RegExp(`<text[^>]*id="${id}"[^>]*>[\\s\\S]*?<\\/text>`))?.[0];
+    assert.ok(element, `Brak pola ${id}`);
+    assert.match(element, /text-anchor="end"/);
+    assert.match(element, new RegExp(`<tspan x="${x}"`));
+  }));
+  assert.match(page, /Dyness PowerBrick Plus 16\.07 kWh/);
+  assert.doesNotMatch(page, />ODS-Produkty-1</);
+});
+
+test('czas zwrotu jest zaokrąglony w dół i nie powiela jednostki lat', () => {
+  const offer = fixtureOffer();
+  offer.calculationSnapshot.paybackYears = 8.9;
+  const page = renderOfferSvgPage(offer, 1);
+  const group = page.match(/<g id="_liczba_lat">[\s\S]*?<\/g>/)?.[0];
+
+  assert.ok(group);
+  assert.equal((group.match(/>lat</g) || []).length, 1);
+  assert.match(group, />8</);
+  assert.doesNotMatch(group, /8,9/);
+  assert.match(group, /<tspan x="550"[^>]*>lat<\/tspan>/);
 });
 
 test('słupki miesięczne mieszczą się w obszarze wykresu', () => {

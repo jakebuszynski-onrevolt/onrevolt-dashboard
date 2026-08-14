@@ -134,7 +134,13 @@ export function groupOfferLines(lines: any[], b2b: boolean) {
     const equipment = packageLines.filter((line) => primaryPackage(line) === key && line.role === 'MAIN_EQUIPMENT');
     const modelLines = equipment.length ? equipment : packageLines.filter((line) => primaryPackage(line) === key);
     const model = Array.from(new Set(modelLines
-      .map((line) => text(line.model || line.name || line.description))
+      .map((line) => {
+        const name = text(line.name);
+        const technicalModel = text(line.model);
+        if (name) return name;
+        if (technicalModel && !/^ODS(?:-|_|\b)/i.test(technicalModel)) return technicalModel;
+        return text(line.description || technicalModel);
+      })
       .filter(Boolean)))
       .slice(0, 2)
       .join(' + ');

@@ -267,7 +267,7 @@ export function mergeConfigurationLineItems(configurations: any[]) {
         sku: item.product?.sku || null,
         name: item.product?.name || item.description || `Pozycja ${index + 1}`,
         description: item.description || item.product?.name || `Pozycja ${index + 1}`,
-        model: item.product?.supplierSku || item.product?.sku || item.product?.producer || '',
+        model: item.product?.name || item.description || '',
         producer: item.product?.producer || '',
         category: item.product?.category || '',
         quantity: decimalToNumber(item.quantity),

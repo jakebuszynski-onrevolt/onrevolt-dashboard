@@ -148,10 +148,10 @@ function setText(document: XmlDocument, field: SvgTextField) {
   const siblingElements = container && container !== target
     ? Array.from(container.getElementsByTagName('text')).filter((element) => element !== target)
     : [];
-  const suffixElements = siblingElements.filter((element) => /\bPLN\b/i.test(element.textContent || ''));
+  const suffixElements = siblingElements.filter((element) => /\b(?:PLN|lat)\b/i.test(element.textContent || ''));
   const siblingText = siblingElements.map((element) => element.textContent || '').join(' ');
-  const value = /\bPLN\b/i.test(siblingText)
-    ? field.value.replace(/\s*PLN\s*$/i, '')
+  const value = /\b(?:PLN|lat)\b/i.test(siblingText)
+    ? field.value.replace(/\s*(?:PLN|lat)\s*$/i, '')
     : field.value;
   let alignedX = field.x;
   if (suffixElements.length && field.textAnchor === 'end' && field.x != null) {
@@ -287,28 +287,31 @@ const packageFieldIds = [
 ];
 
 function page1Fields(report: OfferReport): SvgTextField[] {
-  const rightAlignedSummary = { x: 556, textAnchor: 'end' as const };
+  const quantityColumn = { x: 350, textAnchor: 'end' as const };
+  const unitPriceColumn = { x: 450, textAnchor: 'end' as const };
+  const valueColumn = { x: 550, textAnchor: 'end' as const };
+  const rightAlignedSummary = { x: 550, textAnchor: 'end' as const };
   const rows = report.costs.rows.flatMap((row, index) => {
     const ids = packageFieldIds[index];
     return [
       { id: ids.name, value: row.description, maxWidth: 140, minFontSize: 5.5 },
-      { id: ids.model, value: row.model, maxWidth: 140, minFontSize: 5.5 },
-      { id: ids.quantity, value: row.available ? formatNumber(row.quantity, 0) : '-' },
-      { id: ids.unit, value: row.available ? formatMoney(row.unitValue) : '-' },
-      { id: ids.value, value: row.available ? formatMoney(row.value) : '-' },
+      { id: ids.model, value: row.model, maxWidth: 130, maxLines: 2, minFontSize: 5.5 },
+      { id: ids.quantity, value: row.available ? formatNumber(row.quantity, 0) : '-', ...quantityColumn },
+      { id: ids.unit, value: row.available ? formatMoney(row.unitValue) : '-', ...unitPriceColumn },
+      { id: ids.value, value: row.available ? formatMoney(row.value) : '-', ...valueColumn },
     ];
   });
   return [
     ...headerFields(report),
     ...rows,
-    { id: '_kwota_koszt_systemu_2', value: formatMoney(report.costs.systemValue) },
-    { id: '_kwota_dotacja_2', value: formatMoney(report.costs.subsidy) },
-    { id: '_kwota_ulga_2', value: formatMoney(report.costs.thermoRelief) },
-    { id: '_kwota_po_dofinansowaniach_2', value: formatMoney(report.costs.afterSupport) },
-    { id: '_kwota_nowy_rachunek', value: formatNumber(report.savings.projectedBill, 0) },
-    { id: '_oszczednosc_kwota', value: formatNumber(report.savings.annual, 0) },
-    { id: '_kwota_aktualny_rachunek', value: formatNumber(report.savings.currentBill, 0) },
-    { id: '_liczba_lat', value: report.savings.paybackYears ? `${formatNumber(report.savings.paybackYears, 1)} lat` : 'Brak danych' },
+    { id: '_kwota_koszt_systemu_2', value: formatMoney(report.costs.systemValue), ...valueColumn },
+    { id: '_kwota_dotacja_2', value: formatMoney(report.costs.subsidy), ...valueColumn },
+    { id: '_kwota_ulga_2', value: formatMoney(report.costs.thermoRelief), ...valueColumn },
+    { id: '_kwota_po_dofinansowaniach_2', value: formatMoney(report.costs.afterSupport), ...valueColumn },
+    { id: '_kwota_nowy_rachunek', value: formatNumber(report.savings.projectedBill, 0), ...rightAlignedSummary },
+    { id: '_oszczednosc_kwota', value: formatNumber(report.savings.annual, 0), ...rightAlignedSummary },
+    { id: '_kwota_aktualny_rachunek', value: formatNumber(report.savings.currentBill, 0), ...rightAlignedSummary },
+    { id: '_liczba_lat', value: report.savings.paybackYears ? `${Math.floor(report.savings.paybackYears)} lat` : 'Brak danych', ...rightAlignedSummary },
     { id: '_oszczednosc_2', value: `Oszczędność ${formatNumber(report.savings.percent, 0)}%`, textIndex: 0 },
     { id: '_oszczednosc_', value: `+${formatNumber(report.savings.percent, 0)}%` },
     { id: '_laczna_zgromadzona_wartosc_depozytu_kwota', value: formatNumber(report.deposit.generated, 0), ...rightAlignedSummary },
