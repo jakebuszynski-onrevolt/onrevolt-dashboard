@@ -16,6 +16,7 @@ import {
   Select,
   SimpleGrid,
   Spinner,
+  Switch,
   Tab,
   TabList,
   TabPanel,
@@ -52,10 +53,15 @@ import {
   type ClientJourneyKey,
 } from 'lib/onrevolt/client-journey';
 import { summarizeEnergyInvoices } from 'lib/onrevolt/energy-data';
+import {
+  calculateSolisMaxExportPowerW,
+  getSolisRatedPowerWarning,
+  isValidSolisPowerLimitPercent,
+} from 'lib/onrevolt/solis-inverter';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDeleteOutline, MdEdit, MdExpandLess, MdExpandMore, MdOpenInNew, MdPrint, MdRefresh } from 'react-icons/md';
+import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDeleteOutline, MdEdit, MdExpandLess, MdExpandMore, MdOpenInNew, MdPrint, MdRefresh, MdSystemUpdateAlt } from 'react-icons/md';
 
 type ClientProfileProps = {
   clientId: string;
@@ -208,6 +214,57 @@ type EnergyUsageProfile = {
   annualKwh: number;
   months: EnergyUsageMonth[];
   warnings: string[];
+};
+
+type ReStationFirmwareRelease = {
+  version: string;
+  size: number;
+  createdAt?: string | null;
+};
+
+type ReStationFirmwareStatus = {
+  currentVersion: string;
+  seenAt?: string | null;
+  targetVersion?: string | null;
+  otaEnabled: boolean;
+  otaForce: boolean;
+  lastStatus?: string | null;
+  lastError?: string | null;
+  lastTargetVersion?: string | null;
+  lastAt?: string | null;
+  controlEnabled: boolean;
+  shadowOnly: boolean;
+  inverterRatedPowerW: number;
+  inverterPowerLimitPercent: number;
+  maxExportPowerW: number | null;
+  uid?: string | null;
+  rapidControl: {
+    supported: boolean;
+    command: {
+      sequence: number;
+      name?: string | null;
+      requestedAt?: string | null;
+      expiresAt?: string | null;
+      acknowledgedSequence: number;
+      acknowledgedAt?: string | null;
+      result?: string | null;
+      ok: boolean | null;
+      state: 'IDLE' | 'PENDING' | 'EXPIRED' | 'ACKNOWLEDGED' | 'FAILED';
+    };
+    exportBlocked: boolean;
+    pvBlocked: boolean;
+    exportBlockApplied: boolean;
+    pvBlockApplied: boolean;
+  };
+  state: 'IDLE' | 'WAITING' | 'DOWNLOADING' | 'VERIFYING' | 'CURRENT' | 'FAILED';
+  releases: ReStationFirmwareRelease[];
+};
+
+type ReStationStatus = {
+  station: string;
+  type: string;
+  isSolis: boolean;
+  firmware?: ReStationFirmwareStatus | null;
 };
 
 type EnergyDataSettings = {
@@ -699,6 +756,38 @@ function formatDateTime(value?: string | null) {
   }).format(new Date(value));
 }
 
+function otaStateLabel(state: ReStationFirmwareStatus['state']) {
+  return {
+    IDLE: 'Gotowe',
+    WAITING: 'Oczekiwanie na urządzenie',
+    DOWNLOADING: 'Pobieranie firmware',
+    VERIFYING: 'Instalacja i weryfikacja',
+    CURRENT: 'Wersja potwierdzona',
+    FAILED: 'Błąd aktualizacji',
+  }[state];
+}
+
+function otaStateColor(state: ReStationFirmwareStatus['state']) {
+  if (state === 'FAILED') return 'red';
+  if (state === 'CURRENT') return 'green';
+  if (['WAITING', 'DOWNLOADING', 'VERIFYING'].includes(state)) return 'orange';
+  return 'gray';
+}
+
+function formatFirmwareSize(value: number) {
+  return `${(value / 1024 / 1024).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} MB`;
+}
+
+function rapidCommandLabel(command?: string | null) {
+  return {
+    OTA_CHECK_NOW: 'Natychmiastowe sprawdzenie OTA i konfiguracji',
+    EXPORT_BLOCK_ON: 'Włączenie blokady eksportu',
+    EXPORT_BLOCK_OFF: 'Wyłączenie blokady eksportu',
+    PV_BLOCK_ON: 'Włączenie blokady PV',
+    PV_BLOCK_OFF: 'Wyłączenie blokady PV',
+  }[String(command || '')] || command || 'Polecenie Solis';
+}
+
 function closedEnergyMonths(count: number, now = new Date()): EnergyMonthRow[] {
   const months: EnergyMonthRow[] = [];
   const cursor = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -821,6 +910,19 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [stationCreating, setStationCreating] = useState(false);
   const [stationMessage, setStationMessage] = useState('');
   const [stationError, setStationError] = useState('');
+  const [reStationStatus, setReStationStatus] = useState<ReStationStatus | null>(null);
+  const [reStationStatusLoading, setReStationStatusLoading] = useState(false);
+  const [reStationStatusError, setReStationStatusError] = useState('');
+  const [selectedSolisFirmware, setSelectedSolisFirmware] = useState('');
+  const [otaRequesting, setOtaRequesting] = useState(false);
+  const [otaMessage, setOtaMessage] = useState('');
+  const [otaError, setOtaError] = useState('');
+  const [solisAction, setSolisAction] = useState('');
+  const [solisMessage, setSolisMessage] = useState('');
+  const [solisError, setSolisError] = useState('');
+  const [solisPowerLimitPercent, setSolisPowerLimitPercent] = useState('');
+  const [solisPowerLimitDirty, setSolisPowerLimitDirty] = useState(false);
+  const solisPowerLimitStationRef = useRef('');
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [offerCreating, setOfferCreating] = useState(false);
   const [offerDeletingId, setOfferDeletingId] = useState('');
@@ -853,6 +955,25 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const borderColor = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
   const activeProject = client?.projects?.find((item: any) => item.id === selectedProjectId)
     || client?.projects?.[0];
+  const activeProjectId = activeProject?.id || '';
+  const activeProjectStationRef = activeProject?.dashboardStationNumber || activeProject?.dashboardStation || '';
+
+  useEffect(() => {
+    const station = reStationStatus?.station || '';
+    const inverterPowerLimitPercent = reStationStatus?.firmware?.inverterPowerLimitPercent;
+    if (inverterPowerLimitPercent == null || !station) return;
+
+    const stationChanged = solisPowerLimitStationRef.current !== station;
+    if (stationChanged || !solisPowerLimitDirty) {
+      solisPowerLimitStationRef.current = station;
+      setSolisPowerLimitPercent(String(inverterPowerLimitPercent));
+      if (stationChanged) setSolisPowerLimitDirty(false);
+    }
+  }, [
+    reStationStatus?.firmware?.inverterPowerLimitPercent,
+    reStationStatus?.station,
+    solisPowerLimitDirty,
+  ]);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -955,11 +1076,66 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     }
   }, []);
 
+  const loadReStationStatus = useCallback(async (projectId: string, silent = false) => {
+    if (!projectId) return;
+    if (!silent) setReStationStatusLoading(true);
+    setReStationStatusError('');
+    try {
+      const query = new URLSearchParams({ clientId, projectId });
+      const response = await fetch(`/api/integrations/re/station?${query.toString()}`, { cache: 'no-store' });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      const status = payload.data as ReStationStatus;
+      setReStationStatus(status);
+      setSelectedSolisFirmware((current) => {
+        const releases = status.firmware?.releases || [];
+        if (current && releases.some((release) => release.version === current)) return current;
+        const target = status.firmware?.targetVersion;
+        if (target && releases.some((release) => release.version === target)) return target;
+        return releases[0]?.version || '';
+      });
+    } catch (e) {
+      setReStationStatus(null);
+      setReStationStatusError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (!silent) setReStationStatusLoading(false);
+    }
+  }, [clientId]);
+
   useEffect(() => {
     load();
     loadEnergyProfile();
     loadEnergyTariffCatalog();
   }, [load, loadEnergyProfile, loadEnergyTariffCatalog]);
+
+  useEffect(() => {
+    if (activeTabIndex !== 8 || !activeProjectId || !activeProjectStationRef) {
+      if (!activeProjectStationRef) {
+        setReStationStatus(null);
+        setReStationStatusError('');
+      }
+      return;
+    }
+    loadReStationStatus(activeProjectId);
+  }, [activeProjectId, activeProjectStationRef, activeTabIndex, loadReStationStatus]);
+
+  useEffect(() => {
+    if (activeTabIndex !== 8 || !activeProjectId) return;
+    const commandPending = reStationStatus?.firmware?.rapidControl.command.state === 'PENDING';
+    if (!reStationStatus?.firmware?.otaEnabled && !commandPending) return;
+    const interval = window.setInterval(
+      () => loadReStationStatus(activeProjectId, true),
+      commandPending ? 5_000 : 60_000,
+    );
+    return () => window.clearInterval(interval);
+  }, [
+    activeProjectId,
+    activeTabIndex,
+    loadReStationStatus,
+    reStationStatus?.firmware?.otaEnabled,
+    reStationStatus?.firmware?.rapidControl.command.state,
+  ]);
 
   function updateForm(key: keyof ClientFormState, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -1763,6 +1939,196 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       setOfferError(e instanceof Error ? e.message : String(e));
     } finally {
       setOfferStatusSavingId('');
+    }
+  }
+
+  async function requestSolisOta() {
+    const project = activeProject;
+    const firmware = reStationStatus?.firmware;
+    if (!project?.id || !firmware || !selectedSolisFirmware) return;
+    if (!window.confirm(`Zlecić aktualizację stacji ${reStationStatus?.station || ''} do wersji ${selectedSolisFirmware}?`)) {
+      return;
+    }
+
+    setOtaRequesting(true);
+    setOtaError('');
+    setOtaMessage('');
+    try {
+      const response = await fetch('/api/integrations/re/station', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          projectId: project.id,
+          action: 'REQUEST_OTA',
+          targetVersion: selectedSolisFirmware,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      setReStationStatus(payload.data as ReStationStatus);
+      setOtaMessage(`Włączono OTA do wersji ${selectedSolisFirmware}. Oczekujemy na urządzenie.`);
+    } catch (e) {
+      setOtaError(e instanceof Error ? e.message : String(e));
+      await loadReStationStatus(project.id, true);
+    } finally {
+      setOtaRequesting(false);
+    }
+  }
+
+  function applyReStationStatus(nextStatus: ReStationStatus) {
+    setReStationStatus((current) => {
+      if (
+        nextStatus.firmware
+        && current?.firmware
+        && nextStatus.firmware.releases.length === 0
+      ) {
+        return {
+          ...nextStatus,
+          firmware: {
+            ...nextStatus.firmware,
+            releases: current.firmware.releases,
+          },
+        };
+      }
+      return nextStatus;
+    });
+  }
+
+  async function updateSolisControlSettings(next: { controlEnabled: boolean; shadowOnly: boolean }) {
+    const project = activeProject;
+    const firmware = reStationStatus?.firmware;
+    if (!project?.id || !firmware) return;
+
+    const changes: string[] = [];
+    if (next.controlEnabled !== firmware.controlEnabled) {
+      changes.push(`kontrola falownika: ${next.controlEnabled ? 'włączona' : 'wyłączona'}`);
+    }
+    if (next.shadowOnly !== firmware.shadowOnly) {
+      changes.push(`tryb pracy: ${next.shadowOnly ? 'tylko podgląd' : 'sterowanie aktywne'}`);
+    }
+    if (!changes.length) return;
+    if (!window.confirm(`Zapisać ustawienia stacji ${reStationStatus?.station || ''}?\n\n${changes.join('\n')}`)) return;
+
+    setSolisAction('SETTINGS');
+    setSolisError('');
+    setSolisMessage('');
+    try {
+      const response = await fetch('/api/integrations/re/station', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          projectId: project.id,
+          action: 'UPDATE_CONTROL_SETTINGS',
+          controlEnabled: next.controlEnabled,
+          shadowOnly: next.shadowOnly,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      applyReStationStatus(payload.data as ReStationStatus);
+      setSolisMessage(`Zapisano: ${changes.join(', ')}. Urządzenie zastosuje ustawienia po pobraniu konfiguracji.`);
+    } catch (e) {
+      setSolisError(e instanceof Error ? e.message : String(e));
+      await loadReStationStatus(project.id, true);
+    } finally {
+      setSolisAction('');
+    }
+  }
+
+  async function updateSolisInverterPowerLimit() {
+    const project = activeProject;
+    const firmware = reStationStatus?.firmware;
+    if (!project?.id || !firmware) return;
+
+    const ratedPowerW = firmware.inverterRatedPowerW;
+    const powerLimitPercent = Number(solisPowerLimitPercent);
+    if (!solisPowerLimitPercent.trim() || !isValidSolisPowerLimitPercent(powerLimitPercent)) {
+      setSolisError('Limit mocy falownika musi być całkowitą wartością od 0% do 100%.');
+      return;
+    }
+
+    const maxExportPowerW = calculateSolisMaxExportPowerW(ratedPowerW, powerLimitPercent);
+    const confirmation = [
+      `Czy na pewno zapisać limit mocy falownika stacji ${reStationStatus?.station || ''}?`,
+      '',
+      `Moc znamionowa (tylko odczyt): ${ratedPowerW.toLocaleString('pl-PL')} W`,
+      `Limit mocy: ${powerLimitPercent}%`,
+      `Maksymalna moc eksportu: ${(maxExportPowerW || 0).toLocaleString('pl-PL')} W`,
+    ].join('\n');
+    if (!window.confirm(confirmation)) return;
+
+    setSolisAction('LIMITS');
+    setSolisError('');
+    setSolisMessage('');
+    try {
+      const response = await fetch('/api/integrations/re/station', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          projectId: project.id,
+          action: 'UPDATE_INVERTER_POWER_LIMIT',
+          inverterPowerLimitPercent: powerLimitPercent,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      applyReStationStatus(payload.data as ReStationStatus);
+      setSolisPowerLimitDirty(false);
+      setSolisMessage(`Zapisano limit mocy. Maksymalna moc eksportu: ${(maxExportPowerW || 0).toLocaleString('pl-PL')} W.`);
+    } catch (e) {
+      setSolisError(e instanceof Error ? e.message : String(e));
+      await loadReStationStatus(project.id, true);
+    } finally {
+      setSolisAction('');
+    }
+  }
+
+  async function requestSolisRapidCommand(command: string) {
+    const project = activeProject;
+    const firmware = reStationStatus?.firmware;
+    if (!project?.id || !firmware) return;
+
+    const confirmations: Record<string, string> = {
+      OTA_CHECK_NOW: 'Natychmiast sprawdzić OTA i pobrać konfigurację?',
+      EXPORT_BLOCK_ON: 'Włączyć blokadę eksportu energii do sieci?',
+      EXPORT_BLOCK_OFF: 'Wyłączyć blokadę eksportu i przywrócić możliwość oddawania energii do sieci?',
+      PV_BLOCK_ON: 'Zatrzymać produkcję PV? Solis przejdzie także w standby baterii.',
+      PV_BLOCK_OFF: 'Wyłączyć blokadę PV i przywrócić produkcję?',
+    };
+    if (!window.confirm(`${confirmations[command] || 'Wysłać polecenie do stacji?'}\n\nStacja: ${reStationStatus?.station || ''}`)) return;
+
+    setSolisAction(command);
+    setSolisError('');
+    setSolisMessage('');
+    try {
+      const response = await fetch('/api/integrations/re/station', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          projectId: project.id,
+          action: 'REQUEST_RAPID_COMMAND',
+          command,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      const nextStatus = payload.data as ReStationStatus;
+      applyReStationStatus(nextStatus);
+      const sequence = nextStatus.firmware?.rapidControl.command.sequence;
+      setSolisMessage(`${rapidCommandLabel(command)} zapisane jako polecenie #${sequence || '-'}. Oczekujemy na potwierdzenie urządzenia.`);
+    } catch (e) {
+      setSolisError(e instanceof Error ? e.message : String(e));
+      await loadReStationStatus(project.id, true);
+    } finally {
+      setSolisAction('');
     }
   }
 
@@ -3141,6 +3507,394 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                           </Box>
                         </SimpleGrid>
                       </Box>
+                    </Card>
+
+                    <Card p="22px">
+                      <Flex justify="space-between" gap="12px" align="center" mb="16px">
+                        <Box>
+                          <Text color={textColor} fontSize="lg" fontWeight="800">Status stacji</Text>
+                          <Text color={mutedColor} fontSize="sm">Dane techniczne z EnergyMeter_users.</Text>
+                        </Box>
+                        <Tooltip label="Odśwież status stacji">
+                          <IconButton
+                            aria-label="Odśwież status stacji"
+                            icon={<MdRefresh />}
+                            variant="outline"
+                            onClick={() => activeProjectId && loadReStationStatus(activeProjectId)}
+                            isLoading={reStationStatusLoading}
+                            isDisabled={!activeProjectId || !activeProjectStationRef}
+                          />
+                        </Tooltip>
+                      </Flex>
+
+                      {reStationStatusError ? (
+                        <Alert status="warning" borderRadius="8px">
+                          <AlertIcon />
+                          {reStationStatusError}
+                        </Alert>
+                      ) : null}
+
+                      {reStationStatusLoading && !reStationStatus ? (
+                        <Flex minH="90px" align="center" justify="center"><Spinner size="sm" /></Flex>
+                      ) : null}
+
+                      {reStationStatus ? (
+                        <>
+                          <SimpleGrid columns={{ base: 1, md: 3 }} gap="14px">
+                            <Box>
+                              <Text color={mutedColor} fontSize="xs" fontWeight="700">Typ stacji</Text>
+                              <Text color={textColor} fontWeight="800">{reStationStatus.type || '-'}</Text>
+                            </Box>
+                            <Box>
+                              <Text color={mutedColor} fontSize="xs" fontWeight="700">Numer stacji</Text>
+                              <Text color={textColor} fontWeight="800">{reStationStatus.station || '-'}</Text>
+                            </Box>
+                            <Box>
+                              <Text color={mutedColor} fontSize="xs" fontWeight="700">Rodzina urządzenia</Text>
+                              <Badge colorScheme={reStationStatus.isSolis ? 'green' : 'gray'} mt="4px">
+                                {reStationStatus.isSolis ? 'Solis' : 'Inna'}
+                              </Badge>
+                            </Box>
+                          </SimpleGrid>
+
+                          {isAdmin && reStationStatus.firmware ? (
+                            <Box mt="18px" pt="18px" borderTop="1px solid" borderColor={borderColor}>
+                              <Flex direction={{ base: 'column', md: 'row' }} justify="space-between" gap="10px" mb="14px">
+                                <Box>
+                                  <Text color={textColor} fontWeight="900">Firmware i OTA Solis</Text>
+                                  <Text color={mutedColor} fontSize="sm">Sterowanie aktualizacją jest dostępne tylko dla administratora.</Text>
+                                </Box>
+                                <Badge alignSelf={{ base: 'start', md: 'center' }} colorScheme={otaStateColor(reStationStatus.firmware.state)} px="10px" py="5px" borderRadius="6px">
+                                  {otaStateLabel(reStationStatus.firmware.state)}
+                                </Badge>
+                              </Flex>
+
+                              <SimpleGrid columns={{ base: 1, sm: 2, xl: 4 }} gap="14px" mb="16px">
+                                <Box>
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="700">Aktualny firmware</Text>
+                                  <Text color={textColor} fontWeight="800">{reStationStatus.firmware.currentVersion}</Text>
+                                  <Text color={mutedColor} fontSize="xs">Kontakt: {formatDateTime(reStationStatus.firmware.seenAt)}</Text>
+                                </Box>
+                                <Box>
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="700">Wersja docelowa</Text>
+                                  <Text color={textColor} fontWeight="800">{reStationStatus.firmware.targetVersion || '-'}</Text>
+                                  <Text color={mutedColor} fontSize="xs">OTA: {reStationStatus.firmware.otaEnabled ? 'włączone' : 'wyłączone'}</Text>
+                                </Box>
+                                <Box>
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="700">Kontrola falownika</Text>
+                                  <Flex align="center" gap="8px" mt="5px">
+                                    <Switch
+                                      colorScheme="green"
+                                      isChecked={reStationStatus.firmware.controlEnabled}
+                                      isDisabled={Boolean(solisAction)}
+                                      onChange={() => updateSolisControlSettings({
+                                        controlEnabled: !reStationStatus.firmware!.controlEnabled,
+                                        shadowOnly: reStationStatus.firmware!.shadowOnly,
+                                      })}
+                                    />
+                                    <Text color={textColor} fontSize="sm" fontWeight="800">
+                                      {reStationStatus.firmware.controlEnabled ? 'Włączona' : 'Wyłączona'}
+                                    </Text>
+                                  </Flex>
+                                </Box>
+                                <Box>
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="700">Tryb pracy</Text>
+                                  <Flex align="center" gap="8px" mt="5px">
+                                    <Switch
+                                      colorScheme="green"
+                                      isChecked={!reStationStatus.firmware.shadowOnly}
+                                      isDisabled={Boolean(solisAction)}
+                                      onChange={() => updateSolisControlSettings({
+                                        controlEnabled: reStationStatus.firmware!.controlEnabled,
+                                        shadowOnly: !reStationStatus.firmware!.shadowOnly,
+                                      })}
+                                    />
+                                    <Text color={textColor} fontSize="sm" fontWeight="800">
+                                      {reStationStatus.firmware.shadowOnly ? 'Tylko podgląd' : 'Sterowanie aktywne'}
+                                    </Text>
+                                  </Flex>
+                                </Box>
+                                <Box>
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="700">Ostatni status OTA</Text>
+                                  <Text color={textColor} fontWeight="800">{reStationStatus.firmware.lastStatus || '-'}</Text>
+                                  <Text color={mutedColor} fontSize="xs">{formatDateTime(reStationStatus.firmware.lastAt)}</Text>
+                                </Box>
+                                <Box>
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="700">Ostatni cel OTA</Text>
+                                  <Text color={textColor} fontWeight="800">{reStationStatus.firmware.lastTargetVersion || '-'}</Text>
+                                </Box>
+                                <Box gridColumn={{ xl: 'span 2' }}>
+                                  <Text color={mutedColor} fontSize="xs" fontWeight="700">Numer Solis</Text>
+                                  <Text color={textColor} fontWeight="800" wordBreak="break-all">{reStationStatus.firmware.uid || '-'}</Text>
+                                </Box>
+                              </SimpleGrid>
+
+                              <Box mb="16px" p="14px" border="1px solid" borderColor={borderColor} borderRadius="8px">
+                                <Flex direction={{ base: 'column', lg: 'row' }} gap="12px" align={{ lg: 'end' }}>
+                                  <Box flex="1">
+                                    <Text color={mutedColor} fontSize="xs" fontWeight="700">Moc znamionowa falownika</Text>
+                                    <Text color={textColor} fontSize="lg" fontWeight="900">
+                                      {reStationStatus.firmware.inverterRatedPowerW.toLocaleString('pl-PL')} W
+                                    </Text>
+                                    <Text color={mutedColor} fontSize="xs">wartość tylko do odczytu</Text>
+                                  </Box>
+                                  <FormControl flex="1">
+                                    <FormLabel mb="6px">Limit mocy falownika [%]</FormLabel>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      max={100}
+                                      step={1}
+                                      value={solisPowerLimitPercent}
+                                      isDisabled={Boolean(solisAction)}
+                                      onChange={(event) => {
+                                        setSolisPowerLimitPercent(event.target.value);
+                                        setSolisPowerLimitDirty(true);
+                                      }}
+                                    />
+                                  </FormControl>
+                                  <Box flex="1" minW={{ lg: '220px' }}>
+                                    <Text color={mutedColor} fontSize="xs" fontWeight="700">Maksymalna moc eksportu</Text>
+                                    <Text color={textColor} fontSize="lg" fontWeight="900">
+                                      {(() => {
+                                        const powerLimitPercent = Number(solisPowerLimitPercent);
+                                        const value = solisPowerLimitPercent.trim()
+                                          ? calculateSolisMaxExportPowerW(
+                                            reStationStatus.firmware!.inverterRatedPowerW,
+                                            powerLimitPercent,
+                                          )
+                                          : null;
+                                        return value == null ? '-' : `${value.toLocaleString('pl-PL')} W`;
+                                      })()}
+                                    </Text>
+                                    <Text color={mutedColor} fontSize="xs">
+                                      moc znamionowa × limit procentowy
+                                    </Text>
+                                  </Box>
+                                  <Button
+                                    leftIcon={<MdCheck />}
+                                    colorScheme="purple"
+                                    onClick={updateSolisInverterPowerLimit}
+                                    isLoading={solisAction === 'LIMITS'}
+                                    isDisabled={!solisPowerLimitDirty || Boolean(solisAction && solisAction !== 'LIMITS')}
+                                  >
+                                    Zapisz limit
+                                  </Button>
+                                </Flex>
+                                {(() => {
+                                  const warning = getSolisRatedPowerWarning(
+                                    reStationStatus.firmware!.inverterRatedPowerW,
+                                  );
+                                  if (!warning) return null;
+                                  return (
+                                    <Text color="orange.500" fontSize="sm" fontWeight="700" mt="10px">
+                                      {warning === 'LOW'
+                                        ? 'Odczytana moc znamionowa jest bardzo mała. Sprawdź wartość źródłową przed zmianą limitu.'
+                                        : 'Odczytana moc znamionowa jest bardzo duża. Sprawdź wartość źródłową przed zmianą limitu.'}
+                                    </Text>
+                                  );
+                                })()}
+                              </Box>
+
+                              {reStationStatus.firmware.otaEnabled ? (
+                                <Alert status="warning" borderRadius="8px" mb="14px">
+                                  <AlertIcon />
+                                  OTA do wersji {reStationStatus.firmware.targetVersion || '-'} jest już zlecone. Urządzenie pobiera konfigurację co 20 minut; nie wysyłamy kolejnego zlecenia.
+                                </Alert>
+                              ) : null}
+
+                              {reStationStatus.firmware.lastError ? (
+                                <Alert status={reStationStatus.firmware.state === 'FAILED' ? 'error' : 'info'} borderRadius="8px" mb="14px">
+                                  <AlertIcon />
+                                  <Box>
+                                    <Text fontWeight="800">Ostatni komunikat OTA</Text>
+                                    <Text>{reStationStatus.firmware.lastError}</Text>
+                                  </Box>
+                                </Alert>
+                              ) : null}
+
+                              {otaError ? (
+                                <Alert status="error" borderRadius="8px" mb="14px"><AlertIcon />{otaError}</Alert>
+                              ) : null}
+                              {otaMessage ? (
+                                <Alert status="success" borderRadius="8px" mb="14px"><AlertIcon />{otaMessage}</Alert>
+                              ) : null}
+                              {solisError ? (
+                                <Alert status="error" borderRadius="8px" mb="14px"><AlertIcon />{solisError}</Alert>
+                              ) : null}
+                              {solisMessage ? (
+                                <Alert status="success" borderRadius="8px" mb="14px"><AlertIcon />{solisMessage}</Alert>
+                              ) : null}
+
+                              <Flex direction={{ base: 'column', md: 'row' }} gap="12px" align={{ md: 'end' }}>
+                                <FormControl flex="1">
+                                  <FormLabel>Wersja firmware</FormLabel>
+                                  <Select
+                                    value={selectedSolisFirmware}
+                                    onChange={(event) => setSelectedSolisFirmware(event.target.value)}
+                                    isDisabled={reStationStatus.firmware.otaEnabled || otaRequesting}
+                                  >
+                                    {reStationStatus.firmware.releases.map((release) => (
+                                      <option key={release.version} value={release.version}>
+                                        {release.version} · {formatFirmwareSize(release.size)}
+                                      </option>
+                                    ))}
+                                  </Select>
+                                </FormControl>
+                                <Button
+                                  leftIcon={<MdSystemUpdateAlt />}
+                                  colorScheme="purple"
+                                  onClick={requestSolisOta}
+                                  isLoading={otaRequesting}
+                                  isDisabled={
+                                    reStationStatus.firmware.otaEnabled
+                                    || !selectedSolisFirmware
+                                    || selectedSolisFirmware === reStationStatus.firmware.currentVersion
+                                  }
+                                >
+                                  Włącz OTA
+                                </Button>
+                              </Flex>
+                              <Text color={mutedColor} fontSize="xs" mt="8px">
+                                Po włączeniu OTA CRM oczekuje na raport urządzenia i odświeża stan co minutę. Samo urządzenie pobiera konfigurację w cyklu 20-minutowym.
+                              </Text>
+
+                              <Box mt="20px" pt="18px" borderTop="1px solid" borderColor={borderColor}>
+                                <Flex direction={{ base: 'column', md: 'row' }} justify="space-between" gap="10px" mb="14px">
+                                  <Box>
+                                    <Text color={textColor} fontWeight="900">Szybkie polecenia Solis</Text>
+                                    <Text color={mutedColor} fontSize="sm">
+                                      Urządzenie odbiera polecenia co około 10 sekund. Jednocześnie może oczekiwać tylko jedno polecenie.
+                                    </Text>
+                                  </Box>
+                                  <Button
+                                    leftIcon={<MdRefresh />}
+                                    variant="outline"
+                                    size="sm"
+                                    alignSelf={{ base: 'start', md: 'center' }}
+                                    onClick={() => requestSolisRapidCommand('OTA_CHECK_NOW')}
+                                    isLoading={solisAction === 'OTA_CHECK_NOW'}
+                                    isDisabled={
+                                      !reStationStatus.firmware.rapidControl.supported
+                                      || reStationStatus.firmware.rapidControl.command.state === 'PENDING'
+                                      || Boolean(solisAction && solisAction !== 'OTA_CHECK_NOW')
+                                    }
+                                  >
+                                    Sprawdź OTA teraz
+                                  </Button>
+                                </Flex>
+
+                                {!reStationStatus.firmware.rapidControl.supported ? (
+                                  <Alert status="warning" borderRadius="8px" mb="14px">
+                                    <AlertIcon />
+                                    Szybkie polecenia wymagają firmware 2026.09.02.4 lub nowszego.
+                                  </Alert>
+                                ) : null}
+
+                                {reStationStatus.firmware.rapidControl.command.state !== 'IDLE' ? (
+                                  <Alert
+                                    status={
+                                      reStationStatus.firmware.rapidControl.command.state === 'PENDING'
+                                        ? 'warning'
+                                        : reStationStatus.firmware.rapidControl.command.state === 'FAILED'
+                                          || reStationStatus.firmware.rapidControl.command.state === 'EXPIRED'
+                                          ? 'error'
+                                          : 'success'
+                                    }
+                                    borderRadius="8px"
+                                    mb="14px"
+                                  >
+                                    <AlertIcon />
+                                    <Box>
+                                      <Text fontWeight="800">
+                                        {reStationStatus.firmware.rapidControl.command.state === 'PENDING'
+                                          ? `${rapidCommandLabel(reStationStatus.firmware.rapidControl.command.name)} #${reStationStatus.firmware.rapidControl.command.sequence}`
+                                          : `Ostatnie potwierdzenie #${reStationStatus.firmware.rapidControl.command.acknowledgedSequence}`}
+                                      </Text>
+                                      <Text fontSize="sm">
+                                        {reStationStatus.firmware.rapidControl.command.state === 'PENDING'
+                                          ? `Oczekiwanie do ${formatDateTime(reStationStatus.firmware.rapidControl.command.expiresAt)}.`
+                                          : reStationStatus.firmware.rapidControl.command.state === 'EXPIRED'
+                                            ? 'Polecenie wygasło przed potwierdzeniem urządzenia.'
+                                            : reStationStatus.firmware.rapidControl.command.result || 'Urządzenie potwierdziło wykonanie.'}
+                                      </Text>
+                                      {reStationStatus.firmware.rapidControl.command.acknowledgedAt ? (
+                                        <Text color={mutedColor} fontSize="xs">
+                                          Potwierdzono: {formatDateTime(reStationStatus.firmware.rapidControl.command.acknowledgedAt)}
+                                        </Text>
+                                      ) : null}
+                                    </Box>
+                                  </Alert>
+                                ) : null}
+
+                                <SimpleGrid columns={{ base: 1, md: 2 }} gap="12px">
+                                  <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="14px">
+                                    <Flex justify="space-between" align="center" gap="12px">
+                                      <Box>
+                                        <Text color={textColor} fontWeight="800">Blokada eksportu</Text>
+                                        <Text color={mutedColor} fontSize="xs">Zatrzymuje oddawanie energii do sieci.</Text>
+                                      </Box>
+                                      <Switch
+                                        colorScheme="orange"
+                                        isChecked={reStationStatus.firmware.rapidControl.exportBlocked}
+                                        isDisabled={
+                                          !reStationStatus.firmware.rapidControl.supported
+                                          || reStationStatus.firmware.rapidControl.command.state === 'PENDING'
+                                          || Boolean(solisAction)
+                                        }
+                                        onChange={() => requestSolisRapidCommand(
+                                          reStationStatus.firmware!.rapidControl.exportBlocked
+                                            ? 'EXPORT_BLOCK_OFF'
+                                            : 'EXPORT_BLOCK_ON',
+                                        )}
+                                      />
+                                    </Flex>
+                                    <Flex align="center" gap="8px" mt="10px">
+                                      <Badge colorScheme={reStationStatus.firmware.rapidControl.exportBlockApplied === reStationStatus.firmware.rapidControl.exportBlocked ? 'green' : 'orange'}>
+                                        {reStationStatus.firmware.rapidControl.exportBlockApplied === reStationStatus.firmware.rapidControl.exportBlocked ? 'Potwierdzono' : 'Oczekiwanie'}
+                                      </Badge>
+                                      <Text color={mutedColor} fontSize="xs">
+                                        Falownik: {reStationStatus.firmware.rapidControl.exportBlockApplied ? 'blokada aktywna' : 'eksport dozwolony'}
+                                      </Text>
+                                    </Flex>
+                                  </Box>
+
+                                  <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="14px">
+                                    <Flex justify="space-between" align="center" gap="12px">
+                                      <Box>
+                                        <Text color={textColor} fontWeight="800">Blokada PV</Text>
+                                        <Text color={mutedColor} fontSize="xs">Zatrzymuje PV i przełącza baterię w standby.</Text>
+                                      </Box>
+                                      <Switch
+                                        colorScheme="red"
+                                        isChecked={reStationStatus.firmware.rapidControl.pvBlocked}
+                                        isDisabled={
+                                          !reStationStatus.firmware.rapidControl.supported
+                                          || reStationStatus.firmware.rapidControl.command.state === 'PENDING'
+                                          || Boolean(solisAction)
+                                        }
+                                        onChange={() => requestSolisRapidCommand(
+                                          reStationStatus.firmware!.rapidControl.pvBlocked
+                                            ? 'PV_BLOCK_OFF'
+                                            : 'PV_BLOCK_ON',
+                                        )}
+                                      />
+                                    </Flex>
+                                    <Flex align="center" gap="8px" mt="10px">
+                                      <Badge colorScheme={reStationStatus.firmware.rapidControl.pvBlockApplied === reStationStatus.firmware.rapidControl.pvBlocked ? 'green' : 'orange'}>
+                                        {reStationStatus.firmware.rapidControl.pvBlockApplied === reStationStatus.firmware.rapidControl.pvBlocked ? 'Potwierdzono' : 'Oczekiwanie'}
+                                      </Badge>
+                                      <Text color={mutedColor} fontSize="xs">
+                                        Falownik: {reStationStatus.firmware.rapidControl.pvBlockApplied ? 'PV zatrzymane' : 'PV aktywne'}
+                                      </Text>
+                                    </Flex>
+                                  </Box>
+                                </SimpleGrid>
+                              </Box>
+                            </Box>
+                          ) : null}
+                        </>
+                      ) : null}
                     </Card>
 
                   </Flex>
