@@ -45,6 +45,7 @@
     "@typeform/embed-react": "^4.6.0",
     "@xmldom/xmldom": "^0.9.10",
     "apexcharts": "3.35.5",
+    "bcryptjs": "3.0.2",
     "d3": "^7.9.0",
     "framer-motion": "^4.1.17",
     "heic-convert": "^2.1.0",

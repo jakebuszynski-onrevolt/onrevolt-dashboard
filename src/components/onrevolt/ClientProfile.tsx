@@ -61,7 +61,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDeleteOutline, MdEdit, MdExpandLess, MdExpandMore, MdOpenInNew, MdPrint, MdRefresh, MdSystemUpdateAlt } from 'react-icons/md';
+import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDeleteOutline, MdEdit, MdExpandLess, MdExpandMore, MdOpenInNew, MdPrint, MdRefresh, MdSystemUpdateAlt, MdUploadFile, MdVpnKey } from 'react-icons/md';
 
 type ClientProfileProps = {
   clientId: string;
@@ -165,6 +165,8 @@ type EnergyMeasurementFileRow = {
   fileName?: string | null;
   error?: string | null;
   downloadedAt?: string | null;
+  aggregation?: string | null;
+  dataSource?: string | null;
   document?: {
     id: string;
     title: string;
@@ -216,6 +218,21 @@ type EnergyUsageProfile = {
   warnings: string[];
 };
 
+const ENERGY_MONTH_NAMES = [
+  'Styczeń',
+  'Luty',
+  'Marzec',
+  'Kwiecień',
+  'Maj',
+  'Czerwiec',
+  'Lipiec',
+  'Sierpień',
+  'Wrzesień',
+  'Październik',
+  'Listopad',
+  'Grudzień',
+] as const;
+
 type ReStationFirmwareRelease = {
   version: string;
   size: number;
@@ -263,6 +280,8 @@ type ReStationFirmwareStatus = {
 type ReStationStatus = {
   station: string;
   type: string;
+  accountEmail?: string | null;
+  accountLastLoginAt?: string | null;
   isSolis: boolean;
   firmware?: ReStationFirmwareStatus | null;
 };
@@ -891,6 +910,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [energySaving, setEnergySaving] = useState(false);
   const [energySyncing, setEnergySyncing] = useState(false);
   const [energyMonthAction, setEnergyMonthAction] = useState('');
+  const [energyXlsxUploading, setEnergyXlsxUploading] = useState(false);
+  const [energyXlsxDragActive, setEnergyXlsxDragActive] = useState(false);
+  const energyXlsxInputRef = useRef<HTMLInputElement>(null);
   const [energyMessage, setEnergyMessage] = useState('');
   const [energyError, setEnergyError] = useState('');
   const [energyProfile, setEnergyProfile] = useState<EnergyUsageProfile | null>(null);
@@ -913,6 +935,12 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [reStationStatus, setReStationStatus] = useState<ReStationStatus | null>(null);
   const [reStationStatusLoading, setReStationStatusLoading] = useState(false);
   const [reStationStatusError, setReStationStatusError] = useState('');
+  const [dashboardAccessEmail, setDashboardAccessEmail] = useState('');
+  const [dashboardAccessEmailDirty, setDashboardAccessEmailDirty] = useState(false);
+  const [dashboardAccessResetting, setDashboardAccessResetting] = useState(false);
+  const [dashboardAccessMessage, setDashboardAccessMessage] = useState('');
+  const [dashboardAccessError, setDashboardAccessError] = useState('');
+  const dashboardAccessStationRef = useRef('');
   const [selectedSolisFirmware, setSelectedSolisFirmware] = useState('');
   const [otaRequesting, setOtaRequesting] = useState(false);
   const [otaMessage, setOtaMessage] = useState('');
@@ -974,6 +1002,21 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     reStationStatus?.station,
     solisPowerLimitDirty,
   ]);
+
+  useEffect(() => {
+    const station = reStationStatus?.station || '';
+    if (!station) return;
+    const stationChanged = dashboardAccessStationRef.current !== station;
+    if (stationChanged || !dashboardAccessEmailDirty) {
+      dashboardAccessStationRef.current = station;
+      setDashboardAccessEmail(reStationStatus?.accountEmail || form.email || '');
+      if (stationChanged) {
+        setDashboardAccessEmailDirty(false);
+        setDashboardAccessMessage('');
+        setDashboardAccessError('');
+      }
+    }
+  }, [dashboardAccessEmailDirty, form.email, reStationStatus?.accountEmail, reStationStatus?.station]);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -1041,7 +1084,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setEnergyProfileLoading(true);
     setEnergyProfileError('');
     try {
-      const response = await fetch(`/api/integrations/enea/profile?clientId=${encodeURIComponent(clientId)}`, { cache: 'no-store' });
+      const params = new URLSearchParams({ clientId });
+      if (activeProjectId) params.set('projectId', activeProjectId);
+      const response = await fetch(`/api/integrations/enea/profile?${params.toString()}`, { cache: 'no-store' });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
 
@@ -1058,7 +1103,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     } finally {
       setEnergyProfileLoading(false);
     }
-  }, [clientId]);
+  }, [activeProjectId, clientId]);
 
   const loadEnergyTariffCatalog = useCallback(async () => {
     setEnergyTariffCatalogLoading(true);
@@ -1822,6 +1867,24 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const stationActionLabel = hasStationAssociation ? 'Uzupełnij z RE' : 'Utwórz stację';
   const selectedUsageMonth = energyProfile?.months?.find((month) => month.key === selectedEnergyProfileMonth)
     || energyProfile?.months?.[energyProfile.months.length - 1];
+  const latestUsageMonthByNumber = new Map<number, EnergyUsageMonth>();
+  for (const month of energyProfile?.months || []) {
+    const current = latestUsageMonthByNumber.get(month.month);
+    if (!current || month.year > current.year) latestUsageMonthByNumber.set(month.month, month);
+  }
+  const calendarUsageMonths = ENERGY_MONTH_NAMES.map((label, index): EnergyUsageMonth => {
+    const monthNumber = index + 1;
+    return latestUsageMonthByNumber.get(monthNumber) || {
+      key: `missing-${monthNumber}`,
+      year: 0,
+      month: monthNumber,
+      label,
+      totalKwh: 0,
+      sharePercent: 0,
+      hourly: Array.from({ length: 24 }, () => 0),
+      sourceFiles: 0,
+    };
+  });
   const maxMonthlyKwh = Math.max(1, ...(energyProfile?.months || []).map((month) => month.totalKwh));
   const maxHourlyKwh = Math.max(1, ...(selectedUsageMonth?.hourly || []).map((value) => value));
   const projectEnergyInvoices = energyInvoiceDocuments(client, project?.id);
@@ -1906,6 +1969,59 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setActiveJourneyKey(tabIndex === 1 ? 'client' : tabIndex === 10 ? 'documents' : null);
   }
 
+  async function uploadEnergyXlsxFile(
+    file: File,
+    options: { ppeMismatchConfirmed?: boolean; replaceExisting?: boolean } = {},
+  ): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('clientId', clientId);
+    if (activeProject?.id) formData.append('projectId', activeProject.id);
+    if (options.ppeMismatchConfirmed) formData.append('ppeMismatchConfirmed', 'true');
+    if (options.replaceExisting) formData.append('replaceExisting', 'true');
+
+    const response = await fetch('/api/integrations/enea/upload', { method: 'POST', body: formData });
+    const payload = await response.json();
+    if (response.status === 409 && payload.code === 'ENERGY_PPE_MISMATCH' && !options.ppeMismatchConfirmed) {
+      const confirmed = window.confirm(`${payload.error}\n\nCzy mimo to przypisać ten plik do klienta?`);
+      if (confirmed) return uploadEnergyXlsxFile(file, { ...options, ppeMismatchConfirmed: true });
+    }
+    if (response.status === 409 && payload.code === 'ENERGY_MONTH_EXISTS' && !options.replaceExisting) {
+      const confirmed = window.confirm(`${payload.error}\n\nCzy zastąpić istniejący plik dla tego miesiąca?`);
+      if (confirmed) return uploadEnergyXlsxFile(file, { ...options, replaceExisting: true });
+    }
+    if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+    return payload.data;
+  }
+
+  async function uploadEnergyXlsxFiles(files: FileList | File[]) {
+    const selectedFiles = Array.from(files);
+    if (!selectedFiles.length) return;
+    setEnergyXlsxUploading(true);
+    setEnergyError('');
+    setEnergyMessage('');
+    try {
+      const invalidFile = selectedFiles.find((file) => !file.name.toLowerCase().endsWith('.xlsx'));
+      if (invalidFile) throw new Error(`Plik „${invalidFile.name}” nie jest plikiem XLSX.`);
+
+      const imported: string[] = [];
+      for (const file of selectedFiles) {
+        const result = await uploadEnergyXlsxFile(file);
+        const workbook = result?.workbook;
+        const kind = workbook?.kind === 'ACTIVE_IMPORT' ? 'pobranie' : 'oddanie';
+        imported.push(`${workbook?.periodFrom?.slice(0, 7) || file.name} (${kind})`);
+      }
+      setEnergyMessage(`Dodano ${imported.length} ${imported.length === 1 ? 'plik' : 'pliki'} XLSX: ${imported.join(', ')}.`);
+      await Promise.all([load(true), loadEnergyProfile()]);
+    } catch (e) {
+      setEnergyError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEnergyXlsxUploading(false);
+      setEnergyXlsxDragActive(false);
+      if (energyXlsxInputRef.current) energyXlsxInputRef.current.value = '';
+    }
+  }
+
   function toggleClientOfferConfiguration(configurationId: string) {
     setSelectedClientConfigurationIds((current) => current.includes(configurationId)
       ? current.filter((id) => id !== configurationId)
@@ -1939,6 +2055,56 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       setOfferError(e instanceof Error ? e.message : String(e));
     } finally {
       setOfferStatusSavingId('');
+    }
+  }
+
+  async function resetDashboardAccess() {
+    const project = activeProject;
+    const email = dashboardAccessEmail.trim();
+    if (!project?.id || !reStationStatus?.station) return;
+    if (!email) {
+      setDashboardAccessError('Podaj email klienta do logowania.');
+      return;
+    }
+    if (!window.confirm(
+      `Wygenerować nowe hasło do dashboardu stacji ${reStationStatus.station} i wysłać je na ${email}?\n\nDotychczasowe hasło przestanie działać.`,
+    )) return;
+
+    setDashboardAccessResetting(true);
+    setDashboardAccessError('');
+    setDashboardAccessMessage('');
+    try {
+      const response = await fetch('/api/integrations/re/station', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          projectId: project.id,
+          action: 'RESET_DASHBOARD_ACCESS',
+          email,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      const nextStatus = payload.data as ReStationStatus;
+      setReStationStatus(nextStatus);
+      setDashboardAccessEmail(nextStatus.accountEmail || email);
+      setDashboardAccessEmailDirty(false);
+      if (payload.emailDelivery?.status === 'SENT') {
+        setDashboardAccessMessage(`Nowe dane logowania wysłano na ${email}.`);
+      } else if (payload.emailDelivery?.status === 'QUEUED') {
+        setDashboardAccessMessage(`Nowe hasło zapisano. Wiadomość do ${email} oczekuje na ponowną wysyłkę.`);
+      } else {
+        setDashboardAccessError(
+          `Nowe hasło zapisano, ale wiadomość nie została wysłana: ${payload.emailDelivery?.error || 'nieznany błąd'}`,
+        );
+      }
+    } catch (e) {
+      setDashboardAccessError(e instanceof Error ? e.message : String(e));
+      await loadReStationStatus(project.id, true);
+    } finally {
+      setDashboardAccessResetting(false);
     }
   }
 
@@ -3507,6 +3673,62 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                           </Box>
                         </SimpleGrid>
                       </Box>
+
+                      <Box mt="18px" pt="16px" borderTop="1px solid" borderColor={borderColor}>
+                        <Flex direction={{ base: 'column', lg: 'row' }} gap="14px" align={{ base: 'stretch', lg: 'end' }}>
+                          <FormControl flex="1">
+                            <FormLabel>Email do logowania</FormLabel>
+                            <Input
+                              type="email"
+                              value={dashboardAccessEmail}
+                              placeholder={form.email || 'klient@example.com'}
+                              isReadOnly={!isAdmin}
+                              isDisabled={!reStationStatus}
+                              onChange={(event) => {
+                                setDashboardAccessEmail(event.target.value);
+                                setDashboardAccessEmailDirty(true);
+                                setDashboardAccessMessage('');
+                                setDashboardAccessError('');
+                              }}
+                            />
+                          </FormControl>
+                          {isAdmin ? (
+                            <Button
+                              leftIcon={<MdVpnKey />}
+                              colorScheme="purple"
+                              onClick={resetDashboardAccess}
+                              isLoading={dashboardAccessResetting}
+                              isDisabled={!reStationStatus || !dashboardAccessEmail.trim()}
+                              whiteSpace="nowrap"
+                            >
+                              Nowe hasło
+                            </Button>
+                          ) : null}
+                        </Flex>
+                        <Text color={mutedColor} fontSize="xs" mt="7px">
+                          Nowe dane logowania zostaną zapisane dla tej stacji i wysłane na podany adres wraz z linkiem do dashboardu.
+                        </Text>
+                        <Text color={mutedColor} fontSize="sm" mt="7px">
+                          Ostatnie logowanie:{' '}
+                          <Text as="span" color={textColor} fontWeight="700">
+                            {reStationStatus?.accountLastLoginAt
+                              ? formatDateTime(reStationStatus.accountLastLoginAt)
+                              : 'Jeszcze się nie logował'}
+                          </Text>
+                        </Text>
+                        {dashboardAccessMessage ? (
+                          <Alert status="success" borderRadius="8px" mt="12px">
+                            <AlertIcon />
+                            {dashboardAccessMessage}
+                          </Alert>
+                        ) : null}
+                        {dashboardAccessError ? (
+                          <Alert status="error" borderRadius="8px" mt="12px">
+                            <AlertIcon />
+                            {dashboardAccessError}
+                          </Alert>
+                        ) : null}
+                      </Box>
                     </Card>
 
                     <Card p="22px">
@@ -4166,7 +4388,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                     {energyDataSettings.hasOperatorData ? <Card p="22px">
                     <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" mb="18px">
                       <Box>
-                        <Text color={textColor} fontSize="lg" fontWeight="800">Dostęp do portalu operatora</Text>
+                        <Text color={textColor} fontSize="lg" fontWeight="800">Dane pomiarowe operatora</Text>
                         <Text color={mutedColor}>Ostatnia synchronizacja: {formatDateTime(energyAccount.lastSyncAt)}</Text>
                       </Box>
                       <Flex gap="10px" align="center" wrap="wrap">
@@ -4206,6 +4428,78 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                         <AlertIcon />
                         {energyMessage}
                       </Alert>
+                    ) : null}
+
+                    {energyAccount.operator === 'ENEA' ? (
+                      <Box mb="20px">
+                        <Text color={textColor} fontWeight="800" mb="8px">Pliki przekazane przez klienta</Text>
+                        <Input
+                          ref={energyXlsxInputRef}
+                          type="file"
+                          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                          multiple
+                          display="none"
+                          onChange={(event) => {
+                            if (event.target.files) void uploadEnergyXlsxFiles(event.target.files);
+                          }}
+                        />
+                        <Box
+                          role="button"
+                          tabIndex={0}
+                          aria-label="Dodaj godzinowe pliki XLSX ENEA"
+                          border="2px dashed"
+                          borderColor={energyXlsxDragActive ? 'purple.400' : borderColor}
+                          bg={energyXlsxDragActive ? 'purple.50' : 'blackAlpha.50'}
+                          borderRadius="8px"
+                          px="18px"
+                          py="18px"
+                          cursor={energyXlsxUploading ? 'wait' : 'pointer'}
+                          transition="border-color 0.15s ease, background 0.15s ease"
+                          onClick={() => {
+                            if (!energyXlsxUploading) energyXlsxInputRef.current?.click();
+                          }}
+                          onKeyDown={(event) => {
+                            if (!energyXlsxUploading && (event.key === 'Enter' || event.key === ' ')) {
+                              event.preventDefault();
+                              energyXlsxInputRef.current?.click();
+                            }
+                          }}
+                          onDragEnter={(event) => {
+                            event.preventDefault();
+                            if (!energyXlsxUploading) setEnergyXlsxDragActive(true);
+                          }}
+                          onDragOver={(event) => {
+                            event.preventDefault();
+                            event.dataTransfer.dropEffect = 'copy';
+                          }}
+                          onDragLeave={(event) => {
+                            event.preventDefault();
+                            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setEnergyXlsxDragActive(false);
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            setEnergyXlsxDragActive(false);
+                            if (!energyXlsxUploading) void uploadEnergyXlsxFiles(event.dataTransfer.files);
+                          }}
+                        >
+                          <Flex align="center" justify="center" gap="12px" textAlign="left">
+                            {energyXlsxUploading ? <Spinner size="sm" /> : <Icon as={MdUploadFile} boxSize="24px" color="purple.500" />}
+                            <Box>
+                              <Text color={textColor} fontWeight="800">
+                                {energyXlsxUploading ? 'Dodawanie plików...' : 'Upuść XLSX tutaj'}
+                              </Text>
+                              <Text color={mutedColor} fontSize="sm">
+                                Miesięczne pliki godzinowe ENEA z ostatnich 12 zamkniętych miesięcy. Możesz wybrać kilka plików naraz.
+                              </Text>
+                            </Box>
+                          </Flex>
+                        </Box>
+
+                        <Flex align="center" gap="10px" mt="20px" mb="12px">
+                          <Text color={textColor} fontWeight="800">Automatyczne pobieranie z portalu ENEA</Text>
+                          <Badge colorScheme="gray">opcjonalne</Badge>
+                        </Flex>
+                      </Box>
                     ) : null}
 
                     <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px">
@@ -4273,6 +4567,27 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                       <Badge colorScheme={importBadge.colorScheme}>Pobrana: {importBadge.label}</Badge>
                                       <Badge colorScheme={exportBadge.colorScheme}>Oddana: {exportBadge.label}</Badge>
                                     </Flex>
+                                    {[row.importFile, row.exportFile].filter(Boolean).map((file) => (
+                                      <Flex key={file!.id} align="center" gap="6px" mt="6px" minW="0">
+                                        <Text color={mutedColor} fontSize="xs" noOfLines={1} title={file!.fileName || undefined}>
+                                          {file!.kind === 'ACTIVE_IMPORT' ? 'Pobrana' : 'Oddana'}: {file!.fileName || 'plik XLSX'}
+                                          {file!.dataSource ? ` · ${file!.dataSource}` : ''}
+                                        </Text>
+                                        {file!.document?.id ? (
+                                          <Tooltip label="Pobierz plik XLSX">
+                                            <IconButton
+                                              as="a"
+                                              href={`/api/documents/${file!.document.id}/file?download=1`}
+                                              aria-label={`Pobierz ${file!.fileName || 'plik XLSX'}`}
+                                              icon={<MdOpenInNew />}
+                                              size="xs"
+                                              variant="ghost"
+                                              flexShrink={0}
+                                            />
+                                          </Tooltip>
+                                        ) : null}
+                                      </Flex>
+                                    ))}
                                     {row.importFile?.error ? <Text color="orange.300" fontSize="sm" mt="6px">{row.importFile.error}</Text> : null}
                                     {row.exportFile?.error ? <Text color="orange.300" fontSize="sm" mt="6px">{row.exportFile.error}</Text> : null}
                                   </Box>
@@ -4338,44 +4653,52 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                           <Text color={mutedColor}>Brak pobranych plików XLSX operatora do profilu zużycia.</Text>
                         ) : (
                           <>
-                            <SimpleGrid columns={{ base: 2, md: 4, xl: 6 }} gap="10px">
-                              {energyProfile.months.map((month) => {
-                                const active = selectedUsageMonth?.key === month.key;
-                                const height = Math.max(8, Math.round((month.totalKwh / maxMonthlyKwh) * 100));
+                            <Box overflowX="auto" pb="4px">
+                              <SimpleGrid columns={12} gap="8px" minW="1400px">
+                              {calendarUsageMonths.map((month) => {
+                                const hasData = month.sourceFiles > 0;
+                                const active = hasData && selectedUsageMonth?.key === month.key;
+                                const height = hasData
+                                  ? Math.max(8, Math.round((month.totalKwh / maxMonthlyKwh) * 100))
+                                  : 0;
                                 return (
                                   <Box
                                     as="button"
                                     type="button"
                                     key={month.key}
-                                    onClick={() => setSelectedEnergyProfileMonth(month.key)}
+                                    disabled={!hasData}
+                                    onClick={() => hasData && setSelectedEnergyProfileMonth(month.key)}
                                     textAlign="left"
                                     border="1px solid"
                                     borderColor={active ? 'yellow.400' : borderColor}
                                     borderRadius="8px"
-                                    p="10px"
+                                    p="8px"
                                     bg={active ? 'whiteAlpha.100' : 'transparent'}
+                                    cursor={hasData ? 'pointer' : 'default'}
                                   >
-                                    <Text color={textColor} fontSize="lg" fontWeight="800" textAlign="center">
-                                      {formatKwh(month.totalKwh)}
+                                    <Text color={hasData ? textColor : mutedColor} fontSize="md" fontWeight="800" textAlign="center">
+                                      {hasData ? formatKwh(month.totalKwh) : '--'}
                                     </Text>
-                                    <Flex h="92px" align="end" justify="center" bg="blackAlpha.200" borderRadius="6px" overflow="hidden" mt="8px">
+                                    <Flex h="72px" align="end" justify="center" bg="blackAlpha.200" borderRadius="6px" overflow="hidden" mt="6px">
                                       <Box
                                         w="58%"
                                         h={`${height}%`}
                                         bgGradient="linear(to-t, cyan.400, yellow.300)"
                                         borderTopRadius="6px"
+                                        opacity={hasData ? 1 : 0}
                                       />
                                     </Flex>
-                                    <Text color={textColor} fontWeight="800" mt="8px" textAlign="center">
+                                    <Text color={textColor} fontSize="sm" fontWeight="800" mt="6px" textAlign="center" whiteSpace="nowrap">
                                       {month.label}
                                     </Text>
                                     <Text color={mutedColor} fontSize="sm" textAlign="center">
-                                      {month.sharePercent}%
+                                      {hasData ? `${month.sharePercent}%` : '--'}
                                     </Text>
                                   </Box>
                                 );
                               })}
-                            </SimpleGrid>
+                              </SimpleGrid>
+                            </Box>
 
                             {selectedUsageMonth ? (
                               <Box mt="22px">

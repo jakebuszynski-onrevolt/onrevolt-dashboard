@@ -31,6 +31,8 @@ export type ResolvedReStation = CreatedReStation;
 export type ReStationDeviceStatus = {
   station: string;
   type: string;
+  accountEmail: string | null;
+  accountLastLoginAt: string | null;
   uid: string | null;
   firmwareVersion: string | null;
   firmwareSeenAt: string | null;
@@ -61,6 +63,7 @@ export type ReStationDeviceStatus = {
 
 export class ReStationOtaRequestError extends Error {}
 export class ReStationControlRequestError extends Error {}
+export class ReStationDashboardAccessError extends Error {}
 
 const globalForRePrisma = globalThis as unknown as {
   onrevoltRePrisma?: PrismaClient;
@@ -111,6 +114,8 @@ function selectStationColumns(columns: Map<string, MysqlColumn>) {
 const deviceStatusColumns = [
   'station',
   'type',
+  'email',
+  'last_login_at',
   'uid',
   'firmware_version',
   'firmware_seen_at',
@@ -351,6 +356,8 @@ export async function readReStationDeviceStatus(stationOrHash: string): Promise<
   return {
     station: String(row.station || '').trim(),
     type: String(row.type || '').trim(),
+    accountEmail: optionalText(row.email),
+    accountLastLoginAt: dateValue(row.last_login_at),
     uid: optionalText(row.uid),
     firmwareVersion: optionalText(row.firmware_version),
     firmwareSeenAt: dateValue(row.firmware_seen_at),
@@ -378,6 +385,73 @@ export async function readReStationDeviceStatus(stationOrHash: string): Promise<
     exportBlockApplied: boolValue(row.solis_export_block_applied),
     pvBlockApplied: boolValue(row.solis_pv_block_applied),
   };
+}
+
+export async function updateReStationDashboardAccess(
+  stationOrHash: string,
+  input: { email: string; passwordHash: string },
+) {
+  const email = input.email.trim();
+  const passwordHash = input.passwordHash.trim();
+  if (!email) throw new ReStationDashboardAccessError('Podaj email klienta do logowania');
+  if (!/^\$2[aby]\$\d{2}\$/.test(passwordHash)) {
+    throw new ReStationDashboardAccessError('Nieprawidłowy format hasła dashboardu');
+  }
+
+  const before = await readReStationDeviceStatus(stationOrHash);
+  if (!before) throw new ReStationDashboardAccessError('Nie znaleziono stacji RE');
+
+  const db = rePrisma();
+  const columns = await readEnergyMeterColumns(db);
+  for (const column of ['email', 'password']) {
+    if (!columns.has(column)) {
+      throw new Error(`Tabela EnergyMeter_users nie ma kolumny ${column}`);
+    }
+  }
+
+  const loginPredicates = ['LOWER(`email`) = LOWER(?)'];
+  const loginValues: unknown[] = [email];
+  if (columns.has('username')) {
+    loginPredicates.push('LOWER(`username`) = LOWER(?)');
+    loginValues.push(email);
+  }
+  const conflictingRows = await db.$queryRawUnsafe<Array<{ station: unknown }>>(
+    `SELECT \`station\` FROM \`EnergyMeter_users\`
+     WHERE (${loginPredicates.join(' OR ')}) AND \`station\` <> ? LIMIT 1`,
+    ...loginValues,
+    before.station,
+  );
+  if (conflictingRows.length) {
+    throw new ReStationDashboardAccessError(
+      `Ten email jest już loginem innej stacji (${String(conflictingRows[0].station)}). Podaj inny adres.`,
+    );
+  }
+
+  const assignments = ['`email` = ?', '`password` = ?'];
+  const values: unknown[] = [email, passwordHash];
+  for (const column of [
+    'password_reset_token_hash',
+    'password_reset_expires_at',
+    'password_reset_requested_at',
+    'failed_login_locked_until',
+    'failed_login_last_at',
+  ]) {
+    if (columns.has(column)) assignments.push(`\`${column}\` = NULL`);
+  }
+  if (columns.has('failed_login_count')) assignments.push('`failed_login_count` = 0');
+
+  const updated = await db.$executeRawUnsafe(
+    `UPDATE \`EnergyMeter_users\` SET ${assignments.join(', ')} WHERE \`station\` = ? LIMIT 1`,
+    ...values,
+    before.station,
+  );
+  if (updated !== 1) {
+    throw new ReStationDashboardAccessError('Nie udało się zapisać dostępu do dashboardu');
+  }
+
+  const after = await readReStationDeviceStatus(before.station);
+  if (!after) throw new Error('Stacja zniknęła po zapisaniu dostępu do dashboardu');
+  return { before, after };
 }
 
 export async function requestReStationOta(stationOrHash: string, targetVersion: string) {

@@ -42,7 +42,8 @@
     "strict": false
   },
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "_workspace-artifacts"
   ],
   "include": [
     "./src",

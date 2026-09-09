@@ -2,14 +2,24 @@ import { NextRequest } from 'next/server';
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { badRequest, forbidden, jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import {
+  buildDashboardAccessEmail,
+  DashboardAccessInputError,
+  generateDashboardAccessPassword,
+  hashDashboardAccessPassword,
+  normalizeDashboardAccessEmail,
+} from 'lib/onrevolt/dashboard-access';
+import { queueAndSendEmail } from 'lib/onrevolt/email';
+import {
   createReStation,
   readReStationDeviceStatus,
   requestReStationRapidCommand,
   requestReStationOta,
   resolveReStation,
+  updateReStationDashboardAccess,
   updateReStationControlSettings,
   updateReStationInverterPowerLimit,
   ReStationControlRequestError,
+  ReStationDashboardAccessError,
   ReStationOtaRequestError,
   type ReStationDeviceStatus,
 } from 'lib/onrevolt/re-stations';
@@ -113,6 +123,8 @@ function serializeStationStatus(
   return {
     station: status.station,
     type: status.type,
+    accountEmail: status.accountEmail,
+    accountLastLoginAt: status.accountLastLoginAt,
     isSolis: solis,
     firmware,
   };
@@ -210,7 +222,7 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const access = await authorizeStaffRequest(req, 'energy.manage');
   if (!access.ok) return access.response;
-  if (!isAdminUser(access.user)) return forbidden('Tylko administrator może sterować stacją Solis');
+  if (!isAdminUser(access.user)) return forbidden('Tylko administrator może zarządzać dostępem i sterowaniem stacji');
 
   try {
     const body = await readJsonObject(req);
@@ -226,8 +238,29 @@ export async function PATCH(req: NextRequest) {
     let auditAction: string;
     let auditAfter: Record<string, unknown>;
     let releases: SolisFirmwareRelease[] = [];
+    let emailDelivery: Awaited<ReturnType<typeof queueAndSendEmail>> | undefined;
 
-    if (action === 'REQUEST_OTA') {
+    if (action === 'RESET_DASHBOARD_ACCESS') {
+      const email = normalizeDashboardAccessEmail(body.email);
+      const password = generateDashboardAccessPassword();
+      const passwordHash = await hashDashboardAccessPassword(password);
+      result = await updateReStationDashboardAccess(association.stationRef, { email, passwordHash });
+      const message = buildDashboardAccessEmail({
+        email,
+        password,
+      });
+      emailDelivery = await queueAndSendEmail({
+        to: email,
+        subject: message.subject,
+        body: message.body,
+      });
+      auditAction = 'DASHBOARD_ACCESS_RESET';
+      auditAfter = {
+        station: result.after.station,
+        email,
+        emailDeliveryStatus: emailDelivery.status,
+      };
+    } else if (action === 'REQUEST_OTA') {
       const targetVersion = requireString(body, 'targetVersion');
       releases = await listSolisFirmwareReleases();
       if (!releases.some((release) => release.version === targetVersion)) {
@@ -314,11 +347,17 @@ export async function PATCH(req: NextRequest) {
       ok: true,
       data: serializeStationStatus(result.after, true, releases),
       auditLogged,
+      ...(emailDelivery ? { emailDelivery } : {}),
     });
   } catch (error) {
-    if (error instanceof ReStationOtaRequestError || error instanceof ReStationControlRequestError) {
+    if (
+      error instanceof DashboardAccessInputError
+      || error instanceof ReStationDashboardAccessError
+      || error instanceof ReStationOtaRequestError
+      || error instanceof ReStationControlRequestError
+    ) {
       return badRequest(error.message);
     }
-    return serverError('Nie udało się wykonać operacji na stacji Solis', error);
+    return serverError('Nie udało się wykonać operacji na stacji RE', error);
   }
 }
