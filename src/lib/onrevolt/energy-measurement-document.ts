@@ -26,8 +26,9 @@ function normalizedText(value: unknown) {
 
 function numericCell(value: unknown) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
-  const raw = String(value ?? '').replace(/\s/g, '').replace(',', '.');
-  if (!raw) return undefined;
+  if (typeof value !== 'string') return undefined;
+  const raw = value.trim().replace(',', '.');
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw)) return undefined;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
@@ -127,6 +128,7 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
 
     const headers = normalizedRows[headerIndex];
     const dateIndex = headers.findIndex((cell) => cell === 'dzien' || cell.includes('data'));
+    const statusIndex = headers.findIndex((cell) => cell.includes('status'));
     const importIndexes = headers
       .map((header, index) => ({ header, index }))
       .filter(({ header }) => header.includes('energia czynna pobrana') && header.includes('po bilansowaniu'))
@@ -141,6 +143,9 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
     if (dateIndex < 0 || importIndexes.length === exportIndexes.length) {
       throw new Error('Plik musi zawierać jeden godzinowy raport: energię pobraną albo oddaną po bilansowaniu');
     }
+    if (statusIndex < 0) {
+      throw new Error('Brak kolumny Status w raporcie. Każdy pomiar wymaga statusu Dane rzeczywiste lub Dane szacowane');
+    }
 
     const period = findPeriod(rows);
     if (!period) throw new Error('Nie znaleziono miesięcznego zakresu dat w pliku XLSX');
@@ -149,13 +154,41 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
     if (!ppeNumber) throw new Error('Nie znaleziono numeru PPE w pliku XLSX');
 
     const valueIndexes = importIndexes.length ? importIndexes : exportIndexes;
+    const daylightSavingAdjustment = parts.periodMonth === 3 ? -1 : parts.periodMonth === 10 ? 1 : 0;
+    const expectedRows = parts.daysInMonth * 24 + daylightSavingAdjustment;
     const timestamps: number[] = [];
     let calculatedTotal = 0;
+    let validRows = 0;
+    let invalidStatusRows = 0;
+    let invalidValueRows = 0;
+    let firstInvalidRow: string | undefined;
     for (const row of rows.slice(headerIndex + 1)) {
       const timestamp = civilTimestamp(row[dateIndex]);
       if (timestamp == null) continue;
       timestamps.push(timestamp);
-      for (const valueIndex of valueIndexes) calculatedTotal += numericCell(row[valueIndex]) ?? 0;
+      const status = String(row[statusIndex] ?? '').trim();
+      const validStatus = status === 'Dane rzeczywiste' || status === 'Dane szacowane';
+      const values = valueIndexes.map((valueIndex) => numericCell(row[valueIndex]));
+      const validValues = values.every((value) => value !== undefined && value >= 0);
+      if (!validStatus) invalidStatusRows += 1;
+      if (!validValues) invalidValueRows += 1;
+      if (!validStatus || !validValues) {
+        if (!firstInvalidRow) {
+          const reasons = [
+            !validStatus ? 'wymagany status Dane rzeczywiste lub Dane szacowane' : null,
+            !validValues ? 'wymagana niepusta, poprawna i nieujemna wartość kWh' : null,
+          ].filter(Boolean).join('; ');
+          firstInvalidRow = `${new Date(timestamp).toISOString().replace('T', ' ').slice(0, 19)} (${reasons})`;
+        }
+        continue;
+      }
+      validRows += 1;
+      for (const value of values) calculatedTotal += value!;
+    }
+    if (firstInvalidRow) {
+      throw new Error(`Niepełne dane godzinowe: ${validRows}/${expectedRows} poprawnych pomiarów. `
+        + `Wiersze z brakującym lub nieprawidłowym statusem: ${invalidStatusRows}; wartością kWh: ${invalidValueRows}. `
+        + `Pierwszy niepoprawny pomiar: ${firstInvalidRow}.`);
     }
     if (timestamps.length < 2) throw new Error('Plik nie zawiera pomiarów godzinowych');
 
@@ -172,8 +205,6 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
     const shifted = timestamps.map((timestamp) => timestamp - 60 * 60_000);
     const expectedStart = Date.UTC(parts.periodYear, parts.periodMonth - 1, 1);
     const expectedEnd = Date.UTC(parts.periodYear, parts.periodMonth, 1) - 60 * 60_000;
-    const daylightSavingAdjustment = parts.periodMonth === 3 ? -1 : parts.periodMonth === 10 ? 1 : 0;
-    const expectedRows = parts.daysInMonth * 24 + daylightSavingAdjustment;
     const regularIntervals = intervals.filter((minutes) => minutes === 60).length;
     const expectedDstIntervals = parts.periodMonth === 3
       ? intervals.filter((minutes) => minutes === 120).length === 1
@@ -187,7 +218,7 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
       || regularIntervals !== intervals.length - Math.abs(daylightSavingAdjustment)
       || !expectedDstIntervals
     ) {
-      throw new Error('Plik nie zawiera pełnego miesiąca pomiarów godzinowych');
+      throw new Error(`Plik nie zawiera pełnego miesiąca pomiarów godzinowych (${validRows}/${expectedRows} poprawnych pomiarów)`);
     }
 
     return {

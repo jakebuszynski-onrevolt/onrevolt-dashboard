@@ -4,7 +4,7 @@ import { Alert, AlertIcon, Badge, Box, Button, Flex, FormControl, FormLabel, Gri
 import Card from 'components/card/Card';
 import { defaultHourlyLoadProfile, distributeAnnualConsumption, polishPvHourlyProfiles, polishPvMonthlyDistribution } from 'lib/onrevolt/energy-scenario';
 import { useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MdCalculate, MdOpenInNew, MdRefresh, MdSave } from 'react-icons/md';
 
 const monthLabels = ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru'];
@@ -46,6 +46,7 @@ export default function AuditsWorkspace() {
   const [audit, setAudit] = useState<any>({ ...emptyAudit });
   const [scenario, setScenario] = useState<any>({ ...emptyScenario });
   const [energyProfile, setEnergyProfile] = useState<any>(null);
+  const energyProfileRequest = useRef(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [calculating, setCalculating] = useState(false);
@@ -99,17 +100,20 @@ export default function AuditsWorkspace() {
   }, [selectedProjectId]);
 
   const loadEnergyProfile = useCallback(async (project: any) => {
+    const request = ++energyProfileRequest.current;
     setEnergyProfile(null);
     if (!project?.clientId) return;
-    const response = await fetch(`/api/integrations/enea/profile?clientId=${encodeURIComponent(project.clientId)}`, { cache: 'no-store' });
+    const response = await fetch(`/api/integrations/enea/profile?clientId=${encodeURIComponent(project.clientId)}&projectId=${encodeURIComponent(project.id)}`, { cache: 'no-store' });
     const payload = await response.json().catch(() => null);
-    if (response.ok && payload?.ok) setEnergyProfile(payload.data);
+    if (request === energyProfileRequest.current && response.ok && payload?.ok) setEnergyProfile(payload.data);
   }, []);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (selectedProject) loadEnergyProfile(selectedProject); }, [loadEnergyProfile, selectedProject]);
 
   function selectProject(projectId: string) {
+    energyProfileRequest.current += 1;
+    setEnergyProfile(null);
     setSelectedProjectId(projectId);
     setAudit(auditForm(audits.find((item) => item.projectId === projectId)));
     setMessage('');
@@ -129,10 +133,14 @@ export default function AuditsWorkspace() {
         body: JSON.stringify({ ...audit, id: audit.id || undefined, projectId: selectedProjectId }),
       });
       const payload = await response.json();
+      if (payload.reDeclarationSync?.retryAllowed) {
+        setAudit((current: any) => ({ ...current, id: payload.data?.id || current.id, retryReDeclaration: true }));
+      }
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
       setAudit(auditForm(payload.data));
       setAudits((current) => [payload.data, ...current.filter((item) => item.id !== payload.data.id)]);
       setMessage('Zapisano audyt.');
+      await loadEnergyProfile(selectedProject);
       return payload.data;
     } finally {
       setSaving(false);
@@ -140,11 +148,11 @@ export default function AuditsWorkspace() {
   }
 
   function energyInputs() {
-    const annual = Number(audit.annualConsumptionKwh || 0);
+    const annual = energyProfile?.source === 'RE' ? Number(energyProfile.annualKwh) : Number(audit.annualConsumptionKwh || 0);
     if (!(annual > 0)) throw new Error('Podaj roczne zużycie energii');
     let monthly = distributeAnnualConsumption(annual);
     let hourly = defaultHourlyLoadProfile;
-    if (audit.profileSource === 'OPERATOR_HOURLY') {
+    if (audit.profileSource === 'OPERATOR_HOURLY' || energyProfile?.source === 'RE') {
       if (!energyProfile?.months?.length) throw new Error('Brak wczytanego profilu godzinowego operatora');
       monthly = Array.from({ length: 12 }, (_, index) => energyProfile.months.filter((month: any) => month.month === index + 1).reduce((sum: number, month: any) => sum + Number(month.totalKwh || 0), 0));
       const hourlyTotals = Array.from({ length: 24 }, (_, hour) => energyProfile.months.reduce((sum: number, month: any) => sum + Number(month.hourly?.[hour] || 0), 0));
@@ -191,8 +199,8 @@ export default function AuditsWorkspace() {
       <Flex direction={{ base: 'column', xl: 'row' }} align={{ xl: 'end' }} gap="12px">
         <Box flex="1"><Text color={textColor} fontSize="2xl" fontWeight="800">Audyty i energia</Text><Text color={mutedColor}>Dane techniczne i scenariusze do ofert</Text></Box>
         <FormControl maxW="320px"><FormLabel>Szukaj projektu</FormLabel><Input value={projectSearch} onChange={(event) => setProjectSearch(event.target.value)} /></FormControl>
-        <FormControl maxW="420px"><FormLabel>Projekt</FormLabel><Select value={selectedProjectId} onChange={(event) => selectProject(event.target.value)}><option value="">Wybierz projekt</option>{visibleProjects.map((project) => <option key={project.id} value={project.id}>{project.client.displayName} · {project.title}</option>)}</Select></FormControl>
-        <Button leftIcon={<MdRefresh />} variant="outline" onClick={load} isLoading={loading}>Odśwież</Button>
+        <FormControl maxW="420px"><FormLabel>Projekt</FormLabel><Select isDisabled={saving || calculating || loading} value={selectedProjectId} onChange={(event) => selectProject(event.target.value)}><option value="">Wybierz projekt</option>{visibleProjects.map((project) => <option key={project.id} value={project.id}>{project.client.displayName} · {project.title}</option>)}</Select></FormControl>
+        <Button leftIcon={<MdRefresh />} variant="outline" onClick={load} isLoading={loading} isDisabled={saving || calculating}>Odśwież</Button>
       </Flex>
       {error ? <Alert status="error" borderRadius="8px"><AlertIcon />{error}</Alert> : null}
       {message ? <Alert status="success" borderRadius="8px"><AlertIcon />{message}</Alert> : null}

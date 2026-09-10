@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from 'crypto';
 import { mkdir, unlink, writeFile } from 'fs/promises';
 import path from 'path';
+import type { Prisma } from '@prisma/client';
 import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, notFound, optionalString, readJsonObject, serverError } from 'lib/onrevolt/api';
 import { decryptCredential } from 'lib/onrevolt/credentials';
+import { closedMeasurementPeriodKeys } from 'lib/onrevolt/energy-measurement-document';
 import {
   downloadEneaMeasurementXlsx,
   eneaMeasurementLabel,
@@ -14,6 +16,7 @@ import {
   selectEneaPpe,
 } from 'lib/onrevolt/enea-portal';
 import { prisma } from 'lib/onrevolt/prisma';
+import { syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export const runtime = 'nodejs';
@@ -76,6 +79,9 @@ function requestedMonths(body: Record<string, any>) {
   const periodYear = Number(body.periodYear);
   const periodMonth = Number(body.periodMonth);
   if (Number.isInteger(periodYear) && Number.isInteger(periodMonth) && periodMonth >= 1 && periodMonth <= 12) {
+    if (!closedMeasurementPeriodKeys().has(`${periodYear}-${String(periodMonth).padStart(2, '0')}`)) {
+      throw new Error('Wybierz miesiąc z ostatnich 12 zamkniętych miesięcy');
+    }
     const lastDay = new Date(Date.UTC(periodYear, periodMonth, 0)).getUTCDate();
     return [{
       year: periodYear,
@@ -86,7 +92,7 @@ function requestedMonths(body: Record<string, any>) {
   }
 
   const monthsRaw = Number(body.months || 12);
-  const months = Number.isFinite(monthsRaw) ? Math.min(Math.max(Math.floor(monthsRaw), 1), 24) : 12;
+  const months = Number.isFinite(monthsRaw) ? Math.min(Math.max(Math.floor(monthsRaw), 1), 12) : 12;
   return getClosedMonths(months);
 }
 
@@ -103,7 +109,14 @@ async function existingDownloaded(accountId: string, kind: EneaMeasurementKind, 
     include: { document: true },
   });
 
-  return existing?.status === 'DOWNLOADED' && Boolean(existing.documentId || existing.document);
+  return existing?.status === 'DOWNLOADED' && Boolean(existing.documentId || existing.document) ? existing : null;
+}
+
+async function lockMeasurementAccount(tx: Prisma.TransactionClient, accountId: string) {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM EnergyPortalAccount WHERE id = ${accountId} FOR UPDATE
+  `;
+  if (rows.length !== 1) throw new Error('Nie znaleziono konta ENEA do zapisu pliku');
 }
 
 async function deleteFileIfLocal(storagePath?: string | null) {
@@ -195,11 +208,23 @@ export async function POST(req: NextRequest) {
     const downloaded: Array<Record<string, unknown>> = [];
     const skipped: Array<Record<string, unknown>> = [];
     const failed: Array<Record<string, unknown>> = [];
+    const reSyncResults: Array<Record<string, unknown>> = [];
 
     for (const month of months) {
       for (const kind of eneaKinds) {
+        const where = {
+          accountId_kind_periodYear_periodMonth: {
+            accountId: account.id,
+            kind,
+            periodYear: month.year,
+            periodMonth: month.month,
+          },
+        };
         try {
-          if (!force && await existingDownloaded(account.id, kind, month.year, month.month)) {
+          const existingFile = !force ? await existingDownloaded(account.id, kind, month.year, month.month) : null;
+          if (existingFile) {
+            const reSync = await syncEnergyMeasurementToRe(existingFile.id, { clientId: account.clientId, projectId: account.projectId, actorId: access.user.id });
+            reSyncResults.push({ ...reSync, kind, period: `${month.year}-${String(month.month).padStart(2, '0')}` });
             skipped.push({
               kind,
               label: eneaMeasurementLabel(kind),
@@ -208,94 +233,70 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
-          if (force) {
-            await prisma.energyMeasurementFile.findUnique({
-              where: {
-                accountId_kind_periodYear_periodMonth: {
-                  accountId: account.id,
-                  kind: kind as any,
-                  periodYear: month.year,
-                  periodMonth: month.month,
-                },
-              },
-              select: { id: true },
-            }).then(async (existing) => {
-              if (existing) {
-                const existingRecord = await prisma.energyMeasurementFile.findUnique({
-                  where: { id: existing.id },
-                  include: { document: true },
-                });
-                if (existingRecord) {
-                  await deleteFileIfLocal(existingRecord.document?.storagePath || existingRecord.storagePath);
-                  await prisma.energyMeasurementFile.delete({ where: { id: existingRecord.id } });
-                  if (existingRecord.documentId) {
-                    await prisma.document.deleteMany({ where: { id: existingRecord.documentId } });
-                  }
-                }
-              }
-            });
-          }
-
           const measurement = await downloadEneaMeasurementXlsx(session, ppe, month, kind);
-          const stored = await storeMeasurementFile(account.clientId, measurement.fileName, measurement.bytes);
-          const title = `ENEA ${eneaMeasurementLabel(kind)} ${month.year}-${String(month.month).padStart(2, '0')}`;
-          const document = await prisma.document.create({
-            data: {
-              type: documentType(kind) as any,
-              title,
-              fileName: measurement.fileName,
-              mimeType: measurement.mimeType,
-              sizeBytes: measurement.bytes.length,
-              sha256: stored.sha256,
-              storagePath: stored.relativePath,
-              clientId: account.clientId,
-              projectId: account.projectId,
-              notes: `PPE ${ppe.ppeNumber || ppe.code || ppe.name || ppe.id}; Dane po bilansowaniu; agregacja 60 min`,
-            },
-          });
-
-          await prisma.energyMeasurementFile.upsert({
-            where: {
-              accountId_kind_periodYear_periodMonth: {
+          const saved = await prisma.$transaction(async (tx) => {
+            await lockMeasurementAccount(tx, account.id);
+            const current = await tx.energyMeasurementFile.findUnique({ where });
+            if (!force && current?.status === 'DOWNLOADED' && current.documentId) {
+              return { record: current, downloaded: false };
+            }
+            const stored = await storeMeasurementFile(account.clientId, measurement.fileName, measurement.bytes);
+            const title = `ENEA ${eneaMeasurementLabel(kind)} ${month.year}-${String(month.month).padStart(2, '0')}`;
+            // Keep previous documents as archives; only replace the active measurement link.
+            const document = await tx.document.create({
+              data: {
+                type: documentType(kind) as any,
+                title,
+                fileName: measurement.fileName,
+                mimeType: measurement.mimeType,
+                sizeBytes: measurement.bytes.length,
+                sha256: stored.sha256,
+                storagePath: stored.relativePath,
+                clientId: account.clientId,
+                projectId: account.projectId,
+                notes: `PPE ${ppe.ppeNumber || ppe.code || ppe.name || ppe.id}; Dane po bilansowaniu; agregacja 60 min`,
+              },
+            });
+            const record = await tx.energyMeasurementFile.upsert({
+              where,
+              update: {
+                operator: 'ENEA',
+                clientId: account.clientId,
+                projectId: account.projectId,
+                documentId: document.id,
+                storagePath: stored.relativePath,
+                fileName: measurement.fileName,
+                status: 'DOWNLOADED',
+                error: null,
+                downloadedAt: new Date(),
+              },
+              create: {
                 accountId: account.id,
+                clientId: account.clientId,
+                projectId: account.projectId,
+                operator: 'ENEA',
                 kind: kind as any,
                 periodYear: month.year,
                 periodMonth: month.month,
+                documentId: document.id,
+                storagePath: stored.relativePath,
+                fileName: measurement.fileName,
+                status: 'DOWNLOADED',
+                downloadedAt: new Date(),
               },
-            },
-            update: {
-              operator: 'ENEA',
-              clientId: account.clientId,
-              projectId: account.projectId,
-              documentId: document.id,
-              storagePath: stored.relativePath,
-              fileName: measurement.fileName,
-              status: 'DOWNLOADED',
-              error: null,
-              downloadedAt: new Date(),
-            },
-            create: {
-              accountId: account.id,
-              clientId: account.clientId,
-              projectId: account.projectId,
-              operator: 'ENEA',
-              kind: kind as any,
-              periodYear: month.year,
-              periodMonth: month.month,
-              documentId: document.id,
-              storagePath: stored.relativePath,
-              fileName: measurement.fileName,
-              status: 'DOWNLOADED',
-              downloadedAt: new Date(),
-            },
+            });
+            return { record, downloaded: true };
           });
 
-          downloaded.push({
+          const reSync = await syncEnergyMeasurementToRe(saved.record.id, { clientId: account.clientId, projectId: account.projectId, actorId: access.user.id });
+          reSyncResults.push({ ...reSync, kind, period: `${month.year}-${String(month.month).padStart(2, '0')}` });
+
+          (saved.downloaded ? downloaded : skipped).push({
             kind,
             label: eneaMeasurementLabel(kind),
             period: `${month.year}-${String(month.month).padStart(2, '0')}`,
-            documentId: document.id,
-            fileName: measurement.fileName,
+            documentId: saved.record.documentId,
+            fileName: saved.record.fileName,
           });
         } catch (error) {
           const message = syncErrorMessage(error);
@@ -306,37 +307,36 @@ export async function POST(req: NextRequest) {
             message,
           });
 
-          await prisma.energyMeasurementFile.upsert({
-            where: {
-              accountId_kind_periodYear_periodMonth: {
+          await prisma.$transaction(async (tx) => {
+            await lockMeasurementAccount(tx, account.id);
+            const current = await tx.energyMeasurementFile.findUnique({ where });
+            if (current?.status === 'DOWNLOADED' && current.documentId) return;
+            await tx.energyMeasurementFile.upsert({
+              where,
+              update: {
+                status: 'FAILED',
+                error: message,
+                downloadedAt: null,
+              },
+              create: {
                 accountId: account.id,
+                clientId: account.clientId,
+                projectId: account.projectId,
+                operator: 'ENEA',
                 kind: kind as any,
                 periodYear: month.year,
                 periodMonth: month.month,
+                status: 'FAILED',
+                error: message,
               },
-            },
-            update: {
-              status: 'FAILED',
-              error: message,
-              downloadedAt: null,
-            },
-            create: {
-              accountId: account.id,
-              clientId: account.clientId,
-              projectId: account.projectId,
-              operator: 'ENEA',
-              kind: kind as any,
-              periodYear: month.year,
-              periodMonth: month.month,
-              status: 'FAILED',
-              error: message,
-            },
+            });
           });
         }
       }
     }
 
-    const status = failed.length ? 'PARTIAL' : 'OK';
+    const reFailed = reSyncResults.filter((result) => result.status === 'failed');
+    const status = failed.length || reFailed.length ? 'PARTIAL' : 'OK';
     const message = !downloaded.length && skipped.length && !failed.length
       ? `Brak brakujących plików (${skipped.length} już pobranych)`
       : [
@@ -344,17 +344,19 @@ export async function POST(req: NextRequest) {
         skipped.length ? `pominięto ${skipped.length} istniejących` : null,
         failed.length ? `błędy ${failed.length}` : null,
       ].filter(Boolean).join(', ') || 'Brak brakujących plików';
-    await markAccountSync(account.id, status, message);
+    const syncMessage = reFailed.length ? `${message}. Nie przekazano do RE: ${reFailed.length}. ${reFailed[0].message}` : `${message}. Profil RE zsynchronizowany.`;
+    await markAccountSync(account.id, status, syncMessage);
 
     return jsonResponse({
       ok: true,
       data: {
         status,
-        message,
+        message: syncMessage,
         ppe,
         downloaded,
         skipped,
         failed,
+        reSyncResults,
       },
     });
   } catch (error) {

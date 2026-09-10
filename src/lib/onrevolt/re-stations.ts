@@ -78,7 +78,7 @@ function reDatabaseUrl() {
   return url;
 }
 
-function rePrisma() {
+export function rePrisma() {
   const url = reDatabaseUrl();
   if (!globalForRePrisma.onrevoltRePrisma || globalForRePrisma.onrevoltReDatabaseUrl !== url) {
     globalForRePrisma.onrevoltRePrisma = new PrismaClient({
@@ -281,7 +281,15 @@ async function insertStation(
   await db.$executeRawUnsafe(query, ...insertColumns.map((column) => values[column]));
 }
 
-export async function createReStation(input: { displayName: string; email?: string | null }): Promise<CreatedReStation> {
+export async function createReStation(input: {
+  displayName: string;
+  email?: string | null;
+  annualUsageKwh?: number | null;
+  pvSizeKwp?: number | null;
+  lat?: number | null;
+  lon?: number | null;
+  simulationStartDate?: Date;
+}): Promise<CreatedReStation> {
   const db = rePrisma();
   await ensureEnergyMeterUsersTable(db);
   const columns = await readEnergyMeterColumns(db);
@@ -298,6 +306,16 @@ export async function createReStation(input: { displayName: string; email?: stri
   const apiKey = randomBytes(16).toString('hex');
   const email = input.email?.trim() || null;
   const username = input.displayName.trim() || email || `Stacja ${station}`;
+  const energyInputs: Record<string, unknown> = {};
+  for (const [column, value] of Object.entries({
+    annual_usage_kwh: input.annualUsageKwh,
+    pv_size_kwp: input.pvSizeKwp,
+    lat: input.lat,
+    lon: input.lon,
+  })) {
+    if (value != null && Number.isFinite(value)) energyInputs[column] = value;
+  }
+  if (input.simulationStartDate) energyInputs.dateStart = input.simulationStartDate;
 
   await insertStation(db, columns, {
     station,
@@ -306,6 +324,7 @@ export async function createReStation(input: { displayName: string; email?: stri
     username,
     email,
     user_type: 'user',
+    ...energyInputs,
   });
 
   return {

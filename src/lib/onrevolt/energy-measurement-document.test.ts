@@ -46,6 +46,84 @@ test('rozpoznaje godzinowy raport energii oddanej', () => {
   assert.equal(info.periodMonth, 2);
 });
 
+for (const kind of ['pobrana', 'oddana'] as const) {
+  test(`odrzuca lipcowy raport ${kind}: 168 pomiarów i 576 pustych godzin nie tworzy pełnego miesiąca`, () => {
+    const rows = hourlyReport(kind, 2026, 7);
+    for (let index = 6 + 168; index < rows.length - 1; index += 1) {
+      rows[index][1] = null;
+      rows[index][2] = null;
+    }
+    rows[rows.length - 1][1] = 168;
+    assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes(rows)), (error: Error) => {
+      assert.match(error.message, /168\/744 poprawnych pomiarów/);
+      assert.match(error.message, /statusem: 576; wartością kWh: 576/);
+      assert.match(error.message, /2026-07-08 01:00:00/);
+      assert.match(error.message, /Dane rzeczywiste lub Dane szacowane/);
+      return true;
+    });
+  });
+}
+
+test('akceptuje rzeczywiste i szacowane pomiary, jawne zera oraz poprawne liczby dziesiętne', () => {
+  const rows = hourlyReport('pobrana', 2026, 1);
+  const values = [0, '0', ' 1,25 ', '2.5', '1e-3'];
+  let total = 0;
+  for (let index = 6; index < rows.length - 1; index += 1) {
+    rows[index][1] = values[(index - 6) % values.length];
+    rows[index][2] = index % 2 ? 'Dane rzeczywiste' : ' Dane szacowane ';
+    total += Number(String(rows[index][1]).trim().replace(',', '.'));
+  }
+  rows.pop();
+  const info = inspectEnergyMeasurementWorkbook(workbookBytes(rows));
+  assert.equal(info.rowsCount, 744);
+  assert.equal(info.totalKwh, Math.round(total * 1000) / 1000);
+});
+
+test('odrzuca brak kolumny Status zamiast zakładać rzeczywiste pomiary', () => {
+  const rows = hourlyReport('pobrana', 2026, 1).map(row => row.slice(0, 2));
+  assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes(rows)), /Brak kolumny Status/);
+});
+
+for (const status of [null, '', '   ', 'Brak danych', 'Dane zastępcze', 'dane rzeczywiste', 'Dane rzeczywiste dodatkowe', 0]) {
+  test(`odrzuca godzinę z nieobsługiwanym statusem ${JSON.stringify(status)} mimo poprawnej wartości`, () => {
+    const rows = hourlyReport('pobrana', 2026, 1);
+    rows[6][2] = status;
+    assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes(rows)), (error: Error) => {
+      assert.match(error.message, /743\/744 poprawnych pomiarów/);
+      assert.match(error.message, /statusem: 1; wartością kWh: 0/);
+      assert.match(error.message, /2026-01-01 01:00:00/);
+      return true;
+    });
+  });
+}
+
+for (const value of [null, undefined, '', '   ', '-', 'brak', '1 000', '0x10', '0b10', true, false, -1, '-0,1', 'NaN', 'Infinity', '1e309']) {
+  test(`odrzuca pustą lub niepoprawną wartość ${String(value)} przy poprawnym statusie, niezależnie od wiersza Suma`, () => {
+    const rows = hourlyReport('pobrana', 2026, 1);
+    rows[6][1] = value;
+    assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes(rows)), (error: Error) => {
+      assert.match(error.message, /743\/744 poprawnych pomiarów/);
+      assert.match(error.message, /statusem: 0; wartością kWh: 1/);
+      assert.match(error.message, /niepusta, poprawna i nieujemna wartość kWh/);
+      return true;
+    });
+  });
+}
+
+test('wymaga poprawnej wartości w każdej kolumnie energii, a nie tylko w pierwszej', () => {
+  const rows = hourlyReport('pobrana', 2026, 1);
+  rows[5].splice(2, 0, 'Energia czynna pobrana po bilansowaniu - strefa 2');
+  for (let index = 6; index < rows.length - 1; index += 1) rows[index].splice(2, 0, 0);
+  rows[6][2] = null;
+  assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes(rows)), /743\/744 poprawnych pomiarów/);
+});
+
+test('nie wymaga statusu ani pomiaru w wierszach opisowych i podsumowaniu', () => {
+  const rows = hourlyReport('pobrana', 2026, 1);
+  rows.push([], ['Uwagi', 'Raport za pełny miesiąc']);
+  assert.equal(inspectEnergyMeasurementWorkbook(workbookBytes(rows)).rowsCount, 744);
+});
+
 test('odrzuca raport tygodniowy', () => {
   assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes([
     ['Raport zużycia'],

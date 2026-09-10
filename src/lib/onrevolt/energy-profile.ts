@@ -17,12 +17,19 @@ export type EnergyUsageMonth = {
   weekdayDays: number;
   weekendDays: number;
   sourceFiles: number;
+  importSource?: 'xlsx' | 'real' | 'part' | 'forecast' | 'standard' | 'manual';
+  exportSource?: 'xlsx' | 'real' | 'part' | 'forecast' | 'standard' | 'manual';
+  hasData?: boolean;
 };
 
 export type EnergyUsageProfile = {
   annualKwh: number;
   months: EnergyUsageMonth[];
   warnings: string[];
+  source?: 'RE';
+  station?: string;
+  measuredDays?: number;
+  pvIncluded?: boolean;
 };
 
 type MeasurementFile = {

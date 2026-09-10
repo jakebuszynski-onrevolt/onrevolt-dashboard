@@ -1,6 +1,7 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { vatBreakdown } from 'lib/onrevolt/configuration-vat';
 import { buildEnergyUsageProfile, type EnergyUsageProfile } from 'lib/onrevolt/energy-profile';
+import { readProjectReConsumptionProfile } from 'lib/onrevolt/re-consumption-profile';
 import {
   calculateEnergyScenario,
   defaultHourlyLoadProfile,
@@ -113,7 +114,7 @@ function requireConfigurationTarget(
 }
 
 function usageProfileInputs(profileSource: string | null | undefined, annualConsumptionKwh: number, usageProfile?: EnergyUsageProfile | null) {
-  if (profileSource !== 'OPERATOR_HOURLY') {
+  if (profileSource !== 'OPERATOR_HOURLY' && usageProfile?.source !== 'RE') {
     return {
       monthlyConsumptionKwh: distributeAnnualConsumption(annualConsumptionKwh),
       hourlyLoadProfile: defaultHourlyLoadProfile,
@@ -349,7 +350,9 @@ async function energySnapshot(project: any, scenario?: any) {
   const months = Array.from(new Set<string>(downloaded.map((file: any) => `${file.periodYear}-${String(file.periodMonth).padStart(2, '0')}`)))
     .sort();
   const importFiles = downloaded.filter((file: any) => file.kind === 'ACTIVE_IMPORT');
-  const usageProfile = await buildEnergyUsageProfile(importFiles);
+  const usageProfile = project.dashboardStation || project.dashboardStationNumber
+    ? await readProjectReConsumptionProfile(project.id)
+    : await buildEnergyUsageProfile(importFiles);
   const siteAudit = project.siteAudits?.[0];
   const energyAudit = scenario?.audit || project.energyAudits?.[0] || null;
   const auditImages = (siteAudit?.documents || []).filter((document: any) => document.mimeType?.startsWith('image/'));
@@ -638,9 +641,13 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
     throw new OfferRecalculationError('Najpierw zapisz dane zużycia w zakładce „Dane energetyczne”.');
   }
 
-  const annualConsumptionKwh = finiteNumber(audit.annualConsumptionKwh);
+  let annualConsumptionKwh = finiteNumber(audit.annualConsumptionKwh);
   let usageProfile: EnergyUsageProfile | null = null;
-  if (audit.profileSource === 'OPERATOR_HOURLY') {
+  const profileProject = await prisma.project.findUnique({ where: { id: existing.projectId }, select: { dashboardStation: true, dashboardStationNumber: true } });
+  if (profileProject?.dashboardStation || profileProject?.dashboardStationNumber) {
+    usageProfile = await readProjectReConsumptionProfile(existing.projectId);
+    annualConsumptionKwh = usageProfile.annualKwh;
+  } else if (audit.profileSource === 'OPERATOR_HOURLY') {
     const measurementFiles = await prisma.energyMeasurementFile.findMany({
       where: {
         projectId: existing.projectId,

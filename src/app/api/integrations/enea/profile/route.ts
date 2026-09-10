@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, optionalString, serverError } from 'lib/onrevolt/api';
-import { buildEnergyUsageProfile } from 'lib/onrevolt/energy-profile';
+import { readProjectReConsumptionProfile } from 'lib/onrevolt/re-consumption-profile';
 import { prisma } from 'lib/onrevolt/prisma';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
@@ -15,19 +15,13 @@ export async function GET(req: NextRequest) {
     const projectId = optionalString({ projectId: url.searchParams.get('projectId') }, 'projectId');
     if (!clientId && !projectId) return badRequest('Podaj clientId albo projectId');
 
-    const files = await prisma.energyMeasurementFile.findMany({
-      where: {
-        clientId,
-        projectId,
-        kind: 'ACTIVE_IMPORT',
-        status: 'DOWNLOADED',
-      },
-      include: { document: true },
-      orderBy: [{ periodYear: 'asc' }, { periodMonth: 'asc' }],
-      take: 36,
+    const project = await prisma.project.findFirst({
+      where: { ...(clientId ? { clientId } : {}), ...(projectId ? { id: projectId } : {}) },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true, clientId: true },
     });
-
-    return jsonResponse({ ok: true, data: await buildEnergyUsageProfile(files) });
+    if (!project) return badRequest('Nie znaleziono projektu klienta');
+    return jsonResponse({ ok: true, data: await readProjectReConsumptionProfile(project.id, { clientId: project.clientId }) });
   } catch (error) {
     return serverError('Nie udało się przygotować profilu zużycia', error);
   }

@@ -4,6 +4,7 @@ import { jsonResponse, readJsonObject, requireString, serverError } from 'lib/on
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { calculateEnergyScenario, energyScenarioEngineVersion, EnergyScenarioInput } from 'lib/onrevolt/energy-scenario';
 import { prisma } from 'lib/onrevolt/prisma';
+import { readProjectReConsumptionProfile } from 'lib/onrevolt/re-consumption-profile';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 function numeric(value: unknown, name: string) {
@@ -48,6 +49,13 @@ export async function POST(req: NextRequest) {
       depositPayoutRate: numeric(input.depositPayoutRate, 'depositPayoutRate'),
       investmentGross: input.investmentGross == null ? undefined : numeric(input.investmentGross, 'investmentGross'),
     };
+    if (audit.project.dashboardStation || audit.project.dashboardStationNumber) {
+      const profile = await readProjectReConsumptionProfile(audit.projectId);
+      if (profile.months.length !== 12 || !(profile.annualKwh > 0)) throw new Error('RE nie ma pełnego profilu zużycia do obliczeń');
+      scenarioInput.monthlyConsumptionKwh = profile.months.map((month) => month.totalKwh);
+      scenarioInput.hourlyLoadProfile = Array.from({ length: 24 }, (_, hour) => profile.months.reduce((sum, month) => sum + month.hourly[hour], 0));
+      scenarioInput.monthlyHourlyLoadProfiles = profile.months.map((month) => month.hourly);
+    }
     const result = calculateEnergyScenario(scenarioInput);
     const recommended = body.recommended === true;
     const scenario = await prisma.$transaction(async (tx) => {

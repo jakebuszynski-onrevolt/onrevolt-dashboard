@@ -210,11 +210,15 @@ type EnergyUsageMonth = {
   sharePercent: number;
   hourly: number[];
   sourceFiles: number;
+  hasData?: boolean;
+  importSource?: string;
+  exportSource?: string;
 };
 
 type EnergyUsageProfile = {
   annualKwh: number;
   months: EnergyUsageMonth[];
+  source?: 'RE';
   warnings: string[];
 };
 
@@ -917,6 +921,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [energyError, setEnergyError] = useState('');
   const [energyProfile, setEnergyProfile] = useState<EnergyUsageProfile | null>(null);
   const [energyProfileLoading, setEnergyProfileLoading] = useState(false);
+  const [energyProfileSyncing, setEnergyProfileSyncing] = useState(false);
+  const [energyDeclarationRetryAllowed, setEnergyDeclarationRetryAllowed] = useState(false);
+  const energyProfileRequest = useRef(0);
   const [energyProfileError, setEnergyProfileError] = useState('');
   const [selectedEnergyProfileMonth, setSelectedEnergyProfileMonth] = useState('');
   const [energyDataSettings, setEnergyDataSettings] = useState<EnergyDataSettings>(emptyEnergyDataSettings);
@@ -984,6 +991,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const activeProject = client?.projects?.find((item: any) => item.id === selectedProjectId)
     || client?.projects?.[0];
   const activeProjectId = activeProject?.id || '';
+  const energyProjectRef = useRef(activeProjectId);
+  energyProjectRef.current = activeProjectId;
   const activeProjectStationRef = activeProject?.dashboardStationNumber || activeProject?.dashboardStation || '';
 
   useEffect(() => {
@@ -1081,13 +1090,16 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   }, [clientId, selectedProjectId]);
 
   const loadEnergyProfile = useCallback(async () => {
+    const requestId = ++energyProfileRequest.current;
     setEnergyProfileLoading(true);
+    setEnergyProfile(null);
     setEnergyProfileError('');
     try {
       const params = new URLSearchParams({ clientId });
       if (activeProjectId) params.set('projectId', activeProjectId);
       const response = await fetch(`/api/integrations/enea/profile?${params.toString()}`, { cache: 'no-store' });
       const payload = await response.json();
+      if (requestId !== energyProfileRequest.current) return;
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
 
       const profile = payload.data as EnergyUsageProfile;
@@ -1098,10 +1110,11 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
           : profile.months?.[profile.months.length - 1]?.key || ''
       ));
     } catch (e) {
+      if (requestId !== energyProfileRequest.current) return;
       setEnergyProfile(null);
       setEnergyProfileError(e instanceof Error ? e.message : String(e));
     } finally {
-      setEnergyProfileLoading(false);
+      if (requestId === energyProfileRequest.current) setEnergyProfileLoading(false);
     }
   }, [activeProjectId, clientId]);
 
@@ -1153,6 +1166,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     loadEnergyProfile();
     loadEnergyTariffCatalog();
   }, [load, loadEnergyProfile, loadEnergyTariffCatalog]);
+
+  useEffect(() => { setEnergyDeclarationRetryAllowed(false); }, [activeProjectId]);
 
   useEffect(() => {
     if (activeTabIndex !== 8 || !activeProjectId || !activeProjectStationRef) {
@@ -1329,6 +1344,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       status: energyDataSettings.status,
       profileSource: source.profileSource,
       annualConsumptionKwh: source.annualConsumptionKwh,
+      retryReDeclaration: energyDeclarationRetryAllowed,
       hasOperatorData: energyDataSettings.hasOperatorData,
       hasEnergyInvoices: energyDataSettings.hasEnergyInvoices,
       terrainType: energyDataSettings.terrainType,
@@ -1360,6 +1376,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
         body: JSON.stringify(energyOverviewPayload(project.id, false)),
       });
       const auditPayload = await auditResponse.json();
+      if (energyProjectRef.current !== project.id) return;
+      setEnergyDeclarationRetryAllowed(auditPayload.reDeclarationSync?.retryAllowed === true);
       if (!auditResponse.ok || !auditPayload.ok) {
         throw new Error(auditPayload.message || auditPayload.error || `HTTP ${auditResponse.status}`);
       }
@@ -1388,7 +1406,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       setEnergyDataSettings((current) => ({ ...current, auditId: auditPayload.data.id }));
       setEnergyAccount(energyAccountFromRecord(accountPayload.data));
       setEnergyOverviewMessage('Zapisano dane do oferty.');
-      await load(true);
+      await Promise.all([load(true), loadEnergyProfile()]);
     } catch (e) {
       setEnergyOverviewError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1413,6 +1431,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
         body: JSON.stringify(energyOverviewPayload(project.id, true)),
       });
       const payload = await response.json();
+      if (energyProjectRef.current !== project.id) return;
+      setEnergyDeclarationRetryAllowed(payload.reDeclarationSync?.retryAllowed === true);
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
 
       setEnergyDataSettings((current) => ({
@@ -1424,7 +1444,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
           : String(payload.data.annualConsumptionKwh),
       }));
       setEnergyDataMessage('Zapisano źródła danych o zużyciu.');
-      await load(true);
+      await Promise.all([load(true), loadEnergyProfile()]);
     } catch (e) {
       setEnergyDataError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1785,7 +1805,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   async function deleteEneaMonth(year: number, month: number) {
     if (!energyAccount.id) return;
     const label = `${String(month).padStart(2, '0')}.${year}`;
-    if (!window.confirm(`Usunąć dane ENEA dla ${label}?`)) return;
+    if (!window.confirm(`Usunąć dokumenty ENEA z CRM dla ${label}? Dane przekazane do wspólnego profilu RE pozostaną zachowane.`)) return;
 
     setEnergyMonthAction(`${year}-${month}-delete`);
     setEnergyError('');
@@ -1897,12 +1917,15 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     ? invoiceConsumptionSummary.annualizedKwh
     : 0;
   const shouldShowManualAnnualConsumption = !operatorAnnualConsumptionKwh && !invoiceAnnualConsumptionKwh;
-  const acceptedAnnualConsumptionKwh = operatorAnnualConsumptionKwh
+  const sharedAnnualConsumptionKwh = energyProfile?.source === 'RE' ? Number(energyProfile.annualKwh) : 0;
+  const acceptedAnnualConsumptionKwh = sharedAnnualConsumptionKwh || operatorAnnualConsumptionKwh
     || invoiceAnnualConsumptionKwh
     || (Number.isFinite(manualAnnualConsumptionKwh) && manualAnnualConsumptionKwh > 0
       ? manualAnnualConsumptionKwh
       : 0);
-  const acceptedConsumptionSource = operatorAnnualConsumptionKwh > 0
+  const acceptedConsumptionSource = sharedAnnualConsumptionKwh > 0
+    ? 'Wspólny profil RE'
+    : operatorAnnualConsumptionKwh > 0
     ? 'Profil godzinowy OSD'
     : invoiceAnnualConsumptionKwh > 0
       ? 'Zużycie rozpoznane z faktur'
@@ -1971,7 +1994,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
   async function uploadEnergyXlsxFile(
     file: File,
-    options: { ppeMismatchConfirmed?: boolean; replaceExisting?: boolean } = {},
+    options: { ppeMismatchConfirmed?: boolean; replaceExisting?: boolean; replaceReProfile?: boolean } = {},
   ): Promise<any> {
     const formData = new FormData();
     formData.append('file', file);
@@ -1979,6 +2002,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     if (activeProject?.id) formData.append('projectId', activeProject.id);
     if (options.ppeMismatchConfirmed) formData.append('ppeMismatchConfirmed', 'true');
     if (options.replaceExisting) formData.append('replaceExisting', 'true');
+    if (options.replaceReProfile) formData.append('replaceReProfile', 'true');
 
     const response = await fetch('/api/integrations/enea/upload', { method: 'POST', body: formData });
     const payload = await response.json();
@@ -1989,6 +2013,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     if (response.status === 409 && payload.code === 'ENERGY_MONTH_EXISTS' && !options.replaceExisting) {
       const confirmed = window.confirm(`${payload.error}\n\nCzy zastąpić istniejący plik dla tego miesiąca?`);
       if (confirmed) return uploadEnergyXlsxFile(file, { ...options, replaceExisting: true });
+    }
+    if (response.status === 409 && payload.code === 'ENERGY_RE_MONTH_EXISTS' && !options.replaceReProfile) {
+      if (window.confirm(payload.error)) return uploadEnergyXlsxFile(file, { ...options, replaceReProfile: true });
     }
     if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
     return payload.data;
@@ -2005,20 +2032,48 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       if (invalidFile) throw new Error(`Plik „${invalidFile.name}” nie jest plikiem XLSX.`);
 
       const imported: string[] = [];
+      const reWarnings: string[] = [];
       for (const file of selectedFiles) {
         const result = await uploadEnergyXlsxFile(file);
         const workbook = result?.workbook;
         const kind = workbook?.kind === 'ACTIVE_IMPORT' ? 'pobranie' : 'oddanie';
         imported.push(`${workbook?.periodFrom?.slice(0, 7) || file.name} (${kind})`);
+        if (result?.reSync?.status !== 'synced') reWarnings.push(result?.reSync?.message || 'RE nie potwierdziło importu pliku.');
       }
-      setEnergyMessage(`Dodano ${imported.length} ${imported.length === 1 ? 'plik' : 'pliki'} XLSX: ${imported.join(', ')}.`);
-      await Promise.all([load(true), loadEnergyProfile()]);
+      setEnergyMessage(`Dodano ${imported.length} ${imported.length === 1 ? 'plik' : 'pliki'} XLSX: ${imported.join(', ')}.${reWarnings.length ? '' : ' Dane przekazano do RE.'}`);
+      if (reWarnings.length) setEnergyError(reWarnings.join(' '));
     } catch (e) {
       setEnergyError(e instanceof Error ? e.message : String(e));
     } finally {
+      await Promise.all([load(true), loadEnergyProfile()]);
       setEnergyXlsxUploading(false);
       setEnergyXlsxDragActive(false);
       if (energyXlsxInputRef.current) energyXlsxInputRef.current.value = '';
+    }
+  }
+
+  async function syncEnergyProfileToRe(measurementId?: string, replaceExisting = false) {
+    if (replaceExisting && !window.confirm('Ponownie przekazać ten plik do RE? Zastąpi to profil XLSX tego miesiąca i kierunku w RE. Pomiary rzeczywiste nie zostaną zmienione.')) return;
+    setEnergyProfileSyncing(true);
+    setEnergyError('');
+    setEnergyMessage('');
+    try {
+      const response = await fetch('/api/integrations/enea/re-profile', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, projectId: activeProjectId, measurementId, replaceExisting }),
+      });
+      const payload = await response.json();
+      const failures = (payload.data?.results || []).filter((result: any) => result.status === 'failed');
+      if (!response.ok || !payload.ok) throw new Error(failures.length
+        ? failures.map((result: any) => result.message).join(' ')
+        : payload.error || payload.message || 'Nie udało się przekazać danych do RE');
+      setEnergyMessage(payload.data?.message || 'Zakończono przekazywanie danych do RE.');
+      if (failures.length) setEnergyError(failures.map((result: any) => result.message).join(' '));
+    } catch (e) {
+      setEnergyError(e instanceof Error ? e.message : String(e));
+    } finally {
+      await Promise.all([load(true), loadEnergyProfile()]);
+      setEnergyProfileSyncing(false);
     }
   }
 
@@ -2367,6 +2422,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                 value={project.id || ''}
                 onChange={(event) => selectProject(event.target.value)}
                 aria-label="Aktywny projekt"
+                isDisabled={energyProfileSyncing || energyXlsxUploading || energySyncing || energyOverviewSaving || energyDataSaving || Boolean(energyMonthAction)}
               >
                 {(client.projects || []).map((item: any) => (
                   <option key={item.id} value={item.id}>{item.title}</option>
@@ -2380,6 +2436,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                   variant="outline"
                   onClick={createProject}
                   isLoading={projectCreating}
+                  isDisabled={energyProfileSyncing || energyXlsxUploading || energySyncing || energyOverviewSaving || energyDataSaving || Boolean(energyMonthAction)}
                 />
               </Tooltip>
             </Flex>
@@ -4280,7 +4337,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                           <Text color={mutedColor}>Wybierz dostępne dane. System użyje najdokładniejszego źródła do obliczeń.</Text>
                         </Box>
                         <Button colorScheme="purple" onClick={saveEnergyDataSettings} isLoading={energyDataSaving}>
-                          Zapisz źródła danych
+                          {energyDeclarationRetryAllowed ? 'Ponów zapis źródeł w RE' : 'Zapisz źródła danych'}
                         </Button>
                       </Flex>
 
@@ -4586,6 +4643,12 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                             />
                                           </Tooltip>
                                         ) : null}
+                                        {file!.document?.id && file!.error?.startsWith('[RE]') ? (
+                                          <Tooltip label="Ponów przekazanie pliku do RE">
+                                            <IconButton aria-label="Ponów przekazanie pliku do RE" icon={<MdRefresh />} size="xs" variant="ghost"
+                                              isLoading={energyProfileSyncing} onClick={() => syncEnergyProfileToRe(file!.id, true)} />
+                                          </Tooltip>
+                                        ) : null}
                                       </Flex>
                                     ))}
                                     {row.importFile?.error ? <Text color="orange.300" fontSize="sm" mt="6px">{row.importFile.error}</Text> : null}
@@ -4628,16 +4691,22 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                     </Box> : null}
                     </Card> : null}
 
-                    {energyDataSettings.hasOperatorData ? (
                       <Card p="22px">
-                        <Flex justify="space-between" gap="16px" align="start" mb="14px">
+                        <Flex justify="space-between" gap="16px" align="start" wrap="wrap" mb="14px">
                           <Box>
                             <Text color={textColor} fontSize="lg" fontWeight="800">Profil zużycia</Text>
                             <Text color={mutedColor}>
-                              {energyProfile ? `Suma: ${formatKwh(energyProfile.annualKwh)} kWh/rok (profil godzinowy)` : 'Profil godzinowy z plików XLSX operatora'}
+                              {energyProfile ? `Suma: ${formatKwh(energyProfile.annualKwh)} kWh/rok${energyProfile.source === 'RE' ? ' · profil RE' : ''}` : 'Brak profilu zużycia'}
                             </Text>
                           </Box>
-                          {energyProfileLoading ? <Spinner size="sm" /> : null}
+                          <Flex gap="8px" align="center">
+                            {energyMonths.some((row) => row.importFile || row.exportFile) ? (
+                              <Button size="sm" variant="outline" leftIcon={<MdRefresh />} isLoading={energyProfileSyncing}
+                                onClick={() => syncEnergyProfileToRe()}>Przekaż XLSX do RE</Button>
+                            ) : null}
+                            <Tooltip label="Odśwież profil RE"><IconButton size="sm" variant="ghost" aria-label="Odśwież profil RE" icon={<MdRefresh />}
+                              isLoading={energyProfileLoading} onClick={() => loadEnergyProfile()} /></Tooltip>
+                          </Flex>
                         </Flex>
 
                         {energyProfileError ? (
@@ -4650,15 +4719,15 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                         {energyProfileLoading && !energyProfile ? (
                           <Text color={mutedColor}>Ładowanie profilu zużycia...</Text>
                         ) : !energyProfile?.months?.length ? (
-                          <Text color={mutedColor}>Brak pobranych plików XLSX operatora do profilu zużycia.</Text>
+                          <Text color={mutedColor}>Brak danych profilu zużycia.</Text>
                         ) : (
                           <>
                             <Box overflowX="auto" pb="4px">
                               <SimpleGrid columns={12} gap="8px" minW="1400px">
                               {calendarUsageMonths.map((month) => {
-                                const hasData = month.sourceFiles > 0;
+                                const hasData = month.hasData ?? month.sourceFiles > 0;
                                 const active = hasData && selectedUsageMonth?.key === month.key;
-                                const height = hasData
+                                const height = hasData && month.totalKwh > 0
                                   ? Math.max(8, Math.round((month.totalKwh / maxMonthlyKwh) * 100))
                                   : 0;
                                 return (
@@ -4692,8 +4761,23 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                       {month.label}
                                     </Text>
                                     <Text color={mutedColor} fontSize="sm" textAlign="center">
-                                      {hasData ? `${month.sharePercent}%` : '--'}
+                                      {hasData ? `${month.sharePercent.toFixed(1)}%` : '--'}
                                     </Text>
+                                    {(['importSource', 'exportSource'] as const).map((key, direction) => {
+                                      const source = month[key];
+                                      const label = source === 'xlsx' ? 'XLSX' : source === 'real' ? 'real' : source === 'part' ? 'part'
+                                        : source === 'forecast' ? 'prognoza' : source === 'manual' ? 'ręcznie'
+                                          : source === 'standard' && direction === 0 ? 'roczne' : '--';
+                                      const color = source === 'xlsx' ? 'yellow.600' : source === 'real' ? 'teal.500'
+                                        : source === 'part' ? 'cyan.600' : mutedColor;
+                                      const details = source === 'part' ? 'Część okresu zmierzona, pozostała część z profilu'
+                                        : source === 'forecast' ? 'Prognoza na podstawie pomiarów'
+                                          : source === 'standard' && direction === 0 ? 'Oszacowanie z rocznego zużycia'
+                                            : label === '--' ? 'Brak danych' : label;
+                                      return <Tooltip key={key} label={`${direction === 0 ? 'Pobór' : 'Oddanie'}: ${details}`}>
+                                        <Text fontSize="xs" color={color} textAlign="center" mt="2px">{direction === 0 ? '↓' : '↑'} {label}</Text>
+                                      </Tooltip>;
+                                    })}
                                   </Box>
                                 );
                               })}
@@ -4727,13 +4811,12 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
                             {energyProfile.warnings?.length ? (
                               <Text color={mutedColor} fontSize="sm" mt="14px">
-                                Pominięto część plików: {energyProfile.warnings.slice(0, 2).join('; ')}
+                                {energyProfile.warnings.slice(0, 2).join('; ')}
                               </Text>
                             ) : null}
                           </>
                         )}
                       </Card>
-                    ) : null}
                   </Flex>
                 </TabPanel>
               );

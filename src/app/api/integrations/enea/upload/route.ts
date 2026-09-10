@@ -6,6 +6,7 @@ import { badRequest, jsonResponse, notFound, serverError } from 'lib/onrevolt/ap
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { closedMeasurementPeriodKeys, inspectEnergyMeasurementWorkbook } from 'lib/onrevolt/energy-measurement-document';
 import { prisma } from 'lib/onrevolt/prisma';
+import { preflightProjectReConsumption, syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export const runtime = 'nodejs';
@@ -27,17 +28,7 @@ function normalizedPpe(value?: string | null) {
   return String(value || '').replace(/\s/g, '');
 }
 
-async function removeOrphanedDocument(documentId?: string | null) {
-  if (!documentId) return;
-  const references = await prisma.energyMeasurementFile.count({ where: { documentId } });
-  if (references) return;
-  const document = await prisma.document.findUnique({ where: { id: documentId } });
-  if (!document) return;
-  await prisma.document.delete({ where: { id: documentId } });
-  const root = uploadRoot();
-  const absolutePath = path.resolve(root, document.storagePath);
-  if (absolutePath.startsWith(`${root}${path.sep}`)) await unlink(absolutePath).catch(() => undefined);
-}
+class ConcurrentMeasurementError extends Error {}
 
 export async function POST(req: NextRequest) {
   const access = await authorizeStaffRequest(req, 'energy.manage');
@@ -50,6 +41,7 @@ export async function POST(req: NextRequest) {
     const projectId = String(form.get('projectId') || '').trim() || undefined;
     const mismatchConfirmed = String(form.get('ppeMismatchConfirmed') || '') === 'true';
     const replaceExisting = String(form.get('replaceExisting') || '') === 'true';
+    const replaceReProfile = String(form.get('replaceReProfile') || '') === 'true';
 
     if (!(file instanceof File)) return badRequest('Brak pliku w polu file');
     if (!clientId) return badRequest('Brak klienta dla pliku XLSX');
@@ -130,6 +122,11 @@ export async function POST(req: NextRequest) {
       }, { status: 409 });
     }
 
+    const rePreflight = await preflightProjectReConsumption({ clientId, projectId, workbook: info, replaceExisting: replaceReProfile });
+    if (rePreflight.status === 'existing') {
+      return jsonResponse({ ok: false, code: 'ENERGY_RE_MONTH_EXISTS', error: 'Ten miesiąc ma już profil XLSX w RE. Czy zastąpić go danymi z tego pliku?' }, { status: 409 });
+    }
+
     const relativePath = path.join('enea', clientId, 'manual', periodKey, `${randomUUID()}-${safeFileName(file.name)}`);
     const root = uploadRoot();
     const absolutePath = path.resolve(root, relativePath);
@@ -140,8 +137,17 @@ export async function POST(req: NextRequest) {
     const kindLabel = info.kind === 'ACTIVE_IMPORT' ? 'Zużycie energii' : 'Energia oddana';
     const notes = `Miesięczny plik godzinowy XLSX przekazany przez klienta. PPE: ${info.ppeNumber}. Zakres: ${info.periodFrom} - ${info.periodTo}. Agregacja: ${info.aggregation}. Suma: ${info.totalKwh} kWh.`;
     let document;
+    let measurementId: string;
     try {
       document = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM EnergyPortalAccount WHERE id = ${account.id} FOR UPDATE`;
+        const current = await tx.energyMeasurementFile.findUnique({ where: {
+          accountId_kind_periodYear_periodMonth: { accountId: account.id, kind: info.kind,
+            periodYear: info.periodYear, periodMonth: info.periodMonth },
+        } });
+        if ((current?.documentId || null) !== (existingMeasurement?.documentId || null)) {
+          throw new ConcurrentMeasurementError('W tym czasie zapisano inny plik tego miesiąca. Sprawdź go przed ponownym importem.');
+        }
         const createdDocument = await tx.document.create({
           data: {
             type: documentType,
@@ -161,7 +167,7 @@ export async function POST(req: NextRequest) {
             notes,
           },
         });
-        await tx.energyMeasurementFile.upsert({
+        const measurement = await tx.energyMeasurementFile.upsert({
           where: {
             accountId_kind_periodYear_periodMonth: {
               accountId: account.id,
@@ -197,16 +203,17 @@ export async function POST(req: NextRequest) {
             downloadedAt: new Date(),
           },
         });
+        measurementId = measurement.id;
         return createdDocument;
       });
     } catch (error) {
       await unlink(absolutePath).catch(() => undefined);
+      if (error instanceof ConcurrentMeasurementError) {
+        return jsonResponse({ ok: false, code: 'ENERGY_MONTH_CHANGED', error: error.message }, { status: 409 });
+      }
       throw error;
     }
 
-    if (existingMeasurement?.documentId && existingMeasurement.documentId !== document.id) {
-      await removeOrphanedDocument(existingMeasurement.documentId).catch(() => undefined);
-    }
     await writeAuditLog({
       actorId: access.user.id,
       clientId,
@@ -217,7 +224,8 @@ export async function POST(req: NextRequest) {
       after: { document, workbook: info },
     });
 
-    return jsonResponse({ ok: true, data: { document, workbook: info } }, { status: 201 });
+    const reSync = await syncEnergyMeasurementToRe(measurementId, { clientId, projectId, actorId: access.user.id, replaceExisting: replaceReProfile });
+    return jsonResponse({ ok: true, data: { document, workbook: info, reSync } }, { status: 201 });
   } catch (error) {
     return serverError('Nie udało się dodać danych pomiarowych XLSX', error);
   }
