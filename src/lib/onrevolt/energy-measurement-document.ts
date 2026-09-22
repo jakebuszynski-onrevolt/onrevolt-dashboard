@@ -89,10 +89,16 @@ function periodParts(periodFrom: string, periodTo: string) {
 function findTotal(rows: SheetRow[], headerIndex: number, valueIndexes: number[]) {
   for (const row of rows.slice(headerIndex + 1)) {
     if (normalizedText(row[0]) !== 'suma') continue;
+    let total = 0;
+    let found = false;
     for (const valueIndex of valueIndexes) {
       const value = numericCell(row[valueIndex]);
-      if (value != null) return Math.round(value * 1000) / 1000;
+      if (value != null) {
+        total += value;
+        found = true;
+      }
     }
+    if (found) return Math.round(total * 1000) / 1000;
   }
   return undefined;
 }
@@ -154,6 +160,11 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
     if (!ppeNumber) throw new Error('Nie znaleziono numeru PPE w pliku XLSX');
 
     const valueIndexes = importIndexes.length ? importIndexes : exportIndexes;
+    const registerPrefix = importIndexes.length ? '1' : '2';
+    const registers = valueIndexes.map((index) => headers[index].match(/\(([12])\.8\.(\d+)\)/));
+    const isZonedReport = valueIndexes.length > 1
+      && registers.every((match) => match?.[1] === registerPrefix)
+      && new Set(registers.map((match) => match?.[2])).size === valueIndexes.length;
     const daylightSavingAdjustment = parts.periodMonth === 3 ? -1 : parts.periodMonth === 10 ? 1 : 0;
     const expectedRows = parts.daysInMonth * 24 + daylightSavingAdjustment;
     const timestamps: number[] = [];
@@ -168,8 +179,15 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
       timestamps.push(timestamp);
       const status = String(row[statusIndex] ?? '').trim();
       const validStatus = status === 'Dane rzeczywiste' || status === 'Dane szacowane';
-      const values = valueIndexes.map((valueIndex) => numericCell(row[valueIndex]));
-      const validValues = values.every((value) => value !== undefined && value >= 0);
+      // ENEA leaves inactive OBIS tariff zones empty, including after a tariff change mid-month.
+      const populatedIndexes = valueIndexes.filter((index) => String(row[index] ?? '').trim() !== '');
+      const values = (isZonedReport ? populatedIndexes : valueIndexes).map((index) => numericCell(row[index]));
+      const totalRegisterIndex = registers.findIndex((match) => match?.[2] === '0');
+      if (isZonedReport && populatedIndexes.length > 1 && totalRegisterIndex >= 0
+        && populatedIndexes.includes(valueIndexes[totalRegisterIndex])) {
+        throw new Error('W jednej godzinie podano jednocześnie energię łączną i strefową. Nie można ich sumować bez podwójnego naliczenia');
+      }
+      const validValues = values.length > 0 && values.every((value) => value !== undefined && value >= 0);
       if (!validStatus) invalidStatusRows += 1;
       if (!validValues) invalidValueRows += 1;
       if (!validStatus || !validValues) {
@@ -221,6 +239,11 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
       throw new Error(`Plik nie zawiera pełnego miesiąca pomiarów godzinowych (${validRows}/${expectedRows} poprawnych pomiarów)`);
     }
 
+    const totalKwh = Math.round(calculatedTotal * 1000) / 1000;
+    const reportedTotal = findTotal(rows, headerIndex, valueIndexes);
+    if (isZonedReport && reportedTotal != null && Math.abs(reportedTotal - totalKwh) > 0.001000001) {
+      throw new Error('Suma energii w strefach nie zgadza się z pomiarami godzinowymi');
+    }
     return {
       kind: importIndexes.length ? 'ACTIVE_IMPORT' : 'ACTIVE_EXPORT',
       ppeNumber,
@@ -228,7 +251,7 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
       periodYear: parts.periodYear,
       periodMonth: parts.periodMonth,
       aggregation: '60 min',
-      totalKwh: findTotal(rows, headerIndex, valueIndexes) ?? Math.round(calculatedTotal * 1000) / 1000,
+      totalKwh: reportedTotal ?? totalKwh,
       rowsCount: timestamps.length,
       sheetName,
     };

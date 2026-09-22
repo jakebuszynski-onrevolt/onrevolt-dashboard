@@ -1,9 +1,8 @@
-import { execFile } from 'node:child_process';
-import path from 'node:path';
 import type { EnergyUsageMonth, EnergyUsageProfile } from './energy-profile';
 import { prisma } from './prisma';
 import { readReConsumptionProfile, type ReConsumptionProfile } from './re-consumption-api';
 import { rePrisma, resolveReStation } from './re-stations';
+import { readReConsumptionDashboard } from './re-consumption-dashboard';
 
 type Payload = Record<string, any>;
 type Series = Array<[string, number, number?]>;
@@ -144,20 +143,6 @@ export function buildReEnergyUsageProfile(input: {
     measuredDays: actual.size, pvIncluded: needsPv };
 }
 
-async function readDashboard(station: string): Promise<Payload> {
-  const stdout = await new Promise<string>((resolve, reject) => execFile(process.env.ONREVOLT_PHP_BIN?.trim() || 'php',
-    [path.resolve('scripts/read-re-consumption.php'), process.env.ONREVOLT_RE_ROOT?.trim()
-      || '/var/www/vhosts/onrevolt.com/my.onrevolt.com', station],
-    { timeout: 120_000, maxBuffer: 128 * 1024 * 1024, encoding: 'utf8', windowsHide: true },
-    (error, output) => error ? reject(new Error(`Nie udało się odczytać dashboardu RE: ${error.message}`)) : resolve(output)));
-  let payload: Payload;
-  try { payload = JSON.parse(stdout); } catch { throw new Error('Dashboard RE nie zwrócił poprawnego JSON'); }
-  if (!payload || Array.isArray(payload) || typeof payload !== 'object' || payload.error || !payload.account) {
-    throw new Error(`Błąd dashboardu RE: ${String(payload?.error || 'brak danych konta')}`);
-  }
-  return payload;
-}
-
 async function readSeries(api: 'pv', params: Record<string, string>): Promise<Series> {
   const url = new URL('get_dbdata.php', process.env.ONREVOLT_RE_PROFILE_URL?.trim() || 'https://my.onrevolt.com/re/setup_func.php');
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Nieprawidłowy adres API RE');
@@ -193,7 +178,8 @@ export async function readProjectReConsumptionProfile(projectId: string, options
   const measured = await db.$queryRawUnsafe<Payload[]>(
     'SELECT 1 FROM EnergyMeter USE INDEX (station) WHERE station=? LIMIT 1', station.station);
   // An indexed existence check proves profile-only; CLI failures never select it.
-  const dashboard = measured.length ? await readDashboard(station.station) : { account: metadata[0], energy: {} };
+  const dashboard = measured.length ? await readReConsumptionDashboard(station.station, metadata[0].dateStart)
+    : { account: metadata[0], energy: {} };
   const config = settings(dashboard, profile);
   const end = new Date(config.start);
   end.setUTCFullYear(end.getUTCFullYear() + 1);

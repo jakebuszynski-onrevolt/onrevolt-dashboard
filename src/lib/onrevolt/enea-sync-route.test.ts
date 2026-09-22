@@ -22,13 +22,14 @@ function fixture(options: {
   concurrentFile?: boolean;
   reFailure?: 'result' | 'throw';
   noProject?: boolean;
+  noStation?: boolean;
 } = {}) {
   const root = path.resolve('__virtual_enea_uploads__');
   const account = { id: 'account', clientId: 'client', projectId: options.noProject ? null : 'project',
     operator: 'ENEA', login: 'fixture', encryptedPassword: 'fixture', portalPpeId: 'ppe' };
   const state = {
     records: new Map<string, any>(), documents: new Map<string, any>(), files: new Map<string, Buffer>(),
-    events: [] as string[], reCalls: [] as string[], accountUpdates: [] as any[], sequence: 0,
+    events: [] as string[], reCalls: [] as string[], accountUpdates: [] as any[], sequence: 0, portalLogins: 0,
   };
   function addExisting(kind: string, prefix = 'old') {
     const document = { id: `${prefix}-${kind}`, storagePath: `${prefix}-${kind}.xlsx`, fileName: `${prefix}.xlsx` };
@@ -104,6 +105,9 @@ function fixture(options: {
       } finally { release(); }
     },
   };
+  class ReStationRequiredError extends Error {
+    constructor() { super('Brak przypisanej stacji RE. Najpierw przypisz stację w zakładce EMS, a następnie ponów import danych pomiarowych.'); }
+  }
   const modules: Record<string, unknown> = {
     crypto: { createHash, randomUUID: () => `file-${++state.sequence}` },
     path,
@@ -130,7 +134,7 @@ function fixture(options: {
     'lib/onrevolt/enea-portal': {
       getClosedMonths: () => [{ year: 2026, month: 8, dateFrom: '2026-08-01', dateTo: '2026-08-31' }],
       eneaMeasurementLabel: (kind: string) => kind,
-      loginEneaPortal: async () => ({}), listEneaPpes: async () => [{ id: 'ppe' }], selectEneaPpe: () => ({ id: 'ppe' }),
+      loginEneaPortal: async () => { state.portalLogins++; return {}; }, listEneaPpes: async () => [{ id: 'ppe' }], selectEneaPpe: () => ({ id: 'ppe' }),
       downloadEneaMeasurementXlsx: async (_session: any, _ppe: any, _month: any, kind: string) => {
         state.events.push(`download:${kind}`);
         if (options.concurrentFile) addExisting(kind, 'concurrent');
@@ -140,6 +144,13 @@ function fixture(options: {
     },
     'lib/onrevolt/prisma': { prisma },
     'lib/onrevolt/re-consumption-sync': {
+      ReStationRequiredError,
+      requireProjectReStation: async (clientId: string, projectId?: string) => {
+        assert.equal(clientId, 'client');
+        assert.equal(projectId, options.noProject ? undefined : 'project');
+        if (options.noStation) throw new ReStationRequiredError();
+        return { station: '41', stationHash: 'token' };
+      },
       syncEnergyMeasurementToRe: async (id: string) => {
         state.events.push('re'); state.reCalls.push(id);
         const record = [...state.records.values()].find(item => item.id === id);
@@ -159,11 +170,11 @@ function fixture(options: {
   });
   // Execute the actual route with every database, portal and filesystem side effect kept in memory.
   new vm.Script(routeCode, { filename: routePath }).runInContext(context, { timeout: 10000 });
-  const run = async (force = true) => {
+  const run = async (force = true, expectedStatus = 200) => {
     const response: Response = await exported.POST(new Request('https://crm.example.test/api/integrations/enea/sync', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: 'account', months: 1, force }),
     }));
-    assert.equal(response.status, 200); return response.json();
+    assert.equal(response.status, expectedStatus); return response.json();
   };
   function oldFilesIntact() {
     for (const kind of kinds) assert.equal(state.files.get(path.join(root, `old-${kind}.xlsx`))?.toString(), `old workbook ${kind}`);
@@ -183,6 +194,18 @@ test('force atomically replaces active import/export links and retains every arc
   assert.deepEqual(f.state.events, kinds.flatMap(kind => [
     `download:${kind}`, 'begin', 'lock:account', 'recheck', 'file', 'document', 'upsert:DOWNLOADED', 'commit', 're',
   ]));
+});
+
+test('brak stacji daje jeden komunikat EMS przed logowaniem ENEA i bez zmian miesięcznych plików', async () => {
+  const f = fixture({ existing: true, noStation: true });
+  const result = await f.run(false, 400);
+  assert.match(result.message, /Najpierw przypisz stację w zakładce EMS/);
+  assert.deepEqual(f.initial(), f.before);
+  f.oldFilesIntact();
+  assert.equal(f.state.portalLogins, 0);
+  assert.equal(f.state.reCalls.length, 0);
+  assert.equal(f.state.accountUpdates.length, 0);
+  assert.deepEqual(f.state.events, []);
 });
 
 test('failed force download preserves DOWNLOADED, document, timestamp and pending RE error', async () => {

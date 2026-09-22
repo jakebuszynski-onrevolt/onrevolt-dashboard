@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
-import { listReConsumptionMeasurements, syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
+import { listReConsumptionMeasurements, ReStationRequiredError, requireProjectReStation, syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export const runtime = 'nodejs';
@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    await requireProjectReStation(input.clientId, input.projectId);
     const { project, measurements } = await listReConsumptionMeasurements(input.clientId, input.projectId);
     const selected = input.measurementId ? measurements.filter((file) => file.id === input.measurementId) : measurements;
     if (input.measurementId && !selected.length) {
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
       data: { clientId: input.clientId, projectId: project.id, results, counts, message },
     }, { status: counts.failed ? 502 : 200 });
   } catch (error) {
+    if (error instanceof ReStationRequiredError) return badRequest(error.message);
     return serverError('Nie udało się zsynchronizować zapisanych XLSX z RE; pliki CRM pozostają zachowane', error);
   }
 }

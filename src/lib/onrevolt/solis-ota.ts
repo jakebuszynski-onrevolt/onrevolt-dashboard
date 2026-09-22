@@ -8,6 +8,7 @@ export type SolisOtaState = 'IDLE' | 'WAITING' | 'DOWNLOADING' | 'VERIFYING' | '
 
 export const SOLIS_RAPID_COMMANDS = [
   'OTA_CHECK_NOW',
+  'PHASE_DIAGNOSTICS',
   'EXPORT_BLOCK_ON',
   'EXPORT_BLOCK_OFF',
   'PV_BLOCK_ON',
@@ -35,6 +36,7 @@ export type SolisOtaStateInput = {
 
 const versionPattern = /^[A-Za-z0-9._-]{1,80}$/;
 const minimumRapidCommandFirmware = '2026.09.02.4';
+const minimumPhaseDiagnosticsFirmware = '2026.09.16.1';
 
 export function isValidSolisFirmwareVersion(value: string) {
   return versionPattern.test(value.trim());
@@ -52,6 +54,15 @@ export function supportsSolisRapidCommands(firmwareVersion: string | null | unde
   const version = String(firmwareVersion || '').trim();
   if (!isValidSolisFirmwareVersion(version)) return false;
   return version.localeCompare(minimumRapidCommandFirmware, undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  }) >= 0;
+}
+
+export function supportsSolisPhaseDiagnostics(firmwareVersion: string | null | undefined) {
+  const version = String(firmwareVersion || '').trim();
+  if (!isValidSolisFirmwareVersion(version)) return false;
+  return version.localeCompare(minimumPhaseDiagnosticsFirmware, undefined, {
     numeric: true,
     sensitivity: 'base',
   }) >= 0;

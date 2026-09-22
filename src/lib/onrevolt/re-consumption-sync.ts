@@ -13,7 +13,7 @@ import {
   validateReConsumptionPeriod,
   type ReConsumptionPreflight,
 } from './re-consumption-api';
-import { createReStation, resolveReStation, type ResolvedReStation } from './re-stations';
+import { resolveReStation, type ResolvedReStation } from './re-stations';
 
 export type ReConsumptionSyncResult = {
   status: 'synced' | 'existing' | 'failed';
@@ -28,6 +28,12 @@ export type ReConsumptionSyncOptions = {
 };
 
 const reErrorPrefix = '[RE] ';
+export class ReStationRequiredError extends Error {
+  constructor() {
+    super('Brak przypisanej stacji RE. Najpierw przypisz stację w zakładce EMS, a następnie ponów import danych pomiarowych.');
+    this.name = 'ReStationRequiredError';
+  }
+}
 const transactionOptions = { maxWait: 120_000, timeout: 120_000 };
 const projectSelect = { id: true, clientId: true, dashboardStation: true, dashboardStationNumber: true } as const;
 type ProjectLink = Prisma.ProjectGetPayload<{ select: typeof projectSelect }>;
@@ -63,32 +69,19 @@ async function resolveProjectStation(project: ProjectLink): Promise<ResolvedReSt
   return station;
 }
 
+export async function requireProjectReStation(clientId: string, projectId?: string): Promise<ResolvedReStation> {
+  const project = await findProject(clientId, projectId);
+  const station = await resolveProjectStation(project);
+  if (!station) throw new ReStationRequiredError();
+  return station;
+}
+
 export async function ensureProjectReStation(clientId: string, projectId: string): Promise<ResolvedReStation> {
-  if (!projectId?.trim()) throw new Error('Brak projectId dla tworzenia stacji RE');
+  if (!projectId?.trim()) throw new Error('Brak projectId dla powiązania stacji RE');
   return prisma.$transaction(async (tx) => {
     const project = await lockProject(tx, clientId, projectId);
-    let station = await resolveProjectStation(project);
-    if (!station) {
-      const context = await tx.project.findUniqueOrThrow({
-        where: { id: projectId },
-        select: {
-          client: { select: { displayName: true } },
-          investmentSite: { select: { latitude: true, longitude: true } },
-          energyAudits: { select: { profileSource: true, annualConsumptionKwh: true, existingPvKw: true }, take: 1 },
-        },
-      });
-      const audit = context.energyAudits[0];
-      const site = context.investmentSite;
-      const initialProfile = {
-        displayName: context.client.displayName,
-        ...(audit && audit.profileSource !== 'OPERATOR_HOURLY' && audit.annualConsumptionKwh != null
-          ? { annualUsageKwh: Number(audit.annualConsumptionKwh) } : {}),
-        ...(audit?.existingPvKw != null ? { pvSizeKwp: Number(audit.existingPvKw) } : {}),
-        ...(site?.latitude != null && site.longitude != null ? { lat: Number(site.latitude), lon: Number(site.longitude) } : {}),
-        simulationStartDate: new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1)),
-      };
-      station = await createReStation(initialProfile);
-    }
+    const station = await resolveProjectStation(project);
+    if (!station) throw new ReStationRequiredError();
     if (project.dashboardStation !== station.stationHash || project.dashboardStationNumber !== station.station) {
       await tx.project.update({
         where: { id: projectId },
@@ -107,9 +100,7 @@ export async function preflightProjectReConsumption(input: {
   replaceExisting?: boolean;
 }): Promise<ReConsumptionPreflight> {
   validateReConsumptionPeriod(input.workbook);
-  const project = await findProject(input.clientId, input.projectId);
-  const station = await resolveProjectStation(project);
-  if (!station) return { status: 'ready', station: null, message: 'Stacja RE zostanie utworzona przy synchronizacji pierwszego XLSX' };
+  const station = await requireProjectReStation(input.clientId, input.projectId);
   return preflightReConsumptionWorkbook({ ...input, station: station.station });
 }
 

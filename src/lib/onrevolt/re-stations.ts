@@ -4,6 +4,7 @@ import {
   isSolisStationType,
   isValidSolisFirmwareVersion,
   isValidSolisRapidCommand,
+  supportsSolisPhaseDiagnostics,
   supportsSolisRapidCommands,
   type SolisRapidCommand,
 } from './solis-ota';
@@ -602,6 +603,9 @@ export async function requestReStationRapidCommand(
   }
   if (!supportsSolisRapidCommands(before.firmwareVersion)) {
     throw new ReStationControlRequestError('Szybkie polecenia wymagają firmware Solis 2026.09.02.4 lub nowszego');
+  }
+  if (command === 'PHASE_DIAGNOSTICS' && !supportsSolisPhaseDiagnostics(before.firmwareVersion)) {
+    throw new ReStationControlRequestError('Diagnostyka faz wymaga firmware Solis 2026.09.16.1 lub nowszego');
   }
 
   const db = rePrisma();

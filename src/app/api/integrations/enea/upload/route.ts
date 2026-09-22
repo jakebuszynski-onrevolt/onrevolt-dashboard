@@ -6,7 +6,7 @@ import { badRequest, jsonResponse, notFound, serverError } from 'lib/onrevolt/ap
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { closedMeasurementPeriodKeys, inspectEnergyMeasurementWorkbook } from 'lib/onrevolt/energy-measurement-document';
 import { prisma } from 'lib/onrevolt/prisma';
-import { preflightProjectReConsumption, syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
+import { preflightProjectReConsumption, ReStationRequiredError, requireProjectReStation, syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export const runtime = 'nodejs';
@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
     ]);
     if (!client) return notFound('Nie znaleziono klienta');
     if (projectId && !project) return notFound('Nie znaleziono projektu tego klienta');
+    await requireProjectReStation(clientId, projectId);
 
     const bytes = Buffer.from(await file.arrayBuffer());
     let info;
@@ -227,6 +228,7 @@ export async function POST(req: NextRequest) {
     const reSync = await syncEnergyMeasurementToRe(measurementId, { clientId, projectId, actorId: access.user.id, replaceExisting: replaceReProfile });
     return jsonResponse({ ok: true, data: { document, workbook: info, reSync } }, { status: 201 });
   } catch (error) {
+    if (error instanceof ReStationRequiredError) return badRequest(error.message);
     return serverError('Nie udało się dodać danych pomiarowych XLSX', error);
   }
 }

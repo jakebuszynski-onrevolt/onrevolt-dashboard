@@ -61,7 +61,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDeleteOutline, MdEdit, MdExpandLess, MdExpandMore, MdOpenInNew, MdPrint, MdRefresh, MdSystemUpdateAlt, MdUploadFile, MdVpnKey } from 'react-icons/md';
+import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDeleteOutline, MdEdit, MdExpandLess, MdExpandMore, MdOpenInNew, MdPrint, MdRefresh, MdSystemUpdateAlt, MdTroubleshoot, MdUploadFile, MdVpnKey } from 'react-icons/md';
 
 type ClientProfileProps = {
   clientId: string;
@@ -261,6 +261,7 @@ type ReStationFirmwareStatus = {
   uid?: string | null;
   rapidControl: {
     supported: boolean;
+    phaseDiagnosticsSupported: boolean;
     command: {
       sequence: number;
       name?: string | null;
@@ -804,6 +805,7 @@ function formatFirmwareSize(value: number) {
 function rapidCommandLabel(command?: string | null) {
   return {
     OTA_CHECK_NOW: 'Natychmiastowe sprawdzenie OTA i konfiguracji',
+    PHASE_DIAGNOSTICS: 'Diagnostyka faz',
     EXPORT_BLOCK_ON: 'Włączenie blokady eksportu',
     EXPORT_BLOCK_OFF: 'Wyłączenie blokady eksportu',
     PV_BLOCK_ON: 'Włączenie blokady PV',
@@ -2317,6 +2319,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
     const confirmations: Record<string, string> = {
       OTA_CHECK_NOW: 'Natychmiast sprawdzić OTA i pobrać konfigurację?',
+      PHASE_DIAGNOSTICS: 'Uruchomić jednorazową diagnostykę zgodności faz falownika i licznika? Polecenie wykonuje wyłącznie odczyty.',
       EXPORT_BLOCK_ON: 'Włączyć blokadę eksportu energii do sieci?',
       EXPORT_BLOCK_OFF: 'Wyłączyć blokadę eksportu i przywrócić możliwość oddawania energii do sieci?',
       PV_BLOCK_ON: 'Zatrzymać produkcję PV? Solis przejdzie także w standby baterii.',
@@ -4046,21 +4049,44 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                       Urządzenie odbiera polecenia co około 10 sekund. Jednocześnie może oczekiwać tylko jedno polecenie.
                                     </Text>
                                   </Box>
-                                  <Button
-                                    leftIcon={<MdRefresh />}
-                                    variant="outline"
-                                    size="sm"
-                                    alignSelf={{ base: 'start', md: 'center' }}
-                                    onClick={() => requestSolisRapidCommand('OTA_CHECK_NOW')}
-                                    isLoading={solisAction === 'OTA_CHECK_NOW'}
-                                    isDisabled={
-                                      !reStationStatus.firmware.rapidControl.supported
-                                      || reStationStatus.firmware.rapidControl.command.state === 'PENDING'
-                                      || Boolean(solisAction && solisAction !== 'OTA_CHECK_NOW')
-                                    }
-                                  >
-                                    Sprawdź OTA teraz
-                                  </Button>
+                                  <Flex gap="8px" wrap="wrap" alignSelf={{ base: 'start', md: 'center' }}>
+                                    <Tooltip
+                                      label={reStationStatus.firmware.rapidControl.phaseDiagnosticsSupported
+                                        ? 'Porównaj fazy falownika i licznika na trzech kolejnych odczytach'
+                                        : 'Wymaga firmware Solis 2026.09.16.1 lub nowszego'}
+                                    >
+                                      <Box as="span">
+                                        <Button
+                                          leftIcon={<MdTroubleshoot />}
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => requestSolisRapidCommand('PHASE_DIAGNOSTICS')}
+                                          isLoading={solisAction === 'PHASE_DIAGNOSTICS'}
+                                          isDisabled={
+                                            !reStationStatus.firmware.rapidControl.phaseDiagnosticsSupported
+                                            || reStationStatus.firmware.rapidControl.command.state === 'PENDING'
+                                            || Boolean(solisAction && solisAction !== 'PHASE_DIAGNOSTICS')
+                                          }
+                                        >
+                                          Diagnostyka faz
+                                        </Button>
+                                      </Box>
+                                    </Tooltip>
+                                    <Button
+                                      leftIcon={<MdRefresh />}
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => requestSolisRapidCommand('OTA_CHECK_NOW')}
+                                      isLoading={solisAction === 'OTA_CHECK_NOW'}
+                                      isDisabled={
+                                        !reStationStatus.firmware.rapidControl.supported
+                                        || reStationStatus.firmware.rapidControl.command.state === 'PENDING'
+                                        || Boolean(solisAction && solisAction !== 'OTA_CHECK_NOW')
+                                      }
+                                    >
+                                      Sprawdź OTA teraz
+                                    </Button>
+                                  </Flex>
                                 </Flex>
 
                                 {!reStationStatus.firmware.rapidControl.supported ? (

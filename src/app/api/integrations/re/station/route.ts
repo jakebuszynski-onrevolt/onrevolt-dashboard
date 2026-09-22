@@ -30,6 +30,7 @@ import {
   deriveSolisRapidCommandState,
   isSolisStationType,
   listSolisFirmwareReleases,
+  supportsSolisPhaseDiagnostics,
   supportsSolisRapidCommands,
   type SolisFirmwareRelease,
 } from 'lib/onrevolt/solis-ota';
@@ -87,6 +88,7 @@ function serializeStationStatus(
       uid: status.uid,
       rapidControl: {
         supported: supportsSolisRapidCommands(status.firmwareVersion),
+        phaseDiagnosticsSupported: supportsSolisPhaseDiagnostics(status.firmwareVersion),
         command: {
           sequence: status.rapidCommandSequence,
           name: status.rapidCommand,

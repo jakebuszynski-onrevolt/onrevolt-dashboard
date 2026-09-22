@@ -16,7 +16,7 @@ import {
   selectEneaPpe,
 } from 'lib/onrevolt/enea-portal';
 import { prisma } from 'lib/onrevolt/prisma';
-import { syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
+import { ReStationRequiredError, requireProjectReStation, syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export const runtime = 'nodejs';
@@ -187,6 +187,7 @@ export async function POST(req: NextRequest) {
 
     if (!account) return notFound('Nie znaleziono konta ENEA do synchronizacji');
     if (account.operator !== 'ENEA') return badRequest('Automatyczna synchronizacja jest teraz dostępna tylko dla ENEA');
+    await requireProjectReStation(account.clientId, account.projectId || undefined);
     if (!account.login || !account.encryptedPassword) {
       return badRequest('Konto ENEA wymaga loginu i zapisanego hasła');
     }
@@ -360,6 +361,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof ReStationRequiredError) return badRequest(error.message);
     if (accountId) {
       await markAccountSync(accountId, 'FAILED', syncErrorMessage(error)).catch(() => undefined);
     }

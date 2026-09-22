@@ -118,6 +118,66 @@ test('wymaga poprawnej wartości w każdej kolumnie energii, a nie tylko w pierw
   assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes(rows)), /743\/744 poprawnych pomiarów/);
 });
 
+function zonedReport(kind: 'pobrana' | 'oddana' = 'pobrana') {
+  const rows = hourlyReport(kind, 2026, 8);
+  const prefix = kind === 'pobrana' ? '1' : '2';
+  rows[5] = ['Dzień', ...[0, 1, 2, 3].map((zone) => `Energia czynna ${kind} (${prefix}.8.${zone}) po bilansowaniu`), 'Status'];
+  const totals = [0, 0, 0, 0];
+  for (let index = 6; index < rows.length - 1; index += 1) {
+    const hour = index - 6;
+    const zone = hour < 240 ? 0 : 1 + ((hour - 240) % 3);
+    const value = zone === 0 ? 0 : zone / 10;
+    rows[index] = [rows[index][0], ...[0, 1, 2, 3].map((column) => column === zone ? value : ''), 'Dane rzeczywiste'];
+    totals[zone] += value;
+  }
+  rows[rows.length - 1] = ['Suma', ...totals.map((value) => Math.round(value * 1000) / 1000)];
+  return rows;
+}
+
+for (const kind of ['pobrana', 'oddana'] as const) {
+  test(`akceptuje nieaktywne strefy OBIS i zmianę taryfy w miesiącu: energia ${kind}`, () => {
+    const rows = zonedReport(kind);
+    const info = inspectEnergyMeasurementWorkbook(workbookBytes(rows));
+    assert.equal(info.rowsCount, 744);
+    assert.equal(info.totalKwh, 100.8);
+    assert.equal(info.kind, kind === 'pobrana' ? 'ACTIVE_IMPORT' : 'ACTIVE_EXPORT');
+    rows.pop();
+    assert.equal(inspectEnergyMeasurementWorkbook(workbookBytes(rows)).totalKwh, 100.8);
+  });
+}
+
+test('odrzuca całkowicie pustą godzinę również w raporcie strefowym', () => {
+  const rows = zonedReport();
+  rows[6][1] = '';
+  assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes(rows)), /743\/744 poprawnych pomiarów/);
+});
+
+for (const value of ['brak', -1, 'Infinity', false]) {
+  test(`odrzuca niepoprawną wartość strefy ${String(value)} mimo innej poprawnej strefy`, () => {
+    const rows = zonedReport();
+    rows[246][3] = value;
+    assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes(rows)), /743\/744 poprawnych pomiarów/);
+  });
+}
+
+test('raport strefowy nadal wymaga poprawnego statusu godziny', () => {
+  const rows = zonedReport();
+  rows[6][5] = '';
+  assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes(rows)), /statusem: 1; wartością kWh: 0/);
+});
+
+test('nie sumuje jednocześnie rejestru łącznego i jego stref', () => {
+  const rows = zonedReport();
+  rows[6][2] = 1;
+  assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes(rows)), /jednocześnie energię łączną i strefową/);
+});
+
+test('sprawdza zgodność sum wszystkich stref z pomiarami', () => {
+  const rows = zonedReport();
+  rows[rows.length - 1][2] = 999;
+  assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes(rows)), /nie zgadza się/);
+});
+
 test('nie wymaga statusu ani pomiaru w wierszach opisowych i podsumowaniu', () => {
   const rows = hourlyReport('pobrana', 2026, 1);
   rows.push([], ['Uwagi', 'Raport za pełny miesiąc']);

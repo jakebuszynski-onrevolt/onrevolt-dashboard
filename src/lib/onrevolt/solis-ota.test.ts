@@ -7,6 +7,7 @@ import {
   isValidSolisRapidCommand,
   isValidSolisFirmwareVersion,
   listSolisFirmwareReleases,
+  supportsSolisPhaseDiagnostics,
   supportsSolisRapidCommands,
 } from './solis-ota';
 
@@ -62,8 +63,16 @@ test('udostępnia szybkie polecenia dopiero od firmware 2026.09.02.4', () => {
 
 test('akceptuje wyłącznie znane szybkie polecenia Solis', () => {
   assert.equal(isValidSolisRapidCommand('OTA_CHECK_NOW'), true);
+  assert.equal(isValidSolisRapidCommand('PHASE_DIAGNOSTICS'), true);
   assert.equal(isValidSolisRapidCommand('export_block_on'), true);
   assert.equal(isValidSolisRapidCommand('RESTART'), false);
+});
+
+test('udostępnia diagnostykę faz dopiero od firmware 2026.09.16.1', () => {
+  assert.equal(supportsSolisPhaseDiagnostics('2026.09.11.2'), false);
+  assert.equal(supportsSolisPhaseDiagnostics('2026.09.16.1'), true);
+  assert.equal(supportsSolisPhaseDiagnostics('2026.09.16.2'), true);
+  assert.equal(supportsSolisPhaseDiagnostics(null), false);
 });
 
 test('rozróżnia oczekujące, wygasłe i potwierdzone szybkie polecenia', () => {
