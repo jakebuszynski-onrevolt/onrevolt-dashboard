@@ -12,6 +12,9 @@ import {
   polishPvMonthlyDistribution,
 } from 'lib/onrevolt/energy-scenario';
 import { loadEnergyTariffSnapshots } from 'lib/onrevolt/energy-tariff-pricing';
+import { buildEnergyTariffCostSnapshot } from 'lib/onrevolt/energy-tariff-pricing';
+import { loadClientTariffHistory } from 'lib/onrevolt/client-tariffs-server';
+import { clientTariffAt, tariffToday, tariffScenarioCalendar, tariffScenarioIssue } from 'lib/onrevolt/client-tariffs';
 import {
   calculateHomeEnergyStorageSubsidy,
   calculateThermomodernizationRelief,
@@ -355,15 +358,17 @@ async function energySnapshot(project: any, scenario?: any) {
     : await buildEnergyUsageProfile(importFiles);
   const siteAudit = project.siteAudits?.[0];
   const energyAudit = scenario?.audit || project.energyAudits?.[0] || null;
+  const datedTariff = clientTariffAt(scenario?.inputSnapshot?.currentTariffHistory, tariffToday());
+  const accounts = project.energyPortalAccounts?.length ? project.energyPortalAccounts : datedTariff ? [{}] : [];
   const auditImages = (siteAudit?.documents || []).filter((document: any) => document.mimeType?.startsWith('image/'));
   const coverImage = auditImages.find((document: any) => document.auditFieldKey === 'building.rear')
     || auditImages.find((document: any) => document.auditFieldKey?.startsWith('building.'))
     || auditImages[0];
 
   return {
-    operatorAccounts: (project.energyPortalAccounts || []).map((account: any) => ({
-      operator: account.operator,
-      tariff: account.tariff,
+    operatorAccounts: accounts.map((account: any, index: number) => ({
+      operator: index === 0 && datedTariff ? datedTariff.osd_name || account.operator : account.operator,
+      tariff: index === 0 && datedTariff ? datedTariff.code : account.tariff,
       ppeNumber: account.ppeNumber,
       meterNumber: account.meterNumber,
       lastSyncAt: account.lastSyncAt,
@@ -538,11 +543,43 @@ export async function buildOfferDraft(prisma: PrismaClient, input: OfferCreateIn
 }
 
 export async function createOfferFromConfiguration(prisma: PrismaClient, input: OfferCreateInput) {
-  const draft = await buildOfferDraft(prisma, input);
+  let draft = await buildOfferDraft(prisma, input);
+  const calendar = tariffScenarioCalendar(draft.data.energySnapshot.usageProfile);
+  const history = await loadClientTariffHistory(draft.project.clientId, input.projectId, calendar.from, calendar.until);
+  let tariffScenario: any = null;
+  if (history) {
+    const issue = tariffScenarioIssue(history, calendar.calendarYearsByMonth);
+    if (issue) throw new OfferRecalculationError(issue.message);
+    const audit = draft.project.energyAudits[0];
+    const current = clientTariffAt(history, tariffToday());
+    if (!audit || !current) throw new OfferRecalculationError('Uzupełnij dane energetyczne i aktualną taryfę klienta.');
+    if (!input.tariffAfter) throw new OfferRecalculationError('Wybierz taryfę proponowaną w ofercie.');
+    const account = draft.project.energyPortalAccounts[0];
+    const operator = String(current.osd_name || account?.operator || '');
+    const annualConsumptionKwh = finiteNumber(draft.data.energySnapshot.usageProfile?.annualKwh ?? audit.annualConsumptionKwh);
+    const invoice = await prisma.document.findFirst({ where: { projectId: input.projectId, type: 'FAKTURA_PRAD', billingCycleMonths: { not: null } },
+      select: { billingCycleMonths: true }, orderBy: [{ documentDate: 'desc' }, { createdAt: 'desc' }] });
+    const billingCycleMonths = invoice?.billingCycleMonths || 1;
+    const target = await loadEnergyTariffSnapshots({ operator, tariffCodes: [input.tariffAfter], annualUsageKwh: annualConsumptionKwh,
+      billingCycleMonths, connectionPowerKw: finiteNumber(audit.connectionPowerKw) });
+    const scenarioInput = buildOfferScenarioInput({ annualConsumptionKwh, profileSource: audit.profileSource,
+      usageProfile: draft.data.energySnapshot.usageProfile, configurations: draft.configurations,
+      existingPvKw: audit.existingPvKw, existingBatteryKwh: audit.existingBatteryKwh,
+      existingInput: draft.data.energySnapshot.scenario?.input, investmentGross: draft.data.totalGross,
+      currentTariff: buildEnergyTariffCostSnapshot({ tariff: current, operator, annualUsageKwh: annualConsumptionKwh,
+        billingCycleMonths, connectionPowerKw: finiteNumber(audit.connectionPowerKw) }), targetTariff: target[input.tariffAfter] });
+    Object.assign(scenarioInput, { currentTariffHistory: history, scenarioYear: calendar.scenarioYear, calendarYearsByMonth: calendar.calendarYearsByMonth, billingCycleMonths, connectionPowerKw: finiteNumber(audit.connectionPowerKw) });
+    tariffScenario = { id: randomUUID(), auditId: audit.id, name: 'Oferta z historią taryf klienta',
+      engineVersion: energyScenarioEngineVersion, inputSnapshot: scenarioInput, resultSnapshot: calculateEnergyScenario(scenarioInput),
+      pvPowerKw: scenarioInput.pvPowerKw, batteryCapacityKwh: scenarioInput.batteryCapacityKwh,
+      investmentGross: scenarioInput.investmentGross, recommended: false };
+    draft = await buildOfferDraft(prisma, { ...input, tariffBefore: current.code }, { scenarioOverride: { ...tariffScenario, audit, createdAt: new Date() } });
+  }
   const number = await nextOfferNumber(prisma);
   const { projectId, configurationId, configurationIds, energyScenarioId, ...offerData } = draft.data;
 
   return prisma.$transaction(async (tx) => {
+    if (tariffScenario) await tx.energyScenario.create({ data: tariffScenario });
     const created = await tx.offer.create({
       data: {
         ...offerData,
@@ -663,8 +700,13 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
 
   const lineItems = mergeConfigurationLineItems(configurations);
   const currentTotalGross = money(lineItems.reduce((sum, item) => sum + finiteNumber(item.saleGross), 0));
-  const operator = String(energyAccount?.operator || 'ENEA');
-  const tariffBefore = energyAccount?.tariff || existing.tariffBefore;
+  const calendar = tariffScenarioCalendar(usageProfile);
+  const clientHistory = await loadClientTariffHistory(existing.project.clientId, existing.projectId, calendar.from, calendar.until);
+  const issue = clientHistory && tariffScenarioIssue(clientHistory, calendar.calendarYearsByMonth);
+  if (issue) throw new OfferRecalculationError(issue.message);
+  const currentClientTariff = clientTariffAt(clientHistory, tariffToday());
+  const operator = String(currentClientTariff?.osd_name || energyAccount?.operator || 'ENEA');
+  const tariffBefore = currentClientTariff?.code || energyAccount?.tariff || existing.tariffBefore;
   const tariffAfter = existing.tariffAfter;
   if (!tariffBefore || !tariffAfter) {
     throw new OfferRecalculationError('Oferta nie ma wybranej taryfy przed i po modernizacji.');
@@ -673,7 +715,7 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
   try {
     tariffSnapshots = await loadEnergyTariffSnapshots({
       operator,
-      tariffCodes: [tariffBefore, tariffAfter],
+      tariffCodes: clientHistory ? [tariffAfter] : [tariffBefore, tariffAfter],
       annualUsageKwh: annualConsumptionKwh,
       billingCycleMonths: invoiceWithCycle?.billingCycleMonths || 1,
       connectionPowerKw: finiteNumber(audit.connectionPowerKw),
@@ -695,6 +737,18 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
     currentTariff: tariffSnapshots[tariffBefore],
     targetTariff: tariffSnapshots[tariffAfter],
   });
+  if (clientHistory) {
+    const current = clientTariffAt(clientHistory, tariffToday());
+    if (!current) throw new OfferRecalculationError('Wymaga uzupełnienia: bieżąca taryfa klienta.');
+    scenarioInput.currentTariff = buildEnergyTariffCostSnapshot({ tariff: current, operator,
+      annualUsageKwh: annualConsumptionKwh, billingCycleMonths: invoiceWithCycle?.billingCycleMonths || 1,
+      connectionPowerKw: finiteNumber(audit.connectionPowerKw) });
+    scenarioInput.currentTariffHistory = clientHistory;
+    scenarioInput.scenarioYear = calendar.scenarioYear;
+    scenarioInput.calendarYearsByMonth = calendar.calendarYearsByMonth;
+    scenarioInput.billingCycleMonths = invoiceWithCycle?.billingCycleMonths || 1;
+    scenarioInput.connectionPowerKw = finiteNumber(audit.connectionPowerKw);
+  }
   const scenarioResult = calculateEnergyScenario(scenarioInput);
   const scenarioId = randomUUID();
   const recommended = baseScenario?.recommended ?? true;

@@ -24,6 +24,7 @@ import {
   type ReStationDeviceStatus,
 } from 'lib/onrevolt/re-stations';
 import { prisma } from 'lib/onrevolt/prisma';
+import { prepareClientTariffBinding } from 'lib/onrevolt/client-tariffs-server';
 import { authorizeStaffRequest, isAdminUser } from 'lib/onrevolt/staff-server';
 import {
   deriveSolisOtaState,
@@ -195,6 +196,7 @@ export async function POST(req: NextRequest) {
       return badRequest(`Nie znaleziono stacji RE dla ${stationRef}`);
     }
 
+    const bindTariffs = await prepareClientTariffBinding(clientId, project.id, { token: station.stationHash, number: station.station }, access.user.id);
     const updatedProject = await prisma.project.update({
       where: { id: project.id },
       data: {
@@ -204,8 +206,11 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    let tariffWarning: string | undefined;
+    try { await bindTariffs(); } catch (error) { tariffWarning = `Stacja przypisana. Połącz profil w zakładce Taryfy: ${error instanceof Error ? error.message : String(error)}`; }
     return jsonResponse({
       ok: true,
+      tariffWarning,
       data: {
         project: updatedProject,
         station: station.station,

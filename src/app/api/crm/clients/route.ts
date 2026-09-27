@@ -5,7 +5,8 @@ import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
 import { isOperationalPipelineStageCode, projectStatusStageCode } from 'lib/onrevolt/pipeline-stages';
 import { locationMapProviderValues } from 'lib/onrevolt/location-maps';
-import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser } from 'lib/onrevolt/staff-server';
+import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser, hasStaffPermission } from 'lib/onrevolt/staff-server';
+import { prepareClientTariffBinding } from 'lib/onrevolt/client-tariffs-server';
 
 const clientTypes = new Set(['UNKNOWN', 'B2C', 'B2B', 'B2C_B2B']);
 const locationMapProviderSet = new Set<string>(locationMapProviderValues);
@@ -493,12 +494,20 @@ export async function PUT(req: NextRequest) {
     const projectId = typeof body.projectId === 'string' ? body.projectId : existing.projects[0]?.id;
     const currentUser = await getCurrentStaffUser(req);
     const isAdmin = isAdminUser(currentUser);
+    let bindTariffs: (() => Promise<void>) | undefined;
 
     if (projectBody && projectId) {
       const projected = projectData(displayName, clientType, projectBody, contactBody);
       const existingProject = existing.projects.find((project) => project.id === projectId) || existing.projects[0];
+      if (!existing.projects.some(project => project.id === projectId)) return notFound('Projekt nie należy do klienta');
       if (!isAdmin && lockedStationFieldsChanged(existingProject, projected || {})) {
         return forbidden('Tylko administrator może zmienić numer stacji RE albo token dashboardu po zapisaniu powiązania');
+      }
+      const assignment = { token: projectedValue(projected?.dashboardStation, existingProject.dashboardStation),
+        number: projectedValue(projected?.dashboardStationNumber, existingProject.dashboardStationNumber) };
+      if (assignment.token !== (existingProject.dashboardStation || null) || assignment.number !== (existingProject.dashboardStationNumber || null)) {
+        if (!hasStaffPermission(access.user, 'energy.manage')) return forbidden('Brak uprawnienia do przypisania stacji i taryf');
+        bindTariffs = await prepareClientTariffBinding(id, projectId, assignment, access.user.id);
       }
     }
 
@@ -585,6 +594,11 @@ export async function PUT(req: NextRequest) {
       return client;
     });
 
+    let tariffWarning: string | undefined;
+    if (bindTariffs) {
+      try { await bindTariffs(); }
+      catch (error) { tariffWarning = `Dane klienta zapisane. Powiązanie taryf wymaga ponowienia w zakładce Taryfy: ${error instanceof Error ? error.message : String(error)}`; }
+    }
     const full = await prisma.client.findUnique({
       where: { id: updated.id },
       include: {
@@ -603,7 +617,7 @@ export async function PUT(req: NextRequest) {
       before: existing,
       after: full,
     });
-    return jsonResponse({ ok: true, data: full });
+    return jsonResponse({ ok: true, data: full, tariffWarning });
   } catch (error) {
     return serverError('Nie udało się zaktualizować klienta', error);
   }

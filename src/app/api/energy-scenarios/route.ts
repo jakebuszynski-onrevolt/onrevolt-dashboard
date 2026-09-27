@@ -6,6 +6,8 @@ import { calculateEnergyScenario, energyScenarioEngineVersion, EnergyScenarioInp
 import { prisma } from 'lib/onrevolt/prisma';
 import { readProjectReConsumptionProfile } from 'lib/onrevolt/re-consumption-profile';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
+import { loadClientTariffHistory } from 'lib/onrevolt/client-tariffs-server';
+import { tariffScenarioCalendar, tariffScenarioIssue } from 'lib/onrevolt/client-tariffs';
 
 function numeric(value: unknown, name: string) {
   const number = Number(value);
@@ -49,12 +51,24 @@ export async function POST(req: NextRequest) {
       depositPayoutRate: numeric(input.depositPayoutRate, 'depositPayoutRate'),
       investmentGross: input.investmentGross == null ? undefined : numeric(input.investmentGross, 'investmentGross'),
     };
+    let calendar = tariffScenarioCalendar();
     if (audit.project.dashboardStation || audit.project.dashboardStationNumber) {
       const profile = await readProjectReConsumptionProfile(audit.projectId);
+      calendar = tariffScenarioCalendar(profile);
       if (profile.months.length !== 12 || !(profile.annualKwh > 0)) throw new Error('RE nie ma pełnego profilu zużycia do obliczeń');
       scenarioInput.monthlyConsumptionKwh = profile.months.map((month) => month.totalKwh);
       scenarioInput.hourlyLoadProfile = Array.from({ length: 24 }, (_, hour) => profile.months.reduce((sum, month) => sum + month.hourly[hour], 0));
       scenarioInput.monthlyHourlyLoadProfiles = profile.months.map((month) => month.hourly);
+    }
+    const tariffHistory = await loadClientTariffHistory(audit.project.clientId, audit.projectId, calendar.from, calendar.until);
+    if (tariffHistory) {
+      const issue = tariffScenarioIssue(tariffHistory, calendar.calendarYearsByMonth);
+      if (issue) throw new Error(issue.message);
+      scenarioInput.currentTariffHistory = tariffHistory;
+      scenarioInput.scenarioYear = calendar.scenarioYear;
+      scenarioInput.calendarYearsByMonth = calendar.calendarYearsByMonth;
+      scenarioInput.connectionPowerKw = Number(audit.connectionPowerKw || 0);
+      scenarioInput.billingCycleMonths = Number(input.billingCycleMonths || 1);
     }
     const result = calculateEnergyScenario(scenarioInput);
     const recommended = body.recommended === true;

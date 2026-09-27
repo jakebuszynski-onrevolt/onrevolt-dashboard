@@ -1,4 +1,7 @@
-export const energyScenarioEngineVersion = 'ONREVOLT_RE_SIM_1.1.0';
+import type { ClientTariffHistory } from './client-tariffs';
+import tariffEngine from '../../../public/shared/re-tariff-engine';
+
+export const energyScenarioEngineVersion = 'ONREVOLT_RE_SIM_1.2.0';
 
 export type EnergyTariffZoneRate = {
   code: string;
@@ -46,6 +49,11 @@ export type EnergyScenarioInput = {
   exportGrossPerKwh: number;
   fixedMonthlyGross: number;
   currentTariff?: EnergyTariffCostSnapshot;
+  currentTariffHistory?: ClientTariffHistory;
+  scenarioYear?: number;
+  calendarYearsByMonth?: number[];
+  billingCycleMonths?: number;
+  connectionPowerKw?: number;
   targetTariff?: EnergyTariffCostSnapshot;
   depositPayoutRate: number;
   investmentGross?: number;
@@ -205,9 +213,15 @@ export function calculateEnergyScenario(input: EnergyScenarioInput): EnergyScena
   let annualBatteryCharge = 0;
   let annualBatteryDischarge = 0;
   const months: EnergyScenarioMonth[] = [];
+  const history = input.currentTariffHistory;
+  if (history && (!Number.isInteger(input.scenarioYear) || !input.scenarioYear)) throw new Error('Historia taryf wymaga roku obliczeń.');
+  if (input.calendarYearsByMonth && (input.calendarYearsByMonth.length !== 12 || input.calendarYearsByMonth.some(y => !Number.isInteger(y) || y < 1900 || y > 2200))) throw new Error('Nieprawidłowe lata miesięcy profilu.');
+  const fixedOptions = { annualUsageKwh: input.monthlyConsumptionKwh.reduce((sum, kwh) => sum + kwh, 0),
+    billingCycleMonths: input.billingCycleMonths || 1, connectionPowerKw: input.connectionPowerKw ?? 0 };
 
   for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
-    const days = daysInMonth[monthIndex];
+    const year = input.calendarYearsByMonth?.[monthIndex] || input.scenarioYear;
+    const days = year ? new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate() : daysInMonth[monthIndex];
     const monthConsumption = input.monthlyConsumptionKwh[monthIndex];
     const monthPv = annualPvGenerationKwh * pvMonthProfile[monthIndex];
     const monthTotals = {
@@ -220,9 +234,13 @@ export function calculateEnergyScenario(input: EnergyScenarioInput): EnergyScena
       baselineDistribution: 0,
       scenarioEnergy: 0,
       scenarioDistribution: 0,
+      baselineFixed: 0,
     };
 
     for (let day = 0; day < days; day += 1) {
+      const date = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day + 1).padStart(2, '0')}`;
+      const datedTariff = history ? tariffEngine.resolve(history, date, null) : null;
+      if (datedTariff) monthTotals.baselineFixed += tariffEngine.fixedDaily(datedTariff, date, fixedOptions);
       for (let hour = 0; hour < 24; hour += 1) {
         const load = monthConsumption * (monthlyLoadProfiles?.[monthIndex] || loadProfile)[hour] / days;
         const pv = monthPv * pvHourProfiles[monthIndex][hour] / days;
@@ -245,7 +263,7 @@ export function calculateEnergyScenario(input: EnergyScenarioInput): EnergyScena
         monthTotals.discharge += dischargeToLoad;
         monthTotals.grid += deficit;
         monthTotals.export += surplus;
-        const currentRate = tariffRateAt(
+        const currentRate = datedTariff ? tariffEngine.rates(datedTariff, date, hour) : tariffRateAt(
           input.currentTariff,
           monthIndex,
           hour,
@@ -272,7 +290,7 @@ export function calculateEnergyScenario(input: EnergyScenarioInput): EnergyScena
     const energyDue = monthTotals.scenarioEnergy;
     const paidFromDeposit = Math.min(deposit, energyDue);
     deposit -= paidFromDeposit;
-    const currentFixedMonthly = input.currentTariff?.fixedMonthlyGross ?? input.fixedMonthlyGross;
+    const currentFixedMonthly = history ? monthTotals.baselineFixed : input.currentTariff?.fixedMonthlyGross ?? input.fixedMonthlyGross;
     const targetFixedMonthly = input.targetTariff?.fixedMonthlyGross ?? input.fixedMonthlyGross;
     const scenarioCashCost = energyDue - paidFromDeposit
       + monthTotals.scenarioDistribution

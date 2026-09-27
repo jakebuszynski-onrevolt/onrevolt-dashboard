@@ -13,6 +13,7 @@ export type EneaPortalPpe = {
   code?: string;
   ppeNumber?: string;
   meterNumber?: string;
+  type?: number;
 };
 
 export type ClosedMonth = {
@@ -258,6 +259,7 @@ function normalizePpe(object: Record<string, any>): EneaPortalPpe {
     code: object.code,
     ppeNumber: object.ppeNumber || object.number || object.code || object.name,
     meterNumber: object.meterNumber || object.meterNr,
+    type: Number(object.type),
   };
 }
 
@@ -296,6 +298,29 @@ export function selectEneaPpe(account: EneaPortalAccountInput, ppes: EneaPortalP
 
 export function eneaMeasurementLabel(kind: EneaMeasurementKind) {
   return measurementConfig[kind].label;
+}
+
+export function extractEneaTariffEvidence(payload: unknown, month: ClosedMonth) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('ENEA nie zwróciła metadanych taryfy.');
+  const data = payload as Record<string, unknown>;
+  const names = typeof data.tariffGroupNames === 'string'
+    ? data.tariffGroupNames.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const codes = Array.from(new Set(names));
+  const validUntil = new Date(Date.UTC(month.year, month.month, 1)).toISOString().slice(0, 10);
+  // Only the response for this exact date range is evidence, never the current PPE label or OBIS zones.
+  const certain = codes.length === 1 && /^[A-Z][0-9]{2}[a-zA-Z0-9-]*$/.test(codes[0])
+    && data.periodPartlyInAgreement === false && Array.isArray(data.values) && data.values.length > 0;
+  return { validFrom: month.dateFrom, validUntil, tariffCode: codes.join(', '), certain,
+    source: 'ENEA_CONSUMPTION_RANGE', tariffGroupNames: names,
+    reason: certain ? null : 'Niepełny zakres umowy, kilka taryf lub brak jednoznacznych metadanych.' };
+}
+
+export async function readEneaTariffEvidence(session: EneaPortalSession, ppe: EneaPortalPpe, month: ClosedMonth) {
+  const params = [ppe.id, month.dateFrom, month.dateTo, 1, 2];
+  if (ppe.type === 2) params.push(2);
+  const result = await fetchWithEneaSession(session, `consumption/${params.map(String).map(encodeURIComponent).join('/')}`);
+  if (!result.response.ok) throw new Error(`Nie udało się odczytać taryfy ENEA: ${eneaErrorMessage(result)}`);
+  return extractEneaTariffEvidence(result.data, month);
 }
 
 export function eneaMeasurementDocumentSuffix(kind: EneaMeasurementKind) {

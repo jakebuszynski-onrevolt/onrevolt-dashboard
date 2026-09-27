@@ -23,13 +23,14 @@ function fixture(options: {
   reFailure?: 'result' | 'throw';
   noProject?: boolean;
   noStation?: boolean;
+  tariffFailure?: boolean;
 } = {}) {
   const root = path.resolve('__virtual_enea_uploads__');
   const account = { id: 'account', clientId: 'client', projectId: options.noProject ? null : 'project',
     operator: 'ENEA', login: 'fixture', encryptedPassword: 'fixture', portalPpeId: 'ppe' };
   const state = {
     records: new Map<string, any>(), documents: new Map<string, any>(), files: new Map<string, Buffer>(),
-    events: [] as string[], reCalls: [] as string[], accountUpdates: [] as any[], sequence: 0, portalLogins: 0,
+    events: [] as string[], reCalls: [] as string[], accountUpdates: [] as any[], sequence: 0, portalLogins: 0, tariffReads: 0, tariffWrites: 0,
   };
   function addExisting(kind: string, prefix = 'old') {
     const document = { id: `${prefix}-${kind}`, storagePath: `${prefix}-${kind}.xlsx`, fileName: `${prefix}.xlsx` };
@@ -132,6 +133,7 @@ function fixture(options: {
     'lib/onrevolt/credentials': { decryptCredential: () => 'fixture-password' },
     'lib/onrevolt/energy-measurement-document': { closedMeasurementPeriodKeys: () => new Set(['2026-08']) },
     'lib/onrevolt/enea-portal': {
+      readEneaTariffEvidence: async () => { state.tariffReads++; if (options.tariffFailure) throw new Error('Tariff metadata unavailable'); return { tariffCode: 'G11' }; },
       getClosedMonths: () => [{ year: 2026, month: 8, dateFrom: '2026-08-01', dateTo: '2026-08-31' }],
       eneaMeasurementLabel: (kind: string) => kind,
       loginEneaPortal: async () => { state.portalLogins++; return {}; }, listEneaPpes: async () => [{ id: 'ppe' }], selectEneaPpe: () => ({ id: 'ppe' }),
@@ -143,6 +145,10 @@ function fixture(options: {
       },
     },
     'lib/onrevolt/prisma': { prisma },
+    'lib/onrevolt/client-tariffs-server': {
+      clientTariffScope: async () => ({ projectId: 'project', clientId: 'client', ppe: 'ppe', station: '41' }),
+      callClientTariffs: async (input: any) => { assert.equal(input.action, 'import'); assert.equal(input.actorId, 'staff'); state.tariffWrites++; return { state: 'CONFIRMED' }; },
+    },
     'lib/onrevolt/re-consumption-sync': {
       ReStationRequiredError,
       requireProjectReStation: async (clientId: string, projectId?: string) => {
@@ -181,6 +187,19 @@ function fixture(options: {
   }
   return { state, before, initial, run, oldFilesIntact };
 }
+
+test('tariff metadata refreshes even when both XLSX files already exist', async () => {
+  const f = fixture({ existing: true }); const result = await f.run(false);
+  assert.equal(f.state.tariffReads, 1); assert.equal(f.state.tariffWrites, 1);
+  assert.equal(result.data.skipped.length, 2); assert.equal(result.data.downloaded.length, 0);
+});
+
+test('tariff conflict or metadata failure never blocks measurement download', async () => {
+  const f = fixture({ tariffFailure: true }); const result = await f.run();
+  assert.equal(result.data.downloaded.length, 2); assert.equal(result.data.failed.length, 0);
+  assert.match(result.data.message, /Taryfy: 1 okresów wymaga sprawdzenia/);
+  assert.equal(f.state.tariffWrites, 0);
+});
 
 test('force atomically replaces active import/export links and retains every archived document and file', async () => {
   const f = fixture({ existing: true }); const result = await f.run();

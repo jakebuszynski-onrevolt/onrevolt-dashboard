@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createRequire } from 'node:module';
 import { calculateEnergyScenario, defaultHourlyLoadProfile, polishPvHourlyProfiles, polishPvMonthlyDistribution } from './energy-scenario';
 
 const baseInput = {
@@ -20,6 +21,36 @@ const baseInput = {
   fixedMonthlyGross: 30,
   depositPayoutRate: 0.2,
 };
+
+test('CRM and RE price the same dated load identically while proposed tariff stays unchanged', () => {
+  const engine = createRequire(import.meta.url)('../../../public/shared/re-tariff-engine.js');
+  const g11 = { zone_model: 'all', variable: [{ label: 'Energia czynna', window_code: 'all', price: 0.6 },
+    { label: 'Dystrybucja', window_code: 'all', price: 0.3 }], fixed: [{ component_key: 'fixed', amount: 31 }] };
+  const g13 = { ...g11, zone_model: 'highmidlow', use_monthly: true, cheap_saturday: true, cheap_sunday: true,
+    monthly: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [i + 1, Array.from({ length: 24 }, (_, hour) => hour < 8 ? 3 : 1)])),
+    variable: [{ label: 'Energia czynna', window_code: 'high', price: 1.2 }, { label: 'Energia czynna', window_code: 'low', price: 0.2 },
+      { label: 'Dystrybucja', window_code: 'all', price: 0.3 }], fixed: [{ component_key: 'fixed', amount: 62 }] };
+  const byDate: Record<string, any> = {}, records = [];
+  for (let d = new Date('2026-01-01T12:00:00Z'); d.getUTCFullYear() === 2026; d.setUTCDate(d.getUTCDate() + 1)) {
+    const date = d.toISOString().slice(0, 10), days = new Date(Date.UTC(2026, d.getUTCMonth() + 1, 0)).getUTCDate();
+    byDate[date] = date < '2026-01-16' ? g11 : g13;
+    records.push({ date, slots: Array.from({ length: 96 }, (_, index) => ({ hour: Math.floor(index / 4), kwh: 500 / days / 96 })) });
+  }
+  const history = { strict: true as const, revision: 1, byDate, issues: [] };
+  const options = { billingCycleMonths: 1, connectionPowerKw: 10, annualUsageKwh: 6000 };
+  const input = { ...baseInput, pvPowerKw: 0, hourlyLoadProfile: Array(24).fill(1), scenarioYear: 2026, ...options };
+  const result = calculateEnergyScenario({ ...input, currentTariffHistory: history });
+  const unchangedTarget = calculateEnergyScenario(input);
+  assert.equal(result.scenarioAnnualCostGross, unchangedTarget.scenarioAnnualCostGross);
+  for (let month = 1; month <= 12; month++) {
+    const from = `2026-${String(month).padStart(2, '0')}-01`;
+    const until = new Date(Date.UTC(2026, month, 1)).toISOString().slice(0, 10);
+    const expected = engine.cost(history, records, from, until, options);
+    assert.ok(Math.abs(result.months[month - 1].baselineCostGross - expected.total) < 0.006);
+  }
+  delete byDate['2026-04-01'];
+  assert.throws(() => calculateEnergyScenario({ ...input, currentTariffHistory: history }), /brak cen taryfy/);
+});
 
 test('silnik zachowuje roczny bilans zużycia i produkcji', () => {
   const result = calculateEnergyScenario(baseInput);

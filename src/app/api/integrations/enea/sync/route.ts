@@ -13,9 +13,11 @@ import {
   getClosedMonths,
   listEneaPpes,
   loginEneaPortal,
+  readEneaTariffEvidence,
   selectEneaPpe,
 } from 'lib/onrevolt/enea-portal';
 import { prisma } from 'lib/onrevolt/prisma';
+import { callClientTariffs, clientTariffScope } from 'lib/onrevolt/client-tariffs-server';
 import { ReStationRequiredError, requireProjectReStation, syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
@@ -210,8 +212,19 @@ export async function POST(req: NextRequest) {
     const skipped: Array<Record<string, unknown>> = [];
     const failed: Array<Record<string, unknown>> = [];
     const reSyncResults: Array<Record<string, unknown>> = [];
+    const tariffResults: Array<{ period: string; state: string; message?: string }> = [];
 
     for (const month of months) {
+      // Metadata is refreshed even when both measurement files already exist.
+      try {
+        if (!account.projectId) throw new Error('Brak projektu dla profilu taryfowego.');
+        const evidence = await readEneaTariffEvidence(session, ppe, month);
+        const result = await callClientTariffs<{ state: string }>({ action: 'import',
+          scope: await clientTariffScope(account.clientId, account.projectId), evidence, actorId: access.user.id });
+        tariffResults.push({ period: month.dateFrom, state: result.state });
+      } catch (error) {
+        tariffResults.push({ period: month.dateFrom, state: 'ERROR', message: syncErrorMessage(error) });
+      }
       for (const kind of eneaKinds) {
         const where = {
           accountId_kind_periodYear_periodMonth: {
@@ -345,7 +358,9 @@ export async function POST(req: NextRequest) {
         skipped.length ? `pominięto ${skipped.length} istniejących` : null,
         failed.length ? `błędy ${failed.length}` : null,
       ].filter(Boolean).join(', ') || 'Brak brakujących plików';
-    const syncMessage = reFailed.length ? `${message}. Nie przekazano do RE: ${reFailed.length}. ${reFailed[0].message}` : `${message}. Profil RE zsynchronizowany.`;
+    const tariffWarnings = tariffResults.filter(result => result.state === 'ERROR' || result.state === 'REVIEW');
+    const syncMessage = (reFailed.length ? `${message}. Nie przekazano do RE: ${reFailed.length}. ${reFailed[0].message}` : `${message}. Profil RE zsynchronizowany.`)
+      + (tariffWarnings.length ? ` Taryfy: ${tariffWarnings.length} okresów wymaga sprawdzenia. ${tariffWarnings.find(r => r.message)?.message || 'Sprawdź zakładkę Taryfy.'}` : '');
     await markAccountSync(account.id, status, syncMessage);
 
     return jsonResponse({
@@ -358,6 +373,7 @@ export async function POST(req: NextRequest) {
         skipped,
         failed,
         reSyncResults,
+        tariffResults,
       },
     });
   } catch (error) {

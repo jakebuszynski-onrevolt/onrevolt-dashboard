@@ -33,6 +33,7 @@ import OfferDocument from 'components/onrevolt/OfferDocument';
 import InvestmentLocationPicker from 'components/onrevolt/InvestmentLocationPicker';
 import ClientDocumentsPanel from 'components/onrevolt/ClientDocumentsPanel';
 import ClientSiteAuditPanel from 'components/onrevolt/ClientSiteAuditPanel';
+import ClientTariffsPanel from 'components/onrevolt/ClientTariffsPanel';
 import ConfiguratorWorkspace from 'components/onrevolt/ConfiguratorWorkspace';
 import {
   getDefaultEnergyTariff,
@@ -363,6 +364,7 @@ const tabs = [
   'Historia',
   'Serwis',
   'Formalności',
+  'Taryfy',
 ];
 
 const primaryTabs = [
@@ -372,6 +374,7 @@ const primaryTabs = [
   ['Urządzenia', 6],
   ['Zdjęcia i pliki', 7],
   ['EMS', 8],
+  ['Taryfy', 14],
   ['Dokumenty', 10],
   ['Historia', 11],
   ['Serwis', 12],
@@ -913,6 +916,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [energyAccount, setEnergyAccount] = useState<EnergyAccountForm>(emptyEnergyAccount);
+  const [hasTariffHistory, setHasTariffHistory] = useState(false);
   const [energySaving, setEnergySaving] = useState(false);
   const [energySyncing, setEnergySyncing] = useState(false);
   const [energyMonthAction, setEnergyMonthAction] = useState('');
@@ -1407,6 +1411,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
       setEnergyDataSettings((current) => ({ ...current, auditId: auditPayload.data.id }));
       setEnergyAccount(energyAccountFromRecord(accountPayload.data));
+      window.dispatchEvent(new Event('client-tariffs-changed'));
       setEnergyOverviewMessage('Zapisano dane do oferty.');
       await Promise.all([load(true), loadEnergyProfile()]);
     } catch (e) {
@@ -1503,6 +1508,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
       await load();
+      if (payload.tariffWarning) setSaveError(payload.tariffWarning);
+      window.dispatchEvent(new Event('client-tariffs-changed'));
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1536,6 +1543,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       }));
       setStationMessage(`${hadStationReference ? 'Uzupełniono' : 'Utworzono'} stację RE ${payload.data?.station || ''}.`);
       await load();
+      if (payload.tariffWarning) setStationError(payload.tariffWarning);
+      window.dispatchEvent(new Event('client-tariffs-changed'));
     } catch (e) {
       setStationError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1570,6 +1579,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
       const saved = energyAccountFromRecord(payload.data);
       setEnergyAccount(saved);
+      window.dispatchEvent(new Event('client-tariffs-changed'));
       setEnergyMessage('Zapisano dostęp do operatora.');
       if (reloadAfter) await load();
       return saved;
@@ -3619,6 +3629,10 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
               );
             }
 
+            if (tab === 'Taryfy') {
+              return <TabPanel key={tab} px="0"><ClientTariffsPanel clientId={clientId} projectId={activeProjectId} clientType={project.clientType || client.clientType} /></TabPanel>;
+            }
+
             if (tab === 'EMS') {
               return (
                 <TabPanel key={tab} px="0">
@@ -4270,8 +4284,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
                       <Box mt="14px" pt="12px" borderTop="1px solid" borderColor={borderColor}>
                         <Text color={textColor} fontSize="sm" fontWeight="800" mb="8px">Dane rozliczeniowe</Text>
+                        <ClientTariffsPanel compact clientId={clientId} projectId={activeProjectId} onOpen={() => selectPrimaryTab(14)} onHistoryChange={setHasTariffHistory} />
                         <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} gap="10px">
-                          <FormControl>
+                          <FormControl display={hasTariffHistory ? 'none' : undefined}>
                             <FormLabel mb="5px" fontSize="sm">OSD</FormLabel>
                             <Select
                               size="sm"
@@ -4285,7 +4300,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                               ))}
                             </Select>
                           </FormControl>
-                          <FormControl>
+                          <FormControl display={hasTariffHistory ? 'none' : undefined}>
                             <FormLabel mb="5px" fontSize="sm">Taryfa</FormLabel>
                             <Select
                               size="sm"

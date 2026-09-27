@@ -1,0 +1,11 @@
+.client-tariff-preview[hidden], .client-tariff-preview-banner[hidden], .setup-grid--tariffs[hidden] { display: none !important; }
+.client-tariff-preview-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.client-tariff-preview-actions [role="status"] { font-size: 14px; }
+.client-tariff-preview-actions .setup-button { flex: 0 0 auto; max-width: 100%; height: auto; min-height: 40px; padding: 10px 16px; font-size: 16px; line-height: 1.2; border-radius: 8px; }
+.client-tariff-preview-banner { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 16px; padding: 8px 16px; color: #4d3900; background: #fff0bd; border-top: 1px solid #d6ad31; font-size: 14px; }
+.client-tariff-preview-banner button { color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 6px; padding: 5px 10px; cursor: pointer; font: inherit; }
+.client-tariff-preview-summary { margin: 12px 0 0; font-size: 14px; line-height: 1.4; }
+.client-tariff-preview-saved { margin-top: 16px; border-top: 1px solid rgba(80, 90, 100, 0.25); padding-top: 12px; }
+.client-tariff-preview-saved > summary { cursor: pointer; font-size: 16px; font-weight: 700; padding: 4px 0; }
+.client-tariff-preview-saved[open] > summary { margin-bottom: 12px; }
+.client-tariff-preview-saved[hidden] { display: none !important; }
