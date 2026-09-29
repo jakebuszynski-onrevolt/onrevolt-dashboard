@@ -1977,7 +1977,6 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     !['FAKTURA_PRAD', 'ENEA_ZUZYCIE', 'ENEA_PRODUKCJA', 'ZDJECIE_MONTAZU'].includes(document.type)
     && !(document.type === 'INNE' && document.mimeType?.startsWith('image/'))
   ));
-  const invoiceCount = relatedDocuments.filter((document: any) => document.type === 'FAKTURA_PRAD').length;
   const activeServiceTickets = (client?.serviceTickets || []).filter((ticket: any) => (
     !['RESOLVED', 'CLOSED'].includes(ticket.status)
   ));
@@ -1989,7 +1988,19 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     hasContactChannel: Boolean(contact.phone || contact.email),
     hasAddress: Boolean(site.fullAddress || site.addressLine || contact.investmentAddress || project.locationAddress),
     energyAccounts: (client?.energyPortalAccounts || []).filter((account: any) => !project?.id || account.projectId === project.id),
-    invoiceCount,
+    energyData: {
+      hasConsumptionData: acceptedAnnualConsumptionKwh > 0,
+      terrainType: energyDataSettings.terrainType,
+      buildingType: energyDataSettings.buildingType,
+      roofShape: energyDataSettings.roofShape,
+      settlementSystem: energyDataSettings.settlementSystem,
+      energySupplier: energyDataSettings.energySupplier,
+      connectionType: energyDataSettings.connectionType,
+      connectionPowerKw: energyDataSettings.connectionPowerKw,
+      heatingSource: energyDataSettings.heatingSource,
+      heatingSourceDetail: energyDataSettings.heatingSourceDetail,
+      heatingSourceDetailRequired: getHeatSourceDetailOptions(energyDataSettings.heatingSource).length > 0,
+    },
     odsCase: project?.odsCase,
     configurations: projectConfigurations,
     offers: projectOffers,

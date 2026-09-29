@@ -25,7 +25,19 @@ export type ClientJourneyInput = {
   hasContactChannel?: boolean;
   hasAddress?: boolean;
   energyAccounts?: Array<{ ppeNumber?: string | null; measurementFiles?: unknown[] }>;
-  invoiceCount?: number;
+  energyData?: {
+    hasConsumptionData?: boolean;
+    terrainType?: string | null;
+    buildingType?: string | null;
+    roofShape?: string | null;
+    settlementSystem?: string | null;
+    energySupplier?: string | null;
+    connectionType?: string | null;
+    connectionPowerKw?: string | number | null;
+    heatingSource?: string | null;
+    heatingSourceDetail?: string | null;
+    heatingSourceDetailRequired?: boolean;
+  };
   odsCase?: { status?: string | null } | null;
   configurations?: Array<{ status?: string | null }>;
   offers?: Array<{ status?: string | null; contracts?: Array<{ status?: string | null }> }>;
@@ -80,14 +92,23 @@ function installationProgress(status?: string | null) {
 }
 
 function billingProgress(input: ClientJourneyInput) {
-  const hasAccount = Boolean(input.energyAccounts?.length);
-  const hasPpe = Boolean(input.energyAccounts?.some((account) => account.ppeNumber));
   const hasMeasurements = Boolean(input.energyAccounts?.some((account) => account.measurementFiles?.length));
-  let progress = hasAccount || hasPpe ? 30 : 0;
-  if (hasMeasurements || Number(input.invoiceCount) > 0) progress = Math.max(progress, 55);
-  if (input.odsCase && input.odsCase.status !== 'CANCELLED') progress = Math.max(progress, 80);
-  if (input.odsCase?.status === 'COMPLETED') progress = 100;
-  return progress;
+  const data = input.energyData;
+  const connectionPowerKw = Number(data?.connectionPowerKw);
+  const checks: Array<[boolean, number]> = [
+    [Boolean(data?.hasConsumptionData || hasMeasurements), 25],
+    [Boolean(data?.buildingType), 10],
+    [Boolean(data?.terrainType), 5],
+    [Boolean(data?.roofShape), 5],
+    [Boolean(data?.settlementSystem), 10],
+    [Boolean(data?.energySupplier), 10],
+    [Boolean(data?.connectionType), 10],
+    [Number.isFinite(connectionPowerKw) && connectionPowerKw > 0, 10],
+    [Boolean(data?.heatingSource), 10],
+    [Boolean(data?.heatingSource) && (!data?.heatingSourceDetailRequired || Boolean(data?.heatingSourceDetail)), 5],
+  ];
+
+  return clamp(checks.reduce((sum, [complete, weight]) => sum + (complete ? weight : 0), 0));
 }
 
 function formalitiesProgress(input: ClientJourneyInput) {

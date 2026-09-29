@@ -46,16 +46,49 @@ test('pokazuje formalności po rozpoczęciu procedury OSD', () => {
   assert.equal(completed.progress.formalities, 100);
 });
 
-test('zamyka etap danych energetycznych dopiero po zakończeniu sprawy', () => {
-  const inProgress = calculateClientJourney({
-    energyAccounts: [{ ppeNumber: '590', measurementFiles: [{}] }],
-    invoiceCount: 2,
-    odsCase: { status: 'SUBMITTED' },
+test('liczy kompletność danych energetycznych bez wymagania faktur', () => {
+  const result = calculateClientJourney({
+    energyData: {
+      hasConsumptionData: true,
+      terrainType: 'SUBURBAN',
+      buildingType: 'SINGLE_FAMILY',
+      roofShape: 'GABLE_BARN',
+      settlementSystem: 'net-billing',
+      energySupplier: 'ENEA',
+      connectionType: 'LOW_VOLTAGE',
+      connectionPowerKw: 11,
+      heatingSource: 'NATURAL_GAS',
+      heatingSourceDetail: 'GAS_CONDENSING',
+      heatingSourceDetailRequired: true,
+    },
   });
-  assert.equal(inProgress.progress.billing, 80);
 
-  const completed = calculateClientJourney({ odsCase: { status: 'COMPLETED' } });
-  assert.equal(completed.progress.billing, 100);
+  assert.equal(result.progress.billing, 100);
+});
+
+test('pokazuje 95 procent przy jednym brakującym polu pomocniczym', () => {
+  const result = calculateClientJourney({
+    energyData: {
+      hasConsumptionData: true,
+      terrainType: 'SUBURBAN',
+      buildingType: 'SINGLE_FAMILY',
+      roofShape: '',
+      settlementSystem: 'net-billing',
+      energySupplier: 'ENEA',
+      connectionType: 'LOW_VOLTAGE',
+      connectionPowerKw: 11,
+      heatingSource: 'DISTRICT_HEATING',
+      heatingSourceDetailRequired: false,
+    },
+  });
+
+  assert.equal(result.progress.billing, 95);
+});
+
+test('nie miesza postępu sprawy OSD z kompletnością danych energetycznych', () => {
+  const result = calculateClientJourney({ odsCase: { status: 'COMPLETED' } });
+  assert.equal(result.progress.billing, 0);
+  assert.equal(result.progress.formalities, 100);
 });
 
 test('status serwisowy wyróżnia serwis poza dolną ścieżką', () => {
