@@ -1,3 +1,5 @@
+import type { EnergyMeasurementWorkbookInfo } from './energy-measurement-document';
+
 export type EneaMeasurementKind = 'ACTIVE_IMPORT' | 'ACTIVE_EXPORT';
 
 export type EneaPortalAccountInput = {
@@ -31,6 +33,18 @@ export type EneaDownloadedMeasurement = {
   fileName: string;
   mimeType: string;
   bytes: Buffer;
+};
+
+export type EneaTariffEvidence = {
+  validFrom: string;
+  validUntil: string;
+  tariffCode: string;
+  certain: boolean;
+  source: 'ENEA_CONSUMPTION_RANGE';
+  tariffGroupNames: string[];
+  reason: string | null;
+  continueLast?: boolean;
+  segments?: Array<{ validFrom: string; validUntil: string; tariffCode: string }>;
 };
 
 type EneaFetchOptions = {
@@ -300,7 +314,7 @@ export function eneaMeasurementLabel(kind: EneaMeasurementKind) {
   return measurementConfig[kind].label;
 }
 
-export function extractEneaTariffEvidence(payload: unknown, month: ClosedMonth) {
+export function extractEneaTariffEvidence(payload: unknown, month: ClosedMonth): EneaTariffEvidence {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('ENEA nie zwróciła metadanych taryfy.');
   const data = payload as Record<string, unknown>;
   const names = typeof data.tariffGroupNames === 'string'
@@ -313,6 +327,55 @@ export function extractEneaTariffEvidence(payload: unknown, month: ClosedMonth) 
   return { validFrom: month.dateFrom, validUntil, tariffCode: codes.join(', '), certain,
     source: 'ENEA_CONSUMPTION_RANGE', tariffGroupNames: names,
     reason: certain ? null : 'Niepełny zakres umowy, kilka taryf lub brak jednoznacznych metadanych.' };
+}
+
+function normalizedEneaTariffCode(code: string) {
+  return /^C13ac$/i.test(code) ? 'C13active' : code;
+}
+
+function registerModeForTariff(code: string): 'total' | 'zoned' {
+  return /^(?:G11|C11|C21)$/i.test(code) ? 'total' : 'zoned';
+}
+
+export function refineEneaTariffEvidence(
+  evidence: EneaTariffEvidence,
+  workbook: EnergyMeasurementWorkbookInfo | undefined,
+  continueLast = false,
+): EneaTariffEvidence {
+  const registerPeriods = workbook?.kind === 'ACTIVE_IMPORT' ? workbook.tariffRegisterPeriods : undefined;
+  if (!registerPeriods?.length || registerPeriods[0].validFrom !== evidence.validFrom) {
+    return { ...evidence, continueLast: evidence.certain && continueLast };
+  }
+
+  const codes = Array.from(new Set(evidence.tariffGroupNames.map(normalizedEneaTariffCode)));
+  const byMode = new Map<'total' | 'zoned', string[]>();
+  for (const code of codes) {
+    const mode = registerModeForTariff(code);
+    byMode.set(mode, [...(byMode.get(mode) || []), code]);
+  }
+  if (byMode.get('total')?.length !== 1 || byMode.get('zoned')?.length !== 1) {
+    return { ...evidence, continueLast: evidence.certain && continueLast };
+  }
+
+  const segments = registerPeriods.map((period, index) => ({
+    validFrom: period.validFrom,
+    validUntil: registerPeriods[index + 1]?.validFrom || evidence.validUntil,
+    tariffCode: byMode.get(period.mode)![0],
+  }));
+  if (segments.some((segment, index) => segment.validFrom >= segment.validUntil
+    || (index > 0 && segments[index - 1].validUntil !== segment.validFrom))) {
+    return { ...evidence, continueLast: evidence.certain && continueLast };
+  }
+
+  return {
+    ...evidence,
+    tariffCode: segments.map((segment) => segment.tariffCode).join(', '),
+    tariffGroupNames: codes,
+    certain: true,
+    reason: null,
+    continueLast,
+    segments,
+  };
 }
 
 export async function readEneaTariffEvidence(session: EneaPortalSession, ppe: EneaPortalPpe, month: ClosedMonth) {

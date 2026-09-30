@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/../integrations/re/pricing/CatalogHistory.php';
+require __DIR__ . '/../integrations/re/pricing/DashboardTariffs.php';
 use OnRevolt\Pricing\ClientTariffs as T;
 use OnRevolt\Pricing\CatalogHistory as C;
 
@@ -46,29 +47,37 @@ if (in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     }
     $db = new TestDb('sqlite::memory:', options: [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
     foreach ([
-      'CREATE TABLE pricing_client_profile (id TEXT PRIMARY KEY,project_id TEXT UNIQUE,client_id TEXT,ppe TEXT,station TEXT UNIQUE,revision INTEGER,updated_at TEXT)',
+      'CREATE TABLE pricing_client_profile (id TEXT PRIMARY KEY,project_id TEXT UNIQUE,client_id TEXT,ppe TEXT,station TEXT UNIQUE,context_json TEXT,revision INTEGER,updated_at TEXT)',
       'CREATE TABLE pricing_client_period (id TEXT PRIMARY KEY,profile_id TEXT,valid_from TEXT,valid_until TEXT,osd_id INTEGER,tariff_id INTEGER,source TEXT,overrides_json TEXT,schedule_json TEXT,note TEXT)',
       'CREATE TABLE pricing_client_change (id INTEGER PRIMARY KEY,profile_id TEXT,revision INTEGER,actor_id TEXT,action TEXT,before_json TEXT,after_json TEXT)',
       'CREATE TABLE pricing_client_evidence (id TEXT PRIMARY KEY,profile_id TEXT,valid_from TEXT,valid_until TEXT,tariff_code TEXT,state TEXT,evidence_json TEXT)',
       'CREATE TABLE pricing_catalog_revision (id INTEGER PRIMARY KEY,tariff_id INTEGER,osd_id INTEGER,valid_from TEXT,valid_until TEXT,payload_json TEXT,fingerprint TEXT,source TEXT,superseded INTEGER DEFAULT 0)',
       'CREATE TABLE tariff (id INTEGER PRIMARY KEY,osd_id INTEGER,code TEXT)', "INSERT INTO tariff VALUES (1,1,'G11'),(27,1,'G13active')",
       'CREATE TABLE osd (id INTEGER PRIMARY KEY,slug TEXT)', "INSERT INTO osd VALUES (1,'enea')",
-      'CREATE TABLE EnergyMeter_users (station TEXT PRIMARY KEY)', "INSERT INTO EnergyMeter_users VALUES ('35')",
+      'CREATE TABLE EnergyMeter_users (station TEXT PRIMARY KEY,tariff_target_osd_id INTEGER,tariff_target_tariff_id INTEGER)',
+      "INSERT INTO EnergyMeter_users VALUES ('35',1,27)",
     ] as $sql) $db->exec($sql);
     $repo = new T($db);
-    $scope = ['projectId'=>'project','clientId'=>'client','ppe'=>'123','station'=>null];
+    $scope = ['projectId'=>'project','clientId'=>'client','ppe'=>'123','station'=>null,
+        'connectionPowerKw'=>16,'annualUsageKwh'=>7235.482,'billingCycleMonths'=>null];
     $preview = $repo->save($scope, 0, $history, 'staff', 'MANUAL', true);
     check($repo->profile('project') === null, 'Preview does not persist');
     $saved = $repo->save($scope, 0, $history, 'staff', 'MANUAL');
     check($saved['revision'] === 1 && $saved['station'] === null, 'Profile works without a station');
+    check($repo->profile('project')['context'] === ['connectionPowerKw'=>16.0,'annualUsageKwh'=>7235.482], 'Fixed-cost context is stored with the tariff profile');
+    rejects(fn() => T::context(['connectionPowerKw'=>0]), 'Non-positive connection power is rejected');
     rejects(fn() => $repo->save([...$scope, 'ppe'=>null], 1, $history, 'staff', 'MANUAL'), 'A known PPE cannot silently be cleared from history');
     rejects(fn() => $repo->save([...$scope, 'ppe'=>'OTHER'], 1, $history, 'staff', 'MANUAL'), 'History cannot migrate to a different PPE');
     rejects(fn() => $repo->save($scope, 0, $history, 'staff', 'MANUAL'), 'Optimistic concurrency rejects stale write');
     $scope['station'] = '35';
     $saved = $repo->save($scope, 1, $history, 'staff', 'BIND');
     check($repo->byStation('35')['id'] === $saved['id'], 'Binding uses the same profile');
+    $scope['connectionPowerKw'] = 20;
+    $synced = $repo->syncContext($scope, 'staff');
+    check($synced['revision'] === 3 && $synced['context']['connectionPowerKw'] === 20.0, 'CRM context update invalidates the tariff profile revision');
+    check($repo->syncContext($scope, 'staff')['revision'] === 3, 'Unchanged context does not create another revision');
     rejects(fn() => $repo->save(['projectId'=>'other','clientId'=>'client','ppe'=>null,'station'=>'35'], 0, [], 'staff', 'BIND'), 'Station cannot silently migrate to another project');
-    check((int)$db->query('SELECT COUNT(*) FROM pricing_client_change')->fetchColumn() === 2, 'Audit matches committed revisions');
+    check((int)$db->query('SELECT COUNT(*) FROM pricing_client_change')->fetchColumn() === 3, 'Audit matches committed revisions');
     $db->beginTransaction(); C::record($db, $payload, '2026-01-01', 'fixture'); $db->commit();
     check($repo->history($saved,'2026-01-01','2026-01-03')['issues'] === [], 'Covered dates resolve');
     $packed = T::packHistory($repo->history($saved,'2026-01-01','2026-01-03'));
@@ -105,5 +114,44 @@ if (in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     $ambiguous = $evidence; $ambiguous['validFrom'] = '2026-02-01'; $ambiguous['validUntil'] = '2026-03-01'; $ambiguous['certain'] = false;
     check($repo->importEvidence($scope2, $ambiguous, 'staff')['state'] === 'REVIEW', 'Uncertain boundaries are not inferred');
     check(count($repo->profile('new')['periods']) === 1, 'Ambiguous import leaves periods intact');
+    $db->exec("INSERT INTO EnergyMeter_users VALUES ('36',1,27)");
+    $db->exec("INSERT INTO pricing_client_profile VALUES ('empty-profile','empty-project','client','000','36',NULL,1,CURRENT_TIMESTAMP)");
+    $db->exec("INSERT INTO pricing_client_evidence VALUES ('empty-evidence','empty-profile','2026-08-01','2026-09-01','C11','REVIEW','{}')");
+    $emptyPayload = ['tariffData'=>['current'=>['code'=>'C11']]];
+    \OnRevolt\Pricing\DashboardTariffs::attach($emptyPayload, \OnRevolt\Pricing\DashboardTariffs::context($db, '36'));
+    check(!isset($emptyPayload['tariffHistory']), 'Evidence-only profile keeps the saved RE tariffs until a period is confirmed');
+    $targetPayload = $payload;
+    $targetPayload['tariff_id'] = 27;
+    $targetPayload['code'] = 'G13active';
+    $targetPayload['fixed'] = [['label'=>'Opłata sieciowa','amount'=>2,'amount_mode'=>'per_kw_month']];
+    $targetPayload['pricing']['tariffStorage']['fixed'] = [[
+        'component_key'=>'network-fixed','label'=>'Opłata sieciowa','net'=>2,'vatRate'=>0,'amount_mode'=>'per_kw_month'
+    ]];
+    $db->beginTransaction(); C::record($db, $targetPayload, '2026-01-01', 'fixture'); $db->commit();
+    $db->exec("INSERT INTO EnergyMeter_users VALUES ('37',1,27)");
+    $today = T::today();
+    $monthStart = substr($today, 0, 7) . '-01';
+    $closedScope = ['projectId'=>'closed-project','clientId'=>'client','ppe'=>'111','station'=>'37','connectionPowerKw'=>16];
+    $closed = $repo->save($closedScope, 0, [period('2026-01-01', $monthStart)], 'staff', 'MANUAL');
+    $forecastPayload = ['tariffData'=>['current'=>$payload,'next'=>$targetPayload]];
+    \OnRevolt\Pricing\DashboardTariffs::attach($forecastPayload, \OnRevolt\Pricing\DashboardTariffs::context($db, '37'));
+    $todayTariffKey = $forecastPayload['tariffHistory']['byDate'][$today] ?? null;
+    check(is_string($todayTariffKey) && isset($forecastPayload['tariffHistory']['tariffs'][$todayTariffKey]), 'Target tariff extends pricing after the last measured period');
+    check($forecastPayload['tariffHistory']['tariffs'][$todayTariffKey]['code'] === 'G13active', 'Forecast extension uses the selected target tariff');
+    check($forecastPayload['account']['contractPowerKw'] === 16.0, 'Forecast exposes connection power required by target fixed fees');
+    check(str_ends_with($forecastPayload['tariffHistory']['cacheKey'], '-t1.27'), 'Target tariff is part of the history cache key');
+    $scope3 = ['projectId'=>'transition','clientId'=>'client','ppe'=>'789','station'=>null];
+    $uncertain = ['validFrom'=>'2026-08-01','validUntil'=>'2026-09-01','tariffCode'=>'C11, C13ac','certain'=>false,'source'=>'ENEA_CONSUMPTION_RANGE'];
+    check($repo->importEvidence($scope3, $uncertain, 'staff')['state'] === 'REVIEW', 'Monthly multi-tariff metadata requires review without register evidence');
+    $precise = ['validFrom'=>'2026-08-01','validUntil'=>'2026-09-01','tariffCode'=>'G11, G13active','certain'=>true,
+        'continueLast'=>true,'source'=>'ENEA_CONSUMPTION_RANGE','segments'=>[
+            ['validFrom'=>'2026-08-01','validUntil'=>'2026-08-11','tariffCode'=>'G11'],
+            ['validFrom'=>'2026-08-11','validUntil'=>'2026-09-01','tariffCode'=>'G13active'],
+        ]];
+    check($repo->importEvidence($scope3, $precise, 'staff')['state'] === 'CONFIRMED', 'Exact XLSX register transition is imported atomically');
+    $transition = $repo->profile('transition');
+    check(count($transition['periods']) === 2 && $transition['periods'][0]['validUntil'] === '2026-08-11', 'Old tariff ends at the XLSX transition date');
+    check($transition['periods'][1]['validFrom'] === '2026-08-11' && $transition['periods'][1]['validUntil'] === null, 'Newest measured tariff continues until another change');
+    check($repo->evidence($transition['id']) === [], 'Precise transition resolves the earlier monthly warning');
 } else { throw new RuntimeException('Testy repozytorium wymagają rozszerzenia PDO SQLite.'); }
 echo "OK: $tests assertions\n";

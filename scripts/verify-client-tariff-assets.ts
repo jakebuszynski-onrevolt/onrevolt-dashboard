@@ -19,7 +19,14 @@ function declarations(name: string) {
   visit(ast); return out;
 }
 const setup = readFileSync('public/shared/re-tariff-engine.js', 'utf8') + readFileSync('integrations/re/client-tariff-browser.js', 'utf8');
-const context: any = vm.createContext({ console });
+const notice: any = { textContent: '', hidden: true };
+const context: any = vm.createContext({ console, document: {
+  getElementById: (id: string) => id === 'client-tariff-completeness' ? notice : null,
+  createElement: () => notice,
+  querySelectorAll: () => [],
+  body: { prepend: () => undefined, dataset: {} },
+} });
+context.window = context;
 vm.runInContext(setup, context);
 const tariff = (price: number, fixed: number) => ({ zone_model: 'daynight', dn_night: [0, 1, 2], po_off: [],
   variable: [{ label: 'Energia czynna', window_code: 'day', price }, { label: 'Energia czynna', window_code: 'night', price: price / 2 },
@@ -55,6 +62,13 @@ const measured = { ...payload, usageData: { records: [{ date: '2026-01-01', quar
 const range = { start: new Date(2026, 0, 1), end: new Date(2026, 0, 1) };
 assert.equal(context.clientTariffDashboardCost(measured, range, {}, () => 12).purchaseCost, 9);
 assert.equal(context.clientTariffDashboardCost(measured, range, { gridOnly: true }, () => 12).purchaseCost, 1);
+const powerTariff = { ...first, fixed: [{ amount: 2, amount_mode: 'per_kw_month' }] };
+const powerPayload = { ...measured, tariffHistory: { strict: true, byDate: { '2026-01-01': powerTariff } } };
+assert.equal(context.clientTariffDashboardCost(powerPayload, range, {}, () => 12), null);
+assert.equal(notice.hidden, false);
+assert.match(notice.textContent, /Brak danych do opłaty stałej/);
+assert.equal(context.clientTariffDashboardCost(powerPayload, range, { connectionPowerKw: 16 }, () => 12).fixedCost, 32 / 31);
+assert.equal(notice.hidden, true);
 for (const source of declarations('buildTariffModels')) {
   assert.ok(source.includes('ReTariffEngine.resolve(payload.tariffHistory, formatDateKey(state.anchorDate), null)'));
   assert.ok(!source.includes('annualUsageKwh: Object.values'));
@@ -71,5 +85,8 @@ assert.equal(projected.tariffHistory.byDate['2026-01-01'].variable[0].price, 1 /
 assert.equal(projected.tariffHistory.byDate['2026-01-01'], projected.tariffHistory.byDate['2026-01-02']);
 assert.equal(projected.tariffHistory.byDate['2026-01-03'], null);
 assert.ok(read('js/prosumer-engine.js').includes('context && context.useActualTariffHistory ? payload.tariffHistory : null'));
-assert.ok(read('index.html').includes('js/scripts.js?v=20260926-client-tariffs-1'));
+assert.ok(read('index.html').includes('js/scripts.js?v=20260929-tariff-live-account-1'));
+assert.ok(read('js/scripts.js').includes('new URL("js/scripts.js?v=20260929-tariff-live-account-1", baseUrl)'));
+assert.equal((read('js/scripts.js').match(/account: account \? Object\.assign\(\{\}, \(window\.dashboardLatestPayload && window\.dashboardLatestPayload\.account\) \|\| \{\}, account\)/g) || []).length, 2);
+assert.ok(!read('js/scripts.js').includes('20260926-client-tariffs-1'));
 console.log('RE assets: syntax, actual rates, zone hours, interval boundaries, prorated fees, separate target scenario and asset versions OK');

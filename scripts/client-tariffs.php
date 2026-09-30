@@ -40,6 +40,8 @@ try {
         if ($data) $data = \OnRevolt\Pricing\ClientTariffs::packHistory($data);
     } elseif ($action === 'import') {
         $data = $repo->importEvidence($scope, $input['evidence'], (string)$input['actorId']);
+    } elseif ($action === 'sync-context') {
+        $data = $repo->syncContext($scope, (string)$input['actorId']);
     } elseif (in_array($action, ['save','preview','bind'], true)) {
         $periods = $input['periods'] ?? $profile['periods'] ?? [];
         if (isset($input['period'])) $input['period']['source'] = 'MANUAL';

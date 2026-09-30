@@ -24,6 +24,9 @@ if ($argv[2] === '--check') {
 foreach (explode(';', file_get_contents(__DIR__ . '/../integrations/re/pricing/client-tariffs.sql')) as $sql) {
     if (trim($sql) !== '') $db->exec($sql);
 }
+if (!$db->query("SHOW COLUMNS FROM pricing_client_profile LIKE 'context_json'")->fetch()) {
+    $db->exec('ALTER TABLE pricing_client_profile ADD context_json LONGTEXT NULL AFTER station');
+}
 foreach (['tariff_fixed_cost','tariff_variable_cost'] as $table) {
     if (!$db->query("SHOW COLUMNS FROM $table LIKE 'component_key'")->fetch()) $db->exec("ALTER TABLE $table ADD component_key CHAR(36) NULL");
     $db->exec("UPDATE $table SET component_key=UUID() WHERE component_key IS NULL");

@@ -39,6 +39,29 @@ final class ClientTariffs
         return (new DateTimeImmutable('now', new DateTimeZone('Europe/Warsaw')))->format('Y-m-d');
     }
 
+    public static function context(array $scope, array $current = []): array
+    {
+        $result = $current;
+        foreach (['connectionPowerKw', 'annualUsageKwh'] as $key) {
+            if (!array_key_exists($key, $scope)) continue;
+            $value = $scope[$key];
+            if ($value === null || $value === '') { unset($result[$key]); continue; }
+            if (!is_numeric($value) || !is_finite((float)$value) || (float)$value <= 0) {
+                throw new InvalidArgumentException($key === 'connectionPowerKw'
+                    ? 'Moc przyłączeniowa musi być dodatnią liczbą.'
+                    : 'Roczne zużycie musi być dodatnią liczbą.');
+            }
+            $result[$key] = (float)$value;
+        }
+        if (array_key_exists('billingCycleMonths', $scope)) {
+            $value = $scope['billingCycleMonths'];
+            if ($value === null || $value === '') unset($result['billingCycleMonths']);
+            elseif (!is_int($value) || $value <= 0 || $value > 24) throw new InvalidArgumentException('Nieprawidłowy cykl rozliczeniowy.');
+            else $result['billingCycleMonths'] = $value;
+        }
+        return $result;
+    }
+
     public static function schedule(mixed $input): ?array
     {
         if ($input === null) return null;
@@ -167,6 +190,10 @@ final class ClientTariffs
         $q->execute([$projectId]);
         $row = $q->fetch(PDO::FETCH_ASSOC);
         if (!$row) return null;
+        $row['context'] = $row['context_json'] === null
+            ? []
+            : json_decode($row['context_json'], true, 512, JSON_THROW_ON_ERROR);
+        unset($row['context_json']);
         $q = $this->pdo->prepare('SELECT * FROM pricing_client_period WHERE profile_id=? ORDER BY valid_from');
         $q->execute([$row['id']]);
         $row['periods'] = array_map(fn($p) => ['id' => $p['id'], 'validFrom' => $p['valid_from'], 'validUntil' => $p['valid_until'],
@@ -314,18 +341,20 @@ final class ClientTariffs
                 $q->execute([$station, $scope['projectId']]);
                 if ($q->fetchColumn()) throw new RuntimeException('Stacja ma już profil taryfowy innego projektu. Najpierw rozstrzygnij powiązanie.', 409);
             }
+            $fixedCostContext = self::context($scope, $before['context'] ?? []);
             $after = ['id' => $before['id'] ?? self::uuid(), 'project_id' => $scope['projectId'], 'client_id' => $scope['clientId'],
-                'ppe' => $scope['ppe'], 'station' => $station, 'revision' => $revision + 1, 'periods' => $periods];
+                'ppe' => $scope['ppe'], 'station' => $station, 'context' => $fixedCostContext,
+                'revision' => $revision + 1, 'periods' => $periods];
             if ($preview) {
                 if (!$ownsTransaction) throw new RuntimeException('Podgląd wymaga osobnej transakcji.');
                 $this->pdo->rollBack(); return $after;
             }
             if ($before) {
-                $q = $this->pdo->prepare('UPDATE pricing_client_profile SET ppe=?, station=?, revision=?, updated_at=CURRENT_TIMESTAMP(3) WHERE id=? AND revision=?');
-                $q->execute([$scope['ppe'], $station, $after['revision'], $after['id'], $revision]);
+                $q = $this->pdo->prepare('UPDATE pricing_client_profile SET ppe=?, station=?, context_json=?, revision=?, updated_at=CURRENT_TIMESTAMP(3) WHERE id=? AND revision=?');
+                $q->execute([$scope['ppe'], $station, self::json($fixedCostContext), $after['revision'], $after['id'], $revision]);
             } else {
-                $q = $this->pdo->prepare('INSERT INTO pricing_client_profile (id, project_id, client_id, ppe, station, revision) VALUES (?,?,?,?,?,?)');
-                $q->execute([$after['id'], $scope['projectId'], $scope['clientId'], $scope['ppe'], $station, $after['revision']]);
+                $q = $this->pdo->prepare('INSERT INTO pricing_client_profile (id, project_id, client_id, ppe, station, context_json, revision) VALUES (?,?,?,?,?,?,?)');
+                $q->execute([$after['id'], $scope['projectId'], $scope['clientId'], $scope['ppe'], $station, self::json($fixedCostContext), $after['revision']]);
             }
             $q = $this->pdo->prepare('DELETE FROM pricing_client_period WHERE profile_id=?');
             $q->execute([$after['id']]);
@@ -346,6 +375,22 @@ final class ClientTariffs
         }
     }
 
+    public function syncContext(array $scope, string $actor): ?array
+    {
+        $profile = $this->profile($scope['projectId']);
+        if (!$profile) return null;
+        if ($profile['client_id'] !== $scope['clientId']) throw new RuntimeException('Profil należy do innego klienta.', 409);
+        if ($profile['ppe'] && $profile['ppe'] !== ($scope['ppe'] ?? null)) {
+            throw new RuntimeException('PPE projektu różni się od PPE profilu taryfowego.', 409);
+        }
+        if (($profile['station'] ?? null) !== ($scope['station'] ?? null)) {
+            throw new RuntimeException('Powiązanie profilu taryfowego ze stacją zmieniło się. Użyj zakładki EMS.', 409);
+        }
+        $context = self::context($scope, $profile['context'] ?? []);
+        if ($context === ($profile['context'] ?? []) && $profile['ppe'] === ($scope['ppe'] ?? null)) return $profile;
+        return $this->save($scope, $profile['revision'], $profile['periods'], $actor, 'CONTEXT');
+    }
+
     public function evidence(string $profileId): array
     {
         $q = $this->pdo->prepare("SELECT id,valid_from,valid_until,tariff_code,state,evidence_json FROM pricing_client_evidence WHERE profile_id=? AND state='REVIEW' ORDER BY valid_from");
@@ -360,6 +405,24 @@ final class ClientTariffs
         if ($until <= $from) throw new InvalidArgumentException('Nieprawidłowy zakres ENEA.');
         $code = trim((string)($input['tariffCode'] ?? ''));
         if (strlen($code) > 100 || ($input['source'] ?? '') !== 'ENEA_CONSUMPTION_RANGE') throw new InvalidArgumentException('Nieprawidłowe metadane ENEA.');
+        $rawSegments = $input['segments'] ?? [['validFrom' => $from, 'validUntil' => $until, 'tariffCode' => $code]];
+        if (!is_array($rawSegments) || !array_is_list($rawSegments) || !$rawSegments || count($rawSegments) > 10) {
+            throw new InvalidArgumentException('Nieprawidłowe okresy taryfowe ENEA.');
+        }
+        $segments = [];
+        $cursor = $from;
+        foreach ($rawSegments as $raw) {
+            if (!is_array($raw)) throw new InvalidArgumentException('Nieprawidłowy okres taryfowy ENEA.');
+            $segmentFrom = self::date($raw['validFrom'] ?? null);
+            $segmentUntil = self::date($raw['validUntil'] ?? null);
+            $segmentCode = trim((string)($raw['tariffCode'] ?? ''));
+            if ($segmentFrom !== $cursor || $segmentUntil <= $segmentFrom || $segmentUntil > $until || strlen($segmentCode) > 100) {
+                throw new InvalidArgumentException('Okresy taryfowe ENEA muszą dokładnie i kolejno pokrywać raport.');
+            }
+            $segments[] = ['validFrom' => $segmentFrom, 'validUntil' => $segmentUntil, 'tariffCode' => $segmentCode];
+            $cursor = $segmentUntil;
+        }
+        if ($cursor !== $until) throw new InvalidArgumentException('Okresy taryfowe ENEA nie pokrywają całego raportu.');
         $id = hash('sha256', self::json([$scope['projectId'], $scope['ppe'], $from, $until, $input]));
         $this->pdo->beginTransaction();
         try {
@@ -367,28 +430,64 @@ final class ClientTariffs
             if (!$profile) $profile = $this->save($scope, 0, [], $actor, 'ENEA_PROFILE');
             $q = $this->pdo->prepare('SELECT state FROM pricing_client_evidence WHERE id=?');
             $q->execute([$id]);
-            if ($state = $q->fetchColumn()) { $this->pdo->commit(); return ['state' => $state, 'duplicate' => true]; }
-            $q = $this->pdo->prepare("SELECT t.id,t.osd_id FROM tariff t JOIN osd o ON o.id=t.osd_id WHERE LOWER(o.slug)='enea' AND LOWER(t.code)=LOWER(?)");
-            $q->execute([$code]);
-            $candidates = $q->fetchAll(PDO::FETCH_ASSOC);
-            $certain = ($input['certain'] ?? false) === true && count($candidates) === 1;
-            $periods = $profile['periods'];
-            $overlaps = array_values(array_filter($periods, fn($p) => ($p['validFrom'] === null || $p['validFrom'] < $until) && ($p['validUntil'] === null || $p['validUntil'] > $from)));
-            foreach ($overlaps as $p) if (!$certain || $p['tariffId'] !== (int)$candidates[0]['id'] || $p['osdId'] !== (int)$candidates[0]['osd_id']) $certain = false;
-            if ($certain) {
-                $cursor = $from;
-                foreach ($overlaps as $p) {
-                    if ($p['validFrom'] !== null && $p['validFrom'] > $cursor) {
-                        $periods[] = self::period(['validFrom' => $cursor, 'validUntil' => $p['validFrom'], 'osdId' => (int)$candidates[0]['osd_id'], 'tariffId' => (int)$candidates[0]['id'], 'source' => 'ENEA']);
-                    }
-                    $cursor = $p['validUntil'] === null ? $until : max($cursor, min($until, $p['validUntil']));
+            if ($state = $q->fetchColumn()) {
+                if ($state === 'CONFIRMED') {
+                    $q = $this->pdo->prepare("UPDATE pricing_client_evidence SET state='RESOLVED' WHERE profile_id=? AND state='REVIEW' AND valid_from=? AND valid_until=?");
+                    $q->execute([$profile['id'], $from, $until]);
                 }
-                if ($cursor < $until) $periods[] = self::period(['validFrom' => $cursor, 'validUntil' => $until, 'osdId' => (int)$candidates[0]['osd_id'], 'tariffId' => (int)$candidates[0]['id'], 'source' => 'ENEA']);
+                $this->pdo->commit(); return ['state' => $state, 'duplicate' => true];
+            }
+            $certain = ($input['certain'] ?? false) === true;
+            foreach ($segments as &$segment) {
+                $q = $this->pdo->prepare("SELECT t.id,t.osd_id FROM tariff t JOIN osd o ON o.id=t.osd_id WHERE LOWER(o.slug)='enea' AND LOWER(t.code)=LOWER(?)");
+                $q->execute([$segment['tariffCode']]);
+                $candidates = $q->fetchAll(PDO::FETCH_ASSOC);
+                if (count($candidates) !== 1) $certain = false;
+                else $segment['candidate'] = ['id' => (int)$candidates[0]['id'], 'osd_id' => (int)$candidates[0]['osd_id']];
+            }
+            unset($segment);
+            $periods = $profile['periods'];
+            foreach ($segments as $segment) {
+                $candidate = $segment['candidate'] ?? null;
+                $overlaps = array_values(array_filter($periods, fn($p) => ($p['validFrom'] === null || $p['validFrom'] < $segment['validUntil'])
+                    && ($p['validUntil'] === null || $p['validUntil'] > $segment['validFrom'])));
+                foreach ($overlaps as $p) if (!$certain || $candidate === null
+                    || $p['tariffId'] !== $candidate['id'] || $p['osdId'] !== $candidate['osd_id']) $certain = false;
+            }
+            if ($certain) {
+                foreach ($segments as $index => $segment) {
+                    $candidate = $segment['candidate'];
+                    $segmentCursor = $segment['validFrom'];
+                    $overlaps = array_values(array_filter($periods, fn($p) => ($p['validFrom'] === null || $p['validFrom'] < $segment['validUntil'])
+                        && ($p['validUntil'] === null || $p['validUntil'] > $segment['validFrom'])));
+                    foreach ($overlaps as $p) {
+                        if ($p['validFrom'] !== null && $p['validFrom'] > $segmentCursor) {
+                            $periods[] = self::period(['validFrom' => $segmentCursor, 'validUntil' => $p['validFrom'],
+                                'osdId' => $candidate['osd_id'], 'tariffId' => $candidate['id'], 'source' => 'ENEA']);
+                        }
+                        $segmentCursor = $p['validUntil'] === null ? $segment['validUntil']
+                            : max($segmentCursor, min($segment['validUntil'], $p['validUntil']));
+                    }
+                    if ($segmentCursor < $segment['validUntil']) {
+                        $segmentEnd = $segment['validUntil'];
+                        if (($input['continueLast'] ?? false) === true && $index === count($segments) - 1) {
+                            $future = array_values(array_filter(array_column($periods, 'validFrom'), fn($date) => $date !== null && $date >= $segmentEnd));
+                            sort($future);
+                            $segmentEnd = $future[0] ?? null;
+                        }
+                        $periods[] = self::period(['validFrom' => $segmentCursor, 'validUntil' => $segmentEnd,
+                            'osdId' => $candidate['osd_id'], 'tariffId' => $candidate['id'], 'source' => 'ENEA']);
+                    }
+                }
             }
             $state = $certain ? 'CONFIRMED' : 'REVIEW';
             $q = $this->pdo->prepare('INSERT INTO pricing_client_evidence (id,profile_id,valid_from,valid_until,tariff_code,state,evidence_json) VALUES (?,?,?,?,?,?,?)');
             $q->execute([$id, $profile['id'], $from, $until, $code, $state, self::json($input)]);
             $this->save($scope, $profile['revision'], $periods, $actor, 'ENEA_' . $state);
+            if ($state === 'CONFIRMED') {
+                $q = $this->pdo->prepare("UPDATE pricing_client_evidence SET state='RESOLVED' WHERE profile_id=? AND id<>? AND state='REVIEW' AND valid_from=? AND valid_until=?");
+                $q->execute([$profile['id'], $id, $from, $until]);
+            }
             $this->pdo->commit();
             return ['state' => $state, 'duplicate' => false];
         } catch (Throwable $e) {

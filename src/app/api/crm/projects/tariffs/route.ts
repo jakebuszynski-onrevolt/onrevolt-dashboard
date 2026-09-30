@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, readJsonObject } from 'lib/onrevolt/api';
 import { authorizeStaffRequest, hasStaffPermission } from 'lib/onrevolt/staff-server';
-import { callClientTariffs, clientTariffScope, readProjectGeneralTariffs, ClientTariffError } from 'lib/onrevolt/client-tariffs-server';
+import { callClientTariffs, clientTariffScope, readProjectGeneralTariffs, updateProjectTargetTariff, ClientTariffError } from 'lib/onrevolt/client-tariffs-server';
 
 export const runtime = 'nodejs';
 
@@ -30,6 +30,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await readJsonObject(req);
     const scope = await clientTariffScope(String(body.clientId || ''), String(body.projectId || ''));
+    if (body.action === 'save-target') {
+      const data = await updateProjectTargetTariff(scope, Number(body.osdId), Number(body.tariffId));
+      return jsonResponse({ ok: true, data });
+    }
     if (!Number.isSafeInteger(body.revision) || body.revision < 0) throw new ClientTariffError('Brak wersji edytowanego profilu.');
     if (!['save', 'preview', 'bind'].includes(body.action)) throw new ClientTariffError('Nieprawidłowa operacja.');
     if (body.action !== 'bind' && !['change', 'correct', 'confirm'].includes(body.operation)) throw new ClientTariffError('Nieprawidłowy rodzaj zmiany.');

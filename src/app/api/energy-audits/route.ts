@@ -5,6 +5,7 @@ import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 import { shouldSyncReConsumptionDeclaration, syncProjectReConsumptionDeclaration } from 'lib/onrevolt/re-consumption-declaration';
+import { syncClientTariffContext } from 'lib/onrevolt/client-tariffs-server';
 
 function optionalNumber(value: unknown) {
   if (value == null || value === '') return undefined;
@@ -108,6 +109,9 @@ export async function POST(req: NextRequest) {
     if ('error' in saved) return 'conflict' in saved
       ? jsonResponse({ ok: false, error: saved.error }, { status: 409 }) : notFound(saved.error);
     const { before, audit, clientId } = saved;
+    const shouldSyncTariffContext = Object.prototype.hasOwnProperty.call(body, 'connectionPowerKw')
+      && (before?.connectionPowerKw?.toString() !== audit.connectionPowerKw?.toString()
+        || before?.annualConsumptionKwh?.toString() !== audit.annualConsumptionKwh?.toString());
     const shouldSync = shouldSyncReConsumptionDeclaration({ annualWasProvided,
       previousAnnual: before?.annualConsumptionKwh == null ? null : Number(before.annualConsumptionKwh),
       annual: audit.annualConsumptionKwh == null ? null : Number(audit.annualConsumptionKwh),
@@ -128,14 +132,25 @@ export async function POST(req: NextRequest) {
         reDeclarationSync: { status: 'failed', station: null, retryAllowed: shouldSync, message: 'Nie zapisano historii audytu; RE nie zostało zmienione.' },
       }, { status: 500 });
     }
+    const reTariffContextSync = shouldSyncTariffContext
+      ? await syncClientTariffContext(clientId, projectId, access.user.id).catch(error => ({
+        status: 'failed' as const,
+        station: null,
+        retryAllowed: true,
+        message: error instanceof Error ? error.message : 'Nie udało się przekazać danych do obliczeń taryfowych RE.',
+      }))
+      : { status: 'skipped' as const, station: null, retryAllowed: false,
+        message: 'Dane do obliczeń taryfowych nie zmieniły się.' };
     const reDeclarationSync = shouldSync
       ? await syncProjectReConsumptionDeclaration({ clientId, projectId, auditId: audit.id,
         annualConsumptionKwh: Number(audit.annualConsumptionKwh), actorId: access.user.id })
       : { status: 'skipped' as const, station: null, retryAllowed: false,
         message: 'Nie przekazano deklaracji do RE: brak jawnej zmiany rocznego zużycia albo profil godzinowy OSD.' };
-    return jsonResponse({ ok: reDeclarationSync.status !== 'failed', auditSaved: true, data: audit, reDeclarationSync,
-      ...(reDeclarationSync.status === 'failed' ? { error: reDeclarationSync.message } : {}),
-    }, { status: reDeclarationSync.status === 'failed' ? 502 : before ? 200 : 201 });
+    const syncFailed = reDeclarationSync.status === 'failed' || reTariffContextSync.status === 'failed';
+    const syncError = reTariffContextSync.status === 'failed' ? reTariffContextSync.message : reDeclarationSync.message;
+    return jsonResponse({ ok: !syncFailed, auditSaved: true, data: audit, reDeclarationSync, reTariffContextSync,
+      ...(syncFailed ? { error: syncError } : {}),
+    }, { status: syncFailed ? 502 : before ? 200 : 201 });
   } catch (error) {
     return serverError('Nie udało się zapisać audytu', error);
   }

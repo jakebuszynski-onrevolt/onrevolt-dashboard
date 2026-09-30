@@ -16,11 +16,11 @@ function fixture(row: Record<string, unknown> | null, invalidCatalog = false) {
       calls.push(args);
       if (String(args[0]).includes('EnergyMeter_users')) return row ? [row] : [];
       return invalidCatalog ? [] : [{ operator: 'ENEA', code: args[1] === 1 ? 'G11' : 'G13active' }];
-    } }) },
+    }, $executeRawUnsafe: async (...args: unknown[]) => { calls.push(args); return row ? 1 : 0; } }) },
   };
   const exports: any = {};
   vm.runInNewContext(code, { exports, require: (key: string) => { if (!modules[key]) throw new Error(key); return modules[key]; }, console });
-  return { read: exports.readProjectGeneralTariffs, calls };
+  return { read: exports.readProjectGeneralTariffs, updateTarget: exports.updateProjectTargetTariff, calls };
 }
 const scope = { clientId: 'client', projectId: 'project', station: '40', generalTariff: { operator: 'PGE', code: 'C11' } };
 const selection = { tariff_current_osd_id: 1, tariff_current_tariff_id: 1, tariff_target_osd_id: 1, tariff_target_tariff_id: 27 };
@@ -47,4 +47,11 @@ test('broken RE station or tariff mapping is reported, not silently replaced', a
   await assert.rejects(() => fixture(null).read(scope), /Nie znaleziono/);
   await assert.rejects(() => fixture({ ...selection, tariff_current_osd_id: null }).read(scope), /Niekompletny/);
   await assert.rejects(() => fixture(selection, true).read(scope), /nie istnieje/);
+});
+test('target tariff is validated against the operator and saved for the linked station', async () => {
+  const f = fixture(selection);
+  const value = await f.updateTarget(scope, 1, 75);
+  assert.equal(value.targetTariff.code, 'G13active');
+  assert.ok(f.calls.some(args => String(args[0]).startsWith('UPDATE EnergyMeter_users SET tariff_target_osd_id')));
+  await assert.rejects(() => f.updateTarget({ ...scope, station: null }, 1, 75), /przypisz stację/);
 });

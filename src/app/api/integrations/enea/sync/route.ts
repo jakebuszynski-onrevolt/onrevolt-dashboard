@@ -5,7 +5,7 @@ import type { Prisma } from '@prisma/client';
 import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, notFound, optionalString, readJsonObject, serverError } from 'lib/onrevolt/api';
 import { decryptCredential } from 'lib/onrevolt/credentials';
-import { closedMeasurementPeriodKeys } from 'lib/onrevolt/energy-measurement-document';
+import { closedMeasurementPeriodKeys, inspectEnergyMeasurementWorkbook, type EnergyMeasurementWorkbookInfo } from 'lib/onrevolt/energy-measurement-document';
 import {
   downloadEneaMeasurementXlsx,
   eneaMeasurementLabel,
@@ -14,11 +14,12 @@ import {
   listEneaPpes,
   loginEneaPortal,
   readEneaTariffEvidence,
+  refineEneaTariffEvidence,
   selectEneaPpe,
 } from 'lib/onrevolt/enea-portal';
 import { prisma } from 'lib/onrevolt/prisma';
 import { callClientTariffs, clientTariffScope } from 'lib/onrevolt/client-tariffs-server';
-import { ReStationRequiredError, requireProjectReStation, syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
+import { inspectStoredEnergyMeasurementForRe, ReStationRequiredError, requireProjectReStation, syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 export const runtime = 'nodejs';
@@ -213,17 +214,18 @@ export async function POST(req: NextRequest) {
     const failed: Array<Record<string, unknown>> = [];
     const reSyncResults: Array<Record<string, unknown>> = [];
     const tariffResults: Array<{ period: string; state: string; message?: string }> = [];
+    const latestClosedMonth = getClosedMonths(1)[0]?.dateFrom;
 
     for (const month of months) {
+      let tariffEvidence: Awaited<ReturnType<typeof readEneaTariffEvidence>> | undefined;
+      let tariffEvidenceError: string | undefined;
+      let activeImportWorkbook: EnergyMeasurementWorkbookInfo | undefined;
       // Metadata is refreshed even when both measurement files already exist.
       try {
         if (!account.projectId) throw new Error('Brak projektu dla profilu taryfowego.');
-        const evidence = await readEneaTariffEvidence(session, ppe, month);
-        const result = await callClientTariffs<{ state: string }>({ action: 'import',
-          scope: await clientTariffScope(account.clientId, account.projectId), evidence, actorId: access.user.id });
-        tariffResults.push({ period: month.dateFrom, state: result.state });
+        tariffEvidence = await readEneaTariffEvidence(session, ppe, month);
       } catch (error) {
-        tariffResults.push({ period: month.dateFrom, state: 'ERROR', message: syncErrorMessage(error) });
+        tariffEvidenceError = syncErrorMessage(error);
       }
       for (const kind of eneaKinds) {
         const where = {
@@ -237,6 +239,12 @@ export async function POST(req: NextRequest) {
         try {
           const existingFile = !force ? await existingDownloaded(account.id, kind, month.year, month.month) : null;
           if (existingFile) {
+            if (kind === 'ACTIVE_IMPORT') {
+              activeImportWorkbook = (await inspectStoredEnergyMeasurementForRe(existingFile.id, {
+                clientId: account.clientId,
+                projectId: account.projectId || undefined,
+              })).workbook;
+            }
             const reSync = await syncEnergyMeasurementToRe(existingFile.id, { clientId: account.clientId, projectId: account.projectId, actorId: access.user.id });
             reSyncResults.push({ ...reSync, kind, period: `${month.year}-${String(month.month).padStart(2, '0')}` });
             skipped.push({
@@ -248,6 +256,7 @@ export async function POST(req: NextRequest) {
           }
 
           const measurement = await downloadEneaMeasurementXlsx(session, ppe, month, kind);
+          if (kind === 'ACTIVE_IMPORT') activeImportWorkbook = inspectEnergyMeasurementWorkbook(measurement.bytes);
           const saved = await prisma.$transaction(async (tx) => {
             await lockMeasurementAccount(tx, account.id);
             const current = await tx.energyMeasurementFile.findUnique({ where });
@@ -346,6 +355,19 @@ export async function POST(req: NextRequest) {
             });
           });
         }
+      }
+      if (tariffEvidence) {
+        try {
+          if (!account.projectId) throw new Error('Brak projektu dla profilu taryfowego.');
+          const evidence = refineEneaTariffEvidence(tariffEvidence, activeImportWorkbook, month.dateFrom === latestClosedMonth);
+          const result = await callClientTariffs<{ state: string }>({ action: 'import',
+            scope: await clientTariffScope(account.clientId, account.projectId), evidence, actorId: access.user.id });
+          tariffResults.push({ period: month.dateFrom, state: result.state });
+        } catch (error) {
+          tariffResults.push({ period: month.dateFrom, state: 'ERROR', message: syncErrorMessage(error) });
+        }
+      } else {
+        tariffResults.push({ period: month.dateFrom, state: 'ERROR', message: tariffEvidenceError || 'Nie udało się odczytać taryfy ENEA.' });
       }
     }
 

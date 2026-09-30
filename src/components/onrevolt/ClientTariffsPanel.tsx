@@ -37,6 +37,8 @@ export default function ClientTariffsPanel({ clientId, projectId, clientType, co
   const [month, setMonth] = useState('1');
   const [evidenceId, setEvidenceId] = useState<string | undefined>();
   const [confirmEvidence, setConfirmEvidence] = useState<string | null>(null);
+  const [targetSelection, setTargetSelection] = useState({ osdId: 0, tariffId: 0 });
+  const [targetSaving, setTargetSaving] = useState(false);
   const requestId = useRef(0);
   const text = useColorModeValue('navy.700', 'white');
   const muted = useColorModeValue('gray.600', 'gray.400');
@@ -61,6 +63,9 @@ export default function ClientTariffsPanel({ clientId, projectId, clientType, co
   }, [clientId, projectId]);
 
   useEffect(() => { const controller = new AbortController(); setData(null); setEditor(null); load(controller.signal); return () => controller.abort(); }, [load]);
+  useEffect(() => {
+    setTargetSelection({ osdId: data?.targetTariff?.osdId || 0, tariffId: data?.targetTariff?.tariffId || 0 });
+  }, [data?.targetTariff?.osdId, data?.targetTariff?.tariffId]);
   useEffect(() => { onHistoryChange?.(Boolean(data?.profile?.periods.length || data?.evidence.length)); }, [data, onHistoryChange]);
   useEffect(() => {
     const changed = () => { load(); };
@@ -131,6 +136,18 @@ export default function ClientTariffsPanel({ clientId, projectId, clientType, co
     } catch (e) { setError((e as Error).message); } finally { setSaving(false); }
   }
 
+  async function saveTargetTariff() {
+    setTargetSaving(true); setError('');
+    try {
+      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save-target', clientId, projectId,
+          osdId: targetSelection.osdId, tariffId: targetSelection.tariffId }) });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Nie udało się zapisać taryfy docelowej.');
+      await load();
+    } catch (e) { setError((e as Error).message); } finally { setTargetSaving(false); }
+  }
+
   async function submit(action: 'preview' | 'save') {
     if (!editor) return;
     setError(''); setSaving(true);
@@ -165,7 +182,14 @@ export default function ClientTariffsPanel({ clientId, projectId, clientType, co
       <Flex align="center" gap="8px" wrap="wrap"><Text fontWeight="700">{generalSummary}</Text><Badge colorScheme={hasGeneralTariff ? 'blue' : 'orange'}>{hasGeneralTariff ? 'Cennik ogólny' : 'Wymaga uzupełnienia'}</Badge></Flex>
       <Text color={muted} fontSize="sm" mt="4px">{hasGeneralTariff ? 'Brak indywidualnej historii.' : data.generalTariffSource === 'RE' ? 'Brak zapisanej taryfy w dashboardzie RE. Uzupełnij ustawienia instalacji lub dodaj okres taryfy.' : 'Brak zapisanej taryfy dla tego projektu. Uzupełnij Dane energetyczne lub dodaj okres taryfy.'}</Text>
     </Box> : null}
-    {data?.generalTariffSource === 'RE' ? <Box py="12px"><Text color={muted} fontSize="sm" mb="4px">Taryfa docelowa / symulacja · Dashboard RE</Text><Text fontWeight="700">{generalTariffSummary(data.targetTariff)}</Text></Box> : null}
+    {data?.generalTariffSource === 'RE' ? <Box py="14px" borderTop="1px solid" borderColor={border}>
+      <Text fontWeight="700" mb="8px">Taryfa docelowa / prognoza</Text>
+      <SimpleGrid columns={{ base: 1, md: 3 }} spacing="10px" alignItems="end">
+        <FormControl><FormLabel fontSize="sm">Operator docelowy</FormLabel><Select value={targetSelection.osdId || ''} isDisabled={!data.canEdit || targetSaving} onChange={e => setTargetSelection({ osdId: Number(e.target.value), tariffId: 0 })}><option value="">Wybierz OSD</option>{data.catalog.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</Select></FormControl>
+        <FormControl><FormLabel fontSize="sm">Taryfa docelowa</FormLabel><Select value={targetSelection.tariffId || ''} isDisabled={!data.canEdit || !targetSelection.osdId || targetSaving} onChange={e => setTargetSelection(value => ({ ...value, tariffId: Number(e.target.value) }))}><option value="">Wybierz taryfę</option>{data.catalog.find(o => o.id === targetSelection.osdId)?.tariffs.map(t => <option key={t.id} value={t.id}>{t.code} · {t.name}</option>)}</Select></FormControl>
+        {data.canEdit ? <Button leftIcon={<MdSave />} colorScheme="purple" isLoading={targetSaving} isDisabled={!targetSelection.osdId || !targetSelection.tariffId || (targetSelection.osdId === data.targetTariff?.osdId && targetSelection.tariffId === data.targetTariff?.tariffId)} onClick={saveTargetTariff}>Zapisz taryfę docelową</Button> : <Text fontWeight="700">{generalTariffSummary(data.targetTariff)}</Text>}
+      </SimpleGrid>
+    </Box> : null}
     <Box display={{ base: 'block', md: 'none' }}>{periods.map(p => <Flex key={p.id} gap="8px" py="12px" px="8px" borderBottom="1px solid" borderColor={border} bg={p.id === current?.id ? selected : undefined} align="start">
       <Box flex="1" minW="0"><Text fontWeight="700">{osdName(p)} · {name(p)}</Text><Text fontSize="sm" mt="4px">{tariffPeriodLabel(p)}</Text>
         <Flex gap="5px" wrap="wrap" mt="7px">{p.id === current?.id ? <Badge colorScheme="green">Aktualna</Badge> : p.validFrom && p.validFrom > today ? <Badge colorScheme="blue">Planowana</Badge> : <Badge>Historia</Badge>}

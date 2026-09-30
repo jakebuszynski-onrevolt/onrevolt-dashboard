@@ -6,7 +6,7 @@ const arg = (name: string) => process.argv.find(v => v.startsWith(`--${name}=`))
 const source = arg('source-root');
 const output = arg('output');
 const dashboard = process.argv.includes('--dashboard');
-const assetVersion = '20260926-client-tariffs-1';
+const assetVersion = '20260929-tariff-live-account-1';
 if (!source || !output) throw new Error('Podaj --source-root= i --output=; --dashboard dla my.onrevolt.com.');
 const read = (name: string) => readFileSync(path.join(source, name), 'utf8').replace(/\r\n/g, '\n');
 function write(name: string, content: string) { const file = path.join(output!, name); mkdirSync(path.dirname(file), { recursive: true }); writeFileSync(file, content, 'utf8'); }
@@ -82,6 +82,10 @@ if (dashboard) {
 
   let scripts = read('js/scripts.js');
   scripts = replace(scripts, 'function applyPayload(input, incrementalUpdate) {', 'function applyPayload(input, incrementalUpdate) {\n      if (input?.tariffHistory) input = Object.assign({}, input, { tariffHistory: ReTariffEngine.expand(input.tariffHistory) });');
+  const liveAccountBefore = 'account: account || (window.dashboardLatestPayload && window.dashboardLatestPayload.account) || null,';
+  const liveAccountAfter = 'account: account ? Object.assign({}, (window.dashboardLatestPayload && window.dashboardLatestPayload.account) || {}, account) : (window.dashboardLatestPayload && window.dashboardLatestPayload.account) || null,';
+  if (scripts.split(liveAccountBefore).length !== 3) throw new Error('Niejednoznaczne scalanie konta w odświeżeniu live.');
+  scripts = scripts.replaceAll(liveAccountBefore, liveAccountAfter);
   for (const asset of ['scripts.js', 'script_on.js']) {
     const matches = [...scripts.matchAll(new RegExp(`new URL\\("js/${asset.replace('.', '\\.')}\\?v=[^"\\n]+", baseUrl\\)`, 'g'))];
     if (matches.length !== 1) throw new Error(`Brak jednoznacznego loadera RE: ${asset}`);

@@ -109,6 +109,8 @@ function fixture(options: {
   class ReStationRequiredError extends Error {
     constructor() { super('Brak przypisanej stacji RE. Najpierw przypisz stację w zakładce EMS, a następnie ponów import danych pomiarowych.'); }
   }
+  const workbook = (kind: string) => ({ kind, ppeNumber: 'ppe', periodFrom: '2026-08-01', periodTo: '2026-08-31',
+    periodYear: 2026, periodMonth: 8, aggregation: '60 min', totalKwh: 1, rowsCount: 744, sheetName: 'Raport' });
   const modules: Record<string, unknown> = {
     crypto: { createHash, randomUUID: () => `file-${++state.sequence}` },
     path,
@@ -131,9 +133,13 @@ function fixture(options: {
       serverError: (message: string) => Response.json({ message }, { status: 500 }),
     },
     'lib/onrevolt/credentials': { decryptCredential: () => 'fixture-password' },
-    'lib/onrevolt/energy-measurement-document': { closedMeasurementPeriodKeys: () => new Set(['2026-08']) },
+    'lib/onrevolt/energy-measurement-document': {
+      closedMeasurementPeriodKeys: () => new Set(['2026-08']),
+      inspectEnergyMeasurementWorkbook: (bytes: Buffer) => workbook(bytes.toString().includes('ACTIVE_EXPORT') ? 'ACTIVE_EXPORT' : 'ACTIVE_IMPORT'),
+    },
     'lib/onrevolt/enea-portal': {
       readEneaTariffEvidence: async () => { state.tariffReads++; if (options.tariffFailure) throw new Error('Tariff metadata unavailable'); return { tariffCode: 'G11' }; },
+      refineEneaTariffEvidence: (evidence: any) => evidence,
       getClosedMonths: () => [{ year: 2026, month: 8, dateFrom: '2026-08-01', dateTo: '2026-08-31' }],
       eneaMeasurementLabel: (kind: string) => kind,
       loginEneaPortal: async () => { state.portalLogins++; return {}; }, listEneaPpes: async () => [{ id: 'ppe' }], selectEneaPpe: () => ({ id: 'ppe' }),
@@ -151,6 +157,10 @@ function fixture(options: {
     },
     'lib/onrevolt/re-consumption-sync': {
       ReStationRequiredError,
+      inspectStoredEnergyMeasurementForRe: async (id: string) => {
+        const record = [...state.records.values()].find(item => item.id === id);
+        return { workbook: workbook(record.kind) };
+      },
       requireProjectReStation: async (clientId: string, projectId?: string) => {
         assert.equal(clientId, 'client');
         assert.equal(projectId, options.noProject ? undefined : 'project');

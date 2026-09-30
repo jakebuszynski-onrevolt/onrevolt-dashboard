@@ -19,6 +19,7 @@ function fixture(options: { denied?: boolean; scopeError?: boolean; stale?: bool
       if (options.scopeError) throw new ClientTariffError('Projekt nie należy do klienta.', 404);
       return { clientId, projectId, station: null, ppe: 'verified-ppe', generalTariff: options.generalTariff ?? null };
     }, readProjectGeneralTariffs: async (scope: any) => ({ generalTariff: scope.generalTariff, generalTariffSource: 'CRM', targetTariff: null }),
+    updateProjectTargetTariff: async (scope: any, osdId: number, tariffId: number) => { calls.push({ action: 'save-target', scope, osdId, tariffId }); return { targetTariff: { osdId, tariffId } }; },
     callClientTariffs: async (input: unknown) => { calls.push(input); if (options.stale) throw new ClientTariffError('Odśwież taryfy.', 409); return { profile: null }; } },
   };
   const exports: any = {};
@@ -66,4 +67,11 @@ test('station binding cannot carry a tariff edit or evidence confirmation', asyn
   assert.equal(f.calls[0].operation, undefined);
   assert.equal(f.calls[0].period, undefined);
   assert.equal(f.calls[0].evidenceId, undefined);
+});
+test('target tariff can be saved independently from tariff-history revision', async () => {
+  const f = fixture();
+  const result = await f.exports.POST(f.req({ action: 'save-target', clientId: 'client', projectId: 'project', osdId: 1, tariffId: 75 }));
+  assert.equal(result.status, 200);
+  assert.equal(f.calls[0].action, 'save-target');
+  assert.equal(f.calls[0].tariffId, 75);
 });

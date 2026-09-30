@@ -141,6 +141,10 @@ for (const kind of ['pobrana', 'oddana'] as const) {
     assert.equal(info.rowsCount, 744);
     assert.equal(info.totalKwh, 100.8);
     assert.equal(info.kind, kind === 'pobrana' ? 'ACTIVE_IMPORT' : 'ACTIVE_EXPORT');
+    assert.deepEqual(info.tariffRegisterPeriods, [
+      { validFrom: '2026-08-01', mode: 'total' },
+      { validFrom: '2026-08-11', mode: 'zoned' },
+    ]);
     rows.pop();
     assert.equal(inspectEnergyMeasurementWorkbook(workbookBytes(rows)).totalKwh, 100.8);
   });

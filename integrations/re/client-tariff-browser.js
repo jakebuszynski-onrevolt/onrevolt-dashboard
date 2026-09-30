@@ -24,16 +24,20 @@ function clientTariffFixedCosts(payload, rangeWindow, purchaseKwh) {
   }).fixedCost;
 }
 
-function clientTariffNotice(message) {
+function clientTariffNotice(message, source = 'general') {
+  const notices = window.__clientTariffNotices || (window.__clientTariffNotices = {});
+  if (message) notices[source] = String(message);
+  else delete notices[source];
+  const activeMessage = Object.values(notices).find(Boolean) || '';
   let notice = document.getElementById('client-tariff-completeness');
-  if (!notice && message) {
+  if (!notice && activeMessage) {
     notice = document.createElement('div');
     notice.id = 'client-tariff-completeness';
     notice.setAttribute('role', 'alert');
     notice.style.cssText = 'padding:12px 18px;border:1px solid #d49c19;background:#fff3cd;color:#533f03;margin:12px;';
     document.body.prepend(notice);
   }
-  if (notice) { notice.textContent = message || ''; notice.hidden = !message; }
+  if (notice) { notice.textContent = activeMessage; notice.hidden = !activeMessage; }
 }
 
 function clientTariffDashboardCost(payload, rangeWindow, options, hourOfQuarter) {
@@ -50,9 +54,10 @@ function clientTariffDashboardCost(payload, rangeWindow, options, hourOfQuarter)
           marketPrice: market?.pricePln };
       }) }));
     const result = ReTariffEngine.cost(history, records, dateKey(rangeWindow.start), dateKey(end), options);
+    clientTariffNotice('', 'dashboard-cost');
     return result;
   } catch (error) {
-    clientTariffNotice(error.message + ' Sprawdź historię taryf w CRM. Koszty tego zakresu są niekompletne.');
+    clientTariffNotice(error.message + ' Sprawdź historię taryf w CRM. Koszty tego zakresu są niekompletne.', 'dashboard-cost');
     return null;
   }
 }

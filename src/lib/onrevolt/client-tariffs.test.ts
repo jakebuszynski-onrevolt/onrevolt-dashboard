@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { generalTariffSummary, projectGeneralTariff, tariffPeriodLabel, tariffSchedule } from './client-tariffs';
-import { extractEneaTariffEvidence } from './enea-portal';
+import { extractEneaTariffEvidence, refineEneaTariffEvidence } from './enea-portal';
 const engine = createRequire(import.meta.url)('../../../public/shared/re-tariff-engine.js');
 const base = { zone_model: 'daynight', dn_night: [0, 1, 2, 3, 4, 5, 6, 22, 23], po_off: [],
   variable: [{ label: 'Energia czynna', window_code: 'day', price: 1 }, { label: 'Energia czynna', window_code: 'night', price: 0.3 }, { label: 'Dystrybucja', window_code: 'all', price: 0.2 }],
@@ -70,6 +70,22 @@ test('ENEA evidence requires an unambiguous code and explicit coverage of the re
     assert.equal(extractEneaTariffEvidence({ ...input, ...patch }, month).certain, false);
   }
   assert.equal(extractEneaTariffEvidence({ tariff: 'C11', obis: '1.8.0', values: [1] }, month).certain, false);
+});
+
+test('ENEA tariff transition is derived from total and zoned XLSX registers', () => {
+  const month = { year: 2026, month: 8, dateFrom: '2026-08-01', dateTo: '2026-08-31' } as any;
+  const ambiguous = extractEneaTariffEvidence({ tariffGroupNames: 'C11, C13ac', values: [1], periodPartlyInAgreement: true }, month);
+  const refined = refineEneaTariffEvidence(ambiguous, {
+    kind: 'ACTIVE_IMPORT', ppeNumber: '590310600000302953', periodFrom: '2026-08-01', periodTo: '2026-08-31',
+    periodYear: 2026, periodMonth: 8, aggregation: '60 min', totalKwh: 1, rowsCount: 744, sheetName: 'Raport',
+    tariffRegisterPeriods: [{ validFrom: '2026-08-01', mode: 'total' }, { validFrom: '2026-08-11', mode: 'zoned' }],
+  }, true);
+  assert.equal(refined.certain, true);
+  assert.equal(refined.continueLast, true);
+  assert.deepEqual(refined.segments, [
+    { validFrom: '2026-08-01', validUntil: '2026-08-11', tariffCode: 'C11' },
+    { validFrom: '2026-08-11', validUntil: '2026-09-01', tariffCode: 'C13active' },
+  ]);
 });
 
 test('fixed costs cannot silently ignore required power or billing cycle', () => {

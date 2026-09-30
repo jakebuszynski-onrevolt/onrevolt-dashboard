@@ -66,17 +66,17 @@ test('liczy kompletność danych energetycznych bez wymagania faktur', () => {
   assert.equal(result.progress.billing, 100);
 });
 
-test('pokazuje 95 procent przy jednym brakującym polu pomocniczym', () => {
+test('pokazuje 95 procent bez pomocniczej mocy przyłączeniowej', () => {
   const result = calculateClientJourney({
     energyData: {
       hasConsumptionData: true,
       terrainType: 'SUBURBAN',
       buildingType: 'SINGLE_FAMILY',
-      roofShape: '',
+      roofShape: 'GABLE_BARN',
       settlementSystem: 'net-billing',
       energySupplier: 'ENEA',
       connectionType: 'LOW_VOLTAGE',
-      connectionPowerKw: 11,
+      connectionPowerKw: '',
       heatingSource: 'DISTRICT_HEATING',
       heatingSourceDetailRequired: false,
     },

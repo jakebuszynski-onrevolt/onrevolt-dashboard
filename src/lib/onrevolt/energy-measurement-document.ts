@@ -13,6 +13,10 @@ export type EnergyMeasurementWorkbookInfo = {
   totalKwh: number;
   rowsCount: number;
   sheetName: string;
+  tariffRegisterPeriods?: Array<{
+    validFrom: string;
+    mode: 'total' | 'zoned';
+  }>;
 };
 
 function normalizedText(value: unknown) {
@@ -165,6 +169,8 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
     const isZonedReport = valueIndexes.length > 1
       && registers.every((match) => match?.[1] === registerPrefix)
       && new Set(registers.map((match) => match?.[2])).size === valueIndexes.length;
+    const totalRegisterIndex = registers.findIndex((match) => match?.[2] === '0');
+    const tariffRegisterPeriods: NonNullable<EnergyMeasurementWorkbookInfo['tariffRegisterPeriods']> = [];
     const daylightSavingAdjustment = parts.periodMonth === 3 ? -1 : parts.periodMonth === 10 ? 1 : 0;
     const expectedRows = parts.daysInMonth * 24 + daylightSavingAdjustment;
     const timestamps: number[] = [];
@@ -182,7 +188,6 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
       // ENEA leaves inactive OBIS tariff zones empty, including after a tariff change mid-month.
       const populatedIndexes = valueIndexes.filter((index) => String(row[index] ?? '').trim() !== '');
       const values = (isZonedReport ? populatedIndexes : valueIndexes).map((index) => numericCell(row[index]));
-      const totalRegisterIndex = registers.findIndex((match) => match?.[2] === '0');
       if (isZonedReport && populatedIndexes.length > 1 && totalRegisterIndex >= 0
         && populatedIndexes.includes(valueIndexes[totalRegisterIndex])) {
         throw new Error('W jednej godzinie podano jednocześnie energię łączną i strefową. Nie można ich sumować bez podwójnego naliczenia');
@@ -201,6 +206,15 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
         continue;
       }
       validRows += 1;
+      if (isZonedReport && totalRegisterIndex >= 0) {
+        const mode = populatedIndexes.includes(valueIndexes[totalRegisterIndex]) ? 'total' : 'zoned';
+        if (tariffRegisterPeriods.at(-1)?.mode !== mode) {
+          tariffRegisterPeriods.push({
+            validFrom: new Date(timestamp - 60 * 60_000).toISOString().slice(0, 10),
+            mode,
+          });
+        }
+      }
       for (const value of values) calculatedTotal += value!;
     }
     if (firstInvalidRow) {
@@ -254,6 +268,7 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
       totalKwh: reportedTotal ?? totalKwh,
       rowsCount: timestamps.length,
       sheetName,
+      ...(tariffRegisterPeriods.length > 1 ? { tariffRegisterPeriods } : {}),
     };
   }
 

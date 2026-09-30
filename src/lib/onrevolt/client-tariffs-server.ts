@@ -9,7 +9,17 @@ export class ClientTariffError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
 
-export type ClientTariffScope = { projectId: string; clientId: string; ppe: string | null; station: string | null; dataFrom?: string | null; generalTariff?: ClientTariffData['generalTariff'] };
+export type ClientTariffScope = {
+  projectId: string;
+  clientId: string;
+  ppe: string | null;
+  station: string | null;
+  dataFrom?: string | null;
+  generalTariff?: ClientTariffData['generalTariff'];
+  connectionPowerKw?: number | null;
+  annualUsageKwh?: number | null;
+  billingCycleMonths?: number | null;
+};
 
 export async function readProjectGeneralTariffs(scope: ClientTariffScope) {
   if (!scope.station) return { generalTariff: scope.generalTariff ?? null, targetTariff: null, generalTariffSource: 'CRM' as const };
@@ -32,13 +42,36 @@ export async function readProjectGeneralTariffs(scope: ClientTariffScope) {
   return { generalTariff: await selection('current'), targetTariff: await selection('target'), generalTariffSource: 'RE' as const };
 }
 
+export async function updateProjectTargetTariff(scope: ClientTariffScope, osdId: number, tariffId: number) {
+  if (!scope.station) throw new ClientTariffError('Najpierw przypisz stację w zakładce EMS.', 409);
+  if (!Number.isSafeInteger(osdId) || osdId <= 0 || !Number.isSafeInteger(tariffId) || tariffId <= 0) {
+    throw new ClientTariffError('Wybierz operatora i taryfę docelową.');
+  }
+  const db = rePrisma();
+  const tariff = await db.$queryRawUnsafe<Array<{ id: number }>>(
+    'SELECT id FROM tariff WHERE id = ? AND osd_id = ? LIMIT 1', tariffId, osdId);
+  if (!tariff[0]) throw new ClientTariffError('Wybrana taryfa nie istnieje w katalogu operatora.', 409);
+  await db.$executeRawUnsafe(
+    'UPDATE EnergyMeter_users SET tariff_target_osd_id = ?, tariff_target_tariff_id = ? WHERE station = ? LIMIT 1',
+    osdId, tariffId, scope.station);
+  return readProjectGeneralTariffs(scope);
+}
+
 export async function clientTariffScope(clientId: string, projectId: string, assignment?: { token: string | null; number: string | null }): Promise<ClientTariffScope> {
   if (!clientId || !projectId) throw new ClientTariffError('Wybierz projekt klienta.');
   const project = await prisma.project.findFirst({ where: { id: projectId, clientId },
     select: { id: true, clientId: true, dashboardStation: true, dashboardStationNumber: true } });
   if (!project) throw new ClientTariffError('Projekt nie należy do wskazanego klienta.', 404);
-  const accounts = await prisma.energyPortalAccount.findMany({ where: { projectId, clientId },
-    select: { ppeNumber: true, operator: true, tariff: true }, orderBy: { updatedAt: 'desc' } });
+  const [accounts, firstMeasurement, energyAudit, latestInvoice] = await Promise.all([
+    prisma.energyPortalAccount.findMany({ where: { projectId, clientId },
+      select: { ppeNumber: true, operator: true, tariff: true }, orderBy: { updatedAt: 'desc' } }),
+    prisma.energyMeasurementFile.findFirst({ where: { projectId, clientId, status: 'DOWNLOADED' },
+      orderBy: [{ periodYear: 'asc' }, { periodMonth: 'asc' }], select: { periodYear: true, periodMonth: true } }),
+    prisma.energyAudit.findUnique({ where: { projectId },
+      select: { connectionPowerKw: true, annualConsumptionKwh: true } }),
+    prisma.document.findFirst({ where: { projectId, clientId, billingCycleMonths: { not: null } },
+      orderBy: [{ documentDate: 'desc' }, { updatedAt: 'desc' }], select: { billingCycleMonths: true } }),
+  ]);
   const ppes = Array.from(new Set(accounts.map(a => a.ppeNumber?.trim()).filter(Boolean)));
   if (ppes.length > 1) throw new ClientTariffError('Projekt ma kilka PPE. Rozdziel punkty na osobne projekty przed ustawieniem historii taryf.', 409);
   const token = assignment ? assignment.token : project.dashboardStation;
@@ -46,11 +79,20 @@ export async function clientTariffScope(clientId: string, projectId: string, ass
   const station = stationRef ? await resolveReStation(stationRef) : null;
   if (stationRef && !station) throw new ClientTariffError('Przypisana stacja RE nie istnieje. Popraw powiązanie w EMS.', 409);
   if (station && token && token !== station.stationHash) throw new ClientTariffError('Niespójne powiązanie stacji w EMS.', 409);
-  const firstMeasurement = await prisma.energyMeasurementFile.findFirst({ where: { projectId, clientId, status: 'DOWNLOADED' },
-    orderBy: [{ periodYear: 'asc' }, { periodMonth: 'asc' }], select: { periodYear: true, periodMonth: true } });
   return { projectId, clientId, ppe: ppes[0] || null, station: station?.station || null,
     generalTariff: projectGeneralTariff(accounts),
-    dataFrom: firstMeasurement ? `${firstMeasurement.periodYear}-${String(firstMeasurement.periodMonth).padStart(2, '0')}-01` : null };
+    dataFrom: firstMeasurement ? `${firstMeasurement.periodYear}-${String(firstMeasurement.periodMonth).padStart(2, '0')}-01` : null,
+    connectionPowerKw: energyAudit?.connectionPowerKw == null ? null : Number(energyAudit.connectionPowerKw),
+    annualUsageKwh: energyAudit?.annualConsumptionKwh == null ? null : Number(energyAudit.annualConsumptionKwh),
+    billingCycleMonths: latestInvoice?.billingCycleMonths ?? null };
+}
+
+export async function syncClientTariffContext(clientId: string, projectId: string, actorId: string) {
+  const scope = await clientTariffScope(clientId, projectId);
+  const data = await callClientTariffs<ClientTariffData | null>({ action: 'sync-context', scope, actorId });
+  return data
+    ? { status: 'synced' as const, station: scope.station, retryAllowed: false, message: 'Dane do obliczeń taryfowych przekazano do RE.' }
+    : { status: 'skipped' as const, station: scope.station, retryAllowed: false, message: 'Projekt nie ma jeszcze indywidualnego profilu taryfowego RE.' };
 }
 
 /** Validate conflicts before the CRM save; after commit, bind the existing RE profile only. */

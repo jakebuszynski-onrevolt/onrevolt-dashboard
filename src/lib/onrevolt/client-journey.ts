@@ -96,14 +96,14 @@ function billingProgress(input: ClientJourneyInput) {
   const data = input.energyData;
   const connectionPowerKw = Number(data?.connectionPowerKw);
   const checks: Array<[boolean, number]> = [
-    [Boolean(data?.hasConsumptionData || hasMeasurements), 25],
+    [Boolean(data?.hasConsumptionData || hasMeasurements), 30],
     [Boolean(data?.buildingType), 10],
     [Boolean(data?.terrainType), 5],
     [Boolean(data?.roofShape), 5],
     [Boolean(data?.settlementSystem), 10],
     [Boolean(data?.energySupplier), 10],
     [Boolean(data?.connectionType), 10],
-    [Number.isFinite(connectionPowerKw) && connectionPowerKw > 0, 10],
+    [Number.isFinite(connectionPowerKw) && connectionPowerKw > 0, 5],
     [Boolean(data?.heatingSource), 10],
     [Boolean(data?.heatingSource) && (!data?.heatingSourceDetailRequired || Boolean(data?.heatingSourceDetail)), 5],
   ];
