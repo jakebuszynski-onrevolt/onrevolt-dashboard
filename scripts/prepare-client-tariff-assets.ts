@@ -6,7 +6,7 @@ const arg = (name: string) => process.argv.find(v => v.startsWith(`--${name}=`))
 const source = arg('source-root');
 const output = arg('output');
 const dashboard = process.argv.includes('--dashboard');
-const assetVersion = '20260929-tariff-live-account-1';
+const assetVersion = '20260930-capacity-charge-3';
 if (!source || !output) throw new Error('Podaj --source-root= i --output=; --dashboard dla my.onrevolt.com.');
 const read = (name: string) => readFileSync(path.join(source, name), 'utf8').replace(/\r\n/g, '\n');
 function write(name: string, content: string) { const file = path.join(output!, name); mkdirSync(path.dirname(file), { recursive: true }); writeFileSync(file, content, 'utf8'); }
@@ -66,7 +66,7 @@ funcs = replace(funcs, "            echo json_encode(['ok'=>true,'data'=>$data],
             if (!$dated) throw new RuntimeException('Wymaga uzupełnienia: brak cen katalogowych dla ' . $effectiveDate);
             echo json_encode(['ok'=>true,'data'=>$dated], JSON_UNESCAPED_UNICODE);`);
 write(`${prefix}setup_func.php`, funcs);
-for (const name of ['ClientTariffs.php', 'CatalogHistory.php', 'DashboardTariffs.php']) {
+for (const name of ['ClientTariffs.php', 'CatalogHistory.php', 'DashboardTariffs.php', 'CapacityCharge.php']) {
   const target = path.join(output, prefix, 'pricing', name); mkdirSync(path.dirname(target), { recursive: true });
   copyFileSync(path.resolve('integrations/re/pricing', name), target);
 }
@@ -82,6 +82,33 @@ if (dashboard) {
 
   let scripts = read('js/scripts.js');
   scripts = replace(scripts, 'function applyPayload(input, incrementalUpdate) {', 'function applyPayload(input, incrementalUpdate) {\n      if (input?.tariffHistory) input = Object.assign({}, input, { tariffHistory: ReTariffEngine.expand(input.tariffHistory) });');
+  scripts = editFunctions(scripts, 'getDashboardReInputFromPayload', 1, body => {
+    body = replace(body,
+      '    const target = settings.target && typeof settings.target === "object" ? settings.target : {};',
+      '    const current = settings.current && typeof settings.current === "object" ? settings.current : {};\n    const target = settings.target && typeof settings.target === "object" ? settings.target : {};');
+    return replace(body,
+      '      storageKwh: storageKwh == null ? null : roundDashboardReUp(storageKwh, 1),\n      lat:',
+      `      storageKwh: storageKwh == null ? null : roundDashboardReUp(storageKwh, 1),
+      contractPowerKw: firstFiniteNumber(current.contractPowerKw, current.contract_power_kw, settings.contractPowerKw, account.contractPowerKw),
+      billingCycleMonths: firstFiniteNumber(current.billingCycleMonths, current.billing_cycle_months, settings.billingCycleMonths, account.billingCycleMonths, 1),
+      lat:`);
+  });
+  scripts = editFunctions(scripts, 'syncDashboardReControls', 1, body => {
+    body = replace(body,
+      '    const addressInput = document.getElementById("addrInput");\n    const providerSelect = document.getElementById("providerSelect");',
+      '    const addressInput = document.getElementById("addrInput");\n    const contractPowerInput = document.getElementById("contractPowerKw");\n    const billingCycleSelect = document.getElementById("billingCycleMonths");\n    const providerSelect = document.getElementById("providerSelect");');
+    return replace(body,
+      '    if (providerSelect && input.providerId != null) {',
+      `    if (contractPowerInput && input.contractPowerKw != null && input.contractPowerKw > 0) {
+      contractPowerInput.value = String(input.contractPowerKw);
+    }
+    if (billingCycleSelect && input.billingCycleMonths != null) {
+      const billingValue = String(Math.round(input.billingCycleMonths));
+      if (Array.from(billingCycleSelect.options || []).some(function (option) { return option.value === billingValue; })) billingCycleSelect.value = billingValue;
+    }
+
+    if (providerSelect && input.providerId != null) {`);
+  });
   const liveAccountBefore = 'account: account || (window.dashboardLatestPayload && window.dashboardLatestPayload.account) || null,';
   const liveAccountAfter = 'account: account ? Object.assign({}, (window.dashboardLatestPayload && window.dashboardLatestPayload.account) || {}, account) : (window.dashboardLatestPayload && window.dashboardLatestPayload.account) || null,';
   if (scripts.split(liveAccountBefore).length !== 3) throw new Error('Niejednoznaczne scalanie konta w odświeżeniu live.');
@@ -144,6 +171,89 @@ if (dashboard) {
 }
 `;
   }, body => body.includes('getSummaryAnchorDate(payload)'));
+  const energyLabelFunction = `    function isEnergyActiveTariffLabel(label) {
+      return normalizeText(label).indexOf("energia czynna") !== -1;
+    }`;
+  const capacityLabelFunction = `${energyLabelFunction}
+
+    function isCapacityChargeTariffLabel(label) {
+      return normalizeText(label).replace(/ł/g, "l").indexOf("oplata mocowa") !== -1;
+    }`;
+  if (scripts.split(energyLabelFunction).length !== 3) throw new Error('Niejednoznaczne funkcje etykiet składników taryfy.');
+  scripts = scripts.replaceAll(energyLabelFunction, capacityLabelFunction);
+  scripts = editFunctions(scripts, 'sumTariffVariableRowsForWindow', 2, body => replace(
+    body,
+    '        const label = normalizeText(row && row.label);',
+    '        const label = normalizeText(row && row.label);\n        if (isCapacityChargeTariffLabel(label)) {\n          return sum;\n        }'
+  ));
+  scripts = editFunctions(scripts, 'resolveTariffEnergyPurchasePrice', 1, () => `
+      if (!tariff) return null;
+      const sellMethod = normalizeText(tariff.sell_method || "fixed");
+      const rcePrice = sellMethod === "rdn" ? resolveRcePriceForHour(rce, hour) : undefined;
+      if (sellMethod === "rdn" && rcePrice == null) return null;
+      return ReTariffEngine.rates(tariff, dateKey, hour, rcePrice, capacityOptions).energy;
+    `);
+  scripts = editFunctions(scripts, 'resolveTariffPurchasePrice', 2, () => `
+      if (!tariff) return null;
+      const sellMethod = normalizeText(tariff.sell_method || "fixed");
+      const rcePrice = sellMethod === "rdn" ? resolveRcePriceForHour(rce, hour) : undefined;
+      if (sellMethod === "rdn" && rcePrice == null) return null;
+      return ReTariffEngine.rates(tariff, dateKey, hour, rcePrice, capacityOptions).total;
+    `);
+  scripts = editFunctions(scripts, 'resolveTariffDistributionPrice', 1, () => `
+      const totalPrice = resolveTariffPurchasePrice(tariff, dateKey, hour, rce, capacityOptions);
+      const energyPrice = resolveTariffEnergyPurchasePrice(tariff, dateKey, hour, rce, capacityOptions);
+      if (totalPrice == null || energyPrice == null) return null;
+      return Math.max(totalPrice - energyPrice, 0);
+    `);
+  scripts = editFunctions(scripts, 'simulateBankDay', 1, body => {
+    body = replace(body, '      const HALF_DAY_ARBITRAGE_GAP = 0.05;', `      const HALF_DAY_ARBITRAGE_GAP = 0.05;
+      const account = window.dashboardLatestPayload && window.dashboardLatestPayload.account || {};
+      const settings = account.tariffSettings || {};
+      const currentSettings = settings.current || {};
+      const capacityOptions = {
+        connectionPowerKw: firstNumber(currentSettings.contractPowerKw, settings.contractPowerKw, account.contractPowerKw),
+        dayProfileKwh: hourlySource.map(function (entry) { return firstNumber(entry && entry.demandKwh, 0) || 0; })
+      };`);
+    return body
+      .replaceAll('resolveTariffPurchasePrice(tariff, dateKey, hour, rce)', 'resolveTariffPurchasePrice(tariff, dateKey, hour, rce, capacityOptions)')
+      .replaceAll('resolveTariffEnergyPurchasePrice(tariff, dateKey, hour, rce)', 'resolveTariffEnergyPurchasePrice(tariff, dateKey, hour, rce, capacityOptions)')
+      .replaceAll('resolveTariffDistributionPrice(tariff, dateKey, hour, rce)', 'resolveTariffDistributionPrice(tariff, dateKey, hour, rce, capacityOptions)');
+  });
+  const purchaseBuilder = '    function buildPurchaseDataFromTariffPayload(payload, rce) {';
+  const capacityProfileBuilder = `    function buildCapacityChargeProfile(payload) {
+      const totals = Array(24).fill(0);
+      let samples = 0;
+      const records = payload && payload.usageData && Array.isArray(payload.usageData.records) ? payload.usageData.records : [];
+      records.forEach(function (record) {
+        const quarters = record && Array.isArray(record.quarters) ? record.quarters : [];
+        if (!quarters.length) return;
+        samples += 1;
+        quarters.forEach(function (quarter, index) {
+          const hour = clampNumber(Math.round(firstNumber(quarter && quarter.hour, Math.floor(index / 4)) || 0), 0, 23);
+          totals[hour] += Math.max(0, firstNumber(quarter && quarter.gridBilled, quarter && quarter.billedGrid,
+            quarter && quarter.gridPhysical, quarter && quarter.grid, 0) || 0);
+        });
+      });
+      return samples ? totals.map(function (value) { return value / samples; }) : null;
+    }
+
+${purchaseBuilder}`;
+  scripts = replace(scripts, purchaseBuilder, capacityProfileBuilder);
+  scripts = editFunctions(scripts, 'buildPurchaseDataFromTariffPayload', 1, body => {
+    body = replace(body, '      const currentHour = new Date().getHours();', `      const currentHour = new Date().getHours();
+      const account = payload && payload.account || {};
+      const settings = account.tariffSettings || {};
+      const currentSettings = settings.current || {};
+      const capacityOptions = {
+        connectionPowerKw: firstNumber(currentSettings.contractPowerKw, settings.contractPowerKw, account.contractPowerKw),
+        dayProfileKwh: buildCapacityChargeProfile(payload)
+      };`);
+    return body.replaceAll(
+      'resolveTariffPurchasePrice(tariff, businessDate, hour, rce)',
+      'resolveTariffPurchasePrice(tariff, businessDate, hour, rce, capacityOptions)'
+    );
+  });
   write('js/scripts.js', sharedEngine + '\n' + browserHelpers + '\n' + scripts);
 
   let prosumer = read('js/prosumer-engine.js');
@@ -152,9 +262,69 @@ if (dashboard) {
   prosumer = replace(prosumer, 'entry[1].pricingLegacyTariff || entry[1]', 'entry[1] && (entry[1].pricingLegacyTariff || entry[1])');
   // A target investment simulation must not silently inherit the customer's actual tariff history.
   prosumer = replace(prosumer, 'tariffHistory: payload && payload.tariffHistory ? payload.tariffHistory : null,', 'tariffHistory: context && context.useActualTariffHistory ? payload.tariffHistory : null,');
+  const prosumerCapacityHelpers = readFileSync(path.resolve('integrations/re/prosumer-capacity-charge.js'), 'utf8').trimEnd();
+  prosumer = replace(prosumer, '  function createPriceProvider(context) {', `${prosumerCapacityHelpers}\n\n  function createPriceProvider(context) {`);
+  prosumer = replace(prosumer, '    const currentRce = context && context.currentRce ? context.currentRce : null;', `    const currentRce = context && context.currentRce ? context.currentRce : null;
+    const connectionPowerKw = resolveConnectionPowerKw(context);
+    const capacityProfilesByDate = context && context.capacityProfilesByDate ? context.capacityProfilesByDate : {};`);
+  prosumer = editFunctions(prosumer, 'sumTariffVariableRowsForWindow', 1, body => replace(
+    body,
+    '        const label = normalizeText(row && row.label);',
+    '        const label = normalizeText(row && row.label);\n        if (isCapacityChargeTariffLabel(label)) {\n          return sum;\n        }'
+  ));
+  prosumer = replace(prosumer, '        const rce = resolveRcePriceForHour(rcePayload, hour);', `        const rce = resolveRcePriceForHour(rcePayload, hour);
+        const capacityCharge = tariff
+          ? resolveCapacityCharge(tariff, dateKey, hour, connectionPowerKw, capacityProfilesByDate[dateKey])
+          : { rate: 0, factor: null, mode: null };`);
+  prosumer = replace(prosumer, 'sumTariffVariableRowsForWindow(variableRows, windowCode, false) + rce', 'sumTariffVariableRowsForWindow(variableRows, windowCode, false) + rce + capacityCharge.rate');
+  prosumer = replace(prosumer, 'buyPrice = sumTariffVariableRowsForWindow(variableRows, windowCode, true);', 'buyPrice = sumTariffVariableRowsForWindow(variableRows, windowCode, true) + capacityCharge.rate;');
+  prosumer = replace(prosumer, '          distributionBuyPrice: distributionBuyPrice,', `          distributionBuyPrice: distributionBuyPrice,
+          capacityChargeRate: capacityCharge.rate,
+          capacityChargeFactor: capacityCharge.factor,
+          capacityChargeMode: capacityCharge.mode,`);
+  prosumer = replace(prosumer, '    const priceProvider = input && input.priceProvider ? input.priceProvider : createPriceProvider(input);', `    const priceProvider = input && input.priceProvider ? input.priceProvider : createPriceProvider(Object.assign({}, input, {
+      capacityProfilesByDate: input && input.capacityProfilesByDate ? input.capacityProfilesByDate : buildCapacityProfilesByDate(daysInput)
+    }));`);
+  prosumer = replace(prosumer, `    const priceProvider = createPriceProvider({
+      tariff: tariff,
+      tariffHistory: context && context.useActualTariffHistory ? payload.tariffHistory : null,
+      priceHistory: payload && payload.priceHistory ? payload.priceHistory : null,
+      currentRce: payload && payload.rce ? payload.rce : null
+    });
+`, '');
+  prosumer = replace(prosumer, '    }\n\n    const monthGroups = [];', `    }
+
+    const priceProvider = createPriceProvider({
+      tariff: tariff,
+      tariffHistory: context && context.useActualTariffHistory ? payload.tariffHistory : null,
+      priceHistory: payload && payload.priceHistory ? payload.priceHistory : null,
+      currentRce: payload && payload.rce ? payload.rce : null,
+      connectionPowerKw: resolveConnectionPowerKw(context),
+      capacityProfilesByDate: buildCapacityProfilesByDate(daysInput)
+    });
+
+    const monthGroups = [];`);
   write('js/prosumer-engine.js', prosumer);
   let pricing = read('re/pricing/dashboard-pricing.js');
   pricing = replace(pricing, 'const VERSION = "net-panel-20260924-sale-vat-2";', `const VERSION = "${assetVersion}";`);
+  pricing = replace(pricing, '    [ ["buy_base", "buyBase"], ["sell_fixed_price", "sellFixedPrice"] ].forEach(function (spec) {', `    if (tariff.capacity_charge) {
+      const capacityIndex = (tariff.variable || []).findIndex(function (row) {
+        return String(row && row.label || "").normalize("NFD").replace(/[\\u0300-\\u036f]/g, "")
+          .toLowerCase().replace(/ł/g, "l").indexOf("oplata mocowa") !== -1;
+      });
+      if (capacityIndex < 0) throw new Error("Brak składnika opłaty mocowej w taryfie " + tariff.code);
+      const grossRate = number(tariff.variable[capacityIndex].price, "opłata mocowa brutto");
+      const netRate = number(result.variable[capacityIndex].price, "opłata mocowa netto");
+      if (grossRate <= 0) throw new Error("Nieprawidłowa stawka opłaty mocowej brutto.");
+      const basisFactor = netRate / grossRate;
+      result.capacity_charge = Object.assign({}, tariff.capacity_charge, {
+        variable_rate: netRate,
+        flat_monthly: (tariff.capacity_charge.flat_monthly || []).map(function (band) {
+          return Object.assign({}, band, { amount: number(band.amount, "opłata mocowa miesięczna") * basisFactor });
+        })
+      });
+    }
+    [ ["buy_base", "buyBase"], ["sell_fixed_price", "sellFixedPrice"] ].forEach(function (spec) {`);
   pricing = replace(pricing, 'history = Object.assign({}, history, { byDate: Object.fromEntries(Object.entries(history.byDate).map(entry => [entry[0], projectTariff(entry[1])])) });', `const projected = new Map();
       history = root.ReTariffEngine.expand(history);
       history = Object.assign({}, history, { byDate: Object.fromEntries(Object.entries(history.byDate).map(entry => {
@@ -180,6 +350,13 @@ if (dashboard) {
 
 if (dashboard) {
 let native = read(`${prefix}js/scripts.js`);
+native = replace(native, 'const T = await loadCurrentTariff(osdId, tariffId);', 'const T = await window.loadCurrentTariff(osdId, tariffId);');
+const eagerTariffRefresh = `if (!(typeof window !== 'undefined' && window.HEADLESS === true)) {
+  refreshTariffDerivedState({ reloadCurrentTariff: true }).catch(console.error);
+}
+`;
+native = replace(native, eagerTariffRefresh, '');
+native = replace(native, 'async function fetchJSONplain(url){', `${eagerTariffRefresh}async function fetchJSONplain(url){`);
 native = replace(native, 'function applyReActualDashboardData(payload){', 'function applyReActualDashboardData(payload){\n  window.reClientTariffHistory = ReTariffEngine.expand(payload?.tariffHistory || null);');
 native = replace(native, '\ttotG11 += base;', `\tif (window.reClientTariffHistory?.strict) {
     base = 0;

@@ -11,6 +11,23 @@ export type EnergyTariffZoneRate = {
   totalGrossPerKwh: number;
 };
 
+export type EnergyCapacityCharge = {
+  model: 'pl_capacity_charge';
+  mode: 'flat' | 'variable';
+  effectiveFrom: string;
+  effectiveUntil: string;
+  variableRateGrossPerKwh: number;
+  qualifyingHourFrom: number;
+  qualifyingHourUntil: number;
+  excludeWeekends: boolean;
+  excludePublicHolidays: boolean;
+  profileFactors: Array<{
+    differenceMaxPercent: number | null;
+    factor: number;
+    group: string;
+  }>;
+};
+
 export type EnergyTariffCostSnapshot = {
   source: 'WINDYONE_RE';
   sourceUrl: string;
@@ -29,6 +46,7 @@ export type EnergyTariffCostSnapshot = {
   fixedMonthlyGross: number;
   fixedCosts: Array<{ label: string; amountGross: number }>;
   billingCycleMonths: number;
+  capacityCharge?: EnergyCapacityCharge;
 };
 
 export type EnergyScenarioInput = {
@@ -144,6 +162,102 @@ function validateTariff(tariff: EnergyTariffCostSnapshot | undefined, name: stri
     assertFinite(rate.distributionGrossPerKwh, `${name}.zoneRates[${index}].distributionGrossPerKwh`);
   });
   assertFinite(tariff.fixedMonthlyGross, `${name}.fixedMonthlyGross`);
+  if (tariff.capacityCharge) {
+    assertFinite(tariff.capacityCharge.variableRateGrossPerKwh, `${name}.capacityCharge.variableRateGrossPerKwh`);
+    if (!['flat', 'variable'].includes(tariff.capacityCharge.mode)) {
+      throw new Error(`${name}.capacityCharge.mode ma nieprawidłową wartość`);
+    }
+  }
+}
+
+function easterSunday(year: number) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function dateWithOffset(date: Date, days: number) {
+  const value = new Date(date.getTime());
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function isPolishPublicHoliday(date: string) {
+  const year = Number(date.slice(0, 4));
+  const fixed = new Set([
+    `${year}-01-01`, `${year}-01-06`, `${year}-05-01`, `${year}-05-03`, `${year}-08-15`,
+    `${year}-11-01`, `${year}-11-11`, `${year}-12-25`, `${year}-12-26`,
+  ]);
+  if (year >= 2025) fixed.add(`${year}-12-24`);
+  const easter = easterSunday(year);
+  fixed.add(dateWithOffset(easter, 1));
+  fixed.add(dateWithOffset(easter, 60));
+  return fixed.has(date);
+}
+
+function capacityQualifyingHour(rule: EnergyCapacityCharge, date: string, hour: number) {
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+  if (rule.excludeWeekends && (weekday === 0 || weekday === 6)) return false;
+  if (rule.excludePublicHolidays && isPolishPublicHoliday(date)) return false;
+  return hour >= rule.qualifyingHourFrom && hour < rule.qualifyingHourUntil;
+}
+
+function capacityProfileFactor(rule: EnergyCapacityCharge, date: string, dayProfileKwh: number[]) {
+  if (!Array.isArray(dayProfileKwh) || dayProfileKwh.length !== 24) {
+    throw new Error(`Brak dobowego profilu zużycia do obliczenia opłaty mocowej dla ${date}.`);
+  }
+  let peak = 0;
+  let peakHours = 0;
+  let other = 0;
+  let otherHours = 0;
+  dayProfileKwh.forEach((amount, hour) => {
+    assertFinite(amount, `profil opłaty mocowej ${date}[${hour}]`);
+    if (capacityQualifyingHour(rule, date, hour)) {
+      peak += amount;
+      peakHours += 1;
+    } else {
+      other += amount;
+      otherHours += 1;
+    }
+  });
+  if (!peakHours) return 0;
+  if (!otherHours || other <= 0) return 1;
+  const difference = (((peak / peakHours) / (other / otherHours)) - 1) * 100;
+  const band = rule.profileFactors.find((item) => (
+    item.differenceMaxPercent == null || difference < item.differenceMaxPercent
+  ));
+  if (!band || !Number.isFinite(band.factor)) throw new Error('Niekompletne współczynniki opłaty mocowej.');
+  return band.factor;
+}
+
+function capacityChargeRateAt(
+  tariff: EnergyTariffCostSnapshot,
+  date: string,
+  hour: number,
+  dayProfileKwh: number[],
+) {
+  const rule = tariff.capacityCharge;
+  if (!rule || rule.mode === 'flat') return 0;
+  if (!date || date.startsWith('undefined-')) {
+    throw new Error('Opłata mocowa wymaga roku obliczeń.');
+  }
+  if ((rule.effectiveFrom && date < rule.effectiveFrom) || (rule.effectiveUntil && date >= rule.effectiveUntil)) {
+    throw new Error(`Brak aktualnej reguły opłaty mocowej dla ${date}.`);
+  }
+  if (!capacityQualifyingHour(rule, date, hour)) return 0;
+  return rule.variableRateGrossPerKwh * capacityProfileFactor(rule, date, dayProfileKwh);
 }
 
 function tariffRateAt(
@@ -152,13 +266,15 @@ function tariffRateAt(
   hour: number,
   fallbackEnergy: number,
   fallbackDistribution: number,
+  date: string,
+  dayProfileKwh: number[],
 ) {
   if (!tariff) return { energy: fallbackEnergy, distribution: fallbackDistribution };
   const code = tariff.monthlyZoneCodes[monthIndex]?.[hour] || tariff.zoneRates[0]?.code;
   const rate = tariff.zoneRates.find((item) => item.code === code) || tariff.zoneRates[0];
   return {
     energy: rate.energyGrossPerKwh,
-    distribution: rate.distributionGrossPerKwh,
+    distribution: rate.distributionGrossPerKwh + capacityChargeRateAt(tariff, date, hour, dayProfileKwh),
   };
 }
 
@@ -240,9 +356,12 @@ export function calculateEnergyScenario(input: EnergyScenarioInput): EnergyScena
     for (let day = 0; day < days; day += 1) {
       const date = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day + 1).padStart(2, '0')}`;
       const datedTariff = history ? tariffEngine.resolve(history, date, null) : null;
+      const dayLoadProfile = (monthlyLoadProfiles?.[monthIndex] || loadProfile)
+        .map((share) => monthConsumption * share / days);
+      const dayScenarioGrid = Array.from({ length: 24 }, () => 0);
       if (datedTariff) monthTotals.baselineFixed += tariffEngine.fixedDaily(datedTariff, date, fixedOptions);
       for (let hour = 0; hour < 24; hour += 1) {
-        const load = monthConsumption * (monthlyLoadProfiles?.[monthIndex] || loadProfile)[hour] / days;
+        const load = dayLoadProfile[hour];
         const pv = monthPv * pvHourProfiles[monthIndex][hour] / days;
         const direct = Math.min(load, pv);
         let surplus = pv - direct;
@@ -263,12 +382,21 @@ export function calculateEnergyScenario(input: EnergyScenarioInput): EnergyScena
         monthTotals.discharge += dischargeToLoad;
         monthTotals.grid += deficit;
         monthTotals.export += surplus;
-        const currentRate = datedTariff ? tariffEngine.rates(datedTariff, date, hour) : tariffRateAt(
+        dayScenarioGrid[hour] = deficit;
+      }
+
+      for (let hour = 0; hour < 24; hour += 1) {
+        const currentRate = datedTariff ? tariffEngine.rates(datedTariff, date, hour, undefined, {
+          ...fixedOptions,
+          dayProfileKwh: dayLoadProfile,
+        }) : tariffRateAt(
           input.currentTariff,
           monthIndex,
           hour,
           input.energyBuyGrossPerKwh,
           input.distributionGrossPerKwh,
+          date,
+          dayLoadProfile,
         );
         const targetRate = tariffRateAt(
           input.targetTariff,
@@ -276,11 +404,13 @@ export function calculateEnergyScenario(input: EnergyScenarioInput): EnergyScena
           hour,
           input.energyBuyGrossPerKwh,
           input.distributionGrossPerKwh,
+          date,
+          dayScenarioGrid,
         );
-        monthTotals.baselineEnergy += load * currentRate.energy;
-        monthTotals.baselineDistribution += load * currentRate.distribution;
-        monthTotals.scenarioEnergy += deficit * targetRate.energy;
-        monthTotals.scenarioDistribution += deficit * targetRate.distribution;
+        monthTotals.baselineEnergy += dayLoadProfile[hour] * currentRate.energy;
+        monthTotals.baselineDistribution += dayLoadProfile[hour] * currentRate.distribution;
+        monthTotals.scenarioEnergy += dayScenarioGrid[hour] * targetRate.energy;
+        monthTotals.scenarioDistribution += dayScenarioGrid[hour] * targetRate.distribution;
       }
     }
 

@@ -28,6 +28,22 @@ type ReTariff = {
   monthly?: unknown;
   fixed?: unknown;
   variable?: unknown;
+  capacity_charge?: unknown;
+};
+
+type ReCapacityCharge = {
+  model?: unknown;
+  effective_from?: unknown;
+  effective_until?: unknown;
+  flat_eligible?: unknown;
+  flat_max_power_kw?: unknown;
+  flat_monthly?: unknown;
+  variable_rate?: unknown;
+  qualifying_hour_from?: unknown;
+  qualifying_hour_until?: unknown;
+  exclude_weekends?: unknown;
+  exclude_public_holidays?: unknown;
+  profile_factors?: unknown;
 };
 
 function numberValue(value: unknown) {
@@ -45,6 +61,7 @@ function normalizedText(value: unknown) {
   return String(value ?? '')
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
+    .replace(/[łŁ]/g, 'l')
     .toLowerCase()
     .trim();
 }
@@ -69,6 +86,63 @@ function zoneOrder(code: string) {
 function isEnergyCost(label: unknown) {
   const value = normalizedText(label);
   return value === 'energia' || value.includes('energia czynna');
+}
+
+function isCapacityChargeCost(label: unknown) {
+  return normalizedText(label).includes('oplata mocowa');
+}
+
+function buildCapacityCharge(options: {
+  tariff: ReTariff;
+  annualUsageKwh: number;
+  connectionPowerKw?: number;
+}) {
+  const variable = Array.isArray(options.tariff.variable) ? options.tariff.variable as ReVariableCost[] : [];
+  const capacityRow = variable.find((row) => isCapacityChargeCost(row.label));
+  if (!capacityRow) return { metadata: undefined, fixedCost: undefined };
+
+  const rule = options.tariff.capacity_charge as ReCapacityCharge | undefined;
+  if (!rule || rule.model !== 'pl_capacity_charge') {
+    throw new Error(`Brak reguły rozliczenia opłaty mocowej dla taryfy ${String(options.tariff.code || 'C')}.`);
+  }
+  const connectionPowerKw = optionalNumberValue(options.connectionPowerKw);
+  if (connectionPowerKw == null || connectionPowerKw <= 0) {
+    throw new Error('Brak mocy umownej do obliczenia opłaty mocowej.');
+  }
+  const flatEligible = Boolean(rule.flat_eligible);
+  const flatMaxPowerKw = numberValue(rule.flat_max_power_kw);
+  const mode: 'flat' | 'variable' = flatEligible && connectionPowerKw <= flatMaxPowerKw ? 'flat' : 'variable';
+  const metadata = {
+    model: 'pl_capacity_charge' as const,
+    mode,
+    effectiveFrom: String(rule.effective_from || ''),
+    effectiveUntil: String(rule.effective_until || ''),
+    variableRateGrossPerKwh: numberValue(rule.variable_rate),
+    qualifyingHourFrom: numberValue(rule.qualifying_hour_from),
+    qualifyingHourUntil: numberValue(rule.qualifying_hour_until),
+    excludeWeekends: Boolean(rule.exclude_weekends),
+    excludePublicHolidays: Boolean(rule.exclude_public_holidays),
+    profileFactors: (Array.isArray(rule.profile_factors) ? rule.profile_factors : []).map((item: any) => ({
+      differenceMaxPercent: optionalNumberValue(item?.difference_max_percent),
+      factor: numberValue(item?.factor),
+      group: String(item?.group || ''),
+    })),
+  };
+  if (mode === 'variable') return { metadata, fixedCost: undefined };
+
+  const band = (Array.isArray(rule.flat_monthly) ? rule.flat_monthly : []).find((item: any) => {
+    const minimum = optionalNumberValue(item?.annual_usage_min_kwh);
+    const maximum = optionalNumberValue(item?.annual_usage_max_kwh);
+    return (minimum == null || options.annualUsageKwh >= minimum)
+      && (maximum == null || options.annualUsageKwh < maximum);
+  }) as any;
+  if (!band || !Number.isFinite(Number(band.amount))) {
+    throw new Error('Brak miesięcznej stawki opłaty mocowej.');
+  }
+  return {
+    metadata,
+    fixedCost: { label: 'Opłata mocowa', amountGross: Number(band.amount) },
+  };
 }
 
 function fixedCostApplies(row: ReFixedCost, annualUsageKwh: number, billingCycleMonths: number) {
@@ -136,6 +210,12 @@ export function buildEnergyTariffCostSnapshot(options: {
       : amount;
     return { label: String(row.label || 'Opłata stała'), amountGross };
   });
+  const capacityCharge = buildCapacityCharge({
+    tariff: options.tariff,
+    annualUsageKwh: options.annualUsageKwh,
+    connectionPowerKw: options.connectionPowerKw,
+  });
+  if (capacityCharge.fixedCost) fixedCosts.push(capacityCharge.fixedCost);
   const zoneRates: EnergyTariffZoneRate[] = resolveZoneCodes(options.tariff)
     .map((code) => {
       const matching = variable.filter((row) => {
@@ -146,7 +226,7 @@ export function buildEnergyTariffCostSnapshot(options: {
         .filter((row) => isEnergyCost(row.label))
         .reduce((sum, row) => sum + numberValue(row.price), 0);
       const distributionGrossPerKwh = matching
-        .filter((row) => !isEnergyCost(row.label))
+        .filter((row) => !isEnergyCost(row.label) && !isCapacityChargeCost(row.label))
         .reduce((sum, row) => sum + numberValue(row.price), 0);
       return {
         code,
@@ -180,6 +260,7 @@ export function buildEnergyTariffCostSnapshot(options: {
     fixedMonthlyGross: fixedCosts.reduce((sum, row) => sum + row.amountGross, 0),
     fixedCosts,
     billingCycleMonths,
+    capacityCharge: capacityCharge.metadata,
   };
 }
 

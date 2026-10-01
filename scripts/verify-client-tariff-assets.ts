@@ -69,6 +69,39 @@ assert.equal(notice.hidden, false);
 assert.match(notice.textContent, /Brak danych do opłaty stałej/);
 assert.equal(context.clientTariffDashboardCost(powerPayload, range, { connectionPowerKw: 16 }, () => 12).fixedCost, 32 / 31);
 assert.equal(notice.hidden, true);
+const capacityTariff = {
+  ...first,
+  code: 'C13active',
+  segment: 'nn_le_40',
+  variable: [...first.variable, { label: 'Opłata mocowa', window_code: 'all', price: 0.269862 }],
+  capacity_charge: {
+    model: 'pl_capacity_charge', effective_from: '2026-01-01', effective_until: '2027-01-01',
+    flat_eligible: true, flat_max_power_kw: 16, variable_rate: 0.269862,
+    qualifying_hour_from: 7, qualifying_hour_until: 22, exclude_weekends: true, exclude_public_holidays: true,
+    flat_monthly: [
+      { annual_usage_min_kwh: null, annual_usage_max_kwh: 500, amount: 5.2767 },
+      { annual_usage_min_kwh: 500, annual_usage_max_kwh: 1200, amount: 12.6813 },
+      { annual_usage_min_kwh: 1200, annual_usage_max_kwh: 2800, amount: 21.1314 },
+      { annual_usage_min_kwh: 2800, annual_usage_max_kwh: null, amount: 29.5815 },
+    ],
+    profile_factors: [
+      { difference_max_percent: 5, factor: 0.17, group: 'K1' },
+      { difference_max_percent: 10, factor: 0.5, group: 'K2' },
+      { difference_max_percent: 15, factor: 0.83, group: 'K3' },
+      { difference_max_percent: null, factor: 1, group: 'K4' },
+    ],
+  },
+};
+assert.equal(context.ReTariffEngine.fixedMonthly(capacityTariff, {
+  annualUsageKwh: 1500, billingCycleMonths: 1, connectionPowerKw: 10,
+}), first.fixed[0].amount + 21.1314);
+const capacityRate = context.ReTariffEngine.rates(capacityTariff, '2026-01-02', 12, undefined, {
+  annualUsageKwh: 6000, billingCycleMonths: 1, connectionPowerKw: 20, dayProfileKwh: Array(24).fill(1),
+});
+assert.ok(Math.abs(capacityRate.capacityChargeRate - 0.269862 * 0.17) < 1e-9);
+assert.equal(context.ReTariffEngine.rates(capacityTariff, '2026-01-01', 12, undefined, {
+  annualUsageKwh: 6000, billingCycleMonths: 1, connectionPowerKw: 20, dayProfileKwh: Array(24).fill(1),
+}).capacityChargeRate, 0);
 for (const source of declarations('buildTariffModels')) {
   assert.ok(source.includes('ReTariffEngine.resolve(payload.tariffHistory, formatDateKey(state.anchorDate), null)'));
   assert.ok(!source.includes('annualUsageKwh: Object.values'));
@@ -84,9 +117,39 @@ const projected = context.DashboardPricing.projectPayload({ tariffData: { curren
 assert.equal(projected.tariffHistory.byDate['2026-01-01'].variable[0].price, 1 / 1.23);
 assert.equal(projected.tariffHistory.byDate['2026-01-01'], projected.tariffHistory.byDate['2026-01-02']);
 assert.equal(projected.tariffHistory.byDate['2026-01-03'], null);
+const capacityBusiness = {
+  ...capacityTariff,
+  segment: 'business',
+  buy_base: 1.23,
+  sell_fixed_price: 0,
+  pricing: { tariffStorage: {
+    priceBasis: 'net', vatRate: 0.23,
+    fixed: capacityTariff.fixed.map((row: any) => ({ ...row, net: row.amount / 1.23, vatRate: 0.23 })),
+    variable: capacityTariff.variable.map((row: any) => ({
+      ...row, net: row.label === 'Opłata mocowa' ? 0.2194 : row.price / 1.23, vatRate: 0.23,
+    })),
+    buyBase: { net: 1 }, sellFixedPrice: { net: 0 },
+  } },
+};
+const projectedCapacity = context.DashboardPricing.projectTariff(capacityBusiness);
+assert.equal(projectedCapacity.capacity_charge.variable_rate, 0.2194);
+assert.ok(Math.abs(projectedCapacity.capacity_charge.flat_monthly[0].amount - 4.29) < 1e-9);
 assert.ok(read('js/prosumer-engine.js').includes('context && context.useActualTariffHistory ? payload.tariffHistory : null'));
-assert.ok(read('index.html').includes('js/scripts.js?v=20260929-tariff-live-account-1'));
-assert.ok(read('js/scripts.js').includes('new URL("js/scripts.js?v=20260929-tariff-live-account-1", baseUrl)'));
+assert.ok(read('js/prosumer-engine.js').includes('resolveCapacityCharge(tariff, dateKey, hour'));
+const capacityProfileSource = declarations('buildCapacityChargeProfile')[0];
+assert.ok(capacityProfileSource.includes('clampNumber('));
+assert.ok(!capacityProfileSource.includes('const hour = clamp('));
+assert.ok(read('re/js/scripts.js').includes('await window.loadCurrentTariff(osdId, tariffId)'));
+assert.ok(read('re/js/scripts.js').indexOf('window.loadCurrentTariff = async function') < read('re/js/scripts.js').indexOf('refreshTariffDerivedState({ reloadCurrentTariff: true }).catch(console.error)'));
+assert.ok(read('js/scripts.js').includes('contractPowerInput.value = String(input.contractPowerKw)'));
+assert.ok(read('js/scripts.js').includes('billingCycleSelect.value = billingValue'));
+assert.ok(read('js/scripts.js').includes('days: request.range.coverageDays || request.range.days,'));
+assert.ok(read('re/pricing/CapacityCharge.php').includes("'rate_year' => $rateYear"));
+assert.ok(read('re/pricing/CapacityCharge.php').includes('Prognoza na podstawie ostatniej stawki URE'));
+assert.ok(read('re/pricing/CapacityCharge.php').includes("($tariff['clientPeriodSource'] ?? null) === 'TARGET'"));
+assert.ok(read('re/pricing/ClientTariffs.php').includes("$tariff['clientPeriodSource'] = $period['source']"));
+assert.ok(read('index.html').includes('js/scripts.js?v=20260930-capacity-charge-3'));
+assert.ok(read('js/scripts.js').includes('new URL("js/scripts.js?v=20260930-capacity-charge-3", baseUrl)'));
 assert.equal((read('js/scripts.js').match(/account: account \? Object\.assign\(\{\}, \(window\.dashboardLatestPayload && window\.dashboardLatestPayload\.account\) \|\| \{\}, account\)/g) || []).length, 2);
 assert.ok(!read('js/scripts.js').includes('20260926-client-tariffs-1'));
 console.log('RE assets: syntax, actual rates, zone hours, interval boundaries, prorated fees, separate target scenario and asset versions OK');

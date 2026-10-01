@@ -183,7 +183,6 @@ final class ClientTariffs
             $tariff = array_replace($tariff, $period['schedule']);
         }
         $tariff['clientPeriodId'] = $period['id'];
-        $tariff['clientPeriodSource'] = $period['source'];
         return $tariff;
     }
 

@@ -127,3 +127,56 @@ test('liczy taryfę przed i po według właściwej strefy godzinowej', () => {
   assert.equal(result.scenarioAnnualDistributionCostGross, 480);
   assert.equal(result.scenarioAnnualFixedCostGross, 360);
 });
+
+test('dla firmy nalicza zmienną opłatę mocową tylko w godzinach kwalifikowanych i z grupą K', () => {
+  const allHours = Array.from({ length: 12 }, () => Array.from({ length: 24 }, () => 'all'));
+  const baseTariff = {
+    source: 'WINDYONE_RE' as const,
+    sourceUrl: 'https://windyone.pl/re/setup.php',
+    fetchedAt: '2026-09-30T00:00:00.000Z',
+    operator: 'ENEA',
+    code: 'C13active',
+    name: 'C13active',
+    zoneModel: 'all',
+    monthlyZoneCodes: allHours,
+    zoneRates: [{ code: 'all', label: 'Cała doba', energyGrossPerKwh: 0.5, distributionGrossPerKwh: 0.2, totalGrossPerKwh: 0.7 }],
+    fixedMonthlyGross: 0,
+    fixedCosts: [],
+    billingCycleMonths: 1,
+  };
+  const capacityCharge = {
+    model: 'pl_capacity_charge' as const,
+    mode: 'variable' as const,
+    effectiveFrom: '2026-01-01',
+    effectiveUntil: '2027-01-01',
+    variableRateGrossPerKwh: 0.269862,
+    qualifyingHourFrom: 7,
+    qualifyingHourUntil: 22,
+    excludeWeekends: true,
+    excludePublicHolidays: true,
+    profileFactors: [
+      { differenceMaxPercent: 5, factor: 0.17, group: 'K1' },
+      { differenceMaxPercent: 10, factor: 0.5, group: 'K2' },
+      { differenceMaxPercent: 15, factor: 0.83, group: 'K3' },
+      { differenceMaxPercent: null, factor: 1, group: 'K4' },
+    ],
+  };
+  const withoutCapacity = calculateEnergyScenario({
+    ...baseInput,
+    scenarioYear: 2026,
+    pvPowerKw: 0,
+    hourlyLoadProfile: Array(24).fill(1),
+    targetTariff: baseTariff,
+  });
+  const withCapacity = calculateEnergyScenario({
+    ...baseInput,
+    scenarioYear: 2026,
+    pvPowerKw: 0,
+    hourlyLoadProfile: Array(24).fill(1),
+    targetTariff: { ...baseTariff, capacityCharge },
+  });
+  const extra = withCapacity.scenarioAnnualDistributionCostGross - withoutCapacity.scenarioAnnualDistributionCostGross;
+
+  assert.ok(extra > 0);
+  assert.ok(extra < withCapacity.annualGridImportKwh * capacityCharge.variableRateGrossPerKwh * 0.2);
+});
