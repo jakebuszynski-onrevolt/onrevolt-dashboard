@@ -11,6 +11,25 @@
     if (!tariff) throw new Error('Wymaga uzupełnienia: brak cen taryfy dla ' + date);
     return tariff;
   }
+  function resolveForecast(history, date, referenceDate) {
+    try { return resolve(history, date, null); }
+    catch (error) {
+      const targetYear = Number(String(date).slice(0, 4));
+      const referenceYear = Number(String(referenceDate).slice(0, 4));
+      if (!Number.isInteger(targetYear) || !Number.isInteger(referenceYear) || targetYear <= referenceYear) throw error;
+      const sourceDate = Object.keys(history && history.byDate || {})
+        .filter(function (key) { return key < date && history.byDate[key] != null; })
+        .sort().reverse()[0];
+      if (!sourceDate) throw error;
+      const source = resolve(history, sourceDate, null);
+      if (!source.capacity_charge) return source;
+      return Object.assign({}, source, { capacity_charge: Object.assign({}, source.capacity_charge, {
+        year: targetYear,
+        effective_from: targetYear + '-01-01',
+        effective_until: (targetYear + 1) + '-01-01'
+      }) });
+    }
+  }
   function expand(history) {
     if (!history || history.format !== 'client-tariffs-v1') return history;
     const byDate = Object.fromEntries(Object.entries(history.byDate).map(function (entry) {
@@ -40,8 +59,23 @@
     if (model === 'peakoffpeak') return tariff.po_off.includes(hour) ? 'offpeak' : 'peak';
     throw new Error('Nieobsługiwany harmonogram taryfy.');
   }
+  function energyZone(tariff, date, hour) {
+    const schedule = tariff.energy_schedule;
+    if (!schedule) return zone(tariff, date, hour);
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) throw new Error('Nieprawidłowa godzina taryfy.');
+    if (schedule.model !== 'monthly_codes') throw new Error('Nieobsługiwany harmonogram zakupu energii.');
+    const month = Number(date.slice(5, 7));
+    const row = schedule.monthly && (schedule.monthly[month] || schedule.monthly[String(month)]);
+    const code = Array.isArray(row) ? row[hour] : null;
+    if (typeof code !== 'string' || !code) throw new Error('Niekompletny harmonogram zakupu energii dla ' + date);
+    return code;
+  }
   function normalizedLabel(value) {
     return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/ł/g, 'l');
+  }
+  function isEnergyRow(row) {
+    const label = normalizedLabel(row && row.label);
+    return label === 'energia' || label.includes('energia czynna');
   }
   function capacityRow(tariff) {
     return (tariff.variable || []).find(function (row) {
@@ -147,24 +181,30 @@
     return { rate: Number(rule.variable_rate) * factor, factor, pending: false, mode };
   }
   function rates(tariff, date, hour, marketPrice, options) {
-    const code = zone(tariff, date, hour);
-    let energy = 0, distribution = 0;
+    const distributionCode = zone(tariff, date, hour);
+    const energyCode = energyZone(tariff, date, hour);
+    let energy = 0, distribution = 0, energyMatches = 0;
     for (const row of tariff.variable || []) {
+      const energyRow = isEnergyRow(row);
+      const code = energyRow ? energyCode : distributionCode;
       if (row.window_code !== 'all' && row.window_code !== code) continue;
       const amount = Number(row.price);
       if (!Number.isFinite(amount)) throw new Error('Brak ceny składnika taryfy.');
       const label = normalizedLabel(row.label);
       if (label.includes('oplata mocowa')) continue;
-      if (label === 'energia' || label.includes('energia czynna')) energy += amount;
+      if (energyRow) { energy += amount; energyMatches += 1; }
       else distribution += amount;
     }
     if (tariff.sell_method === 'rdn') {
       if (!Number.isFinite(marketPrice)) throw new Error('Brak ceny RDN dla ' + date + ' godz. ' + hour);
       energy = marketPrice + Number(tariff.osd_add_rdn || 0) + Number(tariff.osd_add_akcyza || 0);
+    } else if (tariff.energy_schedule && energyMatches === 0) {
+      throw new Error('Brak ceny zakupu energii dla ' + date + ' godz. ' + hour + '.');
     }
     const capacity = capacityVariableRate(tariff, date, hour, options || {});
     distribution += capacity.rate;
-    return { energy, distribution, total: energy + distribution, zone: code,
+    return { energy, distribution, total: energy + distribution, zone: distributionCode,
+      distributionZone: distributionCode, energyZone: energyCode,
       capacityChargeRate: capacity.rate, capacityChargeFactor: capacity.factor,
       capacityChargePending: capacity.pending, capacityChargeMode: capacity.mode };
   }
@@ -237,9 +277,9 @@
         out.distributionCost += slot.kwh * rate.distribution;
         out.distributionDetails.capacity += slot.kwh * rate.capacityChargeRate;
         for (const row of tariff.variable || []) {
-          if (row.window_code !== 'all' && row.window_code !== rate.zone) continue;
+          if (row.window_code !== 'all' && row.window_code !== rate.distributionZone) continue;
           const label = normalizedLabel(row.label);
-          if (label.includes('oplata mocowa')) continue;
+          if (label.includes('oplata mocowa') || isEnergyRow(row)) continue;
           const key = label.includes('jako') ? 'quality' : label.includes('oze') ? 'oze' : label.includes('kogener') ? 'cogeneration' : null;
           if (key) out.distributionDetails[key] += slot.kwh * Number(row.price);
         }
@@ -250,6 +290,6 @@
     out.total = out.purchaseCost + out.distributionCost + out.fixedCost;
     return out;
   }
-  return { resolve, expand, zone, rates, fixedMonthly, fixedDaily, cost,
+  return { resolve, resolveForecast, expand, zone, energyZone, rates, fixedMonthly, fixedDaily, cost,
     capacityRule, capacityQualifyingHour, capacityProfileFactor, capacityFlatMonthly, capacityVariableRate };
 });

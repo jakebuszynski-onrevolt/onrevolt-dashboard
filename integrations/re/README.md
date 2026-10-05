@@ -37,6 +37,13 @@ Wyniki zapisywać wyłącznie w `_workspace-artifacts`, nie nadpisywać źróde�
 `scripts/verify-client-tariff-assets.ts KATALOG_WYNIKOWY_MY` sprawdza składnię JS,
 funkcje rzeczywistych stawek, granice, opłaty i oddzielenie scenariusza.
 
+Generator jest aktualizatorem już zintegrowanych źródeł. Dla dashboardu odświeża
+kanoniczny silnik taryf, helpery przeglądarkowe, moduły PHP i wersję zmienionego
+zasobu. Chroni przy tym kalendarz, podgląd taryf oraz widok przemysłowy B. Dla
+`windyone.pl/re` aktualizuje wyłącznie katalog, zapis i edytor taryf; nie osadza
+dashboardowego runtime JS. Starsze lub niepełne źródło kończy pracę błędem
+znacznika zamiast próbować odtworzyć brakujące fragmenty.
+
 ## Bramka wdrożenia
 
 1. Pobrać aktualne pliki serwerowe i porównać z bazą generatora. Nie wdrażać

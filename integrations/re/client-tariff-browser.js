@@ -68,8 +68,12 @@ function getReDatedBaselineDay(dayDate, hourUse, annualUsageKwh, addFixed) {
   const date = fmtDayLocal(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate());
   const next = new Date(dayDate); next.setDate(next.getDate()+1);
   const until = fmtDayLocal(next.getFullYear(), next.getMonth(), next.getDate());
+  const now = new Date();
+  const referenceDate = fmtDayLocal(now.getFullYear(), now.getMonth(), now.getDate());
+  const forecastTariff = ReTariffEngine.resolveForecast(history, date, referenceDate);
+  const forecastHistory = { strict: true, byDate: { [date]: forecastTariff } };
   const market = indexRceByDay(window.rdn).get(date);
-  const cost = ReTariffEngine.cost(history, [{ date, slots: hourUse.map((kwh, hour) => ({ kwh, hour, marketPrice: market?.[hour] })) }], date, until,
+  const cost = ReTariffEngine.cost(forecastHistory, [{ date, slots: hourUse.map((kwh, hour) => ({ kwh, hour, marketPrice: market?.[hour] })) }], date, until,
     { annualUsageKwh, billingCycleMonths: getBillingCycleMonths(), connectionPowerKw: getContractPowerKw() });
   return { energy: cost.purchaseCost + cost.distributionCost, fixed: addFixed ? cost.fixedCost : 0 };
 }

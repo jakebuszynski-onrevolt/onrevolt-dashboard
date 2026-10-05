@@ -29,7 +29,8 @@ final class CapacityCharge
         }
         $segment = strtolower((string)($tariff['segment'] ?? 'household'));
         $code = strtoupper(trim((string)($tariff['code'] ?? '')));
-        if ($segment === 'household' || !str_starts_with($code, 'C')) {
+        $group = substr($code, 0, 1);
+        if ($segment === 'household' || !in_array($group, ['B', 'C'], true)) {
             unset($tariff['capacity_charge']);
             return $tariff;
         }

@@ -34,6 +34,7 @@ import InvestmentLocationPicker from 'components/onrevolt/InvestmentLocationPick
 import ClientDocumentsPanel from 'components/onrevolt/ClientDocumentsPanel';
 import ClientSiteAuditPanel from 'components/onrevolt/ClientSiteAuditPanel';
 import ClientTariffsPanel from 'components/onrevolt/ClientTariffsPanel';
+import MeasurementPointsPanel from 'components/onrevolt/MeasurementPointsPanel';
 import ConfiguratorWorkspace from 'components/onrevolt/ConfiguratorWorkspace';
 import {
   getDefaultEnergyTariff,
@@ -119,6 +120,7 @@ function AutoGrowingTextarea({ onInput, rows = 4, value, ...props }: TextareaPro
 type CurrentUser = {
   id?: string | null;
   systemRole?: string | null;
+  permissions?: string[];
 };
 
 type StageRow = {
@@ -1895,6 +1897,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const hasStationAssociation = Boolean(stationToken || stationNumber);
   const stationIdentityLocked = Boolean(stationToken && stationNumber);
   const isAdmin = currentUser?.systemRole === 'ADMIN';
+  const canManageEnergy = isAdmin || currentUser?.permissions?.includes('energy.manage') === true;
   const canEditStationIdentity = isAdmin || !stationIdentityLocked;
   const stationActionLabel = hasStationAssociation ? 'Uzupełnij z RE' : 'Utwórz stację';
   const selectedUsageMonth = energyProfile?.months?.find((month) => month.key === selectedEnergyProfileMonth)
@@ -3815,6 +3818,13 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                         ) : null}
                       </Box>
                     </Card>
+
+                    <MeasurementPointsPanel
+                      clientId={clientId}
+                      projectId={activeProjectId}
+                      stationRef={activeProjectStationRef}
+                      canManage={canManageEnergy}
+                    />
 
                     <Card p="22px">
                       <Flex justify="space-between" gap="12px" align="center" mb="16px">

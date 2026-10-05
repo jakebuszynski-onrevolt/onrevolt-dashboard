@@ -35,6 +35,17 @@ const first = tariff(1, 31), next = tariff(2, 62);
 const byDate = Object.fromEntries(Array.from({ length: 31 }, (_, i) => [`2026-01-${String(i + 1).padStart(2, '0')}`, i < 15 ? first : next]));
 const history = { strict: true, revision: 1, byDate };
 const payload = { tariffHistory: history, tariffData: { current: next, next: tariff(99, 99) } };
+const energySchedule = Array(24).fill('other');
+energySchedule[5] = 'cheap';
+const energyScheduled = { ...first, energy_schedule: { model: 'monthly_codes', monthly: { 1: energySchedule } },
+  variable: [{ label: 'Energia czynna', window_code: 'cheap', price: 0.25 },
+    { label: 'Energia czynna', window_code: 'other', price: 1 },
+    { label: 'Dystrybucja', window_code: 'all', price: 0.2 }] };
+assert.equal(context.ReTariffEngine.energyZone(energyScheduled, '2026-01-02', 5), 'cheap');
+assert.equal(context.ReTariffEngine.rates(energyScheduled, '2026-01-02', 5).energy, 0.25);
+const forecastSource = { ...first, capacity_charge: { year: 2026, effective_from: '2026-01-01', effective_until: '2027-01-01' } };
+const forecast = context.ReTariffEngine.resolveForecast({ strict: true, byDate: { '2026-12-31': forecastSource } }, '2027-01-01', '2026-10-02');
+assert.equal(forecast.capacity_charge.year, 2027);
 const wrapped = context.clientTariffActual(payload, null);
 for (const source of declarations('resolveEnergyPurchaseRate')) {
   vm.runInContext(source, context);
@@ -147,9 +158,10 @@ assert.ok(read('js/scripts.js').includes('days: request.range.coverageDays || re
 assert.ok(read('re/pricing/CapacityCharge.php').includes("'rate_year' => $rateYear"));
 assert.ok(read('re/pricing/CapacityCharge.php').includes('Prognoza na podstawie ostatniej stawki URE'));
 assert.ok(read('re/pricing/CapacityCharge.php').includes("($tariff['clientPeriodSource'] ?? null) === 'TARGET'"));
+assert.ok(read('re/pricing/CapacityCharge.php').includes("in_array($group, ['B', 'C'], true)"));
 assert.ok(read('re/pricing/ClientTariffs.php').includes("$tariff['clientPeriodSource'] = $period['source']"));
-assert.ok(read('index.html').includes('js/scripts.js?v=20260930-capacity-charge-3'));
-assert.ok(read('js/scripts.js').includes('new URL("js/scripts.js?v=20260930-capacity-charge-3", baseUrl)'));
+assert.ok(read('index.html').includes('js/scripts.js?v=20261002-tariff-runtime-1'));
+assert.ok(read('js/scripts.js').includes('new URL("js/scripts.js?v=20261002-tariff-runtime-1", baseUrl)'));
 assert.equal((read('js/scripts.js').match(/account: account \? Object\.assign\(\{\}, \(window\.dashboardLatestPayload && window\.dashboardLatestPayload\.account\) \|\| \{\}, account\)/g) || []).length, 2);
 assert.ok(!read('js/scripts.js').includes('20260926-client-tariffs-1'));
 console.log('RE assets: syntax, actual rates, zone hours, interval boundaries, prorated fees, separate target scenario and asset versions OK');

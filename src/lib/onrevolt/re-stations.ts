@@ -65,6 +65,19 @@ export type ReStationDeviceStatus = {
 export class ReStationOtaRequestError extends Error {}
 export class ReStationControlRequestError extends Error {}
 export class ReStationDashboardAccessError extends Error {}
+export class ReMeasurementPointError extends Error {}
+
+export type ReMeasurementPoint = {
+  station: string;
+  stationHash: string | null;
+  name: string;
+  location: string | null;
+  order: number;
+  parentStation: string | null;
+  main: boolean;
+  latestDataAt: string | null;
+  fresh: boolean;
+};
 
 const globalForRePrisma = globalThis as unknown as {
   onrevoltRePrisma?: PrismaClient;
@@ -166,6 +179,38 @@ function intValue(value: unknown) {
 function dateValue(value: unknown) {
   if (value instanceof Date) return value.toISOString();
   return optionalText(value);
+}
+
+function requireMeasurementPointColumns(columns: Map<string, MysqlColumn>) {
+  for (const column of [
+    'parent_station',
+    'measurement_point_order',
+    'measurement_point_name',
+    'measurement_point_location',
+  ]) {
+    if (!columns.has(column)) {
+      throw new ReMeasurementPointError(
+        `Tabela EnergyMeter_users nie ma kolumny ${column}. Najpierw wykonaj migrację punktów pomiarowych.`,
+      );
+    }
+  }
+}
+
+function measurementPointFromRow(row: Record<string, unknown>, mainStation: string): ReMeasurementPoint {
+  const station = String(row.station ?? '').trim();
+  const latestDataAt = dateValue(row.latest_data_at ?? row.datastats);
+  const latestTime = latestDataAt ? Date.parse(latestDataAt.replace(' ', 'T')) : Number.NaN;
+  return {
+    station,
+    stationHash: optionalText(row.station_hash),
+    name: optionalText(row.measurement_point_name) || `Stacja ${station}`,
+    location: optionalText(row.measurement_point_location),
+    order: intValue(row.measurement_point_order),
+    parentStation: optionalText(row.parent_station),
+    main: station === mainStation,
+    latestDataAt,
+    fresh: Number.isFinite(latestTime) && Date.now() - latestTime <= 15 * 60 * 1000,
+  };
 }
 
 function validateStationInput(stationOrHash: string) {
@@ -664,4 +709,217 @@ export async function requestReStationRapidCommand(
   const after = await readReStationDeviceStatus(before.station);
   if (!after) throw new Error('Stacja zniknęła po zapisaniu polecenia');
   return { before, after, command: command as SolisRapidCommand, sequence };
+}
+
+export async function readReMeasurementPoints(stationOrHash: string) {
+  const db = rePrisma();
+  await ensureEnergyMeterUsersTable(db);
+  const columns = await readEnergyMeterColumns(db);
+  requireMeasurementPointColumns(columns);
+
+  const stationInput = validateStationInput(stationOrHash);
+  const mainRow = await findStationRow(
+    db,
+    columns,
+    stationInput,
+    '`station`, `station_hash`, `parent_station`',
+  );
+  if (!mainRow) throw new ReMeasurementPointError('Nie znaleziono stacji głównej RE');
+  if (optionalText(mainRow.parent_station)) {
+    throw new ReMeasurementPointError('Wybrana stacja jest podstacją, a nie punktem głównym');
+  }
+
+  const mainStation = String(mainRow.station);
+  const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    `SELECT u.\`station\`, u.\`station_hash\`, u.\`parent_station\`,
+            u.\`measurement_point_order\`, u.\`measurement_point_name\`,
+            u.\`measurement_point_location\`,
+            (SELECT MAX(em.\`datetime\`) FROM \`EnergyMeter\` em WHERE em.\`station\` = u.\`station\`) AS \`latest_data_at\`
+     FROM \`EnergyMeter_users\` u
+     WHERE u.\`station\` = ? OR u.\`parent_station\` = ?
+     ORDER BY CASE WHEN u.\`station\` = ? THEN 0 ELSE 1 END,
+              u.\`measurement_point_order\`, CAST(u.\`station\` AS UNSIGNED), u.\`station\``,
+    mainStation,
+    mainStation,
+    mainStation,
+  );
+
+  return rows.map((row) => measurementPointFromRow(row, mainStation));
+}
+
+export async function searchReMeasurementPointCandidates(
+  stationOrHash: string,
+  query: string,
+  excludedMainStations: string[] = [],
+) {
+  const db = rePrisma();
+  await ensureEnergyMeterUsersTable(db);
+  const columns = await readEnergyMeterColumns(db);
+  requireMeasurementPointColumns(columns);
+  const stationInput = validateStationInput(stationOrHash);
+  const mainRow = await findStationRow(db, columns, stationInput, '`station`, `parent_station`');
+  if (!mainRow) throw new ReMeasurementPointError('Nie znaleziono stacji głównej RE');
+  if (optionalText(mainRow.parent_station)) {
+    throw new ReMeasurementPointError('Wybrana stacja jest podstacją, a nie punktem głównym');
+  }
+
+  const mainStation = String(mainRow.station);
+  const trimmedQuery = query.trim().slice(0, 80);
+  const nameColumn = columns.has('name') ? 'u.`name`' : "''";
+  const exclusions = Array.from(new Set([mainStation, ...excludedMainStations.map(String)]));
+  const exclusionSql = exclusions.length ? `AND u.\`station\` NOT IN (${exclusions.map(() => '?').join(', ')})` : '';
+  const searchSql = trimmedQuery
+    ? `AND (u.\`station\` LIKE ? OR ${nameColumn} LIKE ? OR u.\`measurement_point_name\` LIKE ?)`
+    : '';
+  const searchValues = trimmedQuery
+    ? [`%${trimmedQuery}%`, `%${trimmedQuery}%`, `%${trimmedQuery}%`]
+    : [];
+
+  const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    `SELECT u.\`station\`, u.\`station_hash\`, u.\`parent_station\`,
+            u.\`measurement_point_order\`,
+            COALESCE(NULLIF(TRIM(u.\`measurement_point_name\`), ''), NULLIF(TRIM(${nameColumn}), '')) AS \`measurement_point_name\`,
+            u.\`measurement_point_location\`,
+            (SELECT MAX(em.\`datetime\`) FROM \`EnergyMeter\` em WHERE em.\`station\` = u.\`station\`) AS \`latest_data_at\`
+     FROM \`EnergyMeter_users\` u
+     WHERE u.\`parent_station\` IS NULL
+       ${exclusionSql}
+       ${searchSql}
+       AND NOT EXISTS (
+         SELECT 1 FROM \`EnergyMeter_users\` child WHERE child.\`parent_station\` = u.\`station\`
+       )
+     ORDER BY CAST(u.\`station\` AS UNSIGNED), u.\`station\`
+     LIMIT 30`,
+    ...exclusions,
+    ...searchValues,
+  );
+  return rows.map((row) => measurementPointFromRow(row, mainStation));
+}
+
+export async function attachReMeasurementPoint(stationOrHash: string, childStationInput: string) {
+  const db = rePrisma();
+  const columns = await readEnergyMeterColumns(db);
+  requireMeasurementPointColumns(columns);
+  const mainInput = validateStationInput(stationOrHash);
+  const childInput = validateStationInput(childStationInput);
+
+  return db.$transaction(async (transaction) => {
+    const main = await findStationRow(transaction as PrismaClient, columns, mainInput, '`station`, `parent_station`');
+    const child = await findStationRow(transaction as PrismaClient, columns, childInput, '`station`, `parent_station`');
+    if (!main || !child) throw new ReMeasurementPointError('Nie znaleziono wskazanej stacji RE');
+    const mainStation = String(main.station);
+    const childStation = String(child.station);
+    if (mainStation === childStation) throw new ReMeasurementPointError('Stacja nie może być własną podstacją');
+    if (optionalText(main.parent_station)) throw new ReMeasurementPointError('Podstacja nie może mieć własnych dzieci');
+    if (optionalText(child.parent_station)) throw new ReMeasurementPointError('Ta stacja jest już przypisana jako podstacja');
+
+    const childChildren = await transaction.$queryRawUnsafe<Array<{ station: string }>>(
+      'SELECT `station` FROM `EnergyMeter_users` WHERE `parent_station` = ? LIMIT 1 FOR UPDATE',
+      childStation,
+    );
+    if (childChildren.length) throw new ReMeasurementPointError('Stacja mająca podstacje nie może zostać podstacją');
+
+    const orderRows = await transaction.$queryRawUnsafe<Array<{ maxOrder: unknown }>>(
+      'SELECT MAX(`measurement_point_order`) AS `maxOrder` FROM `EnergyMeter_users` WHERE `parent_station` = ? FOR UPDATE',
+      mainStation,
+    );
+    const order = intValue(orderRows[0]?.maxOrder) + 1;
+    const updated = await transaction.$executeRawUnsafe(
+      `UPDATE \`EnergyMeter_users\`
+       SET \`parent_station\` = ?,
+           \`measurement_point_order\` = ?,
+           \`measurement_point_name\` = COALESCE(NULLIF(TRIM(\`measurement_point_name\`), ''), ?)
+       WHERE \`station\` = ? AND \`parent_station\` IS NULL LIMIT 1`,
+      mainStation,
+      order,
+      `Stacja ${childStation}`,
+      childStation,
+    );
+    if (updated !== 1) throw new ReMeasurementPointError('Nie udało się przypisać podstacji');
+    return { mainStation, childStation, order };
+  });
+}
+
+export async function updateReMeasurementPoint(
+  stationOrHash: string,
+  pointStationInput: string,
+  input: { name: string; location: string | null },
+) {
+  const db = rePrisma();
+  const columns = await readEnergyMeterColumns(db);
+  requireMeasurementPointColumns(columns);
+  const mainInput = validateStationInput(stationOrHash);
+  const pointInput = validateStationInput(pointStationInput);
+  const main = await findStationRow(db, columns, mainInput, '`station`, `parent_station`');
+  if (!main || optionalText(main.parent_station)) throw new ReMeasurementPointError('Nie znaleziono stacji głównej RE');
+  const mainStation = String(main.station);
+  const name = input.name.trim().slice(0, 160) || `Stacja ${pointInput}`;
+  const location = input.location?.trim().slice(0, 255) || null;
+  const updated = await db.$executeRawUnsafe(
+    `UPDATE \`EnergyMeter_users\`
+     SET \`measurement_point_name\` = ?, \`measurement_point_location\` = ?
+     WHERE \`station\` = ? AND (\`station\` = ? OR \`parent_station\` = ?) LIMIT 1`,
+    name,
+    location,
+    pointInput,
+    mainStation,
+    mainStation,
+  );
+  if (updated !== 1) throw new ReMeasurementPointError('Punkt nie należy do tej stacji głównej');
+  return { mainStation, pointStation: pointInput, name, location };
+}
+
+export async function reorderReMeasurementPoints(stationOrHash: string, orderedStations: string[]) {
+  const db = rePrisma();
+  const columns = await readEnergyMeterColumns(db);
+  requireMeasurementPointColumns(columns);
+  const mainInput = validateStationInput(stationOrHash);
+  const main = await findStationRow(db, columns, mainInput, '`station`, `parent_station`');
+  if (!main || optionalText(main.parent_station)) throw new ReMeasurementPointError('Nie znaleziono stacji głównej RE');
+  const mainStation = String(main.station);
+  const normalized = orderedStations.map(validateStationInput);
+  if (new Set(normalized).size !== normalized.length) {
+    throw new ReMeasurementPointError('Lista kolejności zawiera powtórzone stacje');
+  }
+
+  return db.$transaction(async (transaction) => {
+    const rows = await transaction.$queryRawUnsafe<Array<{ station: string }>>(
+      'SELECT `station` FROM `EnergyMeter_users` WHERE `parent_station` = ? ORDER BY `measurement_point_order`, CAST(`station` AS UNSIGNED) FOR UPDATE',
+      mainStation,
+    );
+    const current = rows.map((row) => String(row.station));
+    if (current.length !== normalized.length || current.some((station) => !normalized.includes(station))) {
+      throw new ReMeasurementPointError('Kolejność musi zawierać wszystkie podstacje dokładnie raz');
+    }
+    for (let index = 0; index < normalized.length; index += 1) {
+      await transaction.$executeRawUnsafe(
+        'UPDATE `EnergyMeter_users` SET `measurement_point_order` = ? WHERE `station` = ? AND `parent_station` = ? LIMIT 1',
+        index + 1,
+        normalized[index],
+        mainStation,
+      );
+    }
+    return { mainStation, orderedStations: normalized };
+  });
+}
+
+export async function detachReMeasurementPoint(stationOrHash: string, childStationInput: string) {
+  const db = rePrisma();
+  const columns = await readEnergyMeterColumns(db);
+  requireMeasurementPointColumns(columns);
+  const mainInput = validateStationInput(stationOrHash);
+  const childStation = validateStationInput(childStationInput);
+  const main = await findStationRow(db, columns, mainInput, '`station`, `parent_station`');
+  if (!main || optionalText(main.parent_station)) throw new ReMeasurementPointError('Nie znaleziono stacji głównej RE');
+  const mainStation = String(main.station);
+  if (mainStation === childStation) throw new ReMeasurementPointError('Nie można odpiąć stacji głównej');
+  const updated = await db.$executeRawUnsafe(
+    `UPDATE \`EnergyMeter_users\`
+     SET \`parent_station\` = NULL, \`measurement_point_order\` = 0
+     WHERE \`station\` = ? AND \`parent_station\` = ? LIMIT 1`,
+    childStation,
+    mainStation,
+  );
+  if (updated !== 1) throw new ReMeasurementPointError('Ta stacja nie jest podstacją wskazanego punktu głównego');
+  return { mainStation, childStation };
 }
