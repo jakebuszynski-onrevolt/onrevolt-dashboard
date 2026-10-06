@@ -11,6 +11,7 @@ import {
 import {
   isValidSolisPowerLimitPercent,
 } from './solis-inverter';
+import { isValidSolisSmartPortFanSettings } from './solis-fan';
 
 type MysqlColumn = {
   Field: string;
@@ -48,6 +49,9 @@ export type ReStationDeviceStatus = {
   shadowOnly: boolean;
   inverterRatedPowerW: number;
   inverterPowerLimitPercent: number;
+  smartPortFanEnabled: boolean;
+  smartPortFanOnTemperatureCx10: number;
+  smartPortFanOffTemperatureCx10: number;
   rapidCommandSequence: number;
   rapidCommand: string | null;
   rapidCommandRequestedAt: string | null;
@@ -144,6 +148,9 @@ const deviceStatusColumns = [
   'shadow_only',
   'inverter_rated_power_w',
   'inverter_power_limit_percent',
+  'solis_smart_port_fan_enabled',
+  'solis_smart_port_fan_on_c_x10',
+  'solis_smart_port_fan_off_c_x10',
   'solis_command_seq',
   'solis_command',
   'solis_command_requested_at',
@@ -437,6 +444,9 @@ export async function readReStationDeviceStatus(stationOrHash: string): Promise<
     shadowOnly: row.shadow_only == null ? true : boolValue(row.shadow_only),
     inverterRatedPowerW: intValue(row.inverter_rated_power_w),
     inverterPowerLimitPercent: intValue(row.inverter_power_limit_percent),
+    smartPortFanEnabled: boolValue(row.solis_smart_port_fan_enabled),
+    smartPortFanOnTemperatureCx10: intValue(row.solis_smart_port_fan_on_c_x10),
+    smartPortFanOffTemperatureCx10: intValue(row.solis_smart_port_fan_off_c_x10),
     rapidCommandSequence: intValue(row.solis_command_seq),
     rapidCommand: optionalText(row.solis_command),
     rapidCommandRequestedAt: dateValue(row.solis_command_requested_at),
@@ -629,6 +639,67 @@ export async function updateReStationInverterPowerLimit(
 
   const after = await readReStationDeviceStatus(before.station);
   if (!after) throw new Error('Stacja zniknęła po zapisaniu ustawień mocy');
+  return { before, after };
+}
+
+export async function updateReStationSmartPortFanSettings(
+  stationOrHash: string,
+  input: {
+    enabled: boolean;
+    onTemperatureCx10: number;
+    offTemperatureCx10: number;
+  },
+) {
+  if (!isValidSolisSmartPortFanSettings(input)) {
+    throw new ReStationControlRequestError(
+      'Temperatury wentylatora muszą mieć dokładność 0,1°C, a próg wyłączenia musi być niższy od progu włączenia',
+    );
+  }
+
+  const before = await readReStationDeviceStatus(stationOrHash);
+  if (!before) throw new ReStationControlRequestError('Nie znaleziono stacji RE');
+  if (!isSolisStationType(before.type)) {
+    throw new ReStationControlRequestError('Sterowanie wentylatorem jest dostępne tylko dla stacji Solis');
+  }
+
+  if (
+    before.smartPortFanEnabled === input.enabled
+    && before.smartPortFanOnTemperatureCx10 === input.onTemperatureCx10
+    && before.smartPortFanOffTemperatureCx10 === input.offTemperatureCx10
+  ) {
+    return { before, after: before };
+  }
+
+  const db = rePrisma();
+  const columns = await readEnergyMeterColumns(db);
+  const requiredColumns = [
+    'solis_smart_port_fan_enabled',
+    'solis_smart_port_fan_on_c_x10',
+    'solis_smart_port_fan_off_c_x10',
+  ];
+  for (const column of requiredColumns) {
+    if (!columns.has(column)) {
+      throw new Error(`Tabela EnergyMeter_users nie ma kolumny ${column}`);
+    }
+  }
+
+  const updated = await db.$executeRawUnsafe(
+    `UPDATE \`EnergyMeter_users\`
+     SET \`solis_smart_port_fan_enabled\` = ?,
+         \`solis_smart_port_fan_on_c_x10\` = ?,
+         \`solis_smart_port_fan_off_c_x10\` = ?
+     WHERE \`station\` = ? LIMIT 1`,
+    input.enabled ? 1 : 0,
+    input.onTemperatureCx10,
+    input.offTemperatureCx10,
+    before.station,
+  );
+  if (updated !== 1) {
+    throw new ReStationControlRequestError('Nie udało się zapisać ustawień wentylatora');
+  }
+
+  const after = await readReStationDeviceStatus(before.station);
+  if (!after) throw new Error('Stacja zniknęła po zapisaniu ustawień wentylatora');
   return { before, after };
 }
 

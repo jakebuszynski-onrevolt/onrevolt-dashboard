@@ -18,6 +18,7 @@ import {
   updateReStationDashboardAccess,
   updateReStationControlSettings,
   updateReStationInverterPowerLimit,
+  updateReStationSmartPortFanSettings,
   ReStationControlRequestError,
   ReStationDashboardAccessError,
   ReStationOtaRequestError,
@@ -39,6 +40,7 @@ import {
   calculateSolisMaxExportPowerW,
   isValidSolisPowerLimitPercent,
 } from 'lib/onrevolt/solis-inverter';
+import { isValidSolisSmartPortFanSettings } from 'lib/onrevolt/solis-fan';
 
 export const runtime = 'nodejs';
 
@@ -86,6 +88,11 @@ function serializeStationStatus(
         status.inverterRatedPowerW,
         status.inverterPowerLimitPercent,
       ),
+      smartPortFan: {
+        enabled: status.smartPortFanEnabled,
+        onTemperatureCx10: status.smartPortFanOnTemperatureCx10,
+        offTemperatureCx10: status.smartPortFanOffTemperatureCx10,
+      },
       uid: status.uid,
       rapidControl: {
         supported: supportsSolisRapidCommands(status.firmwareVersion),
@@ -311,6 +318,25 @@ export async function PATCH(req: NextRequest) {
           result.after.inverterRatedPowerW,
           result.after.inverterPowerLimitPercent,
         ),
+      };
+    } else if (action === 'UPDATE_SMART_PORT_FAN_SETTINGS') {
+      const fanSettings = {
+        enabled: body.enabled,
+        onTemperatureCx10: body.onTemperatureCx10,
+        offTemperatureCx10: body.offTemperatureCx10,
+      };
+      if (!isValidSolisSmartPortFanSettings(fanSettings)) {
+        return badRequest(
+          'Temperatury wentylatora muszą mieć dokładność 0,1°C, a próg wyłączenia musi być niższy od progu włączenia',
+        );
+      }
+      result = await updateReStationSmartPortFanSettings(association.stationRef, fanSettings);
+      auditAction = 'SOLIS_SMART_PORT_FAN_SETTINGS_UPDATE';
+      auditAfter = {
+        station: result.after.station,
+        enabled: result.after.smartPortFanEnabled,
+        onTemperatureCx10: result.after.smartPortFanOnTemperatureCx10,
+        offTemperatureCx10: result.after.smartPortFanOffTemperatureCx10,
       };
     } else if (action === 'REQUEST_RAPID_COMMAND') {
       const command = requireString(body, 'command');

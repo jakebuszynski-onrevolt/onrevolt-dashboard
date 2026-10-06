@@ -60,6 +60,11 @@ import {
   getSolisRatedPowerWarning,
   isValidSolisPowerLimitPercent,
 } from 'lib/onrevolt/solis-inverter';
+import {
+  formatSolisFanTemperatureC,
+  isValidSolisSmartPortFanSettings,
+  parseSolisFanTemperatureC,
+} from 'lib/onrevolt/solis-fan';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -261,6 +266,11 @@ type ReStationFirmwareStatus = {
   inverterRatedPowerW: number;
   inverterPowerLimitPercent: number;
   maxExportPowerW: number | null;
+  smartPortFan: {
+    enabled: boolean;
+    onTemperatureCx10: number;
+    offTemperatureCx10: number;
+  };
   uid?: string | null;
   rapidControl: {
     supported: boolean;
@@ -966,6 +976,11 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [solisPowerLimitPercent, setSolisPowerLimitPercent] = useState('');
   const [solisPowerLimitDirty, setSolisPowerLimitDirty] = useState(false);
   const solisPowerLimitStationRef = useRef('');
+  const [solisFanEnabled, setSolisFanEnabled] = useState(false);
+  const [solisFanOnTemperatureC, setSolisFanOnTemperatureC] = useState('');
+  const [solisFanOffTemperatureC, setSolisFanOffTemperatureC] = useState('');
+  const [solisFanDirty, setSolisFanDirty] = useState(false);
+  const solisFanStationRef = useRef('');
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [offerCreating, setOfferCreating] = useState(false);
   const [offerDeletingId, setOfferDeletingId] = useState('');
@@ -1018,6 +1033,25 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     reStationStatus?.firmware?.inverterPowerLimitPercent,
     reStationStatus?.station,
     solisPowerLimitDirty,
+  ]);
+
+  useEffect(() => {
+    const station = reStationStatus?.station || '';
+    const fan = reStationStatus?.firmware?.smartPortFan;
+    if (!fan || !station) return;
+
+    const stationChanged = solisFanStationRef.current !== station;
+    if (stationChanged || !solisFanDirty) {
+      solisFanStationRef.current = station;
+      setSolisFanEnabled(fan.enabled);
+      setSolisFanOnTemperatureC(formatSolisFanTemperatureC(fan.onTemperatureCx10));
+      setSolisFanOffTemperatureC(formatSolisFanTemperatureC(fan.offTemperatureCx10));
+      if (stationChanged) setSolisFanDirty(false);
+    }
+  }, [
+    reStationStatus?.firmware?.smartPortFan,
+    reStationStatus?.station,
+    solisFanDirty,
   ]);
 
   useEffect(() => {
@@ -2328,6 +2362,71 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       applyReStationStatus(payload.data as ReStationStatus);
       setSolisPowerLimitDirty(false);
       setSolisMessage(`Zapisano limit mocy. Maksymalna moc eksportu: ${(maxExportPowerW || 0).toLocaleString('pl-PL')} W.`);
+    } catch (e) {
+      setSolisError(e instanceof Error ? e.message : String(e));
+      await loadReStationStatus(project.id, true);
+    } finally {
+      setSolisAction('');
+    }
+  }
+
+  async function updateSolisSmartPortFanSettings() {
+    const project = activeProject;
+    const firmware = reStationStatus?.firmware;
+    if (!project?.id || !firmware) return;
+
+    const onTemperatureCx10 = parseSolisFanTemperatureC(solisFanOnTemperatureC);
+    const offTemperatureCx10 = parseSolisFanTemperatureC(solisFanOffTemperatureC);
+    const settings = {
+      enabled: solisFanEnabled,
+      onTemperatureCx10: onTemperatureCx10 ?? Number.NaN,
+      offTemperatureCx10: offTemperatureCx10 ?? Number.NaN,
+    };
+    if (!isValidSolisSmartPortFanSettings(settings)) {
+      setSolisError(
+        'Podaj temperatury z dokładnością do 0,1°C. Temperatura wyłączenia musi być niższa od temperatury włączenia.',
+      );
+      return;
+    }
+
+    const confirmation = [
+      `Zapisać ustawienia wentylatora stacji ${reStationStatus?.station || ''}?`,
+      '',
+      `Automatyka: ${settings.enabled ? 'włączona' : 'wyłączona'}`,
+      `Włączenie wentylatora: ${formatSolisFanTemperatureC(settings.onTemperatureCx10)}°C`,
+      `Wyłączenie wentylatora: ${formatSolisFanTemperatureC(settings.offTemperatureCx10)}°C`,
+    ].join('\n');
+    if (!window.confirm(confirmation)) return;
+
+    setSolisAction('FAN');
+    setSolisError('');
+    setSolisMessage('');
+    try {
+      const response = await fetch('/api/integrations/re/station', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          projectId: project.id,
+          action: 'UPDATE_SMART_PORT_FAN_SETTINGS',
+          ...settings,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+
+      const nextStatus = payload.data as ReStationStatus;
+      applyReStationStatus(nextStatus);
+      const nextFan = nextStatus.firmware?.smartPortFan;
+      if (nextFan) {
+        setSolisFanEnabled(nextFan.enabled);
+        setSolisFanOnTemperatureC(formatSolisFanTemperatureC(nextFan.onTemperatureCx10));
+        setSolisFanOffTemperatureC(formatSolisFanTemperatureC(nextFan.offTemperatureCx10));
+      }
+      setSolisFanDirty(false);
+      setSolisMessage(
+        'Zapisano ustawienia wentylatora. Urządzenie pobierze je w ciągu 20 minut; aby zastosować je od razu, użyj „Sprawdź OTA teraz”.',
+      );
     } catch (e) {
       setSolisError(e instanceof Error ? e.message : String(e));
       await loadReStationStatus(project.id, true);
@@ -4011,6 +4110,66 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                     </Text>
                                   );
                                 })()}
+                              </Box>
+
+                              <Box mb="16px" p="14px" border="1px solid" borderColor={borderColor} borderRadius="8px">
+                                <Flex direction={{ base: 'column', lg: 'row' }} gap="12px" align={{ lg: 'end' }}>
+                                  <Box flex="1" minW={{ lg: '220px' }}>
+                                    <Text color={textColor} fontWeight="900">Wentylator Smart Port</Text>
+                                    <Flex align="center" gap="8px" mt="8px">
+                                      <Switch
+                                        colorScheme="green"
+                                        isChecked={solisFanEnabled}
+                                        isDisabled={Boolean(solisAction)}
+                                        onChange={(event) => {
+                                          setSolisFanEnabled(event.target.checked);
+                                          setSolisFanDirty(true);
+                                        }}
+                                      />
+                                      <Text color={textColor} fontSize="sm" fontWeight="800">
+                                        {solisFanEnabled ? 'Automatyka włączona' : 'Automatyka wyłączona'}
+                                      </Text>
+                                    </Flex>
+                                  </Box>
+                                  <FormControl flex="1">
+                                    <FormLabel mb="6px">Włącz przy [°C]</FormLabel>
+                                    <Input
+                                      type="number"
+                                      step={0.1}
+                                      value={solisFanOnTemperatureC}
+                                      isDisabled={Boolean(solisAction)}
+                                      onChange={(event) => {
+                                        setSolisFanOnTemperatureC(event.target.value);
+                                        setSolisFanDirty(true);
+                                      }}
+                                    />
+                                  </FormControl>
+                                  <FormControl flex="1">
+                                    <FormLabel mb="6px">Wyłącz przy [°C]</FormLabel>
+                                    <Input
+                                      type="number"
+                                      step={0.1}
+                                      value={solisFanOffTemperatureC}
+                                      isDisabled={Boolean(solisAction)}
+                                      onChange={(event) => {
+                                        setSolisFanOffTemperatureC(event.target.value);
+                                        setSolisFanDirty(true);
+                                      }}
+                                    />
+                                  </FormControl>
+                                  <Button
+                                    leftIcon={<MdCheck />}
+                                    colorScheme="purple"
+                                    onClick={updateSolisSmartPortFanSettings}
+                                    isLoading={solisAction === 'FAN'}
+                                    isDisabled={!solisFanDirty || Boolean(solisAction && solisAction !== 'FAN')}
+                                  >
+                                    Zapisz wentylator
+                                  </Button>
+                                </Flex>
+                                <Text color={mutedColor} fontSize="xs" mt="8px">
+                                  Ustawienia są pobierane przez urządzenie co 20 minut. Przycisk „Sprawdź OTA teraz” poniżej pobiera je od razu i nie uruchamia aktualizacji firmware, gdy OTA jest wyłączone.
+                                </Text>
                               </Box>
 
                               {reStationStatus.firmware.otaEnabled ? (
