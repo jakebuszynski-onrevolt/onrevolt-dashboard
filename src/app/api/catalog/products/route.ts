@@ -17,6 +17,7 @@ type ProductPriceInput = {
 
 const editableStringFields = [
   'sku',
+  'legacySku',
   'availability',
   'producer',
   'supplier',
@@ -122,6 +123,7 @@ export async function POST(req: NextRequest) {
     const product = await prisma.product.create({
       data: {
         sku: optionalString(body, 'sku'),
+        legacySku: optionalString(body, 'legacySku'),
         name: requireString(body, 'name'),
         availability: optionalString(body, 'availability'),
         producer: optionalString(body, 'producer'),

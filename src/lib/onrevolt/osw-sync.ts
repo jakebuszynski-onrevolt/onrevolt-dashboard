@@ -1,3 +1,7 @@
+import { randomUUID } from 'crypto';
+import fs from 'fs/promises';
+import path from 'path';
+import { catalogMediaRelativePath } from 'lib/onrevolt/catalog-media';
 import { prisma } from 'lib/onrevolt/prisma';
 
 export type OswReviewItem = {
@@ -8,12 +12,18 @@ export type OswReviewItem = {
 
 type OswProductPayload = {
   localProductId?: string;
+  oswProductId?: string;
   supplierSku: string;
   name?: string;
   priceNet?: number;
   availabilityRaw: string;
   supplierUrl?: string;
   currency?: string;
+  category?: 'FALOWNIK' | 'MAGAZYN_ENERGII';
+  producer?: string;
+  imageUrl?: string;
+  datasheetUrl?: string;
+  datasheetName?: string;
 };
 
 type OswFetchedProducts = {
@@ -25,10 +35,16 @@ type OswFetchedProducts = {
 export type OswSyncResult = {
   productsSeen: number;
   matchedProducts: number;
+  productsWouldCreate: number;
+  productsCreated: number;
   pricesWouldUpdate: number;
   pricesUpdated: number;
   availabilityWouldUpdate: number;
   availabilityUpdated: number;
+  imagesWouldImport: number;
+  imagesImported: number;
+  datasheetsWouldImport: number;
+  datasheetsImported: number;
   availableCount: number;
   unavailableCount: number;
   requiresReview: OswReviewItem[];
@@ -40,10 +56,10 @@ export type OswSyncStatus = {
 };
 
 type OswDefaults = {
-  purchaseVatRate?: number;
-  operatingCostNet?: number;
-  marginRate?: number;
-  saleVatRate?: number;
+  purchaseVatRate: number;
+  operatingCostNet: number;
+  marginRate: number;
+  saleVatRate: number;
 };
 
 type OswLoginForm = {
@@ -92,6 +108,19 @@ const oswBrowserUserAgent = [
   'Chrome/126.0.0.0 Safari/537.36',
 ].join(' ');
 const oswPublicBaseUrl = 'https://osw.energy';
+const oswMallPublicBaseUrl = 'https://shop.osw.energy';
+const oswMallApiBaseUrl = 'https://eu-api.solarbrain.ai';
+const oswMallPageSize = 50;
+const oswMallCategories = [
+  { id: 9, category: 'FALOWNIK' as const },
+  { id: 10, category: 'MAGAZYN_ENERGII' as const },
+];
+const oswMediaHosts = new Set([
+  'assets.solarbrain.com.au',
+  'solarbrain-ai.s3.ap-southeast-2.amazonaws.com',
+  'shop.osw.energy',
+]);
+const maxOswMediaBytes = 30 * 1024 * 1024;
 
 class OswCookieJar {
   private cookies = new Map<string, string>();
@@ -138,32 +167,13 @@ function envString(key: string) {
   return value && value.trim() ? value.trim() : undefined;
 }
 
-function envNumber(key: string) {
-  const value = envString(key);
-  if (!value) return undefined;
-  const number = Number(value.replace(',', '.'));
-  if (!Number.isFinite(number)) {
-    throw new Error(`Zmienna ${key} musi być liczbą`);
-  }
-  return number;
-}
-
 function oswDefaults(): OswDefaults {
   return {
-    purchaseVatRate: envNumber('OSW_DEFAULT_PURCHASE_VAT_RATE'),
-    operatingCostNet: envNumber('OSW_DEFAULT_OPERATING_COST_NET'),
-    marginRate: envNumber('OSW_DEFAULT_MARGIN_RATE'),
-    saleVatRate: envNumber('OSW_DEFAULT_SALE_VAT_RATE'),
+    purchaseVatRate: 0.23,
+    operatingCostNet: 0,
+    marginRate: 0.3,
+    saleVatRate: 0.23,
   };
-}
-
-function hasCompleteDefaults(defaults: OswDefaults) {
-  return (
-    defaults.purchaseVatRate !== undefined &&
-    defaults.operatingCostNet !== undefined &&
-    defaults.marginRate !== undefined &&
-    defaults.saleVatRate !== undefined
-  );
 }
 
 function pickString(row: Record<string, unknown>, keys: string[]) {
@@ -1089,10 +1099,290 @@ async function fetchOswProductsFromLocalUrls(): Promise<OswFetchedProducts> {
   return { productsSeen: candidates.length, products, requiresReview };
 }
 
+type OswMallEnvelope<T> = {
+  success: boolean;
+  code?: number | string;
+  message?: string;
+  data?: T | null;
+};
+
+type OswMallListProduct = {
+  mallProductId?: number | string;
+  itemCode?: string;
+  marketName?: string;
+  thumbnailUrl?: string;
+  priceView?: {
+    currency?: string;
+    finalPrice?: number;
+  };
+};
+
+type OswMallProductDetail = OswMallListProduct & {
+  status?: number;
+  images?: string[];
+  brands?: Array<{ name?: string }>;
+  documentDownloads?: Array<{
+    code?: string;
+    name?: string;
+    value?: Array<{ name?: string; url?: string }>;
+  }>;
+};
+
+type OswMallListData = {
+  list?: OswMallListProduct[];
+  total?: number;
+  pageNum?: number;
+  pageSize?: number;
+};
+
+function oswMallApiUrl(pathName: string) {
+  const configured = envString('OSW_MALL_API_HOST') || oswMallApiBaseUrl;
+  return new URL(pathName, configured.endsWith('/') ? configured : `${configured}/`).toString();
+}
+
+function oswMallTenantId() {
+  return envString('OSW_MALL_TENANT_ID') || '6';
+}
+
+function oswMallHeaders(token?: string, json = false) {
+  const headers: Record<string, string> = {
+    ...baseHeaders(),
+    lang: 'pl',
+    'Osw-Currency': 'PLN',
+    'X-Tenant-Id': oswMallTenantId(),
+  };
+  if (json) headers['Content-Type'] = 'application/json';
+  if (token) headers.Authorization = token;
+  return headers;
+}
+
+async function readOswMallResponse<T>(response: Response, operation: string) {
+  const body = await response.text();
+  let payload: OswMallEnvelope<T> | undefined;
+  try {
+    payload = body ? JSON.parse(body) as OswMallEnvelope<T> : undefined;
+  } catch {
+    throw new Error(`OSW Mall: ${operation} zwróciło niepoprawny JSON`);
+  }
+
+  if (!response.ok || !payload?.success || payload.data == null) {
+    const details = payload?.message || `HTTP ${response.status}`;
+    throw new Error(`OSW Mall: ${operation} nie powiodło się (${details})`);
+  }
+  return payload.data;
+}
+
+async function loginOswMall() {
+  const configuredToken = envString('OSW_MALL_API_TOKEN');
+  if (configuredToken) return configuredToken;
+
+  const email = envString('OSW_EMAIL');
+  const password = envString('OSW_PASSWORD');
+  if (!email || !password) {
+    throw new Error('OSW Mall: brak OSW_EMAIL/OSW_PASSWORD albo OSW_MALL_API_TOKEN');
+  }
+
+  const response = await fetch(oswMallApiUrl('/mall/api/login'), {
+    cache: 'no-store',
+    method: 'POST',
+    headers: oswMallHeaders(undefined, true),
+    body: JSON.stringify({
+      check: '',
+      password,
+      remember: 0,
+      username: email,
+      type: 0,
+    }),
+  });
+  const data = await readOswMallResponse<{ token?: string }>(response, 'logowanie');
+  if (!data.token) throw new Error('OSW Mall: logowanie nie zwróciło tokenu');
+  return data.token;
+}
+
+async function fetchOswMallPage(token: string, categoryId: number, pageNum: number) {
+  const response = await fetch(oswMallApiUrl('/mall/api/products'), {
+    cache: 'no-store',
+    method: 'POST',
+    headers: oswMallHeaders(token, true),
+    body: JSON.stringify({
+      categoryId,
+      sort: 'default',
+      pageNum,
+      pageSize: oswMallPageSize,
+    }),
+  });
+  return readOswMallResponse<OswMallListData>(response, `lista kategorii ${categoryId}, strona ${pageNum}`);
+}
+
+async function fetchOswMallDetail(token: string, productId: string) {
+  const response = await fetch(oswMallApiUrl(`/mall/api/products/${encodeURIComponent(productId)}`), {
+    cache: 'no-store',
+    headers: oswMallHeaders(token),
+  });
+  return readOswMallResponse<OswMallProductDetail>(response, `produkt ${productId}`);
+}
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, mapper: (item: T) => Promise<R>) {
+  const result = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      result[index] = await mapper(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return result;
+}
+
+function normalizedOswIdentity(value?: string | null) {
+  return (value || '')
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase('pl-PL')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function normalizedOswName(value?: string | null) {
+  return (value || '')
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase('pl-PL')
+    .replace(/\s+/g, ' ');
+}
+
+const ignoredOswModelTokens = new Set([
+  'EU', 'IP20', 'IP21', 'IP55', 'IP65', 'IP66', 'KWH', 'KW', 'MPPT', 'WIFI',
+]);
+
+function oswModelTokens(...values: Array<string | null | undefined>) {
+  return new Set(values
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join(' ')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter((token) => (
+      token.length >= 4 &&
+      /[A-Z]/.test(token) &&
+      /\d/.test(token) &&
+      !ignoredOswModelTokens.has(token)
+    )));
+}
+
+function oswMallProductIdFromUrl(url?: string | null) {
+  if (!url) return '';
+  try {
+    return new URL(url).pathname.match(/\/mall\/products\/(\d+)\/?$/)?.[1] || '';
+  } catch {
+    return '';
+  }
+}
+
+function mapOswMallProduct(
+  detail: OswMallProductDetail,
+  category: 'FALOWNIK' | 'MAGAZYN_ENERGII',
+): OswProductPayload | undefined {
+  const productId = stringFromOswApiValue(detail.mallProductId);
+  const supplierSku = detail.itemCode?.trim();
+  if (!productId || !supplierSku) return undefined;
+
+  const datasheetGroup = detail.documentDownloads?.find((group) => {
+    const label = `${group.code || ''} ${group.name || ''}`;
+    return /datasheet/i.test(label) || group.value?.some((file) => /datasheet/i.test(file.name || ''));
+  });
+  const datasheet = datasheetGroup?.value?.find((file) => file.url?.trim());
+  const imageUrl = detail.images?.find((url) => url?.trim()) || detail.thumbnailUrl?.trim();
+
+  return {
+    oswProductId: productId,
+    supplierSku,
+    name: detail.marketName?.trim() || supplierSku,
+    priceNet: Number.isFinite(detail.priceView?.finalPrice) ? detail.priceView?.finalPrice : undefined,
+    availabilityRaw: detail.status === 1 ? 'InStock' : 'On Request',
+    supplierUrl: `${oswMallPublicBaseUrl}/pl/mall/products/${productId}`,
+    currency: detail.priceView?.currency?.trim() || 'PLN',
+    category,
+    producer: detail.brands?.find((brand) => brand.name?.trim())?.name?.trim(),
+    imageUrl,
+    datasheetUrl: datasheet?.url?.trim(),
+    datasheetName: datasheet?.name?.trim(),
+  };
+}
+
+async function fetchOswMallProducts(): Promise<OswFetchedProducts> {
+  const token = await loginOswMall();
+  const listed: Array<{ item: OswMallListProduct; category: 'FALOWNIK' | 'MAGAZYN_ENERGII' }> = [];
+  const requiresReview: OswReviewItem[] = [];
+
+  for (const source of oswMallCategories) {
+    let pageNum = 1;
+    let total = Number.POSITIVE_INFINITY;
+    while (listed.filter((entry) => entry.category === source.category).length < total) {
+      const page = await fetchOswMallPage(token, source.id, pageNum);
+      const pageItems = page.list || [];
+      total = Number.isFinite(page.total) ? Number(page.total) : pageItems.length;
+      listed.push(...pageItems.map((item) => ({ item, category: source.category })));
+      if (!pageItems.length || pageItems.length < oswMallPageSize) break;
+      pageNum += 1;
+    }
+  }
+
+  const mapped = await mapWithConcurrency(listed, 6, async ({ item, category }) => {
+    const productId = stringFromOswApiValue(item.mallProductId);
+    if (!productId) {
+      requiresReview.push({ supplierSku: item.itemCode, name: item.marketName, reason: 'OSW Mall nie zwróciło ID produktu' });
+      return undefined;
+    }
+    try {
+      const detail = await fetchOswMallDetail(token, productId);
+      const product = mapOswMallProduct(detail, category);
+      if (!product) {
+        requiresReview.push({ supplierSku: item.itemCode, name: item.marketName, reason: 'OSW Mall nie zwróciło kompletnego SKU/ID produktu' });
+      }
+      return product;
+    } catch (error) {
+      requiresReview.push({
+        supplierSku: item.itemCode,
+        name: item.marketName,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
+  });
+
+  const products: OswProductPayload[] = [];
+  const identities = new Map<string, OswProductPayload>();
+  for (const product of mapped) {
+    if (!product) continue;
+    const identity = normalizedOswIdentity(product.supplierSku);
+    const existing = identities.get(identity);
+    if (existing) {
+      if (existing.oswProductId !== product.oswProductId) {
+        requiresReview.push({
+          supplierSku: product.supplierSku,
+          name: product.name,
+          reason: `Ten sam SKU występuje w OSW pod ID ${existing.oswProductId} i ${product.oswProductId}; użyto pierwszej pozycji`,
+        });
+      }
+      continue;
+    }
+    identities.set(identity, product);
+    products.push(product);
+  }
+
+  return { productsSeen: listed.length, products, requiresReview };
+}
+
 export async function fetchOswProducts(): Promise<OswFetchedProducts> {
-  const url = envString('OSW_PRODUCTS_URL');
-  if (url) return fetchOswProductsFromProductsUrl(url);
-  return fetchOswProductsFromLocalUrls();
+  if (envString('OSW_SYNC_MODE') === 'legacy') {
+    const url = envString('OSW_PRODUCTS_URL');
+    if (url) return fetchOswProductsFromProductsUrl(url);
+    return fetchOswProductsFromLocalUrls();
+  }
+  return fetchOswMallProducts();
 }
 
 export async function getOswSyncStatus(): Promise<OswSyncStatus> {
@@ -1114,28 +1404,31 @@ function decimalNumber(value: unknown) {
   return Number(value);
 }
 
+function moneyAmount(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function buildPriceData(localProduct: any, oswProduct: OswProductPayload, defaults: OswDefaults) {
   if (oswProduct.priceNet === undefined) return undefined;
+  const purchaseNet = moneyAmount(oswProduct.priceNet);
   const latest = localProduct.prices[0];
   if (latest) {
     return {
       productId: localProduct.id,
-      purchaseNet: oswProduct.priceNet,
-      currentPurchaseNet: oswProduct.priceNet,
-      purchaseVatRate: decimalNumber(latest.purchaseVatRate) ?? 0,
+      purchaseNet,
+      currentPurchaseNet: purchaseNet,
+      purchaseVatRate: defaults.purchaseVatRate,
       operatingCostNet: decimalNumber(latest.operatingCostNet) ?? 0,
-      marginRate: decimalNumber(latest.marginRate) ?? 0,
-      saleVatRate: decimalNumber(latest.saleVatRate) ?? 0,
+      marginRate: decimalNumber(latest.marginRate) ?? defaults.marginRate,
+      saleVatRate: defaults.saleVatRate,
       currency: oswProduct.currency || latest.currency || 'PLN',
     };
   }
 
-  if (!hasCompleteDefaults(defaults)) return undefined;
-
   return {
     productId: localProduct.id,
-    purchaseNet: oswProduct.priceNet,
-    currentPurchaseNet: oswProduct.priceNet,
+    purchaseNet,
+    currentPurchaseNet: purchaseNet,
     purchaseVatRate: defaults.purchaseVatRate,
     operatingCostNet: defaults.operatingCostNet,
     marginRate: defaults.marginRate,
@@ -1150,36 +1443,177 @@ function priceNeedsUpdate(latest: any, priceData: ReturnType<typeof buildPriceDa
   return (
     decimalNumber(latest.purchaseNet) !== priceData.purchaseNet ||
     decimalNumber(latest.currentPurchaseNet) !== priceData.currentPurchaseNet ||
+    decimalNumber(latest.purchaseVatRate) !== priceData.purchaseVatRate ||
+    decimalNumber(latest.saleVatRate) !== priceData.saleVatRate ||
     latest.currency !== priceData.currency
   );
 }
 
-async function findLocalProduct(oswProduct: OswProductPayload) {
+type LocalOswProduct = Awaited<ReturnType<typeof loadLocalOswProducts>>[number];
+
+function loadLocalOswProducts() {
+  return prisma.product.findMany({
+    include: {
+      prices: { orderBy: { validFrom: 'desc' as const }, take: 1 },
+      media: { orderBy: { sortOrder: 'asc' as const } },
+    },
+    orderBy: { name: 'asc' },
+  });
+}
+
+function uniqueProducts(products: LocalOswProduct[]) {
+  return [...new Map(products.map((product) => [product.id, product])).values()];
+}
+
+function findLocalProducts(oswProduct: OswProductPayload, products: LocalOswProduct[]) {
   if (oswProduct.localProductId) {
-    const product = await prisma.product.findUnique({
-      where: { id: oswProduct.localProductId },
-      include: { prices: { orderBy: { validFrom: 'desc' }, take: 1 } },
-    });
-    return product ? [product] : [];
+    return products.filter((product) => product.id === oswProduct.localProductId);
   }
 
-  return prisma.product.findMany({
-    where: { supplierSku: oswProduct.supplierSku },
-    include: { prices: { orderBy: { validFrom: 'desc' }, take: 1 } },
-    take: 2,
+  const supplierSku = normalizedOswIdentity(oswProduct.supplierSku);
+  const oswProductId = oswProduct.oswProductId || oswMallProductIdFromUrl(oswProduct.supplierUrl);
+  const name = normalizedOswName(oswProduct.name);
+  const compactName = normalizedOswIdentity(oswProduct.name);
+  const candidates = [
+    products.filter((product) => normalizedOswIdentity(product.supplierSku) === supplierSku),
+    oswProductId
+      ? products.filter((product) => oswMallProductIdFromUrl(product.supplierUrl) === oswProductId)
+      : [],
+    products.filter((product) => normalizedOswIdentity(product.sku) === supplierSku),
+    name ? products.filter((product) => normalizedOswName(product.name) === name) : [],
+    compactName ? products.filter((product) => normalizedOswIdentity(product.name) === compactName) : [],
+  ];
+
+  for (const matches of candidates) {
+    const unique = uniqueProducts(matches);
+    if (unique.length) return unique;
+  }
+  return [];
+}
+
+function findPotentialDuplicateProducts(oswProduct: OswProductPayload, products: LocalOswProduct[]) {
+  const oswName = normalizedOswIdentity(oswProduct.name);
+  const oswProducer = normalizedOswIdentity(oswProduct.producer);
+  const oswTokens = oswModelTokens(oswProduct.supplierSku, oswProduct.name);
+
+  return products.filter((product) => {
+    if (oswProduct.category && product.category !== oswProduct.category) return false;
+
+    const localName = normalizedOswIdentity(product.name);
+    const shorterNameLength = Math.min(oswName.length, localName.length);
+    if (shorterNameLength >= 12 && (oswName.includes(localName) || localName.includes(oswName))) {
+      return true;
+    }
+
+    const localProducer = normalizedOswIdentity(product.producer);
+    const sameProducer = Boolean(oswProducer) && (
+      localProducer === oswProducer ||
+      localName.startsWith(oswProducer)
+    );
+    if (!sameProducer) return false;
+
+    const localTokens = oswModelTokens(product.sku, product.supplierSku, product.name);
+    return [...oswTokens].some((token) => token.length >= 5 && localTokens.has(token));
   });
+}
+
+function findPotentialLegacyDuplicateProducts(oswProduct: OswProductPayload, products: LocalOswProduct[]) {
+  return findPotentialDuplicateProducts(
+    oswProduct,
+    products.filter((product) => !(
+      normalizedOswIdentity(product.supplier) === 'osw' &&
+      normalizedOswIdentity(product.supplierSku)
+    )),
+  );
+}
+
+function sanitizeOswFileName(fileName: string) {
+  return fileName
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function oswMediaExtension(bytes: Buffer, contentType: string, kind: 'image' | 'datasheet') {
+  const normalizedType = contentType.split(';')[0].trim().toLowerCase();
+  if (kind === 'datasheet') {
+    if (bytes.subarray(0, 4).toString('ascii') !== '%PDF') {
+      throw new Error('OSW Mall: pobrany datasheet nie jest plikiem PDF');
+    }
+    return 'pdf';
+  }
+
+  if (normalizedType === 'image/jpeg' || (bytes[0] === 0xff && bytes[1] === 0xd8)) return 'jpg';
+  if (normalizedType === 'image/png' || bytes.subarray(1, 4).toString('ascii') === 'PNG') return 'png';
+  if (normalizedType === 'image/webp' || bytes.subarray(8, 12).toString('ascii') === 'WEBP') return 'webp';
+  throw new Error(`OSW Mall: nieobsługiwany format obrazu (${normalizedType || 'brak Content-Type'})`);
+}
+
+async function downloadOswMedia(
+  productId: string,
+  productName: string,
+  kind: 'image' | 'datasheet',
+  url: string,
+  requestedName?: string,
+) {
+  const parsedUrl = new URL(url);
+  if (parsedUrl.protocol !== 'https:' || !oswMediaHosts.has(parsedUrl.hostname.toLowerCase())) {
+    throw new Error(`OSW Mall: niedozwolony adres pliku ${parsedUrl.hostname}`);
+  }
+
+  const response = await fetch(parsedUrl, { cache: 'no-store', headers: baseHeaders('*/*') });
+  if (!response.ok) throw new Error(`OSW Mall: pobranie pliku zwróciło HTTP ${response.status}`);
+
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > maxOswMediaBytes) {
+    throw new Error('OSW Mall: plik przekracza limit 30 MB');
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (!bytes.length) throw new Error('OSW Mall: pobrany plik jest pusty');
+  if (bytes.length > maxOswMediaBytes) throw new Error('OSW Mall: plik przekracza limit 30 MB');
+
+  const extension = oswMediaExtension(bytes, response.headers.get('content-type') || '', kind);
+  const sourceName = sanitizeOswFileName(requestedName || path.basename(parsedUrl.pathname));
+  const withoutExtension = sourceName.replace(/\.[a-z0-9]{2,5}$/i, '') || (kind === 'image' ? 'produkt' : 'datasheet');
+  const storedName = `${randomUUID()}-${withoutExtension}.${extension}`;
+  const { filePath, relativePath } = catalogMediaRelativePath(productId, storedName);
+
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, bytes, { flag: 'wx' });
+  try {
+    await prisma.productMedia.create({
+      data: {
+        productId,
+        kind,
+        url,
+        storagePath: relativePath,
+        altText: kind === 'image' ? productName : (requestedName || `${productName} - datasheet`),
+        sortOrder: kind === 'image' ? 0 : 10,
+      },
+    });
+  } catch (error) {
+    await fs.unlink(filePath).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function syncOswProducts(options: { apply: boolean }): Promise<OswSyncResult> {
   const fetched = await fetchOswProducts();
   const defaults = oswDefaults();
+  const localProducts = await loadLocalOswProducts();
   const result: OswSyncResult = {
     productsSeen: fetched.productsSeen,
     matchedProducts: 0,
+    productsWouldCreate: 0,
+    productsCreated: 0,
     pricesWouldUpdate: 0,
     pricesUpdated: 0,
     availabilityWouldUpdate: 0,
     availabilityUpdated: 0,
+    imagesWouldImport: 0,
+    imagesImported: 0,
+    datasheetsWouldImport: 0,
+    datasheetsImported: 0,
     availableCount: 0,
     unavailableCount: 0,
     requiresReview: [...fetched.requiresReview],
@@ -1199,15 +1633,87 @@ export async function syncOswProducts(options: { apply: boolean }): Promise<OswS
     if (availability.available) result.availableCount += 1;
     else result.unavailableCount += 1;
 
-    const localMatches = await findLocalProduct(oswProduct);
+    let localMatches = findLocalProducts(oswProduct, localProducts);
+    let productWasCreated = false;
 
     if (!localMatches.length) {
-      result.requiresReview.push({
-        supplierSku: oswProduct.supplierSku,
-        name: oswProduct.name,
-        reason: 'Brak produktu lokalnego z dokładnym supplierSku',
-      });
-      continue;
+      const potentialDuplicates = findPotentialLegacyDuplicateProducts(oswProduct, localProducts);
+      if (potentialDuplicates.length) {
+        const candidates = potentialDuplicates
+          .slice(0, 3)
+          .map((product) => `${product.name}${product.sku ? ` (${product.sku})` : ''}`)
+          .join('; ');
+        result.requiresReview.push({
+          supplierSku: oswProduct.supplierSku,
+          name: oswProduct.name,
+          reason: `Możliwy duplikat lokalnego produktu: ${candidates}. Uzupełnij supplierSku albo zweryfikuj ręcznie; pozycja nie została utworzona`,
+        });
+        continue;
+      }
+
+      if (!oswProduct.category || !oswProduct.name || !oswProduct.supplierUrl) {
+        result.requiresReview.push({
+          supplierSku: oswProduct.supplierSku,
+          name: oswProduct.name,
+          reason: 'Nowy produkt nie ma kompletu danych wymaganych do utworzenia',
+        });
+        continue;
+      }
+
+      result.productsWouldCreate += 1;
+      const canCreatePrice = oswProduct.priceNet !== undefined;
+      const purchaseNet = canCreatePrice ? moneyAmount(oswProduct.priceNet!) : undefined;
+      if (canCreatePrice) result.pricesWouldUpdate += 1;
+
+      if (!options.apply) {
+        if (oswProduct.imageUrl) result.imagesWouldImport += 1;
+        if (oswProduct.datasheetUrl) result.datasheetsWouldImport += 1;
+        continue;
+      }
+
+      try {
+        const created = await prisma.product.create({
+          data: {
+            sku: oswProduct.supplierSku,
+            name: oswProduct.name,
+            availability: availability.label,
+            producer: oswProduct.producer,
+            supplier: 'OSW',
+            supplierSku: oswProduct.supplierSku,
+            supplierUrl: oswProduct.supplierUrl,
+            supplierSyncedAt: new Date(),
+            category: oswProduct.category,
+            sourceSheet: 'OSW Mall',
+            prices: canCreatePrice ? {
+              create: {
+                purchaseNet: purchaseNet!,
+                currentPurchaseNet: purchaseNet!,
+                purchaseVatRate: defaults.purchaseVatRate,
+                operatingCostNet: defaults.operatingCostNet,
+                marginRate: defaults.marginRate,
+                saleVatRate: defaults.saleVatRate,
+                currency: oswProduct.currency || 'PLN',
+              },
+            } : undefined,
+          },
+          include: {
+            prices: { orderBy: { validFrom: 'desc' }, take: 1 },
+            media: { orderBy: { sortOrder: 'asc' } },
+          },
+        });
+        localProducts.push(created);
+        localMatches = [created];
+        productWasCreated = true;
+        result.productsCreated += 1;
+        if (canCreatePrice) result.pricesUpdated += 1;
+      } catch (error) {
+        result.requiresReview.push({
+          supplierSku: oswProduct.supplierSku,
+          name: oswProduct.name,
+          reason: `Nie udało się utworzyć produktu: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        continue;
+      }
     }
     if (localMatches.length > 1) {
       result.requiresReview.push({
@@ -1219,7 +1725,7 @@ export async function syncOswProducts(options: { apply: boolean }): Promise<OswS
     }
 
     const localProduct = localMatches[0];
-    result.matchedProducts += 1;
+    if (!productWasCreated) result.matchedProducts += 1;
 
     if (!oswProduct.supplierUrl && !localProduct.supplierUrl) {
       result.requiresReview.push({
@@ -1234,7 +1740,16 @@ export async function syncOswProducts(options: { apply: boolean }): Promise<OswS
       supplier: 'OSW',
       supplierUrl: oswProduct.supplierUrl || localProduct.supplierUrl,
       supplierSyncedAt: new Date(),
+      sourceSheet: 'OSW Mall',
     };
+    if (!localProduct.supplierSku) productUpdate.supplierSku = oswProduct.supplierSku;
+    if (!localProduct.producer && oswProduct.producer) productUpdate.producer = oswProduct.producer;
+    if (oswProduct.name && localProduct.name !== oswProduct.name) productUpdate.name = oswProduct.name;
+    if (oswProduct.category && localProduct.category !== oswProduct.category) productUpdate.category = oswProduct.category;
+    if (normalizedOswIdentity(localProduct.sku) !== normalizedOswIdentity(oswProduct.supplierSku)) {
+      if (localProduct.sku && !localProduct.legacySku) productUpdate.legacySku = localProduct.sku;
+      productUpdate.sku = oswProduct.supplierSku;
+    }
 
     if (localProduct.availability !== availability.label) {
       result.availabilityWouldUpdate += 1;
@@ -1242,17 +1757,14 @@ export async function syncOswProducts(options: { apply: boolean }): Promise<OswS
     }
 
     const priceData = buildPriceData(localProduct, oswProduct, defaults);
-    if (oswProduct.priceNet !== undefined && !priceData) {
-      result.requiresReview.push({
-        supplierSku: oswProduct.supplierSku,
-        name: oswProduct.name,
-        reason: 'Brak lokalnej ceny bazowej oraz pełnych zmiennych OSW_DEFAULT_* dla VAT/marży',
-      });
-    }
-
     const latestPrice = localProduct.prices[0];
     const shouldCreatePrice = priceNeedsUpdate(latestPrice, priceData);
     if (shouldCreatePrice) result.pricesWouldUpdate += 1;
+
+    const hasImage = localProduct.media.some((media) => media.kind === 'image');
+    const hasDatasheet = localProduct.media.some((media) => media.kind === 'datasheet');
+    if (!hasImage && oswProduct.imageUrl) result.imagesWouldImport += 1;
+    if (!hasDatasheet && oswProduct.datasheetUrl) result.datasheetsWouldImport += 1;
 
     if (options.apply) {
       await prisma.$transaction(async (tx) => {
@@ -1264,6 +1776,37 @@ export async function syncOswProducts(options: { apply: boolean }): Promise<OswS
 
       if ('availability' in productUpdate) result.availabilityUpdated += 1;
       if (shouldCreatePrice) result.pricesUpdated += 1;
+
+      if (!hasImage && oswProduct.imageUrl) {
+        try {
+          await downloadOswMedia(localProduct.id, oswProduct.name || localProduct.name, 'image', oswProduct.imageUrl);
+          result.imagesImported += 1;
+        } catch (error) {
+          result.requiresReview.push({
+            supplierSku: oswProduct.supplierSku,
+            name: oswProduct.name,
+            reason: `Nie udało się zapisać zdjęcia: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      }
+      if (!hasDatasheet && oswProduct.datasheetUrl) {
+        try {
+          await downloadOswMedia(
+            localProduct.id,
+            oswProduct.name || localProduct.name,
+            'datasheet',
+            oswProduct.datasheetUrl,
+            oswProduct.datasheetName,
+          );
+          result.datasheetsImported += 1;
+        } catch (error) {
+          result.requiresReview.push({
+            supplierSku: oswProduct.supplierSku,
+            name: oswProduct.name,
+            reason: `Nie udało się zapisać datasheet: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      }
     }
   }
 
@@ -1271,8 +1814,17 @@ export async function syncOswProducts(options: { apply: boolean }): Promise<OswS
 }
 
 export const __oswSyncTestUtils = {
+  buildPriceData,
   extractOswLoginForm,
+  findLocalProducts,
+  findPotentialLegacyDuplicateProducts,
+  findPotentialDuplicateProducts,
+  mapOswMallProduct,
   mapOswApiProduct,
+  moneyAmount,
+  normalizedOswIdentity,
+  normalizedOswName,
+  oswDefaults,
   oswProductIdFromUrl,
   parseOswProductPage,
   splitSetCookieHeader,

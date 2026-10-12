@@ -388,8 +388,8 @@ const primaryTabs = [
   ['EMS', 8],
   ['Taryfy', 14],
   ['Dokumenty', 10],
-  ['Historia', 11],
   ['Serwis', 12],
+  ['Historia', 11],
 ] as const;
 
 const journeyTabs: Array<{ key: ClientJourneyKey; label: string; tabIndex: number }> = [
@@ -2593,11 +2593,11 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
       <Tabs index={activeTabIndex} colorScheme="purple" variant="soft-rounded" isLazy>
         <Box overflowX="auto" overflowY="hidden" sx={{ scrollbarWidth: 'thin' }}>
-          <Box minW="900px">
+          <Box minW="980px">
             <Box border="1px solid" borderColor={borderColor} borderRadius="8px" bg="whiteAlpha.50">
               <Box
                 display="grid"
-                gridTemplateColumns="110px 120px 85px 100px 130px 60px 105px 80px 110px"
+                gridTemplateColumns="110px 120px 85px 100px 130px 60px 105px 95px 85px 90px"
                 py="9px"
                 alignItems="center"
               >

@@ -107,6 +107,7 @@ const mediaKindLabels: Record<ProductMediaKind, string> = {
 type ProductRow = {
   id: string;
   sku?: string | null;
+  legacySku?: string | null;
   name: string;
   availability?: string | null;
   producer?: string | null;
@@ -222,10 +223,6 @@ function formatMoney(value: number, currency = 'PLN') {
     currency,
     maximumFractionDigits: 2,
   }).format(value);
-}
-
-function formatPercent(value: string | number | null | undefined) {
-  return `${new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 2 }).format(asNumber(value) * 100)}%`;
 }
 
 function productTotals(product: ProductRow) {
@@ -715,6 +712,7 @@ export default function CatalogWorkspace() {
         product.producer,
         product.supplier,
         product.supplierSku,
+        product.legacySku,
         product.supplierUrl,
         product.category,
         product.clientType,
@@ -805,13 +803,11 @@ export default function CatalogWorkspace() {
           <Table variant="simple">
             <Thead>
               <Tr>
-                <Th>Nazwa</Th>
+                <Th minW="460px">Nazwa</Th>
                 <Th>Kategoria</Th>
                 <Th>Parametry</Th>
                 <Th isNumeric>Koszt netto</Th>
-                <Th isNumeric>Marża</Th>
                 <Th isNumeric>Sugerowana cena netto</Th>
-                <Th isNumeric>Zysk</Th>
                 <Th>Media</Th>
                 <Th>Działania</Th>
               </Tr>
@@ -820,29 +816,52 @@ export default function CatalogWorkspace() {
               {filtered.map((product) => {
                 const price = product.prices?.[0];
                 const totals = productTotals(product);
+                const thumbnail = product.media?.find((media) => media.kind === 'image' && (media.url || media.storagePath));
                 return (
                   <Tr key={product.id}>
-                    <Td minW="300px">
-                      <Text color={textColor} fontWeight="700">{product.name}</Text>
-                      <Text color={mutedColor} fontSize="sm">
-                        {[product.producer, product.sku].filter(Boolean).join(' · ') || 'Bez producenta'}
-                      </Text>
-                      {product.supplierSku ? (
-                        <Text color={mutedColor} fontSize="xs" mt="4px">
-                          OSW SKU: {product.supplierSku}
-                        </Text>
-                      ) : null}
-                      {product.supplierUrl ? (
-                        <Link href={product.supplierUrl} isExternal color="blue.300" fontSize="xs" mt="4px" display="inline-flex" alignItems="center" gap="4px">
-                          URL dostawcy
-                          <Icon as={MdOpenInNew} />
-                        </Link>
-                      ) : null}
-                      {product.notes ? (
-                        <Text color={mutedColor} fontSize="xs" mt="4px" maxW="420px">
-                          {product.notes}
-                        </Text>
-                      ) : null}
+                    <Td minW="460px">
+                      <Flex align="flex-start" gap="12px">
+                        {thumbnail ? (
+                          <Image
+                            src={mediaHref(thumbnail)}
+                            alt={product.name}
+                            boxSize="84px"
+                            flex="0 0 84px"
+                            objectFit="contain"
+                            borderRadius="6px"
+                            border="1px solid"
+                            borderColor={subtleBorder}
+                            bg="white"
+                          />
+                        ) : null}
+                        <Box minW="0">
+                          <Text color={textColor} fontWeight="700">{product.name}</Text>
+                          <Text color={mutedColor} fontSize="sm">
+                            {[product.producer, product.sku].filter(Boolean).join(' · ') || 'Bez producenta'}
+                          </Text>
+                          {product.supplierSku ? (
+                            <Text color={mutedColor} fontSize="xs" mt="4px">
+                              OSW SKU: {product.supplierSku}
+                            </Text>
+                          ) : null}
+                          {product.legacySku ? (
+                            <Text color={mutedColor} fontSize="xs" mt="2px">
+                              Poprzednie SKU: {product.legacySku}
+                            </Text>
+                          ) : null}
+                          {product.supplierUrl ? (
+                            <Link href={product.supplierUrl} isExternal color="blue.300" fontSize="xs" mt="4px" display="inline-flex" alignItems="center" gap="4px">
+                              URL dostawcy
+                              <Icon as={MdOpenInNew} />
+                            </Link>
+                          ) : null}
+                          {product.notes ? (
+                            <Text color={mutedColor} fontSize="xs" mt="4px" maxW="420px">
+                              {product.notes}
+                            </Text>
+                          ) : null}
+                        </Box>
+                      </Flex>
                     </Td>
                     <Td>
                       <Badge colorScheme="purple">{categoryLabels[product.category] || product.category}</Badge>
@@ -853,9 +872,7 @@ export default function CatalogWorkspace() {
                       <Text color={mutedColor} fontSize="sm">{product.availability || product.voltageKind || '-'}</Text>
                     </Td>
                     <Td isNumeric>{price ? formatMoney(asNumber(price.purchaseNet), price.currency) : '-'}</Td>
-                    <Td isNumeric>{price ? formatPercent(price.marginRate) : '-'}</Td>
                     <Td isNumeric>{totals && price ? formatMoney(totals.saleNet, price.currency) : '-'}</Td>
-                    <Td isNumeric>{totals && price ? formatMoney(totals.profitNet, price.currency) : '-'}</Td>
                     <Td minW="260px">
                       <Flex gap="8px" wrap="wrap" align="center" mb="10px">
                         {product.media?.length ? sortMediaItems(product.media).map((media) => {
@@ -878,19 +895,6 @@ export default function CatalogWorkspace() {
                           <Text color={mutedColor} fontSize="sm">Brak załączników</Text>
                         )}
                       </Flex>
-
-                      {product.media?.find((media) => media.kind === 'image' && (media.url || media.storagePath)) ? (
-                        <Image
-                          src={mediaHref(product.media.find((media) => media.kind === 'image' && (media.url || media.storagePath))!)}
-                          alt={product.name}
-                          boxSize="44px"
-                          objectFit="contain"
-                          borderRadius="8px"
-                          border="1px solid"
-                          borderColor={subtleBorder}
-                          mb="10px"
-                        />
-                      ) : null}
 
                       <Flex gap="8px" wrap="wrap" align="center">
                         <Select

@@ -67,10 +67,16 @@ type OswSyncStatus = {
 type OswSyncResult = {
   productsSeen: number;
   matchedProducts: number;
+  productsWouldCreate: number;
+  productsCreated: number;
   pricesWouldUpdate: number;
   pricesUpdated: number;
   availabilityWouldUpdate: number;
   availabilityUpdated: number;
+  imagesWouldImport: number;
+  imagesImported: number;
+  datasheetsWouldImport: number;
+  datasheetsImported: number;
   availableCount: number;
   unavailableCount: number;
   requiresReview: Array<{
@@ -382,13 +388,16 @@ export default function SynchronizationWorkspace() {
 
         {oswResult ? (
           <Box mt="18px">
-            <SimpleGrid columns={{ base: 1, md: 3, xl: 6 }} gap="12px">
+            <SimpleGrid columns={{ base: 1, md: 3, xl: 5 }} gap="12px">
               {[
                 ['Tryb', oswMode],
                 ['OSW rekordy', oswResult.productsSeen],
                 ['Dopasowane', oswResult.matchedProducts],
+                ['Nowe produkty', oswMode === 'sync-to-local' ? oswResult.productsCreated : oswResult.productsWouldCreate],
                 ['Ceny', oswMode === 'sync-to-local' ? oswResult.pricesUpdated : oswResult.pricesWouldUpdate],
                 ['Dostępność', oswMode === 'sync-to-local' ? oswResult.availabilityUpdated : oswResult.availabilityWouldUpdate],
+                ['Zdjęcia', oswMode === 'sync-to-local' ? oswResult.imagesImported : oswResult.imagesWouldImport],
+                ['Datasheet PDF', oswMode === 'sync-to-local' ? oswResult.datasheetsImported : oswResult.datasheetsWouldImport],
                 ['Do weryfikacji', oswResult.requiresReview.length],
               ].map(([label, value]) => (
                 <Box key={label} border="1px solid" borderColor={borderColor} borderRadius="8px" p="12px">

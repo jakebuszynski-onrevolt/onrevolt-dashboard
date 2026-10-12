@@ -784,6 +784,7 @@ model Reminder {
 model Product {
   id                       String                      @id @default(cuid())
   sku                      String?                     @unique
+  legacySku                String?
   name                     String
   availability             String?
   producer                 String?
@@ -814,6 +815,7 @@ model Product {
   @@index([name])
   @@index([category])
   @@index([producer])
+  @@index([legacySku])
   @@index([supplierSku])
 }
 
