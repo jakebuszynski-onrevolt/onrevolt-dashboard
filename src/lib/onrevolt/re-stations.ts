@@ -165,6 +165,43 @@ const deviceStatusColumns = [
   'solis_pv_block_applied',
 ] as const;
 
+const deviceStatusSelectColumns = ['station_hash', ...deviceStatusColumns] as const;
+
+const stationAdminListColumns = [
+  'station',
+  'station_hash',
+  'parent_station',
+  'type',
+  'firmware_version',
+  'firmware_seen_at',
+  'firmware_target_version',
+  'ota_enabled',
+  'ota_force',
+  'ota_last_status',
+  'ota_last_error',
+  'ota_last_target_version',
+  'ota_last_at',
+  'control_enabled',
+  'shadow_only',
+  'inverter_rated_power_w',
+  'inverter_power_limit_percent',
+  'solis_smart_port_fan_enabled',
+  'solis_smart_port_fan_on_c_x10',
+  'solis_smart_port_fan_off_c_x10',
+  'solis_command_seq',
+  'solis_command',
+  'solis_command_requested_at',
+  'solis_command_expires_at',
+  'solis_command_ack_seq',
+  'solis_command_ack_at',
+  'solis_command_result',
+  'solis_command_ok',
+  'solis_export_blocked',
+  'solis_pv_blocked',
+  'solis_export_block_applied',
+  'solis_pv_block_applied',
+] as const;
+
 function optionalText(value: unknown) {
   const text = String(value ?? '').trim();
   return text || null;
@@ -425,6 +462,10 @@ export async function readReStationDeviceStatus(stationOrHash: string): Promise<
   const row = await findStationRow(db, columns, stationInput, selectSql);
   if (!row) return null;
 
+  return reStationStatusFromRow(row);
+}
+
+function reStationStatusFromRow(row: Record<string, unknown>): ReStationDeviceStatus {
   return {
     station: String(row.station || '').trim(),
     type: String(row.type || '').trim(),
@@ -460,6 +501,69 @@ export async function readReStationDeviceStatus(stationOrHash: string): Promise<
     exportBlockApplied: boolValue(row.solis_export_block_applied),
     pvBlockApplied: boolValue(row.solis_pv_block_applied),
   };
+}
+
+export async function readReStationDeviceStatuses(stationInputs: string[]) {
+  const inputs = Array.from(new Set(stationInputs.map((input) => validateStationInput(input))));
+  const result = new Map<string, ReStationDeviceStatus>();
+  if (!inputs.length) return result;
+
+  const db = rePrisma();
+  await ensureEnergyMeterUsersTable(db);
+  const columns = await readEnergyMeterColumns(db);
+  if (!columns.has('station')) {
+    throw new Error('Tabela EnergyMeter_users nie ma kolumny station');
+  }
+
+  const numericStations = inputs.filter((input) => /^\d+$/.test(input));
+  const stationHashes = inputs.filter((input) => !/^\d+$/.test(input));
+  const predicates: string[] = [];
+  const values: string[] = [];
+  if (numericStations.length) {
+    predicates.push(`\`station\` IN (${numericStations.map(() => '?').join(', ')})`);
+    values.push(...numericStations);
+  }
+  if (columns.has('station_hash') && stationHashes.length) {
+    predicates.push(`\`station_hash\` IN (${stationHashes.map(() => '?').join(', ')})`);
+    values.push(...stationHashes);
+  }
+  if (!predicates.length) return result;
+
+  const selectedColumns = deviceStatusSelectColumns.filter((column) => columns.has(column));
+  const selectSql = selectedColumns.map((column) => `\`${column}\``).join(', ');
+  const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    `SELECT ${selectSql} FROM \`EnergyMeter_users\` WHERE ${predicates.join(' OR ')}`,
+    ...values,
+  );
+
+  for (const row of rows) {
+    const status = reStationStatusFromRow(row);
+    result.set(status.station, status);
+    const stationHash = optionalText(row.station_hash);
+    if (stationHash) result.set(stationHash, status);
+  }
+  return result;
+}
+
+export async function listReStationDeviceStatuses() {
+  const db = rePrisma();
+  await ensureEnergyMeterUsersTable(db);
+  const columns = await readEnergyMeterColumns(db);
+  if (!columns.has('station')) {
+    throw new Error('Tabela EnergyMeter_users nie ma kolumny station');
+  }
+
+  const selectedColumns = stationAdminListColumns.filter((column) => columns.has(column));
+  const selectSql = selectedColumns.map((column) => `\`${column}\``).join(', ');
+  const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    `SELECT ${selectSql} FROM \`EnergyMeter_users\` ORDER BY \`station\``,
+  );
+
+  return rows.map((row) => ({
+    ...reStationStatusFromRow(row),
+    stationHash: optionalText(row.station_hash),
+    parentStation: optionalText(row.parent_station),
+  }));
 }
 
 export async function updateReStationDashboardAccess(

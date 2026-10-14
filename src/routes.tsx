@@ -98,6 +98,7 @@ const routes: IRoute[] = [
     icon: <Icon as={MdSettings} {...iconProps} />,
     items: [
       child('Synchronizacja', '/synchronization', 'synchronization.manage'),
+      { ...child('EMS', '/ems'), requiredRole: 'ADMIN' },
       child('Użytkownicy i role', '/settings', 'users.manage'),
       child('Workflow i słowniki', '/workflow', 'settings.manage'),
     ],

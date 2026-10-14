@@ -31,6 +31,7 @@ type CurrentStaffUser = {
 function visibleRoutes(routes: IRoute[], user: CurrentStaffUser | null): IRoute[] {
   const permissions = new Set(user?.permissions || []);
   return routes.flatMap((route) => {
+    if (route.requiredRole && user?.systemRole !== route.requiredRole) return [];
     if (route.requiredPermission && !permissions.has(route.requiredPermission)) return [];
     if (!route.items) return [route];
     const items = visibleRoutes(route.items, user);
