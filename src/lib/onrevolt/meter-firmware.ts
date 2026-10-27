@@ -1,5 +1,5 @@
 export type MeterFirmwareFamily = 'ENERGYMETER' | 'PGE';
-export type MeterFirmwareRelease = { version: string; size: number };
+export type MeterFirmwareRelease = { version: string; size: number; url: string; sha256: string };
 
 const catalogUrls: Record<MeterFirmwareFamily, string> = {
   ENERGYMETER: 'https://windyone.pl/OTA/EnergyMeter/releases.php',
@@ -31,7 +31,7 @@ export function parseMeterFirmwareRelease(
     || !/^[A-Za-z0-9._-]+\.bin$/.test(binaryName)) {
     throw new Error(`Nieprawidłowy plik firmware ${family}: ${filename}`);
   }
-  return { version, size: record.size, binaryName };
+  return { version, size: record.size, url: record.url as string, sha256: record.sha256, binaryName };
 }
 
 export async function listMeterFirmwareReleases(
@@ -52,7 +52,7 @@ export async function listMeterFirmwareReleases(
   const releases = payload.releases.map((candidate: unknown) => {
     const version = candidate && typeof candidate === 'object' && 'version' in candidate ? candidate.version : '';
     const release = parseMeterFirmwareRelease(candidate, family, `${version}.json`);
-    return { version: release.version, size: release.size };
+    return { version: release.version, size: release.size, url: release.url, sha256: release.sha256 };
   });
   if (!releases.length) throw new Error(`Brak opublikowanych wydań firmware ${family}`);
   return releases.sort((a, b) => b.version.localeCompare(a.version, 'en', { numeric: true }));

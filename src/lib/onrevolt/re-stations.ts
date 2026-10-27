@@ -12,6 +12,8 @@ import {
   isValidSolisPowerLimitPercent,
 } from './solis-inverter';
 import { isValidSolisSmartPortFanSettings } from './solis-fan';
+import { classifyAdminEmsGroup } from './admin-ems';
+import { listMeterFirmwareReleases } from './meter-firmware';
 
 type MysqlColumn = {
   Field: string;
@@ -662,8 +664,15 @@ export async function requestReStationOta(stationOrHash: string, targetVersion: 
     }
   }
 
+  // Wybór wydania korzysta z katalogu; stare nadpisania nie mogą blokować nowej wersji.
+  const assignments = ['`firmware_target_version` = ?', '`ota_enabled` = 1'];
+  for (const column of ['firmware_target_url', 'firmware_target_sha256']) {
+    if (columns.has(column)) assignments.push(`\`${column}\` = ''`);
+  }
+  if (columns.has('firmware_target_size')) assignments.push('`firmware_target_size` = 0');
+
   const updated = await db.$executeRawUnsafe(
-    'UPDATE `EnergyMeter_users` SET `firmware_target_version` = ?, `ota_enabled` = 1 WHERE `station` = ? AND `ota_enabled` = 0 LIMIT 1',
+    `UPDATE \`EnergyMeter_users\` SET ${assignments.join(', ')} WHERE \`station\` = ? AND \`ota_enabled\` = 0 LIMIT 1`,
     version,
     before.station,
   );
@@ -674,6 +683,48 @@ export async function requestReStationOta(stationOrHash: string, targetVersion: 
   const after = await readReStationDeviceStatus(before.station);
   if (!after) throw new Error('Stacja zniknęła po włączeniu OTA');
   return { before, after };
+}
+
+export async function requestReMeterStationOta(station: string, targetVersion: string) {
+  if (!/^(0|[1-9][0-9]{0,4})$/.test(station) || Number(station) > 65535) {
+    throw new ReStationOtaRequestError('Nieprawidłowy numer stacji');
+  }
+  const before = await readReStationDeviceStatus(station);
+  if (!before) throw new ReStationOtaRequestError('Nie znaleziono stacji RE');
+  const group = classifyAdminEmsGroup(before.type);
+  if (group !== 'ESP32' && group !== 'PGE') {
+    throw new ReStationOtaRequestError('Ta operacja jest dostępna tylko dla liczników ESP32 i PGE');
+  }
+  if (!before.firmwareVersion) {
+    throw new ReStationOtaRequestError('Stacja nie zgłosiła jeszcze bieżącej wersji firmware');
+  }
+  if (before.otaEnabled) {
+    throw new ReStationOtaRequestError('Aktualizacja OTA jest już włączona. Poczekaj na raport urządzenia.');
+  }
+  if (before.firmwareVersion === targetVersion) {
+    throw new ReStationOtaRequestError('Wybrana wersja jest już zainstalowana na urządzeniu');
+  }
+  const family = group === 'PGE' ? 'PGE' : 'ENERGYMETER';
+  const releases = await listMeterFirmwareReleases(family);
+  const release = releases.find((item) => item.version === targetVersion);
+  if (!release) throw new ReStationOtaRequestError('Wybrana wersja nie jest dostępna w katalogu tego typu licznika');
+
+  const db = rePrisma();
+  const columns = await readEnergyMeterColumns(db);
+  for (const column of ['firmware_target_version', 'firmware_target_url', 'firmware_target_sha256', 'firmware_target_size', 'ota_enabled', 'ota_force', 'uid', 'type', 'firmware_version']) {
+    if (!columns.has(column)) throw new Error(`Tabela EnergyMeter_users nie ma kolumny ${column}`);
+  }
+  // Manifest licznika weryfikuje metadane celu; zapisujemy cały zestaw atomowo.
+  const updated = await db.$executeRawUnsafe(
+    'UPDATE `EnergyMeter_users` SET `firmware_target_version` = ?, `firmware_target_url` = ?, `firmware_target_sha256` = ?, `firmware_target_size` = ?, `ota_force` = 0, `ota_enabled` = 1 WHERE `station` = ? AND `uid` <=> ? AND `type` = ? AND `firmware_version` = ? AND `ota_enabled` = 0 LIMIT 1',
+    release.version, release.url, release.sha256, release.size,
+    before.station, before.uid, before.type, before.firmwareVersion,
+  );
+  if (updated !== 1) {
+    throw new ReStationOtaRequestError('Status stacji zmienił się. Odśwież listę przed ponownym zleceniem OTA.');
+  }
+  // Nie ponawiamy zapisu nawet gdy odczyt statusu po zleceniu byłby niedostępny.
+  return { before, targetVersion: release.version, family };
 }
 
 export async function updateReStationControlSettings(

@@ -39,6 +39,7 @@ import {
   MdUploadFile,
 } from 'react-icons/md';
 import DocumentImagePreviewModal from './DocumentImagePreviewModal';
+import { SiteAuditDrafts } from 'lib/onrevolt/site-audit-drafts';
 import {
   normalizeSiteAuditFormData,
   resetTypeDependentCompletion,
@@ -317,14 +318,27 @@ export default function ClientSiteAuditPanel({
   currentUser,
   onDocumentsChanged,
 }: Props) {
-  const [audits, setAudits] = useState<any[]>([]);
-  const [selectedAuditId, setSelectedAuditId] = useState('');
-  const [data, setData] = useState<AuditData>(() => initialData(client, project, currentUser));
-  const [status, setStatus] = useState('DRAFT');
-  const [currentStep, setCurrentStep] = useState(1);
-  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+  const drafts = useMemo(() => new SiteAuditDrafts(
+    `site-audit:v1:${currentUser?.id}:${project?.id}`,
+    project?.id,
+    { getItem: (key) => window.localStorage.getItem(key), setItem: (key, value) => window.localStorage.setItem(key, value) },
+    (input, init) => fetch(input, init),
+    () => crypto.randomUUID(),
+    currentUser?.id || '',
+  ), [currentUser?.id, project?.id]);
+  const [ownedDrafts, setOwnedDrafts] = useState<SiteAuditDrafts | null>(null);
+  const [lockError, setLockError] = useState('');
+  const [draftRevision, renderDraft] = useState(0);
+  const [online, setOnline] = useState(true);
+  const selectedAudit = drafts.current?.record;
+  const selectedAuditId = selectedAudit?.id || '';
+  const data: AuditData = normalizeSiteAuditFormData({ ...initialData(client, project, currentUser), ...selectedAudit?.formData });
+  const status = selectedAudit?.status || 'DRAFT';
+  const currentStep = selectedAudit?.currentStep || 1;
+  const completedSteps: number[] = selectedAudit?.completedSteps || [];
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [manualSaving, setSaving] = useState(false);
+  const saving = manualSaving || drafts.saving;
   const [uploadingField, setUploadingField] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -344,7 +358,6 @@ export default function ClientSiteAuditPanel({
   const batteryConfigurations = configurations.filter((item: any) => (
     ['MAGAZYN', 'MIXED'].includes(item.kind)
   ));
-  const selectedAudit = audits.find((item) => item.id === selectedAuditId);
   const documents: AuditDocument[] = useMemo(
     () => selectedAudit?.documents || [],
     [selectedAudit?.documents],
@@ -353,87 +366,106 @@ export default function ClientSiteAuditPanel({
     ? 100
     : Math.round(new Set(completedSteps).size / steps.length * 100);
 
-  const applyAudit = useCallback((audit: any) => {
-    setSelectedAuditId(audit?.id || '');
-    setData(audit?.formData && typeof audit.formData === 'object'
-      ? normalizeSiteAuditFormData({ ...initialData(client, project, currentUser), ...audit.formData })
-      : initialData(client, project, currentUser));
-    setStatus(audit?.status || 'DRAFT');
-    setCurrentStep(Number(audit?.currentStep) || 1);
-    setCompletedSteps(Array.isArray(audit?.completedSteps) ? audit.completedSteps.map(Number) : []);
-  }, [client, currentUser, project]);
+  async function loadAudits() {
+    await drafts.load(initialData(client, project, currentUser));
+  }
 
-  const loadAudits = useCallback(async (preferredId?: string) => {
-    if (!project?.id) {
-      setAudits([]);
-      setLoading(false);
-      return;
-    }
+  useEffect(() => {
+    let mounted = true;
+    const unsubscribe = drafts.subscribe(() => renderDraft((value) => value + 1));
+    setOnline(navigator.onLine);
     setLoading(true);
-    try {
-      const response = await fetch(`/api/site-audits?projectId=${encodeURIComponent(project.id)}`, { cache: 'no-store' });
-      const payload = await response.json();
-      const records = readResponse(payload, response) || [];
-      setAudits(records);
-      const selected = records.find((item: any) => item.id === (preferredId || selectedAuditId))
-        || records[0];
-      applyAudit(selected);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
+    setError('');
+    setMessage('');
+    if (!currentUser?.id || !project?.id) {
       setLoading(false);
+      return unsubscribe;
     }
-  }, [applyAudit, project?.id, selectedAuditId]);
-
-  useEffect(() => {
-    setSelectedAuditId('');
-    setData(initialData(client, project, currentUser));
-    setStatus('DRAFT');
-    setCurrentStep(1);
-    setCompletedSteps([]);
-    loadAudits();
-  // selectedAuditId is intentionally reset when the project changes.
+    const abort = new AbortController();
+    let releaseLock: (() => void) | undefined;
+    setOwnedDrafts(null);
+    setLockError('');
+    if (!navigator.locks) {
+      setLockError('Ta przeglądarka nie obsługuje bezpiecznego autozapisu. Otwórz audyt w aktualnej wersji przeglądarki.');
+      setLoading(false);
+      return unsubscribe;
+    }
+    // Only one tab writes this user's local project drafts at a time.
+    void navigator.locks.request(drafts.storageKey, { signal: abort.signal }, async () => {
+      if (!mounted) return;
+      drafts.resume();
+      try { drafts.restore(); } catch (e) {
+        setLockError(String(e));
+        setLoading(false);
+        return;
+      }
+      setOwnedDrafts(drafts);
+      const held = new Promise<void>((resolve) => { releaseLock = resolve; });
+      void drafts.load(initialData(client, project, currentUser)).finally(() => { if (mounted) setLoading(false); });
+      await held;
+    }).catch((e) => { if (mounted) { setLockError(String(e)); setLoading(false); } });
+    const connection = () => {
+      if (navigator.onLine) drafts.error = '';
+      setOnline(navigator.onLine);
+      renderDraft((value) => value + 1);
+    };
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (drafts.storageError && drafts.drafts.some((draft) => draft.dirty)) {
+        event.preventDefault(); event.returnValue = '';
+      }
+    };
+    window.addEventListener('online', connection);
+    window.addEventListener('offline', connection);
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => {
+      mounted = false; unsubscribe();
+      abort.abort();
+      drafts.close();
+      // A late response still writes its acknowledgement to local storage.
+      void drafts.waitForSave().finally(() => releaseLock?.());
+      window.removeEventListener('online', connection);
+      window.removeEventListener('offline', connection);
+      window.removeEventListener('beforeunload', beforeUnload);
+    };
+  // Data from CRM initializes only a new draft; prop refresh must not replace local edits.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.id]);
+  }, [drafts]);
 
   useEffect(() => {
-    if (!selectedAuditId || !Array.isArray(client?.documents)) return;
+    if (ownedDrafts !== drafts || loading || !online || drafts.saving || manualSaving) return;
+    const draft = drafts.drafts.find((item) => (item.dirty || item.pending) && !item.blocked);
+    if (!draft) return;
+    const timer = window.setTimeout(() => { void drafts.flush(draft.key).catch(() => {}); }, drafts.error ? 30_000 : 1200);
+    return () => window.clearTimeout(timer);
+  }, [drafts, ownedDrafts, draftRevision, loading, online, manualSaving]);
+
+  useEffect(() => {
+    if (ownedDrafts !== drafts || !selectedAuditId || !Array.isArray(client?.documents)) return;
     const currentAuditDocuments = client.documents.filter(
       (document: AuditDocument) => document.siteAuditId === selectedAuditId,
     );
-    setAudits((current) => current.map((item) => (
-      item.id === selectedAuditId
-        ? { ...item, documents: currentAuditDocuments }
-        : item
-    )));
-  }, [client?.documents, selectedAuditId]);
+    drafts.updateDocuments(selectedAuditId, currentAuditDocuments);
+  }, [client?.documents, selectedAuditId, drafts, ownedDrafts]);
 
   function update(key: string, value: any) {
-    setData((current) => ({ ...current, [key]: value }));
+    drafts.edit({ formData: { ...data, ...drafts.current?.record.formData, [key]: value }, status: 'DRAFT' });
     setMessage('');
   }
 
   function updateClientType(value: string) {
-    setData((current) => ({ ...current, client_type: value }));
-    setCompletedSteps((current) => resetTypeDependentCompletion(current));
-    if (status === 'COMPLETED') setStatus('DRAFT');
+    drafts.edit({ formData: { ...data, client_type: value }, completedSteps: resetTypeDependentCompletion(completedSteps), status: 'DRAFT' });
     setMessage('Zmieniono typ wizji. Sprawdź sekcje zależne od typu i ponownie oznacz kroki jako gotowe.');
     setError('');
   }
 
   function newAudit() {
-    setSelectedAuditId('');
-    setData(initialData(client, project, currentUser));
-    setStatus('DRAFT');
-    setCurrentStep(1);
-    setCompletedSteps([]);
+    drafts.create(initialData(client, project, currentUser));
     setError('');
-    setMessage('Rozpoczęto nową wizję lokalną. Zapisz wersję roboczą, aby utworzyć rekord.');
+    setMessage('Rozpoczęto nową wizję lokalną.');
   }
 
   function selectAudit(id: string) {
-    const audit = audits.find((item) => item.id === id);
-    if (audit) applyAudit(audit);
+    drafts.select(id);
   }
 
   async function saveAudit(
@@ -442,28 +474,21 @@ export default function ClientSiteAuditPanel({
     currentStepOverride = currentStep,
   ) {
     if (!project?.id) throw new Error('Brak projektu dla audytu');
+    if (nextStatus === 'COMPLETED' && !navigator.onLine) {
+      throw new Error('Zakończenie audytu wymaga połączenia z internetem. Szkic pozostaje na urządzeniu.');
+    }
+    const key = drafts.selected;
+    drafts.edit({ status: nextStatus, completedSteps: stepsOverride, currentStep: currentStepOverride, formData: data });
+    if (!navigator.onLine) {
+      setMessage('Zachowano szkic na urządzeniu. Oczekuje na połączenie.');
+      return drafts.current?.record;
+    }
     setSaving(true);
     setError('');
     try {
-      const response = await fetch('/api/site-audits', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: selectedAuditId || undefined,
-          projectId: project.id,
-          title: selectedAudit?.title,
-          status: nextStatus,
-          visitDate: data.visit_date,
-          auditorId: data.auditor_id || undefined,
-          currentStep: currentStepOverride,
-          completedSteps: stepsOverride,
-          formData: data,
-        }),
-      });
-      const payload = await response.json();
-      const saved = readResponse(payload, response);
-      setAudits((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
-      applyAudit(saved);
+      let saved = await drafts.flush(key);
+      // An earlier timed-out request may have been acknowledged first.
+      if (drafts.drafts.find((item) => item.key === key)?.dirty) saved = await drafts.flush(key);
       setMessage(nextStatus === 'COMPLETED' ? 'Audyt został zakończony.' : 'Zapisano wersję roboczą audytu.');
       return saved;
     } catch (e) {
@@ -486,8 +511,8 @@ export default function ClientSiteAuditPanel({
       }
       const allSteps = [...requiredSteps, steps.length];
       await saveAudit('COMPLETED', allSteps, steps.length);
-    } catch {
-      // saveAudit already exposes the validation or API message in the panel.
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -502,7 +527,7 @@ export default function ClientSiteAuditPanel({
   function goToStep(step: number) {
     setError('');
     setMessage('');
-    setCurrentStep(step);
+    drafts.edit({ currentStep: step });
     window.setTimeout(() => document.getElementById('site-audit-content')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   }
 
@@ -530,10 +555,15 @@ export default function ClientSiteAuditPanel({
 
   async function uploadFiles(fieldKey: string, label: string, files: File[]) {
     if (!files.length) return;
+    if (!navigator.onLine) {
+      setError('Wysyłanie zdjęć i załączników wymaga internetu. Wpisane dane formularza są zachowane na urządzeniu.');
+      return;
+    }
     setUploadingField(fieldKey);
     setError('');
     try {
-      const audit = selectedAudit || await saveAudit('DRAFT');
+      const audit = selectedAuditId ? selectedAudit : await saveAudit('DRAFT');
+      if (!audit?.id) throw new Error('Najpierw zapisz audyt na serwerze, aby dodać załącznik.');
       for (const file of files) {
         const image = file.type.startsWith('image/') || /\.(heic|heif)$/i.test(file.name);
         const form = new FormData();
@@ -550,17 +580,8 @@ export default function ClientSiteAuditPanel({
         const response = await fetch('/api/documents/upload', { method: 'POST', body: form });
         const payload = await response.json();
         const uploadedDocument = readResponse(payload, response);
-        setAudits((current) => current.map((item) => (
-          item.id === audit.id
-            ? {
-              ...item,
-              documents: [
-                uploadedDocument,
-                ...(item.documents || []).filter((document: AuditDocument) => document.id !== uploadedDocument.id),
-              ],
-            }
-            : item
-        )));
+        const record = drafts.drafts.find((item) => item.record.id === audit.id)?.record;
+        drafts.updateDocuments(audit.id, [uploadedDocument, ...(record?.documents || []).filter((document: AuditDocument) => document.id !== uploadedDocument.id)]);
       }
       await onDocumentsChanged?.();
       setMessage(`Dodano ${files.length} ${files.length === 1 ? 'plik' : 'pliki'}.`);
@@ -582,14 +603,7 @@ export default function ClientSiteAuditPanel({
       });
       const payload = await response.json();
       readResponse(payload, response);
-      setAudits((current) => current.map((item) => (
-        item.id === selectedAuditId
-          ? {
-            ...item,
-            documents: (item.documents || []).filter((document: AuditDocument) => document.id !== id),
-          }
-          : item
-      )));
+      drafts.updateDocuments(selectedAuditId, documents.filter((document) => document.id !== id));
       await onDocumentsChanged?.();
       setMessage('Usunięto załącznik.');
     } catch (e) {
@@ -598,7 +612,9 @@ export default function ClientSiteAuditPanel({
   }
 
   async function deleteAudit() {
+    if (drafts.saving) return;
     if (!selectedAuditId || !window.confirm('Usunąć całą wizję lokalną? Załączniki pozostaną w dokumentach klienta.')) return;
+    const key = drafts.selected;
     setSaving(true);
     try {
       const response = await fetch('/api/site-audits', {
@@ -608,7 +624,7 @@ export default function ClientSiteAuditPanel({
       });
       const payload = await response.json();
       readResponse(payload, response);
-      setSelectedAuditId('');
+      drafts.remove(key);
       await loadAudits();
       setMessage('Usunięto audyt.');
     } catch (e) {
@@ -664,8 +680,16 @@ export default function ClientSiteAuditPanel({
     return <Alert status="warning" borderRadius="8px"><AlertIcon />Najpierw utwórz projekt klienta.</Alert>;
   }
 
-  if (loading && !audits.length) {
+  if (ownedDrafts !== drafts) {
+    return <Alert status="warning"><AlertIcon />{lockError || 'Otwieranie szkicu. Jeśli audyt jest otwarty w innej karcie, zamknij tam zakładkę audytu, aby kontynuować tutaj.'}</Alert>;
+  }
+
+  if (loading && !drafts.loaded) {
     return <Flex justify="center" py="70px"><Spinner /></Flex>;
+  }
+
+  if (!drafts.loaded || !currentUser?.id) {
+    return <Alert status="warning"><AlertIcon />{error || drafts.error || 'Nie udało się otworzyć audytu. Połącz się z internetem i spróbuj ponownie.'}<Button ml="3" onClick={loadAudits}>Ponów</Button></Alert>;
   }
 
   return (
@@ -680,30 +704,38 @@ export default function ClientSiteAuditPanel({
               </Badge>
             </Flex>
             <Text color={mutedColor}>{client.displayName} · {project.title}</Text>
+            <Text role="status" fontSize="sm" color={drafts.current?.blocked || drafts.storageError ? 'red.500' : mutedColor}>
+              {drafts.storageError || drafts.current?.blocked || (drafts.saving ? 'Zapisywanie…' : drafts.current?.dirty
+                ? !online ? 'Zapisano na urządzeniu · brak internetu' : drafts.error ? 'Zapisano na urządzeniu · ponawianie zapisu na serwerze' : 'Zapisano na urządzeniu · oczekuje na synchronizację'
+                : selectedAuditId ? 'Zapisano na serwerze' : 'Nowy szkic na urządzeniu')}
+            </Text>
+            {drafts.current?.blocked ? <Button size="sm" variant="outline" mt="2" isDisabled={saving || !online} onClick={async () => {
+              if (!window.confirm('Odrzucić lokalne zmiany tej wizji i wczytać wersję z serwera?')) return;
+              try { await drafts.discardLocal(); } catch (e) { setError(String(e)); }
+            }}>Wczytaj wersję z serwera</Button> : null}
           </Box>
           <FormControl maxW={{ xl: '410px' }}>
             <FormLabel>Wizja lokalna</FormLabel>
-            <Select value={selectedAuditId} onChange={(event) => selectAudit(event.target.value)}>
-              <option value="">Nowa wizja lokalna</option>
-              {audits.map((audit) => (
-                <option key={audit.id} value={audit.id}>
-                  {formatDate(audit.visitDate || audit.createdAt)} · {audit.status === 'COMPLETED' ? 'zakończona' : `${audit.progressPercent}%`}
+            <Select value={drafts.selected} isDisabled={manualSaving || Boolean(uploadingField)} onChange={(event) => selectAudit(event.target.value)}>
+              {drafts.drafts.map(({ key, record: audit, dirty }) => (
+                <option key={key} value={key}>
+                  {formatDate(audit.visitDate || audit.formData?.visit_date || audit.createdAt)} · {audit.status === 'COMPLETED' ? 'zakończona' : dirty ? 'szkic lokalny' : `${audit.progressPercent || 0}%`}
                 </option>
               ))}
             </Select>
           </FormControl>
           <Flex gap="8px" wrap="wrap">
             <Tooltip label="Odśwież dane audytów">
-              <IconButton aria-label="Odśwież dane audytów" icon={<MdRefresh />} variant="outline" onClick={() => loadAudits(selectedAuditId)} />
+              <IconButton aria-label="Odśwież dane audytów" icon={<MdRefresh />} variant="outline" isDisabled={saving} onClick={loadAudits} />
             </Tooltip>
-            <Button leftIcon={<MdAdd />} variant="outline" onClick={newAudit}>Nowa wizja</Button>
+            <Button leftIcon={<MdAdd />} variant="outline" isDisabled={manualSaving || Boolean(uploadingField)} onClick={newAudit}>Nowa wizja</Button>
             <Button leftIcon={<MdSave />} colorScheme="purple" onClick={saveDraft} isLoading={saving}>Zapisz</Button>
             {currentStep === 7 ? (
               <Button leftIcon={<MdCheck />} colorScheme="green" onClick={finishAudit} isLoading={saving}>Zakończ audyt</Button>
             ) : null}
             {selectedAuditId && currentUser?.systemRole === 'ADMIN' ? (
               <Tooltip label="Usuń audyt">
-                <IconButton aria-label="Usuń audyt" icon={<MdDeleteOutline />} colorScheme="red" variant="outline" onClick={deleteAudit} />
+                <IconButton aria-label="Usuń audyt" icon={<MdDeleteOutline />} colorScheme="red" variant="outline" isDisabled={saving || !online} onClick={deleteAudit} />
               </Tooltip>
             ) : null}
           </Flex>

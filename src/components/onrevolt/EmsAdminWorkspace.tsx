@@ -12,6 +12,7 @@ import {
   Heading,
   HStack,
   Icon,
+  Select,
   Spinner,
   Table,
   TableContainer,
@@ -24,7 +25,7 @@ import {
   VStack,
 } from '@chakra-ui/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MdCheckCircle, MdRefresh } from 'react-icons/md';
+import { MdCheckCircle, MdRefresh, MdSystemUpdateAlt } from 'react-icons/md';
 import {
   ADMIN_EMS_COMMAND_POLL_INTERVAL_MS,
   ADMIN_EMS_COMMAND_POLL_LIMIT,
@@ -76,11 +77,14 @@ type EmsStationRow = {
 type EmsListData = {
   stations: EmsStationRow[];
   latestFirmwareVersion: string | null;
+  solisFirmwareReleases: Array<{ version: string; size: number }>;
   firmwareCatalogError: string | null;
   latestEnergyMeterFirmwareVersion: string | null;
   energyMeterFirmwareCatalogError: string | null;
+  energyMeterFirmwareReleases: Array<{ version: string; size: number }>;
   latestPgeFirmwareVersion: string | null;
   pgeFirmwareCatalogError: string | null;
+  pgeFirmwareReleases: Array<{ version: string; size: number }>;
 };
 
 const sections: Array<{ id: AdminEmsGroup; title: string }> = [
@@ -136,17 +140,24 @@ export default function EmsAdminWorkspace() {
   const mountedRef = useRef(false);
   const pollAttemptsRef = useRef(new Map<string, number>());
   const busyStationsRef = useRef(new Set<string>());
+  const otaPendingRef = useRef(new Map<string, string>());
   const [latestFirmwareVersion, setLatestFirmwareVersion] = useState<string | null>(null);
+  const [solisFirmwareReleases, setSolisFirmwareReleases] = useState<EmsListData['solisFirmwareReleases']>([]);
   const [firmwareCatalogError, setFirmwareCatalogError] = useState<string | null>(null);
   const [latestEnergyMeterFirmwareVersion, setLatestEnergyMeterFirmwareVersion] = useState<string | null>(null);
   const [energyMeterFirmwareCatalogError, setEnergyMeterFirmwareCatalogError] = useState<string | null>(null);
   const [latestPgeFirmwareVersion, setLatestPgeFirmwareVersion] = useState<string | null>(null);
   const [pgeFirmwareCatalogError, setPgeFirmwareCatalogError] = useState<string | null>(null);
+  const [energyMeterFirmwareReleases, setEnergyMeterFirmwareReleases] = useState<EmsListData['energyMeterFirmwareReleases']>([]);
+  const [pgeFirmwareReleases, setPgeFirmwareReleases] = useState<EmsListData['pgeFirmwareReleases']>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [busyStations, setBusyStations] = useState<Set<string>>(new Set());
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+  const [selectedOtaVersions, setSelectedOtaVersions] = useState<Record<string, string>>({});
+  const [pendingOta, setPendingOta] = useState<Record<string, string>>({});
+  const [otaMessages, setOtaMessages] = useState<Record<string, string>>({});
 
   useEffect(() => {
     mountedRef.current = true;
@@ -177,6 +188,19 @@ export default function EmsAdminWorkspace() {
 
       const data = payload.data as EmsListData;
       stationsRef.current = data.stations;
+      const pendingOtaAfterRefresh = new Map(otaPendingRef.current);
+      for (const stationId of pendingOtaAfterRefresh.keys()) {
+        const station = data.stations.find((item) => item.station.trim() === stationId);
+        if (station?.otaEnabled === false) {
+          pendingOtaAfterRefresh.delete(stationId);
+        }
+      }
+      otaPendingRef.current = pendingOtaAfterRefresh;
+      const pendingOtaByStation: Record<string, string> = {};
+      pendingOtaAfterRefresh.forEach((version, stationId) => {
+        pendingOtaByStation[stationId] = version;
+      });
+      setPendingOta(pendingOtaByStation);
       const currentPollKeys = new Set(data.stations
         .filter((station) => station.rapidCommandState === 'PENDING')
         .map((station) => `${station.station}:${station.rapidCommandSequence}`));
@@ -185,11 +209,14 @@ export default function EmsAdminWorkspace() {
       }
       setStations(data.stations);
       setLatestFirmwareVersion(data.latestFirmwareVersion);
+      setSolisFirmwareReleases(data.solisFirmwareReleases ?? []);
       setFirmwareCatalogError(data.firmwareCatalogError);
       setLatestEnergyMeterFirmwareVersion(data.latestEnergyMeterFirmwareVersion ?? null);
       setEnergyMeterFirmwareCatalogError(data.energyMeterFirmwareCatalogError ?? null);
+      setEnergyMeterFirmwareReleases(data.energyMeterFirmwareReleases ?? []);
       setLatestPgeFirmwareVersion(data.latestPgeFirmwareVersion ?? null);
       setPgeFirmwareCatalogError(data.pgeFirmwareCatalogError ?? null);
+      setPgeFirmwareReleases(data.pgeFirmwareReleases ?? []);
       setLoadError('');
       return true;
     } catch (error) {
@@ -253,6 +280,33 @@ export default function EmsAdminWorkspace() {
     return grouped;
   }, [stations]);
 
+  const pendingFirmwareSignature = useMemo(() => Array.from(new Set([
+    ...Object.keys(pendingOta),
+    ...stations.filter((station) => station.otaEnabled
+      && ['SOLIS', 'ESP32', 'PGE'].includes(classifyAdminEmsGroup(station.type))).map((station) => station.station),
+  ])).sort().join('|'), [stations, pendingOta]);
+
+  useEffect(() => {
+    if (!pendingFirmwareSignature) return undefined;
+    let disposed = false;
+    let attempts = 0;
+    let timer: number | undefined;
+    const schedule = () => {
+      if (disposed || attempts >= 80) return;
+      timer = window.setTimeout(async () => {
+        if (disposed) return;
+        attempts += 1;
+        await loadStations(true);
+        schedule();
+      }, 30_000);
+    };
+    schedule();
+    return () => {
+      disposed = true;
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, [pendingFirmwareSignature, loadStations]);
+
   function setStationBusy(stationId: string, busy: boolean) {
     const current = busyStationsRef.current;
     if (busy && current.has(stationId)) return false;
@@ -304,32 +358,23 @@ export default function EmsAdminWorkspace() {
 
   function solisControl(row: EmsStationRow) {
     if (row.controlEnabled == null || row.shadowOnly == null) return <Text color="secondaryGray.600">Brak danych</Text>;
+    const controlActive = row.controlEnabled && !row.shadowOnly;
     const busy = busyStations.has(row.station);
     const unavailable = !row.projectId || !row.clientId;
     return (
       <VStack align="start" spacing="1">
         <Checkbox
           size="sm"
-          isChecked={row.controlEnabled}
+          isChecked={controlActive}
           isDisabled={busy || unavailable}
           onChange={(event) => void patchStation(
             row,
             'UPDATE_CONTROL_SETTINGS',
-            { controlEnabled: event.target.checked, shadowOnly: row.shadowOnly },
+            { controlEnabled: event.target.checked, shadowOnly: !event.target.checked },
             `${event.target.checked ? 'Włączyć' : 'Wyłączyć'} kontrolę falownika?`,
           )}
         >Kontrola włączona</Checkbox>
-        <Checkbox
-          size="sm"
-          isChecked={row.shadowOnly}
-          isDisabled={busy || unavailable}
-          onChange={(event) => void patchStation(
-            row,
-            'UPDATE_CONTROL_SETTINGS',
-            { controlEnabled: row.controlEnabled, shadowOnly: event.target.checked },
-            `${event.target.checked ? 'Włączyć tryb tylko podglądu' : 'Włączyć aktywne sterowanie'}?`,
-          )}
-        >Tylko podgląd</Checkbox>
+        {!controlActive ? <Text fontSize="xs" color="secondaryGray.600">(tylko podgląd)</Text> : null}
         {unavailable ? <Text fontSize="xs" color="secondaryGray.600">Brak projektu — sterowanie niedostępne</Text> : null}
       </VStack>
     );
@@ -421,6 +466,45 @@ export default function EmsAdminWorkspace() {
     );
   }
 
+  async function requestOta(row: EmsStationRow, targetVersion: string) {
+    const stationId = row.station.trim();
+    if (!targetVersion || otaPendingRef.current.has(stationId)) return;
+    const projectName = row.projectName || row.parentProjectName || 'Brak przypisanego projektu';
+    const confirmed = window.confirm(
+      `Włączyć OTA dla urządzenia?\n\nStacja: ${row.station}\nProjekt: ${projectName}\nWersja: ${targetVersion}\n\nPo aktualizacji urządzenie uruchomi się ponownie. Czy kontynuować?`,
+    );
+    if (!confirmed || !setStationBusy(stationId, true)) return;
+
+    setOtaMessages((current) => ({ ...current, [stationId]: '' }));
+    try {
+      const response = await fetch('/api/admin/ems/ota', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ station: row.station, targetVersion }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+      }
+
+      otaPendingRef.current.set(stationId, targetVersion);
+      setPendingOta((current) => ({ ...current, [stationId]: targetVersion }));
+      if (!await loadStations(true)) {
+        setOtaMessages((current) => ({
+          ...current,
+          [stationId]: 'Polecenie wysłano, ale nie udało się odświeżyć listy. Oczekiwanie na urządzenie.',
+        }));
+      }
+    } catch (error) {
+      setOtaMessages((current) => ({
+        ...current,
+        [stationId]: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setStationBusy(stationId, false);
+    }
+  }
+
   function renderTable(group: AdminEmsGroup, rows: EmsStationRow[]) {
     const isSolis = group === 'SOLIS';
     return (
@@ -465,6 +549,22 @@ export default function EmsAdminWorkspace() {
                 ? `${numberFormat.format(row.inverterRatedPowerW / 1000)} kW`
                 : 'Brak danych';
               const actionError = actionErrors[row.station];
+              const stationId = row.station.trim();
+              const otaReleases = group === 'SOLIS' ? solisFirmwareReleases
+                : group === 'ESP32' ? energyMeterFirmwareReleases
+                  : group === 'PGE' ? pgeFirmwareReleases : [];
+              const selectedOtaVersion = otaReleases.some((release) => release.version === selectedOtaVersions[stationId])
+                ? selectedOtaVersions[stationId]
+                : otaReleases.find((release) => release.version === latestVersion)?.version
+                  || otaReleases[0]?.version
+                  || '';
+              const pendingOtaVersion = pendingOta[stationId];
+              const otaDisabled = busyStations.has(stationId)
+                || Boolean(pendingOtaVersion)
+                || row.otaEnabled === true
+                || !row.firmwareVersion
+                || !otaReleases.length;
+              const otaMessage = otaMessages[stationId];
               const parentLabel = row.parentStation
                 ? `Podstacja ${row.station} · ${row.parentClientName || row.parentProjectName || `stacja nadrzędna ${row.parentStation}`}`
                 : null;
@@ -517,6 +617,42 @@ export default function EmsAdminWorkspace() {
                           {row.firmwareTargetVersion ? <Text fontSize="xs">Cel: {row.firmwareTargetVersion}</Text> : null}
                           {row.otaLastAt ? <Text fontSize="xs" color="secondaryGray.600">{dateLabel(row.otaLastAt)}</Text> : null}
                           {row.otaLastError ? <Text fontSize="xs" color="red.500">{row.otaLastError}</Text> : null}
+                          {group === 'SOLIS' || group === 'ESP32' || group === 'PGE' ? (
+                            <VStack align="stretch" spacing="1" mt="2" minW="170px">
+                              <Select
+                                size="sm"
+                                value={selectedOtaVersion}
+                                isDisabled={otaDisabled}
+                                aria-label={`Wersja OTA dla stacji ${row.station}`}
+                                onChange={(event) => setSelectedOtaVersions((current) => ({
+                                  ...current,
+                                  [stationId]: event.target.value,
+                                }))}
+                              >
+                                {otaReleases.map((release) => (
+                                  <option key={release.version} value={release.version}>{release.version}</option>
+                                ))}
+                              </Select>
+                              <Button
+                                size="sm"
+                                colorScheme="teal"
+                                leftIcon={<Icon as={MdSystemUpdateAlt} />}
+                                isLoading={busyStations.has(stationId)}
+                                isDisabled={otaDisabled || !selectedOtaVersion || selectedOtaVersion === row.firmwareVersion}
+                                onClick={() => void requestOta(row, selectedOtaVersion)}
+                              >Włącz OTA</Button>
+                              {pendingOtaVersion || row.otaEnabled ? (
+                                <Text fontSize="xs" color="orange.500" fontWeight="600">
+                                  Oczekiwanie na urządzenie: {pendingOtaVersion || row.firmwareTargetVersion}
+                                </Text>
+                              ) : null}
+                              {otaMessage ? (
+                                <Text fontSize="xs" color={pendingOtaVersion ? 'orange.500' : 'red.500'}>
+                                  {otaMessage}
+                                </Text>
+                              ) : null}
+                            </VStack>
+                          ) : null}
                         </VStack>
                       )}
                   </Td>

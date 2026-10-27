@@ -3,9 +3,9 @@ import { forbidden, jsonResponse, serverError } from 'lib/onrevolt/api';
 import { prisma } from 'lib/onrevolt/prisma';
 import { listReStationDeviceStatuses } from 'lib/onrevolt/re-stations';
 import { authorizeStaffRequest, isAdminUser } from 'lib/onrevolt/staff-server';
-import { deriveSolisRapidCommandState, isSolisStationType, listSolisFirmwareReleases } from 'lib/onrevolt/solis-ota';
+import { deriveSolisRapidCommandState, isSolisStationType, listSolisFirmwareReleases, type SolisFirmwareRelease } from 'lib/onrevolt/solis-ota';
 import { classifyAdminEmsGroup, deduplicateAdminEmsStations } from 'lib/onrevolt/admin-ems';
-import { listMeterFirmwareReleases } from 'lib/onrevolt/meter-firmware';
+import { listMeterFirmwareReleases, type MeterFirmwareRelease } from 'lib/onrevolt/meter-firmware';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -100,10 +100,12 @@ export async function GET(req: NextRequest) {
     });
 
     let latestFirmwareVersion: string | null = null;
+    let solisFirmwareReleases: SolisFirmwareRelease[] = [];
     let firmwareCatalogError: string | null = null;
     if (rows.some((row) => isSolisStationType(row.type))) {
       try {
-        latestFirmwareVersion = (await listSolisFirmwareReleases())[0]?.version || null;
+        solisFirmwareReleases = await listSolisFirmwareReleases();
+        latestFirmwareVersion = solisFirmwareReleases[0]?.version || null;
       } catch (error) {
         firmwareCatalogError = error instanceof Error ? error.message : String(error);
         console.error('Nie udało się pobrać katalogu firmware Solis dla panelu EMS', error);
@@ -113,17 +115,17 @@ export async function GET(req: NextRequest) {
     const groups = new Set(rows.map((row) => classifyAdminEmsGroup(row.type)));
     const [energyMeterCatalog, pgeCatalog] = await Promise.all([
       groups.has('ESP32') ? listMeterFirmwareReleases('ENERGYMETER')
-        .then((releases) => ({ version: releases[0].version, error: null }))
+        .then((releases) => ({ version: releases[0].version, releases, error: null }))
         .catch((error: unknown) => {
           console.error('Nie udało się pobrać katalogu firmware EnergyMeter', error);
-          return { version: null, error: 'Katalog firmware EnergyMeter jest niedostępny lub niekompletny.' };
-        }) : Promise.resolve({ version: null, error: null }),
+          return { version: null, releases: [] as MeterFirmwareRelease[], error: 'Katalog firmware EnergyMeter jest niedostępny lub niekompletny.' };
+        }) : Promise.resolve({ version: null, releases: [] as MeterFirmwareRelease[], error: null }),
       groups.has('PGE') ? listMeterFirmwareReleases('PGE')
-        .then((releases) => ({ version: releases[0].version, error: null }))
+        .then((releases) => ({ version: releases[0].version, releases, error: null }))
         .catch((error: unknown) => {
           console.error('Nie udało się pobrać katalogu firmware PGE', error);
-          return { version: null, error: 'Katalog firmware PGE jest niedostępny lub niekompletny.' };
-        }) : Promise.resolve({ version: null, error: null }),
+          return { version: null, releases: [] as MeterFirmwareRelease[], error: 'Katalog firmware PGE jest niedostępny lub niekompletny.' };
+        }) : Promise.resolve({ version: null, releases: [] as MeterFirmwareRelease[], error: null }),
     ]);
 
     return jsonResponse({
@@ -131,11 +133,14 @@ export async function GET(req: NextRequest) {
       data: {
         stations: rows,
         latestFirmwareVersion,
+        solisFirmwareReleases,
         firmwareCatalogError,
         latestEnergyMeterFirmwareVersion: energyMeterCatalog.version,
         energyMeterFirmwareCatalogError: energyMeterCatalog.error,
+        energyMeterFirmwareReleases: energyMeterCatalog.releases,
         latestPgeFirmwareVersion: pgeCatalog.version,
         pgeFirmwareCatalogError: pgeCatalog.error,
+        pgeFirmwareReleases: pgeCatalog.releases,
       },
     });
   } catch (error) {

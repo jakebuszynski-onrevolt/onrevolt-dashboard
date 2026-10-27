@@ -36,6 +36,10 @@ test('katalog odczytuje osobne endpointy rodzin i sortuje numerycznie', async ()
   };
   assert.deepEqual((await listMeterFirmwareReleases('ENERGYMETER', fakeFetch)).map((release) => release.version), ['2026.09.26.10', '2026.09.26.2']);
   assert.deepEqual((await listMeterFirmwareReleases('PGE', fakeFetch)).map((release) => release.version), ['PGE-2026.09.26.4']);
+  const selected = (await listMeterFirmwareReleases('ENERGYMETER', fakeFetch))[0];
+  assert.equal(selected.url, manifest(selected.version).url);
+  assert.equal(selected.sha256, manifest(selected.version).sha256);
+  assert.equal(selected.size, manifest(selected.version).size);
 });
 
 test('pusty, uszkodzony lub niewłaściwy katalog nie sugeruje wersji do aktualizacji', async () => {
