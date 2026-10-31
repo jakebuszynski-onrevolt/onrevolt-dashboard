@@ -5,6 +5,9 @@ import {
   mergeConfigurationLineItems,
   normalizeOfferConfigurationIds,
   offerDeleteBlockReason,
+  OfferRecalculationError,
+  recalculateOfferFromCurrentData,
+  selectOfferInvoiceForAnalysisPeriod,
 } from './offers';
 
 test('oferta zachowuje konfigurację główną i usuwa powtórzenia', () => {
@@ -91,4 +94,27 @@ test('przeliczenie wskazuje niekompletną konfigurację zamiast używać starej 
     configurations: [{ name: 'PV bez mocy', kind: 'PV_DACH_SKOSNY', targetPowerKw: null }],
     investmentGross: 20000,
   }), /moc docelowa PV/);
+});
+
+test('cykl rozliczeniowy oferty pochodzi wyłącznie z faktur w całości objętych okresem analizy', () => {
+  const invoices = [
+    { id: 'inside', billingCycleMonths: 2, billingPeriodFrom: '2025-10-01', billingPeriodTo: '2025-11-30' },
+    { id: 'cross-start', billingCycleMonths: 6, billingPeriodFrom: '2025-09-15', billingPeriodTo: '2025-10-15' },
+    { id: 'cross-end', billingCycleMonths: 3, billingPeriodFrom: '2026-09-30', billingPeriodTo: '2026-10-15' },
+    { id: 'undated', billingCycleMonths: 12, billingPeriodFrom: null, billingPeriodTo: null },
+  ];
+  const period = { startMonth: '2025-10', endDate: '2026-09-30' };
+
+  assert.equal(selectOfferInvoiceForAnalysisPeriod(invoices, period)?.id, 'inside');
+  assert.equal(selectOfferInvoiceForAnalysisPeriod(invoices.slice(1), period), null);
+});
+
+test('zaakceptowana oferta nie przechodzi do odczytu źródeł okresu ani przeliczenia', async () => {
+  let invoiceReads = 0;
+  const prisma: any = {
+    offer: { findUnique: async () => ({ status: 'ACCEPTED' }) },
+    document: { findMany: async () => { invoiceReads += 1; return []; } },
+  };
+  await assert.rejects(() => recalculateOfferFromCurrentData(prisma, 'accepted-offer'), OfferRecalculationError);
+  assert.equal(invoiceReads, 0);
 });

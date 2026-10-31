@@ -3,10 +3,16 @@ import { prisma } from './prisma';
 import { readReConsumptionProfile, type ReConsumptionProfile } from './re-consumption-api';
 import { rePrisma, resolveReStation } from './re-stations';
 import { readReConsumptionDashboard } from './re-consumption-dashboard';
+import { readProjectAnalysisPeriod } from './project-analysis-period-server';
+import type { ProjectAnalysisPeriod } from './project-analysis-period';
+import { projectPvSettingsFromSources } from './project-pv-settings';
+import { selectReConsumptionHistory } from './re-consumption-history';
 
 type Payload = Record<string, any>;
 type Series = Array<[string, number, number?]>;
+type HourlySourceYears = { imports: Array<number | null>; exports: Array<number | null> };
 type ActualDay = { isComplete: boolean; hours: Array<{ hasUse: boolean; use: number }> };
+type ProjectPvProfileSource = { powerKw: number | null; latitude: number | null; longitude: number | null };
 const engine = require('../../../public/shared/re-consumption-engine.js') as {
   buildActualMap(payload: Payload): Map<string, ActualDay>;
   buildForecastModel(payload: Payload): { days: number; monthlyHours: number[][] } | null;
@@ -27,10 +33,10 @@ function civilDate(value: unknown): string {
   return text;
 }
 
-function settings(payload: Payload, profile: ReConsumptionProfile) {
+function settings(payload: Payload, profile: ReConsumptionProfile, startOverride?: string, projectPv?: ProjectPvProfileSource | null) {
   const account = payload.account || {};
   const raw = payload.rawEnergy || payload.energy || {};
-  const start = civilDate(account.dateStart || account.historyStart || payload.history?.startDate
+  const start = civilDate(startOverride || account.dateStart || account.historyStart || payload.history?.startDate
     || payload.history?.historyStart || raw.dateStart || raw.historyStart);
   const manualPv = finite(account.pvSizeKwp, account.pvKwp, account.pvPowerKwp);
   let pv = manualPv ?? finite(raw.installedPowerKw, raw.installationPowerKw, raw.mocInstalacjiKw);
@@ -50,9 +56,9 @@ function settings(payload: Payload, profile: ReConsumptionProfile) {
     if (totals.length) annual = totals.reduce((a: number, b: number) => a + b, 0) / totals.length * 365;
   }
   return { start, year: Number(start.slice(0, 4)), annualKwh: Math.round(Math.max(0, annual ?? 0)),
-    kWp: Math.round((manualPv != null ? manualPv : Math.ceil(pv || 0)) * 1000) / 1000,
-    lat: finite(account.lat, account.latitude, raw.lat, raw.latitude),
-    lon: finite(account.lon, account.lng, account.longitude, raw.lon, raw.lng, raw.longitude) };
+    kWp: Math.round((projectPv ? projectPv.powerKw ?? 0 : manualPv != null ? manualPv : Math.ceil(pv || 0)) * 1000) / 1000,
+    lat: projectPv ? projectPv.latitude : finite(account.lat, account.latitude, raw.lat, raw.latitude),
+    lon: projectPv ? projectPv.longitude : finite(account.lon, account.lng, account.longitude, raw.lon, raw.lng, raw.longitude) };
 }
 
 function hourlyPatterns(rows: Series) {
@@ -78,13 +84,19 @@ function hourlyPatterns(rows: Series) {
 /** Aggregates the same resolved days as RE, retaining effective import/export labels. */
 export function buildReEnergyUsageProfile(input: {
   profile: ReConsumptionProfile; dashboard: Payload; hourly?: Series; pv?: Series; linked?: boolean;
+  analysisPeriod?: ProjectAnalysisPeriod; hourlySourceYears?: HourlySourceYears;
+  projectPv?: ProjectPvProfileSource | null;
 }): EnergyUsageProfile {
-  const { profile, dashboard, hourly = [], pv = [], linked = true } = input;
-  const config = settings(dashboard, profile);
+  const { profile, dashboard, hourly = [], pv = [], linked = true, analysisPeriod, hourlySourceYears, projectPv } = input;
+  const explicitStart = analysisPeriod ? `${analysisPeriod.startMonth}-01` : undefined;
+  const config = settings(dashboard, profile, explicitStart, projectPv);
   const payload = { ...dashboard, rawEnergy: dashboard.rawEnergy || dashboard.energy || {} };
   for (const field of ['usageData', 'pvData', 'storageData']) {
     if (Array.isArray(payload[field]?.records)) payload[field] = { ...payload[field],
-      records: payload[field].records.filter((record: Payload) => String(record.date).slice(0, 10) >= config.start) };
+      records: payload[field].records.filter((record: Payload) => {
+        const date = String(record.date).slice(0, 10);
+        return date >= config.start && (!analysisPeriod || date <= analysisPeriod.endDate);
+      }) };
   }
   if (payload.rawEnergy.datetime && Intl.DateTimeFormat().resolvedOptions().timeZone !== 'Europe/Warsaw') {
     throw new Error('Silnik pomiarów RE wymaga TZ=Europe/Warsaw w procesie CRM');
@@ -117,30 +129,113 @@ export function buildReEnergyUsageProfile(input: {
       return radiation * config.kWp * 1.05 / 1000;
     });
   }
-  const result = engine.buildProfile({ year: config.year, annualKwh: config.annualKwh,
-    monthlyKwh: profile.months, sources, exportSources, getDayInputs(dayKey: string) {
-      const date = new Date(dayKey), month = date.getUTCMonth(), actualDay = actual.get(dayKey);
-      const selected = hourlyDays.get(dayKey) || patterns.get(dayKey.slice(5));
-      const complete = actualDay?.isComplete && actualDay.hours.every(hour => hour.hasUse);
-      if (!complete && sources[month] === 'xlsx' && !selected) throw new Error(`Brak godzinowego profilu XLSX: ${dayKey}`);
-      return { hourlyProfile: selected?.imports,
-        exportHourlyKwh: selected?.exports, hasExport: exportSources[month] === 'xlsx',
-        pvHourlyKwh: !complete && sources[month] !== 'standard' && selected && exportSources[month] === 'xlsx' ? pvHours(date) : null,
-        learnedHours: forecast?.monthlyHours[month], actualDay };
-    } });
-  const months = result.months.map((item, month) => ({ ...item,
-      key: `${config.year}-${String(month + 1).padStart(2, '0')}`, label: labels[month],
-      sharePercent: result.annualKwh ? item.totalKwh / result.annualKwh * 100 : 0,
-      sourceFiles: sources[month] === 'xlsx' || exportSources[month] === 'xlsx' ? 1 : 0,
-      hasData: linked ? item.hasData : config.annualKwh > 0 }));
-  const importOnly = months.filter((item, month) => config.kWp > 0 && sources[month] === 'xlsx' && exportSources[month] !== 'xlsx'
+  const requestedKeys = analysisPeriod ? new Set(analysisPeriod.periodKeys) : null;
+  const years = analysisPeriod
+    ? Array.from(new Set(analysisPeriod.periodKeys.map(periodKey => Number(periodKey.slice(0, 4)))))
+    : [config.year];
+  const projected: Array<{ item: EnergyUsageMonth; baseImportSource: string; baseExportSource: string;
+    sourceFiles: number }> = [];
+  const patternWarnings: string[] = [];
+  for (const year of years) {
+    const yearSources = [...sources];
+    const yearExportSources = [...exportSources];
+    const requestedMonths = analysisPeriod ? analysisPeriod.periodKeys
+      .filter(periodKey => Number(periodKey.slice(0, 4)) === year)
+      .map(periodKey => Number(periodKey.slice(5, 7))) : [];
+    if (analysisPeriod) {
+      const selectedMonthIndexes = new Set(requestedMonths.map(month => month - 1));
+      for (let index = 0; index < 12; index++) {
+        if (!selectedMonthIndexes.has(index)) {
+          yearSources[index] = 'standard';
+          yearExportSources[index] = 'standard';
+        }
+      }
+      for (const monthNumber of requestedMonths) {
+        const index = monthNumber - 1;
+        if (sources[index] === 'xlsx' && hourlySourceYears?.imports[index] !== year) {
+          yearSources[index] = 'forecast';
+          patternWarnings.push(hourlySourceYears?.imports[index] == null
+            ? `Wzorzec XLSX dla ${labels[index]} nie ma potwierdzonego roku źródłowego; pokazano go jako prognozę.`
+            : `Wzorzec XLSX dla ${labels[index]} pochodzi z ${hourlySourceYears.imports[index]}; pokazano go jako prognozę dla ${year}.`);
+        }
+        if (exportSources[index] === 'xlsx' && hourlySourceYears?.exports[index] !== year) {
+          yearExportSources[index] = 'forecast';
+          patternWarnings.push(hourlySourceYears?.exports[index] == null
+            ? `Wzorzec energii oddanej XLSX dla ${labels[index]} nie ma potwierdzonego roku źródłowego; pokazano go jako prognozę.`
+            : `Wzorzec energii oddanej XLSX dla ${labels[index]} pochodzi z ${hourlySourceYears.exports[index]}; pokazano go jako prognozę dla ${year}.`);
+        }
+      }
+    }
+    const result = engine.buildProfile({ year, annualKwh: config.annualKwh,
+      monthlyKwh: profile.months, sources: yearSources, exportSources: yearExportSources, getDayInputs(dayKey: string) {
+        const date = new Date(dayKey), month = date.getUTCMonth(), actualDay = actual.get(dayKey);
+        const selected = hourlyDays.get(dayKey) || patterns.get(dayKey.slice(5));
+        const complete = actualDay?.isComplete && actualDay.hours.every(hour => hour.hasUse);
+        const selectedMonth = !analysisPeriod || requestedKeys!.has(`${year}-${String(month + 1).padStart(2, '0')}`);
+        if (selectedMonth && !complete && (sources[month] === 'xlsx' || exportSources[month] === 'xlsx') && !selected) {
+          throw new Error(`Brak godzinowego profilu XLSX: ${dayKey}`);
+        }
+        const hasExportPattern = selectedMonth && exportSources[month] === 'xlsx' && !!selected;
+        return { hourlyProfile: selected?.imports,
+          exportHourlyKwh: selected?.exports, hasExport: hasExportPattern,
+          pvHourlyKwh: selectedMonth && !complete && sources[month] !== 'standard' && selected && hasExportPattern ? pvHours(date) : null,
+          learnedHours: forecast?.monthlyHours[month], actualDay };
+      } });
+    for (const item of result.months) {
+      const periodKey = `${year}-${String(item.month).padStart(2, '0')}`;
+      if (requestedKeys && !requestedKeys.has(periodKey)) continue;
+      projected.push({ item, baseImportSource: sources[item.month - 1], baseExportSource: exportSources[item.month - 1],
+        sourceFiles: yearSources[item.month - 1] === 'xlsx' || yearExportSources[item.month - 1] === 'xlsx' ? 1 : 0 });
+    }
+  }
+  const projectedAnnualKwh = projected.reduce((sum, { item }) => sum + item.totalKwh, 0);
+  const months = projected.map(({ item, baseExportSource, sourceFiles }) => ({ ...item,
+      key: `${item.year}-${String(item.month).padStart(2, '0')}`, label: labels[item.month - 1],
+      sharePercent: projectedAnnualKwh ? item.totalKwh / projectedAnnualKwh * 100 : 0,
+      ...(analysisPeriod && item.importSource === 'forecast' ? { exportSource: baseExportSource === 'xlsx'
+        ? (hourlySourceYears?.exports[item.month - 1] !== item.year ? 'forecast' : 'xlsx')
+        : item.exportSource } : {}),
+      sourceFiles, hasData: linked ? item.hasData : config.annualKwh > 0 }));
+  const importOnly = months.filter((item, index) => config.kWp > 0 && projected[index].baseImportSource === 'xlsx'
+    && projected[index].baseExportSource !== 'xlsx'
     && !Array.from({ length: item.weekdayDays + item.weekendDays }, (_, day) => {
       const measured = actual.get(`${item.key}-${String(day + 1).padStart(2, '0')}`);
       return measured?.isComplete && measured.hours.every(hour => hour.hasUse);
     }).every(Boolean));
-  const warnings = importOnly.length ? [`Brak plików energii oddanej: ${importOnly.map(month => month.label).join(', ')}; te miesiące obejmują pobór z sieci, nie pełne zużycie budynku`] : [];
-  return { annualKwh: result.annualKwh, months, warnings, ...(linked ? { source: 'RE' as const, station: profile.station } : {}),
-    measuredDays: actual.size, pvIncluded: needsPv };
+  const warnings = [...new Set(patternWarnings)];
+  if (importOnly.length) warnings.push(`Brak plików energii oddanej: ${importOnly.map(month => analysisPeriod
+    ? `${month.label} ${month.year}` : month.label).join(', ')}; te miesiące obejmują pobór z sieci, nie pełne zużycie budynku`);
+  if (analysisPeriod && !linked) warnings.push('Brak powiązanej stacji RE; profil oparto na rocznym zużyciu deklarowanym, nie na pomiarach.');
+  return { annualKwh: projectedAnnualKwh, months, warnings, ...(linked ? { source: 'RE' as const, station: profile.station } : {}),
+    measuredDays: actual.size, pvIncluded: needsPv,
+    ...(analysisPeriod ? { analysisStartMonth: analysisPeriod.startMonth } : {}) };
+}
+
+function hourlySourceYears(rows: Payload[]): HourlySourceYears {
+  const result: HourlySourceYears = { imports: Array(12).fill(null), exports: Array(12).fill(null) };
+  for (let month = 1; month <= 12; month++) {
+    const monthRows = rows.filter(row => Number(row.month_no) === month);
+    for (const [sourceKey, yearKey, target] of [
+      ['source', 'source_year', result.imports],
+      ['export_source', 'export_source_year', result.exports],
+    ] as const) {
+      const matching = monthRows.filter(row => row[sourceKey] === 'xlsx');
+      const years = new Set(matching.map(row => {
+        const value = Number(row[yearKey]);
+        return Number.isInteger(value) && value >= 1900 && value <= 9999 ? value : null;
+      }));
+      if (matching.length && matching.length === monthRows.length && years.size === 1 && !years.has(null)) {
+        target[month - 1] = [...years][0] as number;
+      }
+    }
+  }
+  return result;
+}
+
+function dayAfter(date: string): string {
+  const next = new Date(`${civilDate(date)}T00:00:00.000Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return key(next);
 }
 
 async function readSeries(api: 'pv', params: Record<string, string>): Promise<Series> {
@@ -157,20 +252,41 @@ async function readSeries(api: 'pv', params: Record<string, string>): Promise<Se
 export async function readProjectReConsumptionProfile(projectId: string, options: { clientId?: string } = {}): Promise<EnergyUsageProfile> {
   if (!projectId?.trim()) throw new Error('Brak projectId dla profilu RE');
   const project = await prisma.project.findFirst({ where: { id: projectId, ...(options.clientId ? { clientId: options.clientId } : {}) },
-    select: { dashboardStation: true, dashboardStationNumber: true } });
+    select: {
+      dashboardStation: true,
+      dashboardStationNumber: true,
+      offerWorkspace: { select: { input: true } },
+      energyAudits: { select: { existingPvKw: true, roofTiltDeg: true, roofOrientation: true }, take: 1 },
+      investmentSite: { select: { latitude: true, longitude: true } },
+    } });
   if (!project) throw new Error('Nie znaleziono projektu tego klienta');
+  const energyAudit = project.energyAudits?.[0] || null;
+  const hasProjectPvSettings = Boolean(project.offerWorkspace) || energyAudit?.existingPvKw != null;
+  const projectPvSettings = hasProjectPvSettings ? projectPvSettingsFromSources({
+    draftExists: Boolean(project.offerWorkspace),
+    draftInput: project.offerWorkspace?.input,
+    energyAudit,
+  }) : null;
+  const projectPv: ProjectPvProfileSource | null = projectPvSettings ? {
+    powerKw: projectPvSettings.powerKw,
+    latitude: finite(project.investmentSite?.latitude),
+    longitude: finite(project.investmentSite?.longitude),
+  } : null;
+  const analysis = await readProjectAnalysisPeriod(projectId);
+  if (!analysis) throw new Error('Nie znaleziono okresu analizy projektu');
+  const analysisPeriod = analysis.period;
   const ref = project.dashboardStation?.trim() || project.dashboardStationNumber?.trim();
   if (!ref) {
     const audit = await prisma.energyAudit.findUnique({ where: { projectId }, select: { annualConsumptionKwh: true } });
     return buildReEnergyUsageProfile({ linked: false, profile: { station: '', months: null, sources: null, exportSources: null,
       annualUsageKwh: Number(audit?.annualConsumptionKwh || 0), hourlyProfile: { exists: false, rows: 0 } },
-      dashboard: { account: { dateStart: `${new Intl.DateTimeFormat('en', { year: 'numeric', timeZone: 'Europe/Warsaw' }).format(new Date())}-01-01` } } });
+      dashboard: { account: { dateStart: `${analysisPeriod.startMonth}-01` } }, analysisPeriod, projectPv });
   }
   const station = await resolveReStation(ref);
   if (!station || (project.dashboardStationNumber && project.dashboardStationNumber.trim() !== station.station)) {
     throw new Error('Nieprawidłowe powiązanie stacji RE w projekcie');
   }
-  const profile = await readReConsumptionProfile(station.station);
+  const storedProfile = await readReConsumptionProfile(station.station);
   const db = rePrisma();
   const metadata = await db.$queryRawUnsafe<Payload[]>(
     "SELECT DATE_FORMAT(dateStart, '%Y-%m-%d') AS dateStart, annual_usage_kwh AS annualUsageKwh, pv_size_kwp AS pvSizeKwp, lat, lon FROM EnergyMeter_users WHERE station=? LIMIT 1", station.station);
@@ -178,22 +294,28 @@ export async function readProjectReConsumptionProfile(projectId: string, options
   const measured = await db.$queryRawUnsafe<Payload[]>(
     'SELECT 1 FROM EnergyMeter USE INDEX (station) WHERE station=? LIMIT 1', station.station);
   // An indexed existence check proves profile-only; CLI failures never select it.
-  const dashboard = measured.length ? await readReConsumptionDashboard(station.station, metadata[0].dateStart)
+  const dashboard = measured.length ? await readReConsumptionDashboard(station.station,
+    `${analysisPeriod.startMonth}-01`, undefined, new Date(`${analysisPeriod.endDate}T12:00:00.000Z`))
     : { account: metadata[0], energy: {} };
-  const config = settings(dashboard, profile);
-  const end = new Date(config.start);
-  end.setUTCFullYear(end.getUTCFullYear() + 1);
-  const range = { from: config.start, to: key(end) };
-  const rows = profile.hourlyProfile.exists ? await db.$queryRawUnsafe<Payload[]>(
-    'SELECT month_no, day_no, hour_no, kwh, export_kwh FROM EnergyMeter_users_usage_hourly WHERE station=? ORDER BY month_no, day_no, hour_no', station.station) : [];
+  const range = { from: `${analysisPeriod.startMonth}-01`, to: dayAfter(analysisPeriod.endDate) };
+  const legacyRows = storedProfile.hourlyProfile.exists ? await db.$queryRawUnsafe<Payload[]>(
+    'SELECT month_no, day_no, hour_no, kwh, export_kwh, source, source_year, export_source, export_source_year FROM EnergyMeter_users_usage_hourly WHERE station=? ORDER BY month_no, day_no, hour_no',
+    station.station) : [];
+  const historyRows = await db.$queryRawUnsafe<Payload[]>(
+    'SELECT year_no, month_no, day_no, hour_no, direction, kwh FROM EnergyMeter_users_usage_history WHERE station=? AND year_no BETWEEN ? AND ? ORDER BY year_no, month_no, day_no, hour_no, direction',
+    station.station, Number(analysisPeriod.startMonth.slice(0, 4)), Number(analysisPeriod.endDate.slice(0, 4)));
+  const { profile, rows } = selectReConsumptionHistory(storedProfile, legacyRows, historyRows, analysisPeriod.periodKeys);
+  const config = settings(dashboard, profile, `${analysisPeriod.startMonth}-01`, projectPv);
   // A leap year preserves all month/day patterns, including February 29.
   const hourly: Series = rows.map(row => [`2024-${String(row.month_no).padStart(2, '0')}-${String(row.day_no).padStart(2, '0')} ${String(row.hour_no).padStart(2, '0')}:00:00`,
     Number(row.kwh), Number(row.export_kwh)]);
   let pv: Series = [];
   if (profile.exportSources?.includes('xlsx')) {
     if (!(config.kWp > 0)) throw new Error('Brak mocy PV do przeliczenia profilu OSD z energią oddaną');
-    if (config.lat == null || config.lon == null) throw new Error('Brak lokalizacji do pobrania danych PV');
+    if (config.lat == null || config.lon == null) throw new Error(projectPv
+      ? 'Brak lokalizacji projektu do pobrania danych PV'
+      : 'Brak lokalizacji do pobrania danych PV');
     pv = await readSeries('pv', { lat: String(config.lat), lon: String(config.lon), ...range });
   }
-  return buildReEnergyUsageProfile({ profile, dashboard, hourly, pv });
+  return buildReEnergyUsageProfile({ profile, dashboard, hourly, pv, analysisPeriod, hourlySourceYears: hourlySourceYears(rows), projectPv });
 }

@@ -4,6 +4,8 @@ import { encryptCredential } from 'lib/onrevolt/credentials';
 import { isEnergyOperator } from 'lib/onrevolt/energy-tariffs';
 import { prisma } from 'lib/onrevolt/prisma';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
+import { offerWorkspaceProjectWhere } from 'lib/onrevolt/offer-workspace-server';
+import { readAnalysisAccountMeasurements } from 'lib/onrevolt/project-analysis-measurements';
 
 function validateOperator(value: unknown) {
   if (value == null || value === '') return 'ENEA';
@@ -54,14 +56,29 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const clientId = url.searchParams.get('clientId');
     if (!clientId) return badRequest('Brak clientId');
+    const projectId = url.searchParams.get('projectId');
+    if (projectId) {
+      const project = await prisma.project.findFirst({
+        where: { ...offerWorkspaceProjectWhere(projectId, access.user), clientId }, select: { id: true },
+      });
+      if (!project) return notFound('Nie znaleziono projektu klienta');
+    }
 
     const accounts = await prisma.energyPortalAccount.findMany({
-      where: { clientId },
+      where: { clientId, ...(projectId ? { projectId } : {}) },
       select: accountSelect(),
       orderBy: { updatedAt: 'desc' },
     });
+    let analysisStartMonth: string | undefined;
+    for (const account of accounts) {
+      if (account.projectId) {
+        const selected = await readAnalysisAccountMeasurements(account.id, account.projectId);
+        account.measurementFiles = selected.files;
+        if (projectId) analysisStartMonth = selected.period.startMonth;
+      }
+    }
 
-    return jsonResponse({ ok: true, data: accounts.map(publicAccount) });
+    return jsonResponse({ ok: true, data: accounts.map(publicAccount), analysisStartMonth });
   } catch (error) {
     return serverError('Nie udało się pobrać kont operatorów', error);
   }

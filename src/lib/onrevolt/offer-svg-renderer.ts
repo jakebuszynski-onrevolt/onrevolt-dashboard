@@ -197,7 +197,7 @@ function setText(document: XmlDocument, field: SvgTextField) {
   });
 }
 
-function injectFonts(document: XmlDocument) {
+export function injectFonts(document: XmlDocument) {
   const svg = document.documentElement;
   let defs = Array.from(svg.getElementsByTagName('defs'))[0];
   if (!defs) {

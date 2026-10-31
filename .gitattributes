@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Pinned source assets are verified by byte-level SHA-256 across platforms.
+/assets/offer-templates/REFORM_B2C/2026_10_V3/*.svg -text
+/integrations/re/offer-runtime/prosumer-engine.js -text

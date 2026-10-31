@@ -10,6 +10,13 @@ const defaultUrl = 'https://my.onrevolt.com/re/setup_func.php';
 const xlsxMimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 export type ReConsumptionSource = 'standard' | 'manual' | 'xlsx';
+export type ReConsumptionMeasurementHistoryEntry = {
+  year: number;
+  month: number;
+  direction: 'import' | 'export';
+  rows: number;
+  totalKwh: number;
+};
 export type ReConsumptionProfile = {
   station: string;
   months: number[] | null;
@@ -17,11 +24,13 @@ export type ReConsumptionProfile = {
   exportSources: ReConsumptionSource[] | null;
   annualUsageKwh: number | null;
   hourlyProfile: { exists: boolean; rows: number; firstUpdate?: string | null; lastUpdate?: string | null };
+  measurementHistory?: ReConsumptionMeasurementHistoryEntry[];
 };
 export type ReConsumptionApiOptions = {
   fetch?: typeof fetch;
   baseUrl?: string;
   now?: Date;
+  periodKeys?: readonly string[];
 };
 export type ReConsumptionPreflight = {
   status: 'ready' | 'existing';
@@ -41,22 +50,24 @@ export function reConsumptionPeriod(workbook: Pick<EnergyMeasurementWorkbookInfo
   return `${workbook.periodYear}-${String(workbook.periodMonth).padStart(2, '0')}`;
 }
 
-export function validateReConsumptionPeriod(workbook: EnergyMeasurementWorkbookInfo, now = new Date()) {
+export function validateReConsumptionPeriod(workbook: EnergyMeasurementWorkbookInfo, now = new Date(), periodKeys?: readonly string[]) {
   if (!['ACTIVE_IMPORT', 'ACTIVE_EXPORT'].includes(workbook.kind)
     || !Number.isInteger(workbook.periodYear) || !Number.isInteger(workbook.periodMonth)
     || !Number.isFinite(workbook.totalKwh) || workbook.totalKwh < 0) {
     throw new Error('Nieprawidłowe metadane raportu XLSX dla RE');
   }
   const period = reConsumptionPeriod(workbook);
-  if (!closedMeasurementPeriodKeys(12, now).has(period)) {
-    throw new Error(`Miesiąc ${period} jest poza zakresem ostatnich 12 zamkniętych miesięcy`);
+  if (!(periodKeys ? new Set(periodKeys) : closedMeasurementPeriodKeys(12, now)).has(period)) {
+    throw new Error(periodKeys
+      ? `Miesiąc ${period} jest poza wybranym okresem analizy`
+      : `Miesiąc ${period} jest poza zakresem ostatnich 12 zamkniętych miesięcy`);
   }
 }
 
-export function inspectReConsumptionWorkbook(bytes: Buffer, now = new Date()) {
+export function inspectReConsumptionWorkbook(bytes: Buffer, now = new Date(), periodKeys?: readonly string[]) {
   if (!bytes.length || bytes.length > 25 * 1024 * 1024) throw new Error('Nieprawidłowy rozmiar XLSX (limit 25 MB)');
   const info = inspectEnergyMeasurementWorkbook(bytes);
-  validateReConsumptionPeriod(info, now);
+  validateReConsumptionPeriod(info, now, periodKeys);
   // RE reads only the first sheet and can write both channels in one request.
   const workbook = XLSX.read(bytes, { type: 'buffer' });
   if (workbook.SheetNames[0] !== info.sheetName) throw new Error('Raport RE musi znajdować się w pierwszym arkuszu XLSX');
@@ -85,6 +96,14 @@ function parseProfile(data: Record<string, unknown>): ReConsumptionProfile {
   const sourcesValid = (value: unknown) => value === null || (
     Array.isArray(value) && value.length === 12 && value.every((source) => ['standard', 'manual', 'xlsx'].includes(source))
   );
+  const historyValid = Array.isArray(data.measurementHistory) && data.measurementHistory.every((entry) => object(entry)
+    && typeof entry.year === 'number' && Number.isInteger(entry.year) && entry.year >= 1900 && entry.year <= 9999
+    && typeof entry.month === 'number' && Number.isInteger(entry.month) && entry.month >= 1 && entry.month <= 12
+    && (entry.direction === 'import' || entry.direction === 'export')
+    && typeof entry.rows === 'number' && Number.isInteger(entry.rows) && entry.rows > 0
+    && validNumber(entry.totalKwh))
+    && new Set((data.measurementHistory as unknown[]).map((entry) => object(entry)
+      ? `${entry.year}-${entry.month}-${entry.direction}` : '')).size === (data.measurementHistory as unknown[]).length;
   if (typeof data.station !== 'string' || !/^\d+$/.test(data.station)
     || !(data.months === null || (Array.isArray(data.months) && data.months.length === 12 && data.months.every(validNumber)))
     || !sourcesValid(data.sources) || !sourcesValid(data.exportSources)
@@ -92,7 +111,8 @@ function parseProfile(data: Record<string, unknown>): ReConsumptionProfile {
     || (data.months === null) !== (data.exportSources === null)
     || !(data.annualUsageKwh === null || validNumber(data.annualUsageKwh))
     || !object(data.hourlyProfile) || typeof data.hourlyProfile.exists !== 'boolean'
-    || !Number.isInteger(data.hourlyProfile.rows) || !validNumber(data.hourlyProfile.rows)) {
+    || !Number.isInteger(data.hourlyProfile.rows) || !validNumber(data.hourlyProfile.rows)
+    || !historyValid) {
     throw new Error('Nieprawidłowa odpowiedź profilu RE; synchronizacja nie została potwierdzona');
   }
   return data as unknown as ReConsumptionProfile;
@@ -163,13 +183,15 @@ export async function preflightReConsumptionWorkbook(input: {
   workbook: EnergyMeasurementWorkbookInfo;
   replaceExisting?: boolean;
 }, options: ReConsumptionApiOptions = {}): Promise<ReConsumptionPreflight> {
-  validateReConsumptionPeriod(input.workbook, options.now);
+  validateReConsumptionPeriod(input.workbook, options.now, options.periodKeys);
   const profile = await readReConsumptionProfile(input.station, options);
-  const sources = input.workbook.kind === 'ACTIVE_IMPORT' ? profile.sources : profile.exportSources;
-  if (sources?.[input.workbook.periodMonth - 1] === 'xlsx' && input.replaceExisting !== true) {
+  const direction = input.workbook.kind === 'ACTIVE_IMPORT' ? 'import' : 'export';
+  const existing = profile.measurementHistory?.some((entry) => entry.year === input.workbook.periodYear
+    && entry.month === input.workbook.periodMonth && entry.direction === direction);
+  if (existing && input.replaceExisting !== true) {
     return {
       status: 'existing', station: profile.station,
-      message: `RE ma już XLSX (${input.workbook.kind === 'ACTIVE_IMPORT' ? 'pobór' : 'oddanie'}) za miesiąc ${input.workbook.periodMonth}. Potwierdź zastąpienie profilu w RE.`,
+      message: `RE ma już XLSX (${direction === 'import' ? 'pobór' : 'oddanie'}) za ${reConsumptionPeriod(input.workbook)}. Potwierdź zastąpienie profilu w RE.`,
     };
   }
   return { status: 'ready', station: profile.station, message: `RE: można zaimportować ${reConsumptionPeriod(input.workbook)}` };
@@ -182,7 +204,7 @@ export async function uploadReConsumptionWorkbook(input: {
   replaceExisting?: boolean;
 }, options: ReConsumptionApiOptions = {}) {
   if (!/\.xlsx$/i.test(input.fileName)) throw new Error('Plik RE musi mieć rozszerzenie .xlsx');
-  const workbook = inspectReConsumptionWorkbook(input.bytes, options.now);
+  const workbook = inspectReConsumptionWorkbook(input.bytes, options.now, options.periodKeys);
   const preflight = await preflightReConsumptionWorkbook({ ...input, workbook }, options);
   if (preflight.status === 'existing') throw new ReConsumptionConflictError(preflight.station, preflight.message);
   const form = new FormData();
@@ -192,12 +214,15 @@ export async function uploadReConsumptionWorkbook(input: {
   const { data, profile } = await request('user_consumption_xlsx_upload', preflight.station, options, form);
   const receipt = data[workbook.kind === 'ACTIVE_IMPORT' ? 'imported' : 'exported'];
   const otherReceipt = data[workbook.kind === 'ACTIVE_IMPORT' ? 'exported' : 'imported'];
-  const sources = workbook.kind === 'ACTIVE_IMPORT' ? profile.sources : profile.exportSources;
+  const direction = workbook.kind === 'ACTIVE_IMPORT' ? 'import' : 'export';
+  const historyEntry = profile.measurementHistory?.find((entry) => entry.year === workbook.periodYear
+    && entry.month === workbook.periodMonth && entry.direction === direction);
   if (!object(receipt) || receipt.month !== workbook.periodMonth || receipt.sourceYear !== workbook.periodYear
     || !validNumber(receipt.totalKwh) || !sameTotal(receipt.totalKwh, workbook.totalKwh)
-    || otherReceipt != null || sources?.[workbook.periodMonth - 1] !== 'xlsx'
+    || otherReceipt != null || !historyEntry || historyEntry.rows !== workbook.rowsCount
+    || !sameTotal(historyEntry.totalKwh, workbook.totalKwh)
     || !profile.hourlyProfile.exists || profile.hourlyProfile.rows === 0
-    || (workbook.kind === 'ACTIVE_IMPORT' && !sameTotal(profile.months[workbook.periodMonth - 1], workbook.totalKwh))) {
+  ) {
     throw new Error(`RE nie potwierdziło kierunku, okresu lub sumy ${workbook.totalKwh} kWh za ${reConsumptionPeriod(workbook)} (tolerancja 1 Wh). Zapis mógł nastąpić. Sprawdź dane i potwierdź zastąpienie profilu w RE.`);
   }
   return { profile, workbook };

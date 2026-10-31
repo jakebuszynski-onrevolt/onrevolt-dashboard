@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     const { project, measurements } = await listReConsumptionMeasurements(input.clientId, input.projectId);
     const selected = input.measurementId ? measurements.filter((file) => file.id === input.measurementId) : measurements;
     if (input.measurementId && !selected.length) {
-      return notFound('Nie znaleziono pobranego XLSX tego klienta i projektu w ostatnich 12 zamkniętych miesiącach');
+      return notFound('Nie znaleziono pobranego XLSX tego klienta i projektu w wybranym okresie analizy');
     }
     const results = [];
     for (const measurement of selected) {
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     };
     const message = results.length
       ? `RE: zapisano ${counts.synced}, pominięto istniejące ${counts.existing}, błędy ${counts.failed}.`
-      : 'Brak pobranych plików poboru/oddania do synchronizacji w ostatnich 12 zamkniętych miesiącach.';
+      : 'Brak pobranych plików poboru/oddania w wybranym okresie analizy.';
     return jsonResponse({
       ok: counts.failed === 0,
       ...(counts.failed ? { error: message } : {}),

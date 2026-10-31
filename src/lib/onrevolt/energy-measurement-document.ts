@@ -19,6 +19,98 @@ export type EnergyMeasurementWorkbookInfo = {
   }>;
 };
 
+/** ENEA labels interval ends; UTC bounds are authoritative and local values include the Warsaw offset. */
+export type EnergyMeasurementInterval = {
+  localStart: string;
+  localEnd: string;
+  startUtc: string;
+  endUtc: string;
+  valueKwh: number;
+  source: 'measured' | 'estimated';
+  occurrence: number;
+};
+
+export type EnergyMeasurementWorkbookWithIntervals = {
+  info: EnergyMeasurementWorkbookInfo;
+  intervals: EnergyMeasurementInterval[];
+};
+
+type ParsedMeasurementRow = { localEndEpoch: number; valueKwh: number; source: 'measured' | 'estimated'; winterLabel: boolean };
+
+const warsawFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Warsaw',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+});
+
+function warsawParts(epoch: number) {
+  const parts = Object.fromEntries(warsawFormatter.formatToParts(new Date(epoch)).map(({ type, value }) => [type, value]));
+  return {
+    year: Number(parts.year), month: Number(parts.month), day: Number(parts.day),
+    hour: Number(parts.hour), minute: Number(parts.minute), second: Number(parts.second),
+  };
+}
+
+function sameCivilTime(parts: ReturnType<typeof warsawParts>, wallEpoch: number) {
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) === wallEpoch;
+}
+
+function resolveWarsawInstants(wallEpoch: number) {
+  const candidates: number[] = [];
+  for (const shiftMinutes of [-180, -120, -60, 0, 60, 120, 180]) {
+    const candidate = wallEpoch + shiftMinutes * 60_000;
+    if (sameCivilTime(warsawParts(candidate), wallEpoch)) candidates.push(candidate);
+  }
+  return Array.from(new Set(candidates)).sort((a, b) => a - b);
+}
+
+function formatWarsawInstant(epoch: number) {
+  const parts = warsawParts(epoch);
+  const localEpoch = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  const offsetMinutes = Math.round((localEpoch - epoch) / 60_000);
+  const sign = offsetMinutes < 0 ? '-' : '+';
+  const absoluteOffset = Math.abs(offsetMinutes);
+  return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+    + `T${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}:${String(parts.second).padStart(2, '0')}`
+    + `${sign}${String(Math.floor(absoluteOffset / 60)).padStart(2, '0')}:${String(absoluteOffset % 60).padStart(2, '0')}`;
+}
+
+function intervalsFromRows(rows: ParsedMeasurementRow[]): EnergyMeasurementInterval[] {
+  const firstEndCandidates = resolveWarsawInstants(rows[0].localEndEpoch);
+  if (firstEndCandidates.length !== 1) throw new Error('Niejednoznaczny początek miesiąca pomiarowego');
+  const occurrences = new Map<number, number>();
+  return rows.map(({ localEndEpoch, valueKwh, source, winterLabel }, index) => {
+    const endUtc = firstEndCandidates[0] + index * 60 * 60_000;
+    const startUtc = endUtc - 60 * 60_000;
+    const endParts = warsawParts(endUtc);
+    const startParts = warsawParts(startUtc);
+    const endWall = Date.UTC(endParts.year, endParts.month - 1, endParts.day, endParts.hour, endParts.minute, endParts.second);
+    const startWall = Date.UTC(startParts.year, startParts.month - 1, startParts.day, startParts.hour, startParts.minute, startParts.second);
+    // ENEA can label both autumn 02:00 intervals as 03:00, marking the second "czasu zimowego".
+    // Validate those nominal end labels against an uninterrupted UTC timeline, not two identical UTC ends.
+    if (localEndEpoch !== endWall && localEndEpoch !== startWall + 60 * 60_000) {
+      throw new Error('Nie można jednoznacznie rozwinąć chronologii pomiarów w strefie Europe/Warsaw');
+    }
+    if (winterLabel && (startParts.month !== 10 || startParts.hour !== 2 || endParts.hour !== 3
+      || (startWall - startUtc) !== 60 * 60_000
+      || new Date(startWall).getUTCDay() !== 0
+      || startParts.day < 25)) {
+      throw new Error('Nieprawidłowe oznaczenie godziny czasu zimowego');
+    }
+    const occurrence = (occurrences.get(endWall) || 0) + 1;
+    occurrences.set(endWall, occurrence);
+    return {
+      localStart: formatWarsawInstant(startUtc),
+      localEnd: formatWarsawInstant(endUtc),
+      startUtc: new Date(startUtc).toISOString(),
+      endUtc: new Date(endUtc).toISOString(),
+      valueKwh,
+      source,
+      occurrence,
+    };
+  });
+}
+
 function normalizedText(value: unknown) {
   return String(value ?? '')
     .normalize('NFD')
@@ -109,7 +201,8 @@ function findTotal(rows: SheetRow[], headerIndex: number, valueIndexes: number[]
 
 export function closedMeasurementPeriodKeys(count = 12, now = new Date()) {
   const keys = new Set<string>();
-  const cursor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const localNow = warsawParts(now.getTime());
+  const cursor = new Date(Date.UTC(localNow.year, localNow.month - 2, 1));
   for (let index = 0; index < count; index += 1) {
     keys.add(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`);
     cursor.setUTCMonth(cursor.getUTCMonth() - 1);
@@ -117,7 +210,7 @@ export function closedMeasurementPeriodKeys(count = 12, now = new Date()) {
   return keys;
 }
 
-export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasurementWorkbookInfo {
+function parseEnergyMeasurementWorkbook(bytes: Buffer, includeIntervals: boolean): EnergyMeasurementWorkbookWithIntervals {
   let workbook: XLSX.WorkBook;
   try {
     workbook = XLSX.read(bytes, { type: 'buffer', cellDates: true });
@@ -179,9 +272,14 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
     let invalidStatusRows = 0;
     let invalidValueRows = 0;
     let firstInvalidRow: string | undefined;
+    const parsedRows: ParsedMeasurementRow[] = [];
     for (const row of rows.slice(headerIndex + 1)) {
       const timestamp = civilTimestamp(row[dateIndex]);
       if (timestamp == null) continue;
+      if (includeIntervals && typeof row[dateIndex] === 'string'
+        && !/^(?:\d{4}-\d{1,2}-\d{1,2}[ T]|\d{1,2}[./-]\d{1,2}[./-]\d{4}\s+)\d{1,2}:\d{2}(?::\d{2})?(?:\s+czasu zimowego)?$/.test(String(row[dateIndex]).trim())) {
+        throw new Error('Nieobsługiwane lub sprzeczne oznaczenie czasu w pomiarze godzinowym');
+      }
       timestamps.push(timestamp);
       const status = String(row[statusIndex] ?? '').trim();
       const validStatus = status === 'Dane rzeczywiste' || status === 'Dane szacowane';
@@ -216,6 +314,12 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
         }
       }
       for (const value of values) calculatedTotal += value!;
+      parsedRows.push({
+        localEndEpoch: timestamp,
+        valueKwh: values.reduce((sum, value) => sum + value!, 0),
+        source: status.trim() === 'Dane rzeczywiste' ? 'measured' : 'estimated',
+        winterLabel: typeof row[dateIndex] === 'string' && /\s+czasu zimowego$/.test(String(row[dateIndex]).trim()),
+      });
     }
     if (firstInvalidRow) {
       throw new Error(`Niepełne dane godzinowe: ${validRows}/${expectedRows} poprawnych pomiarów. `
@@ -259,18 +363,29 @@ export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasureme
       throw new Error('Suma energii w strefach nie zgadza się z pomiarami godzinowymi');
     }
     return {
-      kind: importIndexes.length ? 'ACTIVE_IMPORT' : 'ACTIVE_EXPORT',
-      ppeNumber,
-      ...period,
-      periodYear: parts.periodYear,
-      periodMonth: parts.periodMonth,
-      aggregation: '60 min',
-      totalKwh: reportedTotal ?? totalKwh,
-      rowsCount: timestamps.length,
-      sheetName,
-      ...(tariffRegisterPeriods.length > 1 ? { tariffRegisterPeriods } : {}),
+      info: {
+        kind: importIndexes.length ? 'ACTIVE_IMPORT' : 'ACTIVE_EXPORT',
+        ppeNumber,
+        ...period,
+        periodYear: parts.periodYear,
+        periodMonth: parts.periodMonth,
+        aggregation: '60 min',
+        totalKwh: reportedTotal ?? totalKwh,
+        rowsCount: timestamps.length,
+        sheetName,
+        ...(tariffRegisterPeriods.length > 1 ? { tariffRegisterPeriods } : {}),
+      },
+      intervals: includeIntervals ? intervalsFromRows(parsedRows) : [],
     };
   }
 
   throw new Error('Plik nie zawiera miesięcznego raportu godzinowego ENEA');
+}
+
+export function inspectEnergyMeasurementWorkbook(bytes: Buffer): EnergyMeasurementWorkbookInfo {
+  return parseEnergyMeasurementWorkbook(bytes, false).info;
+}
+
+export function parseEnergyMeasurementIntervals(bytes: Buffer): EnergyMeasurementWorkbookWithIntervals {
+  return parseEnergyMeasurementWorkbook(bytes, true);
 }

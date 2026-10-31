@@ -24,13 +24,14 @@ function fixture(options: {
   noProject?: boolean;
   noStation?: boolean;
   tariffFailure?: boolean;
+  analysisPeriod?: { periodKeys: string[] };
 } = {}) {
   const root = path.resolve('__virtual_enea_uploads__');
   const account = { id: 'account', clientId: 'client', projectId: options.noProject ? null : 'project',
     operator: 'ENEA', login: 'fixture', encryptedPassword: 'fixture', portalPpeId: 'ppe' };
   const state = {
     records: new Map<string, any>(), documents: new Map<string, any>(), files: new Map<string, Buffer>(),
-    events: [] as string[], reCalls: [] as string[], accountUpdates: [] as any[], sequence: 0, portalLogins: 0, tariffReads: 0, tariffWrites: 0,
+    events: [] as string[], reCalls: [] as string[], requestedMonths: [] as string[], accountUpdates: [] as any[], sequence: 0, portalLogins: 0, tariffReads: 0, tariffWrites: 0,
   };
   function addExisting(kind: string, prefix = 'old') {
     const document = { id: `${prefix}-${kind}`, storagePath: `${prefix}-${kind}.xlsx`, fileName: `${prefix}.xlsx` };
@@ -134,7 +135,7 @@ function fixture(options: {
     },
     'lib/onrevolt/credentials': { decryptCredential: () => 'fixture-password' },
     'lib/onrevolt/energy-measurement-document': {
-      closedMeasurementPeriodKeys: () => new Set(['2026-08']),
+      closedMeasurementPeriodKeys: () => new Set(['2026-07', '2026-08']),
       inspectEnergyMeasurementWorkbook: (bytes: Buffer) => workbook(bytes.toString().includes('ACTIVE_EXPORT') ? 'ACTIVE_EXPORT' : 'ACTIVE_IMPORT'),
     },
     'lib/onrevolt/enea-portal': {
@@ -144,6 +145,7 @@ function fixture(options: {
       eneaMeasurementLabel: (kind: string) => kind,
       loginEneaPortal: async () => { state.portalLogins++; return {}; }, listEneaPpes: async () => [{ id: 'ppe' }], selectEneaPpe: () => ({ id: 'ppe' }),
       downloadEneaMeasurementXlsx: async (_session: any, _ppe: any, _month: any, kind: string) => {
+        state.requestedMonths.push(`${_month.year}-${String(_month.month).padStart(2, '0')}`);
         state.events.push(`download:${kind}`);
         if (options.concurrentFile) addExisting(kind, 'concurrent');
         if (options.failDownload) throw new Error('Download failed');
@@ -176,6 +178,12 @@ function fixture(options: {
       },
     },
     'lib/onrevolt/staff-server': { authorizeStaffRequest: async () => ({ ok: true, user: { id: 'staff' } }) },
+    'lib/onrevolt/project-analysis-period-server': {
+      readProjectAnalysisPeriod: async (projectId: string) => {
+        assert.equal(projectId, 'project');
+        return { period: options.analysisPeriod || { periodKeys: ['2026-08'] } };
+      },
+    },
   };
   const exported: any = {};
   const context = vm.createContext({ exports: exported, Buffer, Date, Error,
@@ -186,9 +194,9 @@ function fixture(options: {
   });
   // Execute the actual route with every database, portal and filesystem side effect kept in memory.
   new vm.Script(routeCode, { filename: routePath }).runInContext(context, { timeout: 10000 });
-  const run = async (force = true, expectedStatus = 200) => {
+  const run = async (force = true, expectedStatus = 200, extra: Record<string, unknown> = {}) => {
     const response: Response = await exported.POST(new Request('https://crm.example.test/api/integrations/enea/sync', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: 'account', months: 1, force }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: 'account', months: 1, force, ...extra }),
     }));
     assert.equal(response.status, expectedStatus); return response.json();
   };
@@ -202,6 +210,19 @@ test('tariff metadata refreshes even when both XLSX files already exist', async 
   const f = fixture({ existing: true }); const result = await f.run(false);
   assert.equal(f.state.tariffReads, 1); assert.equal(f.state.tariffWrites, 1);
   assert.equal(result.data.skipped.length, 2); assert.equal(result.data.downloaded.length, 0);
+});
+
+test('ENEA month selection follows the project period and explicit dates cannot escape it', async () => {
+  const selected = fixture({ analysisPeriod: { periodKeys: ['2026-08'] } });
+  const result = await selected.run(true, 200, { months: undefined });
+  assert.equal(result.data.downloaded.length, 2);
+  assert.deepEqual(selected.state.requestedMonths, ['2026-08', '2026-08']);
+
+  const outside = fixture({ analysisPeriod: { periodKeys: ['2026-08'] } });
+  const resultOutside = await outside.run(true, 400, { periodYear: 2026, periodMonth: 7 });
+  assert.match(resultOutside.message, /wybranego okresu analizy projektu/u);
+  assert.equal(outside.state.portalLogins, 0);
+  assert.equal(outside.state.accountUpdates.length, 0);
 });
 
 test('tariff conflict or metadata failure never blocks measurement download', async () => {

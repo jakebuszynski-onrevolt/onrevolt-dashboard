@@ -1,0 +1,967 @@
+<svg width="595" height="843" viewBox="0 0 595 843" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="09 &#226;&#128;&#148; Por&#195;&#179;wnanie rachunk&#195;&#179;w">
+<rect width="595" height="842.034" fill="#EEF1F9"/>
+<g id="01 / naglowek">
+<rect x="30" y="60" width="535" height="29" rx="10" fill="white"/>
+<text id="_nazwa" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="79.092">Por&#xf3;wnanie rachunk&#xf3;w rocznych</tspan></text>
+<text id="#b2c_nr_reform_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" font-weight="bold" letter-spacing="-0.02em"><tspan x="451.627" y="79.092">NR XX/XX/XX/XX/X</tspan></text>
+</g>
+<g id="sekcja / aktualna_taryfa_i_system_rozliczeniowy">
+<rect x="30" y="94" width="265" height="61" rx="10" fill="url(#paint0_linear_2449_13763)"/>
+<rect x="30.5" y="94.5" width="264" height="60" rx="9.5" stroke="#FF0000" stroke-opacity="0.25"/>
+<text id="etykieta / aktualna_taryfa_i_system_rozliczeniowy" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="112.41">Aktualna taryfa i system rozliczeniowy</tspan></text>
+<g id="_aktualna_taryfa_i_system_rozliczeniowy">
+<g id="blok / taryfa">
+<g clip-path="url(#clip0_2449_13763)">
+<rect x="35" y="118" width="125" height="32" rx="5" fill="white"/>
+<text id="etykieta / taryfa" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="40" y="128.887">Taryfa</tspan></text>
+<text id="#b2c_taryfa_aktualna_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="40" y="142.41">Taryfa przed</tspan></text>
+</g>
+</g>
+<g id="blok / system_rozliczeniowy">
+<g clip-path="url(#clip1_2449_13763)">
+<rect x="165" y="118" width="125" height="32" rx="5" fill="white"/>
+<text id="etykieta / system_rozliczeniowy" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="170" y="128.887">System rozliczeniowy</tspan></text>
+<text id="#b2c_system_rozliczeniowy_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="170" y="142.41">System rozliczeniowy</tspan></text>
+</g>
+</g>
+</g>
+</g>
+<g id="sekcja / nowa_taryfa_i_system_rozliczeniowy">
+<rect x="300.5" y="94.5" width="264" height="60" rx="9.5" fill="url(#paint1_linear_2449_13763)"/>
+<rect x="300.5" y="94.5" width="264" height="60" rx="9.5" stroke="#80EABB"/>
+<text id="_twoja_prognozowana_oszczednosc" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="310" y="112.41">Nowa taryfa i system rozliczeniowy</tspan></text>
+<g id="_nowa_taryfa_i_system_rozliczeniowy">
+<g id="blok / taryfa_2">
+<g clip-path="url(#clip2_2449_13763)">
+<rect x="305" y="118" width="125" height="32" rx="5" fill="white"/>
+<text id="etykieta / taryfa_2" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="310" y="128.887">Taryfa</tspan></text>
+<text id="#b2c_taryfa_prognozowana_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="310" y="142.41">G13 active</tspan></text>
+</g>
+</g>
+<g id="blok / system_rozliczeniowy_2">
+<g clip-path="url(#clip3_2449_13763)">
+<rect x="435" y="118" width="125" height="32" rx="5" fill="white"/>
+<text id="etykieta / system_rozliczeniowy_2" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="440" y="128.887">System rozliczeniowy</tspan></text>
+<text id="#b2c_system_rozliczeniowy_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="440" y="142.41">Net-billing</tspan></text>
+</g>
+</g>
+</g>
+</g>
+<g id="sekcja / koszt_zakupu_1_kwh">
+<rect x="30" y="160" width="265" height="181" rx="10" fill="white"/>
+<rect x="30.5" y="160.5" width="264" height="180" rx="9.5" stroke="#FF0000" stroke-opacity="0.25"/>
+<g id="etykieta / koszt_zakupu_1_kwh_pln_brutto">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="178.41">Koszt zakupu 1 kWh </tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" font-weight="300" letter-spacing="-0.02em"><tspan x="133.573" y="178.41">(PLN brutto)</tspan></text>
+</g>
+<g id="blok / oplata_zmienna_sieciowa">
+<g id="pole / b2c_oplata_zmienna_sieciowa_aktualny_strona_09">
+<text id="#b2c_oplata_zmienna_sieciowa_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="255" y="216.046">X,XXXX</tspan></text>
+<text id="stale / jednostka lub dopisek" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="273" y="216.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplata_zmienna_sieciowa" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="216.046">Op&#x142;ata zmienna sieciowa</tspan></text>
+</g>
+<g id="blok / oplata_jakosciowa">
+<g id="pole / b2c_oplata_jakosciowa_aktualny_strona_09">
+<text id="#b2c_oplata_jakosciowa_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="255" y="228.046">X,XXXX</tspan></text>
+<text id="stale / jednostka lub dopisek_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="273" y="228.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplata_jakosciowa" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="228.046">Op&#x142;ata jako&#x15b;ciowa</tspan></text>
+</g>
+<g id="blok / oplata_oze">
+<g id="pole / b2c_oplata_oze_aktualny_strona_09">
+<text id="#b2c_oplata_oze_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="255" y="240.046">X,XXXX</tspan></text>
+<text id="stale / jednostka lub dopisek_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="273" y="240.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplata_oze" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="240.046">Op&#x142;ata OZE</tspan></text>
+</g>
+<g id="blok / oplata_kogeneracyjna">
+<g id="pole / b2c_oplata_kogeneracyjna_aktualny_strona_09">
+<text id="#b2c_oplata_kogeneracyjna_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="255" y="252.046">X,XXXX</tspan></text>
+<text id="stale / jednostka lub dopisek_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="273" y="252.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplata_kogeneracyjna" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="252.046">Op&#x142;ata kogeneracyjna</tspan></text>
+</g>
+<path id="_separator_dystrybucja_energii_aktualny" d="M94 208H285" stroke-width="0.25" stroke="#A3AED0"/>
+<path id="_separator_zakup_energii_aktualny" d="M94 194H285" stroke-width="0.25" stroke="#A3AED0"/>
+<g id="_zakup_energii_aktualny_grupa">
+<g id="blok / zakup_energii">
+<g id="pole / b2c_zakup_energii_cena_kwh_aktualny_strona_09">
+<text id="#b2c_zakup_energii_cena_kwh_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="254" y="188.887">X,XX</tspan></text>
+<text id="stale / jednostka lub dopisek_5" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="270" y="188.887"> PLN</tspan></text>
+</g>
+<text id="etykieta / zakup_energii" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="102" y="191.387">Zakup energii</tspan></text>
+</g>
+<circle id="_zakup_energii_aktualny_znacznik" cx="96.5" cy="188.5" r="2.5" fill="#FC7C00"/>
+</g>
+<g id="_dystrybucja_energii_aktualna_grupa">
+<g id="blok / dystrybucja_energii">
+<g id="pole / b2c_dystrybucja_energii_cena_kwh_aktualny_strona_09">
+<text id="#b2c_dystrybucja_energii_cena_kwh_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="254" y="201.887">X,XX</tspan></text>
+<text id="stale / jednostka lub dopisek_6" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="270" y="201.887"> PLN</tspan></text>
+</g>
+<text id="etykieta / dystrybucja_energii" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="102" y="204.387">Dystrybucja energii</tspan></text>
+</g>
+<circle id="_dystrybucja_energii_aktualna_znacznik" cx="96.5" cy="201.5" r="2.5" fill="#FDB066"/>
+</g>
+<g id="blok / oplata_handlowa_miesiac">
+<g id="pole / b2c_oplata_handlowa_aktualny_strona_09">
+<text id="#b2c_oplata_handlowa_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="255" y="278.046">X,XXXX</tspan></text>
+<text id="stale / jednostka lub dopisek_7" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="273" y="278.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplata_handlowa_miesiac" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="278.046">Op&#x142;ata handlowa / miesi&#x105;c</tspan></text>
+</g>
+<g id="blok / skladnik_staly_sieciowy_miesiac">
+<g id="pole / b2c_skladnik_staly_sieciowy_aktualny_strona_09">
+<text id="#b2c_skladnik_staly_sieciowy_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="255" y="289.046">X,XXXX</tspan></text>
+<text id="stale / jednostka lub dopisek_8" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="273" y="289.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / skladnik_staly_sieciowy_miesiac" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="289.046">Sk&#x142;adnik sta&#x142;y sieciowy / miesi&#x105;c</tspan></text>
+</g>
+<g id="blok / oplata_mocowa_miesiac">
+<g id="pole / b2c_skladnik_staly_sieciowy_aktualny_strona_09_2">
+<text id="#b2c_skladnik_staly_sieciowy_aktualny_strona_09_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="255" y="300.046">X,XXXX</tspan></text>
+<text id="stale / jednostka lub dopisek_9" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="273" y="300.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplata_mocowa_miesiac" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="300.046">Op&#x142;ata mocowa / miesi&#x105;c</tspan></text>
+</g>
+<g id="_oplaty_stale_aktuale_grupa">
+<g id="blok / oplaty_stale_miesiac">
+<g id="pole / b2c_oplaty_stale_aktualny_strona_09">
+<text id="#b2c_oplaty_stale_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="254" y="263.887">X,XX</tspan></text>
+<text id="stale / jednostka lub dopisek_10" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="270" y="263.887"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplaty_stale_miesiac" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="102" y="266.387">Op&#x142;aty sta&#x142;e / miesi&#x105;c</tspan></text>
+</g>
+</g>
+<g id="_stala_cena_abonementu_aktualna_grupa">
+<g id="blok / stala_cena_abonamentu_miesiac">
+<g id="pole / b2c_stala_abonementu_aktualny_strona_09">
+<text id="#b2c_stala_abonementu_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="255" y="308.046">X,XXXX</tspan></text>
+<text id="stale / jednostka lub dopisek_11" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="273" y="308.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / stala_cena_abonamentu_miesiac" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="311.046">Sta&#x142;a cena abonamentu / miesi&#x105;c</tspan></text>
+</g>
+</g>
+<path id="_vat_energii_aktualny" d="M94 258H285" stroke-width="0.25" stroke="#A3AED0"/>
+<g id="blok / calkowity_koszt_zakupu_1_kwh">
+<text id="etykieta / calkowity_koszt_zakupu_1_kwh" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="102" y="326.387">Ca&#x142;kowity koszt zakupu 1 kWh</tspan></text>
+<g id="pole / b2c_koszt_zakupu_1kwh_aktualny_strona_09">
+<text id="#b2c_koszt_zakupu_1kwh_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="247" y="325.41">X,XX</tspan></text>
+<g id="stale / jednostka lub dopisek_12">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="271.154" y="325.41">PLN</tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="269" y="325.41"> </tspan></text>
+</g>
+</g>
+</g>
+<path id="_separator_koszt_aktualny" d="M94 316H285" stroke="#A3AED0"/>
+<g id="wykres_png / b2c / strona_09 / koszt_kwh_aktualny">
+<g id="Group 23">
+<path id="_linie_wykres_aktualny_12" d="M59 320.5L84.0382 320.5" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_11" d="M59 274.5L84.0382 274.5" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_10" d="M59 297.5L84.0382 297.5" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_9" d="M59 251.5L84.0382 251.5" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_8" d="M59 228.5L84.0382 228.5" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_7" d="M59 309L84.0382 309" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_6" d="M59 263L84.0382 263" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_5" d="M59 286L84.0382 286" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_4" d="M59 240L84.0382 240" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_3" d="M59 217L84.0382 217" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_2" d="M59 205.5L84.0382 205.5" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_2_2" d="M59 194L84.0382 194" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_1" d="M58 332L83.625 332" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+</g>
+<g id="Group 24">
+<text id="_0,00" transform="translate(30 323)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.5846" y="8.58444">0,00</tspan></text>
+<text id="_0,00_2" transform="translate(30 312)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.4498" y="8.58444">0,10</tspan></text>
+<text id="_0,00_3" transform="translate(30 300)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="12.1721" y="8.58444">0,20</tspan></text>
+<text id="_0,00_4" transform="translate(30 289)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="12.0497" y="8.58444">0,30</tspan></text>
+<text id="_0,00_5" transform="translate(30 277)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.9665" y="8.58444">0,40</tspan></text>
+<text id="_0,00_6" transform="translate(30 266)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.9518" y="8.58444">0,50</tspan></text>
+<text id="_0,00_7" transform="translate(30 254)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.8637" y="8.58444">0,60</tspan></text>
+<text id="_0,00_8" transform="translate(30 243)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="12.4022" y="8.58444">0,70</tspan></text>
+<text id="_0,00_9" transform="translate(30 231)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.9616" y="8.58444">0,80</tspan></text>
+<text id="_0,00_10" transform="translate(30 219)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.8637" y="8.58444">0,90</tspan></text>
+<text id="_0,00_11" transform="translate(30 208)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.298" y="8.58444">1,00</tspan></text>
+<text id="_0,00_12" transform="translate(30 197)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="15.1632" y="8.58444">1,10</tspan></text>
+<text id="_0,00_13" transform="translate(30 185)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.8855" y="8.58444">1,20</tspan></text>
+</g>
+<g id="_dystrybucja_energii_aktualna_slupek">
+<rect id="_dystrybucja_energii_aktualna_slupek_2" x="66" y="291" width="11.4583" height="40.4612" fill="#FDB066"/>
+</g>
+<g id="_zakup_energii_aktualny_slupek">
+<path id="_zakup_energii_aktualny_slupek_2" d="M66 222.5C66 221.119 67.1193 220 68.5 220L74.9583 220C76.339 220 77.4583 221.119 77.4583 222.5L77.4583 290.999L66 290.999L66 222.5Z" fill="#FC7C00"/>
+</g>
+</g>
+</g>
+<g id="sekcja / koszt_zakupu_1_kwh_2">
+<rect x="301.5" y="160.5" width="264" height="180" rx="9.5" fill="white"/>
+<rect x="301.5" y="160.5" width="264" height="180" rx="9.5" stroke="#80EABB"/>
+<g id="etykieta / koszt_zakupu_1_kwh_pln_brutto_2">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="311" y="178.41">Koszt zakupu 1 kWh </tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" font-weight="300" letter-spacing="-0.02em"><tspan x="404.573" y="178.41">(PLN brutto)</tspan></text>
+</g>
+<g id="blok / oplata_zmienna_sieciowa_2">
+<g id="pole / b2c_oplata_zmienna_sieciowa_prognozowany_strona_09">
+<text id="#b2c_oplata_zmienna_sieciowa_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="527" y="216.046">0,090</tspan></text>
+<text id="stale / jednostka lub dopisek_13" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="544" y="216.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplata_zmienna_sieciowa_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="373" y="216.046">Op&#x142;ata zmienna sieciowa</tspan></text>
+</g>
+<g id="blok / oplata_jakosciowa_2">
+<g id="pole / b2c_oplata_jakosciowa_prognozowany_strona_09">
+<text id="#b2c_oplata_jakosciowa_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="530" y="228.046">0,041</tspan></text>
+<text id="stale / jednostka lub dopisek_14" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="544" y="228.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplata_jakosciowa_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="373" y="228.046">Op&#x142;ata jako&#x15b;ciowa</tspan></text>
+</g>
+<g id="blok / oplata_oze_2">
+<g id="pole / b2c_oplata_oze_prognozowany_strona_09">
+<text id="#b2c_oplata_oze_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="527" y="240.046">0,009</tspan></text>
+<text id="stale / jednostka lub dopisek_15" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="544" y="240.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplata_oze_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="373" y="240.046">Op&#x142;ata OZE</tspan></text>
+</g>
+<g id="blok / oplata_kogeneracyjna_2">
+<g id="pole / b2c_oplata_kogeneracyjna_prognozowany_strona_09">
+<text id="#b2c_oplata_kogeneracyjna_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="527" y="252.046">0,004</tspan></text>
+<text id="stale / jednostka lub dopisek_16" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="544" y="252.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplata_kogeneracyjna_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="373" y="252.046">Op&#x142;ata kogeneracyjna</tspan></text>
+</g>
+<path id="_separator_dystrybucja_energii_aktualny_2" d="M365 208H556" stroke-width="0.25" stroke="#A3AED0"/>
+<path id="_separator_zakup_energii_aktualny_2" d="M365 194H556" stroke-width="0.25" stroke="#A3AED0"/>
+<g id="_zakup_energii_aktualny_grupa_2">
+<g id="blok / zakup_energii_2">
+<g id="pole / b2c_zakup_energii_cena_kwh_prognozowany_strona_09">
+<text id="#b2c_zakup_energii_cena_kwh_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="523" y="188.887">0,341</tspan></text>
+<text id="stale / jednostka lub dopisek_17" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="541" y="188.887"> PLN</tspan></text>
+</g>
+<text id="etykieta / zakup_energii_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="373" y="191.387">Zakup energii</tspan></text>
+</g>
+<circle id="_zakup_energii_aktualny_znacznik_2" cx="367.5" cy="188.5" r="2.5" fill="#FC7C00"/>
+</g>
+<g id="_dystrybucja_energii_aktualna_grupa_2">
+<g id="blok / dystrybucja_energii_2">
+<g id="pole / b2c_dystrybucja_energii_cena_kwh_prognozowany_strona_09">
+<text id="#b2c_dystrybucja_energii_cena_kwh_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="523" y="201.887">0,143</tspan></text>
+<text id="stale / jednostka lub dopisek_18" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="541" y="201.887"> PLN</tspan></text>
+</g>
+<text id="etykieta / dystrybucja_energii_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="373" y="204.387">Dystrybucja energii</tspan></text>
+</g>
+<circle id="_dystrybucja_energii_aktualna_znacznik_2" cx="367.5" cy="201.5" r="2.5" fill="#FDB066"/>
+</g>
+<g id="blok / oplata_handlowa_miesiac_2">
+<g id="pole / b2c_oplata_handlowa_prognozowany_strona_09">
+<text id="#b2c_oplata_handlowa_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="527" y="278.046">19,582</tspan></text>
+<text id="stale / jednostka lub dopisek_19" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="544" y="278.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplata_handlowa_miesiac_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="373" y="278.046">Op&#x142;ata handlowa / miesi&#x105;c</tspan></text>
+</g>
+<g id="blok / skladnik_staly_sieciowy_miesiac_2">
+<g id="pole / b2c_skladnik_staly_sieciowy_prognozowany_strona_09">
+<text id="#b2c_skladnik_staly_sieciowy_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="529" y="289.046">11,796</tspan></text>
+<text id="stale / jednostka lub dopisek_20" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="544" y="289.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / skladnik_staly_sieciowy_miesiac_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="373" y="289.046">Sk&#x142;adnik sta&#x142;y sieciowy / miesi&#x105;c</tspan></text>
+</g>
+<g id="blok / oplata_mocowa_miesiac_2">
+<g id="pole / b2c_skladnik_staly_sieciowy_prognozowany_strona_09_2">
+<text id="#b2c_skladnik_staly_sieciowy_prognozowany_strona_09_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="525" y="300.046">29,582</tspan></text>
+<text id="stale / jednostka lub dopisek_21" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="544" y="300.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplata_mocowa_miesiac_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="373" y="300.046">Op&#x142;ata mocowa / miesi&#x105;c</tspan></text>
+</g>
+<path id="_separator_zakup_energii_aktualny_3" d="M365 270H556" stroke-width="0.25" stroke="#A3AED0"/>
+<g id="_oplaty_stale_aktuale_grupa_2">
+<g id="blok / oplaty_stale_miesiac_2">
+<g id="pole / b2c_oplaty_stale_prognozowany_strona_09">
+<text id="#b2c_oplaty_stale_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="518" y="263.887">65,682</tspan></text>
+<text id="stale / jednostka lub dopisek_22" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="541" y="263.887"> PLN</tspan></text>
+</g>
+<text id="etykieta / oplaty_stale_miesiac_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="373" y="266.387">Op&#x142;aty sta&#x142;e / miesi&#x105;c</tspan></text>
+</g>
+</g>
+<g id="_stala_cena_abonementu_aktualna_grupa_2">
+<g id="blok / stala_cena_abonamentu_miesiac_2">
+<g id="pole / b2c_stala_abonementu_prognozowany_strona_09">
+<text id="#b2c_stala_abonementu_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="529" y="308.046">4,723</tspan></text>
+<text id="stale / jednostka lub dopisek_23" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="544" y="308.046"> PLN</tspan></text>
+</g>
+<text id="etykieta / stala_cena_abonamentu_miesiac_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="373" y="311.046">Sta&#x142;a cena abonamentu / miesi&#x105;c</tspan></text>
+</g>
+</g>
+<path id="_vat_energii_aktualny_2" d="M365 258H556" stroke-width="0.25" stroke="#A3AED0"/>
+<g id="blok / calkowity_koszt_zakupu_1_kwh_2">
+<text id="etykieta / calkowity_koszt_zakupu_1_kwh_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="373" y="326.387">Ca&#x142;kowity koszt zakupu 1 kWh</tspan></text>
+<g id="pole / b2c_koszt_zakupu_1kwh_prognozowany_strona_09">
+<text id="#b2c_koszt_zakupu_1kwh_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="513" y="325.41">0,484</tspan></text>
+<text id="stale / jednostka lub dopisek_24" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="541" y="324.887"> PLN</tspan></text>
+</g>
+</g>
+<path id="_separator_koszt_aktualny_2" d="M365 316H556" stroke="#A3AED0"/>
+<g id="wykres_png / b2c / strona_09 / koszt_kwh_prognoza">
+<g id="Group 23_2">
+<path id="_linie_wykres_aktualny_12_2" d="M330 320.5L355.038 320.5" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_11_2" d="M330 274.5L355.038 274.5" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_10_2" d="M330 297.5L355.038 297.5" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_9_2" d="M330 251.5L355.038 251.5" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_8_2" d="M330 228.5L355.038 228.5" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_7_2" d="M330 309L355.038 309" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_6_2" d="M330 263L355.038 263" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_5_2" d="M330 286L355.038 286" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_4_2" d="M330 240L355.038 240" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_3_2" d="M330 217L355.038 217" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_2_3" d="M330 205.5L355.038 205.5" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_2_4" d="M330 194L355.038 194" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linie_wykres_aktualny_1_2" d="M329 332L354.625 332" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+</g>
+<g id="Group 24_2">
+<text id="_0,00_14" transform="translate(301 323)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.5846" y="8.58444">0,00</tspan></text>
+<text id="_0,00_15" transform="translate(301 312)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.4498" y="8.58444">0,10</tspan></text>
+<text id="_0,00_16" transform="translate(301 300)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="12.1721" y="8.58444">0,20</tspan></text>
+<text id="_0,00_17" transform="translate(301 289)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="12.0497" y="8.58444">0,30</tspan></text>
+<text id="_0,00_18" transform="translate(301 277)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.9665" y="8.58444">0,40</tspan></text>
+<text id="_0,00_19" transform="translate(301 266)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.9518" y="8.58444">0,50</tspan></text>
+<text id="_0,00_20" transform="translate(301 254)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.8637" y="8.58444">0,60</tspan></text>
+<text id="_0,00_21" transform="translate(301 243)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="12.4022" y="8.58444">0,70</tspan></text>
+<text id="_0,00_22" transform="translate(301 231)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.9616" y="8.58444">0,80</tspan></text>
+<text id="_0,00_23" transform="translate(301 219)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.8637" y="8.58444">0,90</tspan></text>
+<text id="_0,00_24" transform="translate(301 208)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.298" y="8.58444">1,00</tspan></text>
+<text id="_0,00_25" transform="translate(301 197)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="15.1632" y="8.58444">1,10</tspan></text>
+<text id="_0,00_26" transform="translate(301 185)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.8855" y="8.58444">1,20</tspan></text>
+</g>
+<g id="_dystrybucja_energii_aktualna_slupek_3">
+<rect id="_dystrybucja_energii_aktualna_slupek_4" x="337" y="315.297" width="11.4583" height="16.1644" fill="#FDB066"/>
+</g>
+<g id="_zakup_energii_aktualny_slupek_3">
+<path id="_zakup_energii_aktualny_slupek_4" d="M337 279.5C337 278.119 338.119 277 339.5 277L345.958 277C347.339 277 348.458 278.119 348.458 279.5L348.458 315.295L337 315.295L337 279.5Z" fill="#FC7C00"/>
+</g>
+</g>
+</g>
+<g id="marka / reform_logo">
+<path id="Vector" d="M51.4005 35.3373C49.2209 35.3373 47.4112 36.0464 46.0242 37.4261C44.6372 38.8057 43.9238 40.5593 43.9238 42.6095C43.9238 44.6596 44.6372 46.4518 46.0506 47.8186C47.464 49.1854 49.3398 49.8816 51.6251 49.8816C54.3463 49.8816 56.4334 48.863 57.8336 46.8644L57.8865 46.7871L55.3106 45.3172L55.2313 45.2785L55.1785 45.3559C54.3991 46.4518 53.2102 47.0063 51.6515 47.0063C50.5287 47.0063 49.5512 46.7355 48.7718 46.194C48.0188 45.6782 47.5301 44.9304 47.3055 43.9891H58.3885V43.9117C58.4809 43.3831 58.5206 42.9834 58.5206 42.6739C58.5206 40.6625 57.8469 38.9218 56.5259 37.5035C55.1917 36.0593 53.4744 35.3373 51.4005 35.3373ZM48.6397 39.0894C49.3662 38.5092 50.2777 38.2126 51.3741 38.2126C52.3384 38.2126 53.1838 38.4834 53.8972 39.0378C54.5841 39.5536 55.0464 40.3401 55.2578 41.3716H47.2791C47.4904 40.4175 47.9528 39.6438 48.6397 39.0894Z" fill="#009A44"/>
+<path id="Vector_2" d="M40.4885 41.2687C40.6866 41.1655 40.8848 41.0495 41.0565 40.9205C41.2811 40.7529 41.5056 40.5853 41.7038 40.3919C41.7963 40.3016 41.8887 40.1985 41.9812 40.1082C42.1397 39.9406 42.285 39.7601 42.4303 39.5667C42.4832 39.4893 42.536 39.4119 42.6021 39.3346C42.9983 38.7414 43.289 38.071 43.4343 37.3618C43.4343 37.3231 43.4607 37.2715 43.4607 37.2329C43.5267 36.8847 43.5796 36.5237 43.5796 36.1498V36.0853C43.5796 35.7243 43.5267 35.3632 43.4607 35.0022C43.4607 34.9635 43.4343 34.912 43.4343 34.8733C43.2758 34.1641 42.9983 33.4936 42.6021 32.9005C42.5492 32.8231 42.4964 32.7458 42.4303 32.6684C42.285 32.475 42.1397 32.3074 41.9812 32.1269C41.8887 32.0366 41.8095 31.9335 41.7038 31.8432C41.5056 31.6498 41.2811 31.4822 41.0565 31.3146C40.8716 31.1856 40.6866 31.0825 40.4885 30.9664C40.4489 30.9406 40.4225 30.9406 40.3828 30.9148L40.33 30.8891C39.4846 30.4378 38.5467 30.167 37.5295 30.167H30V49.495H33.4081V42.0681H36.3935L40.7791 49.4434L40.8055 49.495H44.9798L40.1715 41.4234C40.1715 41.4234 40.2904 41.3718 40.33 41.346M37.5427 38.8962H33.4213V33.326H37.5427C39.0751 33.326 40.3168 34.5767 40.3432 36.1111C40.3168 37.6584 39.0883 38.8962 37.5427 38.8962Z" fill="#009A44"/>
+<path id="Vector_3" d="M62.6151 43.1382V43.0351C62.6151 41.3975 64.121 40.6239 64.121 39.1669C64.121 38.0451 63.1832 37.1296 62.0339 37.1296C60.8847 37.1296 59.9468 38.0451 59.9468 39.1669C59.9468 40.5852 61.4527 41.3717 61.4527 43.0351V43.1382C61.4527 44.8015 59.9468 45.1883 59.9468 47.0064C59.9468 48.1282 60.8847 49.0436 62.0339 49.0436C63.1832 49.0436 64.121 48.1282 64.121 47.0064C64.121 45.2915 62.6151 44.7757 62.6151 43.1382Z" fill="#009A44"/>
+<g id="form">
+<path id="Vector_4" d="M115.285 35.5258C116.845 35.5258 118.101 36.0302 119.055 37.0392C120.009 38.0482 120.486 39.4057 120.486 41.1118V49.6423H117.514V41.3045C117.514 40.3505 117.276 39.6167 116.799 39.103C116.322 38.571 115.671 38.305 114.845 38.305C113.928 38.305 113.194 38.6077 112.644 39.2131C112.112 39.8185 111.846 40.7266 111.846 41.9374V49.6423H108.874V41.3045C108.874 40.3505 108.644 39.6167 108.186 39.103C107.746 38.571 107.113 38.305 106.287 38.305C105.388 38.305 104.654 38.6169 104.086 39.2406C103.517 39.846 103.233 40.7449 103.233 41.9374V49.6423H100.261V35.8835H103.233V37.5345C104.113 36.1954 105.425 35.5258 107.168 35.5258C108.929 35.5258 110.231 36.2504 111.075 37.6996C111.992 36.2504 113.396 35.5258 115.285 35.5258Z" fill="#1A1A1A"/>
+<path id="Vector_5" d="M94.3777 38.195C95.1298 36.4889 96.5424 35.6359 98.6154 35.6359V38.8554C97.478 38.782 96.4873 39.0572 95.6435 39.6809C94.7996 40.2863 94.3777 41.2953 94.3777 42.7079V49.6423H91.4058V35.8835H94.3777V38.195Z" fill="#1A1A1A"/>
+<path id="Vector_6" d="M82.0039 50C79.9859 50 78.2707 49.3029 76.8581 47.9087C75.4455 46.5144 74.7393 44.7992 74.7393 42.7629C74.7393 40.7266 75.4455 39.0113 76.8581 37.6171C78.2707 36.2229 79.9859 35.5258 82.0039 35.5258C84.0402 35.5258 85.7555 36.2229 87.1497 37.6171C88.5623 39.0113 89.2685 40.7266 89.2685 42.7629C89.2685 44.7992 88.5623 46.5144 87.1497 47.9087C85.7555 49.3029 84.0402 50 82.0039 50ZM78.9494 45.8724C79.775 46.6979 80.7931 47.1107 82.0039 47.1107C83.2147 47.1107 84.2328 46.6979 85.0584 45.8724C85.8839 45.0468 86.2966 44.0103 86.2966 42.7629C86.2966 41.5154 85.8839 40.4789 85.0584 39.6534C84.2328 38.8279 83.2147 38.4151 82.0039 38.4151C80.7931 38.4151 79.775 38.8279 78.9494 39.6534C78.1239 40.4789 77.7112 41.5154 77.7112 42.7629C77.7112 44.0103 78.1239 45.0468 78.9494 45.8724Z" fill="#1A1A1A"/>
+<path id="Vector_7" d="M74.9666 32.8839C72.8018 32.6821 71.7195 33.5902 71.7195 35.6082V35.8834H74.9666V38.7452H71.7195V49.6421H68.7476V38.7452H66.6562V35.8834H68.7476V35.6082C68.7476 33.7186 69.2704 32.2877 70.3161 31.3154C71.3801 30.3248 72.9303 29.8937 74.9666 30.0221V32.8839Z" fill="#1A1A1A"/>
+</g>
+</g>
+<g id="marka / dostarczone_przez">
+<path id="Vector_8" d="M240.003 48.4927H243.594V50H237.831V48.936L241.289 44.1184H237.978V42.6111H243.446V43.6751L240.003 48.4927Z" fill="#1A1A1A"/>
+<path id="Vector_9" d="M231.422 46.9853C231.541 47.5468 231.811 47.9803 232.235 48.2857C232.659 48.5813 233.176 48.7291 233.787 48.7291C234.634 48.7291 235.269 48.4237 235.693 47.8128L237.008 48.5813C236.279 49.6551 235.201 50.1921 233.772 50.1921C232.57 50.1921 231.6 49.8276 230.861 49.0985C230.122 48.3596 229.752 47.4286 229.752 46.3055C229.752 45.2021 230.117 44.281 230.846 43.5421C231.575 42.7933 232.511 42.4189 233.654 42.4189C234.737 42.4189 235.624 42.7982 236.314 43.5568C237.013 44.3154 237.363 45.2366 237.363 46.3203C237.363 46.4878 237.343 46.7094 237.304 46.9853H231.422ZM231.408 45.6848H235.752C235.644 45.0839 235.393 44.6307 234.999 44.3253C234.614 44.0199 234.161 43.8672 233.639 43.8672C233.048 43.8672 232.555 44.0297 232.161 44.3548C231.767 44.68 231.516 45.1233 231.408 45.6848Z" fill="#1A1A1A"/>
+<path id="Vector_10" d="M225.831 48.4927H229.422V50H223.659V48.936L227.117 44.1184H223.806V42.6111H229.274V43.6751L225.831 48.4927Z" fill="#1A1A1A"/>
+<path id="Vector_11" d="M220.765 43.8525C221.169 42.9363 221.927 42.4781 223.041 42.4781V44.2072C222.43 44.1677 221.898 44.3155 221.445 44.6505C220.992 44.9756 220.765 45.5175 220.765 46.276V50.0001H219.169V42.6111H220.765V43.8525Z" fill="#1A1A1A"/>
+<path id="Vector_12" d="M214.338 42.4189C215.353 42.4189 216.22 42.7982 216.939 43.5568C217.658 44.3056 218.018 45.2218 218.018 46.3055C218.018 47.3991 217.658 48.3202 216.939 49.069C216.22 49.8177 215.353 50.1921 214.338 50.1921C213.215 50.1921 212.353 49.7783 211.752 48.9507V52.9555H210.156V42.6111H211.752V43.6751C212.353 42.8377 213.215 42.4189 214.338 42.4189ZM212.417 48.005C212.861 48.4483 213.417 48.67 214.087 48.67C214.757 48.67 215.314 48.4483 215.757 48.005C216.2 47.5518 216.422 46.9853 216.422 46.3055C216.422 45.6257 216.2 45.0642 215.757 44.6208C215.314 44.1677 214.757 43.9411 214.087 43.9411C213.417 43.9411 212.861 44.1677 212.417 44.6208C211.974 45.0642 211.752 45.6257 211.752 46.3055C211.752 46.9853 211.974 47.5518 212.417 48.005Z" fill="#1A1A1A"/>
+<path id="Vector_13" d="M199.708 46.9853C199.826 47.5468 200.097 47.9803 200.521 48.2857C200.944 48.5813 201.462 48.7291 202.072 48.7291C202.92 48.7291 203.555 48.4237 203.979 47.8128L205.294 48.5813C204.565 49.6551 203.486 50.1921 202.058 50.1921C200.856 50.1921 199.885 49.8276 199.146 49.0985C198.408 48.3596 198.038 47.4286 198.038 46.3055C198.038 45.2021 198.403 44.281 199.132 43.5421C199.861 42.7933 200.797 42.4189 201.939 42.4189C203.023 42.4189 203.91 42.7982 204.599 43.5568C205.299 44.3154 205.649 45.2366 205.649 46.3203C205.649 46.4878 205.629 46.7094 205.59 46.9853H199.708ZM199.693 45.6848H204.038C203.93 45.0839 203.678 44.6307 203.284 44.3253C202.9 44.0199 202.447 43.8672 201.925 43.8672C201.334 43.8672 200.841 44.0297 200.447 44.3548C200.053 44.68 199.802 45.1233 199.693 45.6848Z" fill="#1A1A1A"/>
+<path id="Vector_14" d="M194.192 42.4189C195.039 42.4189 195.724 42.6899 196.246 43.2317C196.768 43.7736 197.029 44.5174 197.029 45.4632V50H195.433V45.6257C195.433 45.074 195.285 44.6504 194.99 44.3548C194.694 44.0593 194.29 43.9115 193.778 43.9115C193.216 43.9115 192.763 44.0888 192.418 44.4435C192.074 44.7883 191.901 45.3203 191.901 46.0395V50H190.305V42.6111H191.901V43.5568C192.384 42.7982 193.147 42.4189 194.192 42.4189Z" fill="#1A1A1A"/>
+<path id="Vector_15" d="M185.256 50.1921C184.172 50.1921 183.251 49.8177 182.492 49.069C181.734 48.3202 181.354 47.3991 181.354 46.3055C181.354 45.212 181.734 44.2908 182.492 43.5421C183.251 42.7933 184.172 42.4189 185.256 42.4189C186.349 42.4189 187.271 42.7933 188.019 43.5421C188.778 44.2908 189.157 45.212 189.157 46.3055C189.157 47.3991 188.778 48.3202 188.019 49.069C187.271 49.8177 186.349 50.1921 185.256 50.1921ZM183.615 47.9754C184.059 48.4187 184.606 48.6404 185.256 48.6404C185.906 48.6404 186.453 48.4187 186.896 47.9754C187.34 47.5321 187.561 46.9754 187.561 46.3055C187.561 45.6356 187.34 45.079 186.896 44.6356C186.453 44.1923 185.906 43.9706 185.256 43.9706C184.606 43.9706 184.059 44.1923 183.615 44.6356C183.172 45.079 182.95 45.6356 182.95 46.3055C182.95 46.9754 183.172 47.5321 183.615 47.9754Z" fill="#1A1A1A"/>
+<path id="Vector_16" d="M177.433 48.4927H181.024V50H175.261V48.936L178.719 44.1184H175.409V42.6111H180.876V43.6751L177.433 48.4927Z" fill="#1A1A1A"/>
+<path id="Vector_17" d="M171.445 50.1921C170.332 50.1921 169.401 49.8177 168.652 49.069C167.913 48.3202 167.543 47.3991 167.543 46.3055C167.543 45.2021 167.913 44.281 168.652 43.5421C169.401 42.7933 170.332 42.4189 171.445 42.4189C172.164 42.4189 172.819 42.5914 173.41 42.9362C174.001 43.281 174.445 43.744 174.74 44.3253L173.366 45.1233C173.198 44.7686 172.942 44.4928 172.597 44.2957C172.263 44.0888 171.873 43.9854 171.43 43.9854C170.78 43.9854 170.233 44.2071 169.79 44.6504C169.356 45.0937 169.139 45.6454 169.139 46.3055C169.139 46.9656 169.356 47.5173 169.79 47.9606C170.233 48.404 170.78 48.6256 171.43 48.6256C171.864 48.6256 172.253 48.5222 172.597 48.3153C172.952 48.1084 173.218 47.8326 173.395 47.4877L174.77 48.271C174.455 48.8621 174.001 49.33 173.41 49.6749C172.819 50.0197 172.164 50.1921 171.445 50.1921Z" fill="#1A1A1A"/>
+<path id="Vector_18" d="M165.144 43.8525C165.548 42.9363 166.306 42.4781 167.42 42.4781V44.2072C166.809 44.1677 166.277 44.3155 165.824 44.6505C165.37 44.9756 165.144 45.5175 165.144 46.276V50.0001H163.548V42.6111H165.144V43.8525Z" fill="#1A1A1A"/>
+<path id="Vector_19" d="M160.387 42.6111H161.983V50H160.387V48.936C159.786 49.7734 158.924 50.1921 157.801 50.1921C156.787 50.1921 155.92 49.8177 155.2 49.069C154.481 48.3104 154.122 47.3892 154.122 46.3055C154.122 45.212 154.481 44.2908 155.2 43.5421C155.92 42.7933 156.787 42.4189 157.801 42.4189C158.924 42.4189 159.786 42.8327 160.387 43.6603V42.6111ZM156.383 48.005C156.826 48.4483 157.383 48.67 158.052 48.67C158.722 48.67 159.279 48.4483 159.722 48.005C160.166 47.5518 160.387 46.9853 160.387 46.3055C160.387 45.6257 160.166 45.0642 159.722 44.6208C159.279 44.1677 158.722 43.9411 158.052 43.9411C157.383 43.9411 156.826 44.1677 156.383 44.6208C155.939 45.0642 155.718 45.6257 155.718 46.3055C155.718 46.9853 155.939 47.5518 156.383 48.005Z" fill="#1A1A1A"/>
+<path id="Vector_20" d="M153.686 44.148H151.854V47.6947C151.854 48.0001 151.923 48.2218 152.061 48.3597C152.199 48.4878 152.401 48.5617 152.667 48.5814C152.943 48.5912 153.283 48.5863 153.686 48.5666V50C152.465 50.1478 151.588 50.0444 151.056 49.6897C150.524 49.3252 150.258 48.6602 150.258 47.6947V44.148H148.898V42.6111H150.258V41.0151L151.854 40.5422V42.6111H153.686V44.148Z" fill="#1A1A1A"/>
+<path id="Vector_21" d="M144.769 44.6504C144.769 44.8967 144.902 45.0937 145.168 45.2415C145.444 45.3794 145.774 45.5026 146.158 45.611C146.552 45.7095 146.947 45.8277 147.341 45.9656C147.735 46.1035 148.065 46.34 148.331 46.675C148.607 47.0001 148.744 47.4138 148.744 47.9163C148.744 48.6256 148.469 49.1823 147.917 49.5862C147.375 49.9901 146.69 50.1921 145.863 50.1921C145.134 50.1921 144.508 50.0394 143.986 49.734C143.464 49.4286 143.085 49.0049 142.848 48.4631L144.222 47.6651C144.479 48.3744 145.025 48.7291 145.863 48.7291C146.7 48.7291 147.119 48.4532 147.119 47.9015C147.119 47.6651 146.981 47.473 146.705 47.3252C146.439 47.1774 146.109 47.0543 145.715 46.9557C145.331 46.8474 144.942 46.7242 144.548 46.5863C144.154 46.4484 143.819 46.2218 143.543 45.9065C143.277 45.5814 143.144 45.1725 143.144 44.68C143.144 44.0002 143.4 43.4534 143.912 43.0396C144.434 42.6258 145.08 42.4189 145.848 42.4189C146.459 42.4189 147.001 42.5569 147.474 42.8327C147.956 43.0987 148.326 43.4731 148.582 43.9558L147.237 44.7095C146.981 44.1479 146.518 43.8672 145.848 43.8672C145.543 43.8672 145.286 43.9361 145.08 44.0741C144.873 44.2021 144.769 44.3942 144.769 44.6504Z" fill="#1A1A1A"/>
+<path id="Vector_22" d="M138.431 50.1921C137.347 50.1921 136.426 49.8177 135.668 49.069C134.909 48.3202 134.53 47.3991 134.53 46.3055C134.53 45.212 134.909 44.2908 135.668 43.5421C136.426 42.7933 137.347 42.4189 138.431 42.4189C139.525 42.4189 140.446 42.7933 141.195 43.5421C141.953 44.2908 142.332 45.212 142.332 46.3055C142.332 47.3991 141.953 48.3202 141.195 49.069C140.446 49.8177 139.525 50.1921 138.431 50.1921ZM136.791 47.9754C137.234 48.4187 137.781 48.6404 138.431 48.6404C139.081 48.6404 139.628 48.4187 140.071 47.9754C140.515 47.5321 140.736 46.9754 140.736 46.3055C140.736 45.6356 140.515 45.079 140.071 44.6356C139.628 44.1923 139.081 43.9706 138.431 43.9706C137.781 43.9706 137.234 44.1923 136.791 44.6356C136.347 45.079 136.126 45.6356 136.126 46.3055C136.126 46.9754 136.347 47.5321 136.791 47.9754Z" fill="#1A1A1A"/>
+<path id="Vector_23" d="M131.783 39.6555H133.379V50H131.783V48.936C131.182 49.7734 130.32 50.1921 129.197 50.1921C128.182 50.1921 127.315 49.8177 126.596 49.069C125.877 48.3104 125.517 47.3892 125.517 46.3055C125.517 45.212 125.877 44.2908 126.596 43.5421C127.315 42.7933 128.182 42.419 129.197 42.419C130.32 42.419 131.182 42.8327 131.783 43.6603V39.6555ZM127.778 48.005C128.221 48.4483 128.778 48.67 129.448 48.67C130.118 48.67 130.675 48.4483 131.118 48.005C131.561 47.5518 131.783 46.9853 131.783 46.3055C131.783 45.6258 131.561 45.0642 131.118 44.6209C130.675 44.1677 130.118 43.9411 129.448 43.9411C128.778 43.9411 128.221 44.1677 127.778 44.6209C127.335 45.0642 127.113 45.6258 127.113 46.3055C127.113 46.9853 127.335 47.5518 127.778 48.005Z" fill="#1A1A1A"/>
+</g>
+<g id="marka / onrevolt_logo" clip-path="url(#clip4_2449_13763)">
+<path id="Vector_24" d="M306.114 43.9894V42.3554H304.264V40.2928H302.547V42.3518H301.172V43.9857H302.547V47.4807C302.547 48.4552 302.826 49.1366 303.376 49.503C303.766 49.7631 304.334 49.8913 305.081 49.8913C305.382 49.8913 305.761 49.8693 306.118 49.829V48.294C305.717 48.316 305.319 48.3196 305.044 48.305C304.784 48.2903 304.587 48.2207 304.457 48.0998C304.331 47.9789 304.264 47.7701 304.264 47.4844V43.9894H306.114Z" fill="#1A1A1A"/>
+<path id="Vector_25" d="M281.441 46.4809V46.4259C281.441 45.543 282.24 45.1327 282.24 44.345C282.24 43.7405 281.742 43.2496 281.129 43.2496C280.515 43.2496 280.018 43.7405 280.018 44.345C280.018 45.1107 280.816 45.532 280.816 46.4259V46.4809C280.816 47.3748 280.018 47.5873 280.018 48.5618C280.018 49.1662 280.515 49.6572 281.129 49.6572C281.742 49.6572 282.24 49.1662 282.24 48.5618C282.24 47.6385 281.441 47.3638 281.441 46.4809Z" fill="#8A47FF"/>
+<path id="Vector_26" d="M275.658 42.191C274.495 42.191 273.529 42.5684 272.789 43.3157C272.046 44.0631 271.671 45.001 271.671 46.1074C271.671 47.2137 272.054 48.1773 272.804 48.9136C273.555 49.65 274.558 50.0237 275.777 50.0237C277.229 50.0237 278.344 49.4778 279.084 48.3971L279.117 48.3494L277.742 47.5581L277.701 47.5325L277.675 47.5728C277.259 48.1626 276.628 48.463 275.795 48.463C275.193 48.463 274.677 48.3165 274.261 48.0234C273.863 47.745 273.599 47.3456 273.477 46.8327H279.388L279.396 46.7888C279.437 46.5067 279.455 46.2869 279.455 46.1183C279.455 45.0339 279.098 44.0961 278.389 43.3341C277.683 42.572 276.761 42.191 275.658 42.191ZM274.186 44.206C274.573 43.8909 275.063 43.7334 275.643 43.7334C276.156 43.7334 276.609 43.8836 276.988 44.1767C277.356 44.4588 277.597 44.8837 277.709 45.4369H273.454C273.566 44.9204 273.811 44.5101 274.183 44.206H274.186Z" fill="#8A47FF"/>
+<path id="Vector_27" d="M269.806 45.4039C269.91 45.3453 270.014 45.2867 270.11 45.2171C270.233 45.1292 270.348 45.0339 270.456 44.9313C270.508 44.8837 270.553 44.8288 270.601 44.7775C270.686 44.6859 270.764 44.587 270.839 44.4881C270.868 44.4478 270.898 44.4038 270.928 44.3635C271.14 44.0411 271.292 43.6821 271.374 43.3011C271.377 43.2791 271.385 43.2534 271.389 43.2315C271.426 43.041 271.452 42.8468 271.452 42.649V42.6123C271.452 42.4145 271.426 42.2203 271.389 42.0298C271.385 42.0078 271.377 41.9822 271.374 41.9602C271.292 41.5792 271.14 41.2202 270.928 40.8978C270.898 40.8538 270.868 40.8135 270.839 40.7732C270.764 40.6707 270.686 40.5754 270.601 40.4838C270.553 40.4325 270.508 40.3776 270.456 40.3299C270.348 40.2274 270.233 40.1321 270.11 40.0442C270.014 39.9746 269.91 39.916 269.806 39.8573C269.783 39.8427 269.772 39.8427 269.75 39.828L269.724 39.8134C269.274 39.5716 268.773 39.425 268.23 39.425H264.21V49.8368H266.031V45.8362H267.621L269.958 49.8112L269.973 49.8368H272.202L269.638 45.4882C269.664 45.4735 269.698 45.4626 269.724 45.4479M268.23 44.129H266.031V41.1249H268.23C269.048 41.1249 269.709 41.799 269.72 42.627C269.709 43.4586 269.048 44.129 268.23 44.129Z" fill="#8A47FF"/>
+<path id="Vector_28" d="M251.732 42.191C250.629 42.191 249.681 42.572 248.909 43.3231C248.136 44.0741 247.746 45.012 247.746 46.1074C247.746 47.2028 248.136 48.1406 248.909 48.8916C249.681 49.6427 250.629 50.0237 251.732 50.0237C252.836 50.0237 253.798 49.6427 254.564 48.8916C255.329 48.1406 255.719 47.2028 255.719 46.1074C255.719 45.012 255.329 44.0741 254.564 43.3231C253.798 42.572 252.843 42.191 251.732 42.191ZM253.352 47.7303C252.918 48.1589 252.375 48.3751 251.736 48.3751C251.097 48.3751 250.555 48.1589 250.12 47.7303C249.685 47.3017 249.466 46.7558 249.466 46.1074C249.466 45.4589 249.685 44.913 250.12 44.4844C250.555 44.0558 251.097 43.8396 251.736 43.8396C252.375 43.8396 252.918 44.0558 253.352 44.4844C253.787 44.913 254.006 45.4589 254.006 46.1074C254.006 46.7558 253.787 47.3017 253.352 47.7303Z" fill="#1A1A1A"/>
+<path id="Vector_29" d="M260.316 42.191C259.317 42.191 258.559 42.5317 258.057 43.2058V42.3815H256.34V49.8368H258.057V45.8472C258.057 45.1512 258.228 44.6273 258.562 44.2902C258.897 43.9532 259.346 43.7847 259.896 43.7847C260.398 43.7847 260.795 43.9276 261.081 44.2096C261.368 44.4917 261.512 44.9057 261.512 45.4369V49.8405H263.229V45.2757C263.229 44.3269 262.958 43.5649 262.423 43.019C261.888 42.4731 261.178 42.1947 260.312 42.1947H260.316V42.191Z" fill="#1A1A1A"/>
+<path id="Vector_30" d="M294.111 42.191C293.007 42.191 292.056 42.572 291.287 43.3231C290.514 44.0741 290.124 45.012 290.124 46.1074C290.124 47.2028 290.514 48.1406 291.287 48.8916C292.06 49.6427 293.007 50.0237 294.111 50.0237C295.214 50.0237 296.177 49.6427 296.942 48.8916C297.711 48.1406 298.098 47.2028 298.098 46.1074C298.098 45.012 297.708 44.0741 296.942 43.3231C296.177 42.572 295.222 42.191 294.111 42.191ZM295.727 47.7303C295.292 48.1589 294.75 48.3751 294.111 48.3751C293.472 48.3751 292.929 48.1589 292.495 47.7303C292.06 47.3017 291.841 46.7558 291.841 46.1074C291.841 45.4589 292.06 44.913 292.495 44.4844C292.929 44.0558 293.472 43.8396 294.111 43.8396C294.75 43.8396 295.292 44.0558 295.727 44.4844C296.162 44.913 296.381 45.4589 296.381 46.1074C296.381 46.7558 296.162 47.3017 295.727 47.7303Z" fill="#1A1A1A"/>
+<path id="Vector_31" d="M300.496 40.2643H298.85V49.8334H300.496V40.2643Z" fill="#1A1A1A"/>
+<path id="Vector_32" d="M286.488 47.8839L284.448 42.4105L284.437 42.3776L282.453 42.3739L285.499 49.8072L285.511 49.8402H287.45L290.478 42.4472L290.508 42.3739L288.524 42.3776L286.488 47.8839Z" fill="#1A1A1A"/>
+</g>
+<g id="sekcja / twoja_prognozowana_oszczednosc">
+<rect x="30" y="599" width="535" height="168" rx="10" fill="white"/>
+<text id="_twoja_prognozowana_oszczednosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="41" y="618.41">Twoja prognozowana oszcz&#x119;dno&#x15b;&#x107;</tspan></text>
+<g id="_nowy rachunek">
+<rect id="_tlo_nowy_rachunek" x="254" y="637.379" width="299" height="42.6462" rx="5" fill="#029B46" fill-opacity="0.05"/>
+<text id="_nowy_rachunek" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" font-weight="600" letter-spacing="-0.02em"><tspan x="276.967" y="649.982">Tw&#xf3;j nowy rachunek z systemem</tspan></text>
+<text id="#b2c_twoj_nowy_rachunek_z_systemem_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" font-weight="900" letter-spacing="-0.02em"><tspan x="527.433" y="649.831">X XXX</tspan></text>
+<rect id="_kolor_nowy_rachunek" x="258.791" y="642.096" width="8" height="8" rx="2.5" fill="#029B46" fill-opacity="0.5"/>
+<g id="pole / b2c_oszczednosc_procent_strona_09">
+<text id="stale / tekst" fill="#009A44" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" font-weight="bold" letter-spacing="-0.02em"><tspan x="277.209" y="661.677">Oszcz&#x119;dno&#x15b;&#x107; </tspan></text>
+<text id="#b2c_oszczednosc_procent_strona_09" fill="#009A44" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" font-weight="bold" letter-spacing="-0.02em"><tspan x="326.209" y="661.677">85</tspan></text>
+<text id="stale / jednostka lub dopisek_25" fill="#009A44" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" font-weight="bold" letter-spacing="-0.02em"><tspan x="337.209" y="661.677">%</tspan></text>
+</g>
+<text id="#b2c_oszczednosc_strona_09" fill="#009A44" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="520.859" y="662.53">X XXX</tspan></text>
+</g>
+<g id="_aktualny_rachunek">
+<rect id="_tlo_aktualny_rachunek" x="254" y="618.093" width="299.443" height="15.7655" rx="5" fill="#FF3B30" fill-opacity="0.1"/>
+<text id="_aktualny_rachunek_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" font-weight="bold" letter-spacing="-0.02em"><tspan x="276.758" y="628.74">Tw&#xf3;j aktualny rachunek roczny</tspan></text>
+<text id="#b2c_twoj_aktualny_rachunek_roczny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" font-weight="900" letter-spacing="-0.02em"><tspan x="527.225" y="628.923">X XXX</tspan></text>
+<rect id="_kolor_aktualny_rachunek" x="258.791" y="622.096" width="8" height="8" rx="2.5" fill="#FF3B30" fill-opacity="0.5"/>
+</g>
+<g id="_PLN_brutto">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" letter-spacing="-0.02em"><tspan x="526.441" y="612.719">brutto</tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" letter-spacing="-0.02em"><tspan x="524.343" y="612.719"> </tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-weight="bold" letter-spacing="-0.02em"><tspan x="509.62" y="612.719">PLN</tspan></text>
+</g>
+<g id="_nowy rachunek_2">
+<rect id="_tlo_nowy_rachunek_2" x="254" y="683.974" width="299" height="75.0256" rx="5" fill="#8A47FF" fill-opacity="0.05"/>
+</g>
+<g id="_obliczenia">
+<text id="_laczna_zgromadzona_wartosc_depozytu" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" letter-spacing="-0.02em"><tspan x="277" y="706.828">&#x141;&#x105;czna zgromadzona warto&#x15b;&#x107; depozytu </tspan></text>
+<text id="_oplaty_stale_i_dystrybucyjne" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" letter-spacing="-0.02em"><tspan x="277" y="696.261">Op&#x142;aty sta&#x142;e i dystrybucyjne</tspan></text>
+<text id="_laczna_wykorzystana_wartosc_depozytu_na_pokrycie_energii_pobranej" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" letter-spacing="-0.02em"><tspan x="277" y="716.405">&#x141;&#x105;czna wykorzystana warto&#x15b;&#x107; depozytu na pokrycie energii pobranej</tspan></text>
+<text id="_niewykorzystana_wartosc_depozytu" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" letter-spacing="-0.02em"><tspan x="277" y="737.964">Niewykorzystana warto&#x15b;&#x107; depozytu </tspan></text>
+<text id="_zwrot_30%_wartosci" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" letter-spacing="-0.02em"><tspan x="277" y="748.531">Zwrot 30% warto&#x15b;ci</tspan></text>
+<text id="_wartosc_energii_obranej_niepokrytej_z_depozytu" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" letter-spacing="-0.02em"><tspan x="277" y="727.396">Warto&#x15b;&#x107; energii pobranej niepokrytej z depozytu</tspan></text>
+<text id="#b2c_laczna_zgromadzona_wartosc_depozytu_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" letter-spacing="-0.02em"><tspan x="530.532" y="707.159">X XXX</tspan></text>
+<text id="#b2c_oplaty_stale_i_dystrybucyjne_strona_09" fill="#FF3B30" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" font-weight="bold" letter-spacing="-0.02em"><tspan x="522.951" y="696.261">- X XXX</tspan></text>
+<text id="#b2c_laczna_wykorzystana_wartosc_depozytu_na_pokrycie_energii_pobranej_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" letter-spacing="-0.02em"><tspan x="530.532" y="718.056">X XXX</tspan></text>
+<text id="#b2c_niewykorzystana_wartosc_depozytu_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" letter-spacing="-0.02em"><tspan x="530.532" y="739.851">X XXX</tspan></text>
+<text id="#b2c_zwrot_30_wartosci_strona_09" fill="#009A44" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" font-weight="bold" letter-spacing="-0.02em"><tspan x="528.737" y="750.748">X XXX</tspan></text>
+<text id="#b2c_wartosc_energii_pobranej_niepokrytej_z_depozytu_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.5" letter-spacing="-0.02em"><tspan x="545.481" y="728.953">X</tspan></text>
+</g>
+<g id="wykres_png / b2c / strona_09 / oszczednosc">
+<g id="_pln_brutto">
+<text transform="translate(39 756) rotate(-90)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" letter-spacing="-0.02em"><tspan x="59.6308" y="7.71872">brutto</tspan></text>
+<text transform="translate(39 756) rotate(-90)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" letter-spacing="-0.02em"><tspan x="57.533" y="7.71872"> </tspan></text>
+<text transform="translate(39 756) rotate(-90)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-weight="bold" letter-spacing="-0.02em"><tspan x="42.8098" y="7.71872">PLN</tspan></text>
+</g>
+<g id="grafika / slupki_oszczednosci">
+<g id="_wartosci_wykres">
+<text id="_wartosc_1" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="74.2148" y="757.424">0</tspan></text>
+</g>
+<path id="Rectangle 519" d="M183.006 740C184.659 740 186 741.341 186 742.994L186 757L162 757L162 742.994C162 741.341 163.341 740 164.994 740L183.006 740Z" fill="#029B46" fill-opacity="0.5"/>
+<path id="_strzalka" d="M174 735.407L174.399 735.407L174.399 648.093L174 648.093L173.601 648.093L173.601 735.407L174 735.407ZM174 739L176.305 735.007L171.695 735.007L174 739ZM174 644.5L171.695 648.493L176.305 648.493L174 644.5Z" fill="#009A44"/>
+<path id="_ponowy_wykres" d="M88 757.504L88.25 757.504L88.25 625.25L88 625.25L87.75 625.25L87.75 757.504L88 757.504ZM88 623L86.5566 625.5L89.4434 625.5L88 623Z" fill="#2B3674"/>
+<path id="_poziomy_wykres" d="M84 757.504L210 757.504" stroke-width="0.5" stroke="#2B3674"/>
+<path id="Rectangle 517" d="M113 757L113 646.994C113 645.341 114.341 644 115.994 644L134.006 644C135.659 644 137 645.341 137 646.994L137 757L113 757Z" fill="#FF9D98"/>
+<path id="_przerywana_1" d="M88 740L88.9838 740M210 740L209.016 740M207.048 740L205.081 740M203.113 740L201.145 740M199.177 740L197.21 740M195.242 740L193.274 740M191.306 740L189.339 740M187.371 740L185.403 740M183.435 740L181.468 740M179.5 740L177.532 740M175.565 740L173.597 740M171.629 740L169.661 740M167.694 740L165.726 740M163.758 740L161.79 740M159.823 740L157.855 740M155.887 740L153.919 740M151.952 740L149.984 740M148.016 740L146.048 740M144.081 740L142.113 740M140.145 740L138.177 740M136.21 740L134.242 740M132.274 740L130.306 740M128.339 740L126.371 740M124.403 740L122.435 740M120.468 740L118.5 740M116.532 740L114.564 740M112.597 740L110.629 740M108.661 740L106.694 740M104.726 740L102.758 740M100.79 740L98.8225 740M96.8548 740L94.887 740M92.9193 740L90.9516 740" stroke-width="0.5" stroke="#2B3674"/>
+<path id="_przerywana_2" d="M88 644L88.9838 644M210 644L209.016 644M207.048 644L205.081 644M203.113 644L201.145 644M199.177 644L197.21 644M195.242 644L193.274 644M191.306 644L189.339 644M187.371 644L185.403 644M183.435 644L181.468 644M179.5 644L177.532 644M175.565 644L173.597 644M171.629 644L169.661 644M167.694 644L165.726 644M163.758 644L161.79 644M159.823 644L157.855 644M155.887 644L153.919 644M151.952 644L149.984 644M148.016 644L146.048 644M144.081 644L142.113 644M140.145 644L138.177 644M136.21 644L134.242 644M132.274 644L130.306 644M128.339 644L126.371 644M124.403 644L122.435 644M120.468 644L118.5 644M116.532 644L114.564 644M112.597 644L110.629 644M108.661 644L106.694 644M104.726 644L102.758 644M100.79 644L98.8225 644M96.8548 644L94.887 644M92.9193 644L90.9516 644" stroke-width="0.5" stroke="#2B3674"/>
+</g>
+<g id="_oszczednosc">
+<rect width="28" height="9" transform="translate(160 689)" fill="white"/>
+<text id="_oszczednosc_%" transform="translate(160 689)" fill="#009A44" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7.98515" font-weight="bold" letter-spacing="-0.02em"><tspan x="3.14899" y="7.71365">+XX%</tspan></text>
+</g>
+<text id="_wartosc_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="59.0932" y="708.424">4 000</tspan></text>
+<text id="_wartosc_2_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="61.1645" y="745.424">1 000</tspan></text>
+<text id="_wartosc_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="59.0727" y="696.424">5 000</tspan></text>
+<text id="_wartosc_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="58.9496" y="684.424">6 000</tspan></text>
+<text id="_wartosc_4_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="59.2094" y="720.424">3 000</tspan></text>
+<text id="_wartosc_4_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="59.312" y="732.424">2 000</tspan></text>
+<text id="_wartosc_5" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="59.6059" y="672.424">7 000</tspan></text>
+<text id="_wartosc_5_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="58.9496" y="648.424">9 000</tspan></text>
+<text id="_wartosc_6" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="59.0864" y="660.424">8 000</tspan></text>
+<text id="_wartosc_6_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="56.5193" y="634.423">10 000</tspan></text>
+<path id="_wskaznik_1" d="M84 707.537H88" stroke-width="0.5" stroke="#2B3674"/>
+<path id="_wskaznik_1_2" d="M84 744.537H88" stroke-width="0.5" stroke="#2B3674"/>
+<path id="_wskaznik_3" d="M84 683.537H88" stroke-width="0.5" stroke="#2B3674"/>
+<path id="_wskaznik_3_2" d="M84 719.537H88" stroke-width="0.5" stroke="#2B3674"/>
+<path id="_wskaznik_5" d="M84 659.536H88" stroke-width="0.5" stroke="#2B3674"/>
+<path id="_wskaznik_5_2" d="M84 635.536H88" stroke-width="0.5" stroke="#2B3674"/>
+<path id="_wskaznik_2" d="M84 695.537H88" stroke-width="0.5" stroke="#2B3674"/>
+<path id="_wskaznik_2_2" d="M84 731.537H88" stroke-width="0.5" stroke="#2B3674"/>
+<path id="_wskaznik_4" d="M84 671.537H88" stroke-width="0.5" stroke="#2B3674"/>
+<path id="_wskaznik_4_2" d="M84 647.536H88" stroke-width="0.5" stroke="#2B3674"/>
+</g>
+</g>
+<g id="stopka / zalozenia_kalkulacji">
+<rect x="30" y="772" width="535" height="40" rx="10" fill="white"/>
+<text id="_opis_oferty_opis" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-style="italic" font-weight="300" letter-spacing="-0.02em"><tspan x="40" y="786.387">Kalkulacja </tspan><tspan x="73.1733" y="786.387">koszt&#xf3;w </tspan><tspan x="101.394" y="786.387">i </tspan><tspan x="106.207" y="786.387">prognozowanych </tspan><tspan x="161.823" y="786.387">oszcz&#x119;dno&#x15b;ci </tspan><tspan x="206.686" y="786.387">ma </tspan><tspan x="219.61" y="786.387">charakter </tspan><tspan x="252.137" y="786.387">szacunkowy </tspan><tspan x="292.707" y="786.387">i </tspan><tspan x="297.52" y="786.387">zosta&#x142;a </tspan><tspan x="322.439" y="786.387">sporz&#x105;dzona </tspan><tspan x="365.049" y="786.387">na </tspan><tspan x="375.827" y="786.387">podstawie </tspan><tspan x="411.232" y="786.387">oferty </tspan><tspan x="433.091" y="786.387">ENEA </tspan><tspan x="452.783" y="786.387">S.A. </tspan><tspan x="466.829" y="786.387">oraz </tspan><tspan x="483.253" y="786.387">taryf </tspan><tspan x="500.959" y="786.387">dystrybucji </tspan><tspan x="538.634" y="786.387">ENEA </tspan><tspan x="40" y="794.387">Operator </tspan><tspan x="70.663" y="794.387">obowi&#x105;zuj&#x105;cych </tspan><tspan x="122.539" y="794.387">na </tspan><tspan x="132.543" y="794.387">dzie&#x144; </tspan><tspan x="151.41" y="794.387">19.10.2026 </tspan><tspan x="185.197" y="794.387">r., </tspan><tspan x="192.128" y="794.387">przy </tspan><tspan x="207.964" y="794.387">za&#x142;o&#x17c;eniu </tspan><tspan x="238.698" y="794.387">zu&#x17c;ycia </tspan><tspan x="263.684" y="794.387">z </tspan><tspan x="269.296" y="794.387">roku </tspan><tspan x="285.199" y="794.387">poprzedniego. </tspan><tspan x="331.343" y="794.387">Prognozowane </tspan><tspan x="378.666" y="794.387">koszty </tspan><tspan x="400.927" y="794.387">i </tspan><tspan x="404.966" y="794.387">oszcz&#x119;dno&#x15b;ci </tspan><tspan x="449.056" y="794.387">mog&#x105; </tspan><tspan x="468.808" y="794.387">r&#xf3;&#x17c;ni&#x107; </tspan><tspan x="489.818" y="794.387">si&#x119; </tspan><tspan x="500.988" y="794.387">od </tspan><tspan x="511.71" y="794.387">rzeczywistych            </tspan><tspan x="40" y="802.387">w </tspan><tspan x="46.9934" y="802.387">zale&#x17c;no&#x15b;ci </tspan><tspan x="80.0911" y="802.387">od </tspan><tspan x="90.1575" y="802.387">zmian </tspan><tspan x="110.01" y="802.387">cen </tspan><tspan x="123.327" y="802.387">energii, </tspan><tspan x="146.724" y="802.387">taryf </tspan><tspan x="163.001" y="802.387">dystrybucyjnych, </tspan><tspan x="217.312" y="802.387">obowi&#x105;zuj&#x105;cych </tspan><tspan x="268.532" y="802.387">przepis&#xf3;w </tspan><tspan x="301.626" y="802.387">oraz </tspan><tspan x="316.621" y="802.387">faktycznego </tspan><tspan x="355.677" y="802.387">zu&#x17c;ycia </tspan><tspan x="380.007" y="802.387">energii </tspan><tspan x="402.368" y="802.387">i </tspan><tspan x="405.752" y="802.387">pracy </tspan><tspan x="425.331" y="802.387">instalacji.</tspan></text>
+</g>
+<g id="sekcja / aktualny_rachunek_roczny">
+<g clip-path="url(#clip5_2449_13763)">
+<rect x="30" y="346" width="265" height="248" rx="10" fill="white"/>
+<g id="_twoja_prognozowana_oszczednosc_3">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="364.41">Aktualny rachunek roczny </tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" letter-spacing="-0.02em"><tspan x="165.439" y="364.41">(PLN brutto)</tspan></text>
+</g>
+<g id="blok / zuzycie_energii">
+<text id="etykieta / zuzycie_energii" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="102" y="377.387">Zu&#x17c;ycie energii</tspan></text>
+<g id="pole / b2c_zuzycie_energii_aktualne_strona_09">
+<text id="#b2c_zuzycie_energii_aktualne_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="243" y="374.887">XX XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_26" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="268" y="374.887"> kWh</tspan></text>
+</g>
+</g>
+<g id="blok / calkowity_rachunek">
+<g id="pole / b2c_calkowity_rachunek_brutto_aktualny_strona_09">
+<text id="#b2c_calkowity_rachunek_brutto_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="238" y="506.41">X XXX</tspan></text>
+<g id="stale / jednostka lub dopisek_27">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-weight="bold" letter-spacing="-0.02em"><tspan x="269.154" y="506.41">PLN</tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="267" y="506.41"> </tspan></text>
+</g>
+</g>
+<text id="etykieta / calkowity_rachunek" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="102" y="507.387">Ca&#x142;kowity rachunek </tspan></text>
+</g>
+<g id="blok / autokonsumpcja_z_pv">
+<g id="pole / b2c_autokonsumpcja_z_pv_aktualna_strona_09">
+<text id="#b2c_autokonsumpcja_z_pv_aktualna_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="255" y="388.046">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_28" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="271" y="388.046"> kWh</tspan></text>
+</g>
+<text id="etykieta / autokonsumpcja_z_pv" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="388.046">Autokonsumpcja z PV</tspan></text>
+</g>
+<g id="blok / zakup_z_sieci">
+<g id="pole / b2c_energia_pobrana_z_sieci_strona_09">
+<text id="#b2c_energia_pobrana_z_sieci_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="255" y="400.046">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_29" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="271" y="400.046"> kWh</tspan></text>
+</g>
+<text id="etykieta / zakup_z_sieci" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="400.046">Zakup z sieci</tspan></text>
+</g>
+<path id="_separator_zuzycie_energii_aktualny_rachunek" d="M94 380H285" stroke-width="0.25" stroke="#A3AED0"/>
+<path id="_separator_zakup_energii_aktualny_rachunek" d="M94 430H285" stroke-width="0.25" stroke="#A3AED0"/>
+<path id="_separator_dystrybucja_energii_aktualny_rachunek" d="M94 470H285" stroke-width="0.25" stroke="#A3AED0"/>
+<path id="_separator_oplaty_stale_aktualny_rachunek" d="M94 492H285" stroke-width="0.25" stroke="#A3AED0"/>
+<path id="_separator_stala_cena_abonamnetu_aktualny_rachunek" d="M94 492H285" stroke="#A3AED0"/>
+<g id="_zakup_energii_aktualny_rachunek_grupa">
+<g id="blok / zakup_energii_3">
+<g id="pole / b2c_zakup_energii_aktualny_strona_09">
+<text id="#b2c_zakup_energii_aktualny_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="250" y="424.887">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_30" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="270" y="424.887"> PLN</tspan></text>
+</g>
+<text id="etykieta / zakup_energii_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="102" y="427.387">Zakup energii</tspan></text>
+</g>
+<circle id="_zakup_energii_aktualny_rachunek_znacznik" cx="96.5" cy="424.5" r="2.5" fill="#FC7C00"/>
+</g>
+<g id="blok / dystrybucja_energii_3">
+<g id="pole / b2c_dystrybucja_energii_aktualne_strona_09">
+<text id="#b2c_dystrybucja_energii_aktualne_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="250" y="463.887">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_31" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="270" y="463.887"> PLN</tspan></text>
+</g>
+<text id="etykieta / dystrybucja_energii_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="102" y="466.387">Dystrybucja energii</tspan></text>
+<circle id="_dystrybucja_energii_aktualny_rachunek_znacznik" cx="96.5" cy="463.5" r="2.5" fill="#FDB066"/>
+</g>
+<g id="_oplaty_stale_aktualny_rachunek_grupa">
+<g id="pole / b2c_oplaty_stale_aktualne_strona_09">
+<text id="#b2c_oplaty_stale_aktualne_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="250" y="483.887">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_32" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="270" y="483.887"> PLN</tspan></text>
+</g>
+<g id="blok / oplaty_stale">
+<text id="etykieta / oplaty_stale" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="102" y="486.387">Op&#x142;aty sta&#x142;e</tspan></text>
+</g>
+<circle id="_oplaty_stale_aktualny_rachunek_znacznik" cx="96.5" cy="483.5" r="2.5" fill="#FECB99"/>
+</g>
+<g id="blok / energia_zakupiona_z_sieci">
+<g id="pole / b2c_zakup_energii_aktualny_strona_09_2">
+<text id="#b2c_zakup_energii_aktualny_strona_09_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" letter-spacing="-0.02em"><tspan x="257" y="438.046">X XXX</tspan></text>
+<g id="stale / jednostka lub dopisek_33">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="274.491" y="438.046">PLN </tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" letter-spacing="-0.02em"><tspan x="273" y="438.046"> </tspan></text>
+</g>
+</g>
+<text id="etykieta / energia_zakupiona_z_sieci" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="438.046">Energia zakupiona z sieci</tspan></text>
+</g>
+<g id="blok / energia_oddana_do_depozytu">
+<g id="pole / b2c_energia_oddana_do_depozytu_aktualna_strona_09">
+<text id="#b2c_energia_oddana_do_depozytu_aktualna_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="255" y="582.046">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_34" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="271" y="582.046"> kWh</tspan></text>
+</g>
+<text id="etykieta / energia_oddana_do_depozytu" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="582.046">Energia oddana do depozytu</tspan></text>
+</g>
+<g id="blok / pokryte_z_depozytu">
+<g id="pole / b2c_pokryte_z_depozytu_aktualne_strona_09">
+<text id="#b2c_pokryte_z_depozytu_aktualne_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" letter-spacing="-0.02em"><tspan x="257" y="450.046">X XXX</tspan></text>
+<g id="stale / jednostka lub dopisek_35">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="274.491" y="450.046">PLN </tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" letter-spacing="-0.02em"><tspan x="273" y="450.046"> </tspan></text>
+</g>
+</g>
+<text id="etykieta / pokryte_z_depozytu" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="102" y="450.046">Pokryte z depozytu</tspan></text>
+</g>
+<g id="wykres_png / b2c / strona_09 / rachunek_aktualny">
+<g id="Group 1192">
+<g id="_jenostki_wykres_aktualny_rachunek">
+<text id="_0,00_27" transform="translate(27.019 579.013)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="17.5846" y="8.58444">0,00</tspan></text>
+<text id="_1000" transform="translate(27 557.904)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="15.3248" y="8.58444">1 000</tspan></text>
+<text id="_500" transform="translate(27 568.969)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="18.8359" y="8.58444">500</tspan></text>
+<text id="_1500" transform="translate(27 547.576)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="15.692" y="8.58444">1 500</tspan></text>
+<text id="_2000" transform="translate(27 537.248)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.9981" y="8.58444">2 000</tspan></text>
+<text id="_2500" transform="translate(27 526.92)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.3653" y="8.58444">2 500</tspan></text>
+<text id="_3000" transform="translate(27 516.592)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.9247" y="8.58444">3 000</tspan></text>
+<text id="_3500" transform="translate(27 506.264)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.2919" y="8.58444">3 500</tspan></text>
+<text id="_5000" transform="translate(27 475.28)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.8268" y="8.58444">5 000</tspan></text>
+<text id="_4000" transform="translate(27 495.936)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.8415" y="8.58444">4 000</tspan></text>
+<text id="_5500" transform="translate(27 464.952)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.194" y="8.58444">5 500</tspan></text>
+<text id="_4500" transform="translate(27 485.608)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.2087" y="8.58444">4 500</tspan></text>
+<text id="_6000" transform="translate(27 454.624)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.7387" y="8.58444">6 000</tspan></text>
+<text id="_6500" transform="translate(27 444.296)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.1058" y="8.58444">6 500</tspan></text>
+<text id="_7000" transform="translate(27 433.968)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.2087" y="8.58444">7 000</tspan></text>
+<text id="_7000_2" transform="translate(28 423.64)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.5758" y="8.58444">7 500</tspan></text>
+<text id="_7000_3" transform="translate(28 413.312)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.8366" y="8.58444">8 000</tspan></text>
+<text id="_7000_4" transform="translate(28 402.984)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.2038" y="8.58444">8 500</tspan></text>
+<text id="_7000_5" transform="translate(28 392.656)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.7387" y="8.58444">9 000</tspan></text>
+<text id="_7000_6" transform="translate(28 382.328)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.1058" y="8.58444">9 500</tspan></text>
+<text id="_7000_7" transform="translate(28 372)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.7726" y="8.58444">10 000</tspan></text>
+</g>
+<path id="_linia_2" d="M63 580.35L88 580.35" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_10" d="M63 539.324L88 539.324" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_6" d="M63 559.435L88 559.435" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_4" d="M63 569.893L88 569.893" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_12" d="M63 528.866L88 528.866" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_14" d="M63 518.408L88 518.408" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_16" d="M63 507.951L88 507.951" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_22" d="M63 477.382L88 477.382" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_18" d="M63 497.493L88 497.493" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_24" d="M63 466.924L88 466.924" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_24_2" d="M63 429.92L88 429.92" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_24_3" d="M63 399.351L88 399.351" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_27" d="M63 450.835L88 450.835" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_27_2" d="M63 414.635L88 414.635" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_27_3" d="M63 384.067L88 384.067" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_8" d="M63 548.977L88 548.977" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_3" d="M63 574.719L88 574.719" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_11" d="M63 533.693L88 533.693" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_7" d="M63 554.608L88 554.608" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_5" d="M63 565.066L88 565.066" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_13" d="M63 523.235L88 523.235" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_15" d="M63 512.777L88 512.777" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_21" d="M63 482.208L88 482.209" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_17" d="M63 503.124L88 503.124" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_23" d="M63 471.751L88 471.751" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_23_2" d="M63 435.551L88 435.551" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_26" d="M63 456.466L88 456.466" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_26_2" d="M63 420.267L88 420.267" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_26_3" d="M63 388.893L88 388.893" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_19" d="M63 492.666L88 492.666" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_25" d="M63 461.293L88 461.293" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_25_2" d="M63 425.093L88 425.093" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_25_3" d="M63 394.524L88 394.524" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_28" d="M63 446.009L88 446.009" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_28_2" d="M63 409.809L88 409.809" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_28_3" d="M63 378.436L88 378.436" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_29" d="M63 441.182L88 441.182" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_29_2" d="M63 404.178L88 404.178" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_20" d="M63 487.035L88 487.035" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_9" d="M63 544.151L88 544.151" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_1" d="M63 585.177L89 585.177" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+</g>
+<g id="_oplaty_stale_aktualny_rachunek_slupek">
+<rect id="_oplaty_stale_aktualny_rachunek_slupek_2" x="70" y="574.477" width="12" height="11.5231" fill="#FECB99"/>
+</g>
+<g id="_oplaty_stale_aktualny_rachunek_slupek_3">
+<rect id="_oplaty_stale_aktualny_rachunek_slupek_4" x="70" y="509.454" width="12" height="65.0231" fill="#FDB066"/>
+</g>
+<g id="_zakup_energii_aktualny_rachunek_slupek">
+<path id="_zakup_energii_aktualny_rachunek_slupek_2" d="M82 509.954L70 509.954L70 397.546C70 396.165 71.1193 395.046 72.5 395.046L79.5 395.046C80.8807 395.046 82 396.165 82 397.546L82 509.954Z" fill="#FC7C00"/>
+</g>
+</g>
+</g>
+<rect x="30.5" y="346.5" width="264" height="247" rx="9.5" stroke="#FF0000" stroke-opacity="0.25"/>
+</g>
+<g id="sekcja / prognozowany_rachunek_roczny">
+<g clip-path="url(#clip6_2449_13763)">
+<rect x="300" y="346" width="265" height="248" rx="10" fill="white"/>
+<g id="_twoja_prognozowana_oszczednosc_4">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="310" y="364.41">Prognozowany rachunek roczny </tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-style="italic" letter-spacing="-0.02em"><tspan x="461.573" y="364.41">(PLN brutto)</tspan></text>
+</g>
+<g id="blok / zuzycie_energii_2">
+<text id="etykieta / zuzycie_energii_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="372" y="377.387">Zu&#x17c;ycie energii</tspan></text>
+<g id="pole / b2c_zuzycie_energii_prognozowana_strona_09">
+<text id="#b2c_zuzycie_energii_prognozowana_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="513" y="374.887">XX XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_36" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="538" y="374.887"> kWh</tspan></text>
+</g>
+</g>
+<g id="blok / energia_zakupiona_z_sieci_2">
+<g id="pole / b2c_zakup_energii_prognozowany_strona_09">
+<text id="#b2c_zakup_energii_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" letter-spacing="-0.02em"><tspan x="527" y="438.046">X XXX</tspan></text>
+<g id="stale / jednostka lub dopisek_37">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="544.491" y="438.046">PLN </tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" letter-spacing="-0.02em"><tspan x="543" y="438.046"> </tspan></text>
+</g>
+</g>
+<text id="etykieta / energia_zakupiona_z_sieci_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="372" y="438.046">Energia zakupiona z sieci</tspan></text>
+</g>
+<g id="blok / autokonsumpcja_z_pv_2">
+<g id="pole / b2c_autokonsumpcja_z_pv_prognozowana_strona_09">
+<text id="#b2c_autokonsumpcja_z_pv_prognozowana_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="525" y="388.046">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_38" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="541" y="388.046"> kWh</tspan></text>
+</g>
+<text id="etykieta / autokonsumpcja_z_pv_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="372" y="388.046">Autokonsumpcja z PV</tspan></text>
+</g>
+<g id="blok / autokonsumpcja_z_magazynu">
+<g id="pole / b2c_autokonsumpcja_z_magazynu_prognozowana_strona_09">
+<text id="#b2c_autokonsumpcja_z_magazynu_prognozowana_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="525" y="412.046">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_39" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="541" y="412.046"> kWh</tspan></text>
+</g>
+<text id="etykieta / autokonsumpcja_z_magazynu" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="372" y="412.046">Autokonsumpcja z magazynu</tspan></text>
+</g>
+<g id="blok / pokryte_z_depozytu_2">
+<g id="pole / b2c_pokryte_z_depozytu_prognozowana_strona_09">
+<text id="#b2c_pokryte_z_depozytu_prognozowana_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" letter-spacing="-0.02em"><tspan x="527" y="450.046">X XXX</tspan></text>
+<g id="stale / jednostka lub dopisek_40">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="544.491" y="450.046">PLN </tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" letter-spacing="-0.02em"><tspan x="543" y="450.046"> </tspan></text>
+</g>
+</g>
+<text id="etykieta / pokryte_z_depozytu_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="372" y="450.046">Pokryte z depozytu</tspan></text>
+</g>
+<g id="blok / zakup_z_sieci_2">
+<g id="pole / b2c_energia_pobrana_z_sieci_prognozowana_strona_09">
+<text id="#b2c_energia_pobrana_z_sieci_prognozowana_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="525" y="400.046">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_41" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="541" y="400.046"> kWh</tspan></text>
+</g>
+<text id="etykieta / zakup_z_sieci_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="372" y="400.046">Zakup z sieci</tspan></text>
+</g>
+<g id="blok / energia_oddana_do_depozytu_2">
+<g id="pole / b2c_energia_oddana_do_depozytu_prognozowana_strona_09">
+<text id="#b2c_wartosc_energii_oddanej_do_depozytu_prognozowana_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="493" y="570.046">X XXX</tspan></text>
+<text id="stale / tekst_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="509" y="570.046"> PLN / </tspan></text>
+<text id="#b2c_energia_oddana_do_depozytu_prognozowana_kwh_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="525" y="570.046">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_42" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="541" y="570.046"> kWh</tspan></text>
+</g>
+<text id="etykieta / energia_oddana_do_depozytu_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="372" y="570.046">Energia oddana do depozytu</tspan></text>
+</g>
+<g id="blok / energia_wykorzystana_z_depozytu">
+<g id="pole / b2c_energia_wykorzystana_z_depozytu_prognozowana_strona_09">
+<text id="#b2c_wartosc_energii_wykorzystanej_z_depozytu_prognozowana_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="493" y="581.046">X XXX</tspan></text>
+<text id="stale / tekst_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="509" y="581.046"> PLN / </tspan></text>
+<text id="#b2c_energia_wykorzystana_z_depozytu_prognozowana_kwh_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="525" y="581.046">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_43" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="541" y="581.046"> kWh</tspan></text>
+</g>
+<text id="etykieta / energia_wykorzystana_z_depozytu" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="6" font-weight="300" letter-spacing="-0.02em"><tspan x="372" y="582.046">Energia wykorzystana z depozytu</tspan></text>
+</g>
+<path id="_separator_zuzycie_energii_nowy_rachunek" d="M364 380H555" stroke-width="0.25" stroke="#A3AED0"/>
+<path id="_separator_zakup_energii_nowy_rachunek" d="M364 430H555" stroke-width="0.25" stroke="#A3AED0"/>
+<path id="_separator_dystrybucja_energii_nowy_rachunek" d="M364 470H555" stroke-width="0.25" stroke="#A3AED0"/>
+<path id="_separator_oplaty_stale_nowy_rachunek" d="M364 491H555" stroke-width="0.25" stroke="#A3AED0"/>
+<path id="_separator_depozyt_nowy_rachunek" d="M364 559H555" stroke-width="0.25" stroke="#A3AED0"/>
+<path id="_separator_stala_cena_abonamnetu_nowy_rachunek" d="M364 491H555" stroke="#A3AED0"/>
+<g id="_wartosc_skumulowanego_depozytu_nowy_rachunek_grupa">
+<g id="blok / wartosc_skumulowanego_depozytu">
+<g id="pole / b2c_wartosc_skumulowanego_depozytu_prognozowana_strona_09">
+<text id="#b2c_wartosc_skumulowanego_depozytu_prognozowana_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="520" y="553.887">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_44" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="540" y="553.887"> PLN</tspan></text>
+</g>
+<text id="etykieta / wartosc_skumulowanego_depozytu" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="372" y="556.387">Warto&#x15b;&#x107; skumulowanego depozytu</tspan></text>
+</g>
+<circle id="_wartosc_skumulowanego_depozytu_nowy_rachunek_znacznik" cx="366.5" cy="553.5" r="2.5" fill="#8A47FF"/>
+</g>
+<g id="_zakup_energii_nowy_rachunek_grupa">
+<g id="blok / zakup_energii_4">
+<g id="pole / b2c_zakup_energii_prognozowany_strona_09_2">
+<text id="#b2c_zakup_energii_prognozowany_strona_09_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="520" y="424.887">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_45" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="540" y="424.887"> PLN</tspan></text>
+</g>
+<text id="etykieta / zakup_energii_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="372" y="427.387">Zakup energii</tspan></text>
+</g>
+<circle id="_zakup_energii_nowy_rachunek_znacznik" cx="366.5" cy="424.5" r="2.5" fill="#FC7C00"/>
+</g>
+<g id="blok / dystrybucja_energii_4">
+<g id="pole / b2c_dystrybucja_energii_prognozowana_strona_09">
+<text id="#b2c_dystrybucja_energii_prognozowana_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="520" y="463.887">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_46" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="540" y="463.887"> PLN</tspan></text>
+</g>
+<text id="etykieta / dystrybucja_energii_4" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="372" y="466.387">Dystrybucja energii</tspan></text>
+<circle id="_dystrybucja_energii_nowy_rachunek_znacznik" cx="366.5" cy="463.5" r="2.5" fill="#FDB066"/>
+</g>
+<g id="_oplaty_stale_nowy_rachunek_grupa">
+<g id="pole / b2c_oplaty_stale_prognozowane_strona_09">
+<text id="#b2c_oplaty_stale_prognozowane_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="520" y="483.887">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_47" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="540" y="483.887"> PLN</tspan></text>
+</g>
+<g id="blok / oplaty_stale_2">
+<text id="etykieta / oplaty_stale_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="372" y="486.387">Op&#x142;aty sta&#x142;e</tspan></text>
+</g>
+<circle id="_oplaty_stale_nowy_rachunek_znacznik" cx="366.5" cy="483.5" r="2.5" fill="#FECB99"/>
+</g>
+<g id="blok / oszczednosc_brutto">
+<g id="pole / b2c_oszczednosc_brutto_prognozowana_strona_09">
+<text id="#b2c_oszczednosc_brutto_prognozowana_strona_09" fill="#009A44" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="520" y="528.887">X XXX</tspan></text>
+<text id="stale / jednostka lub dopisek_48" fill="#009A44" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="540" y="528.887"> PLN</tspan></text>
+</g>
+<text id="etykieta / oszczednosc_brutto" fill="#009A44" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="372" y="531.387">Oszcz&#x119;dno&#x15b;&#x107; brutto</tspan></text>
+</g>
+<g id="blok / calkowity_rachunek_brutto">
+<g id="pole / b2c_calkowity_rachunek_brutto_prognozowany_strona_09">
+<text id="#b2c_calkowity_rachunek_brutto_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="508" y="502.41">X XXX</tspan></text>
+<g id="stale / jednostka lub dopisek_49">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-weight="bold" letter-spacing="-0.02em"><tspan x="539.154" y="502.41">PLN</tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="537" y="502.41"> </tspan></text>
+</g>
+</g>
+<text id="etykieta / calkowity_rachunek_brutto" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="372" y="503.387">Ca&#x142;kowity rachunek brutto</tspan></text>
+</g>
+<g id="blok / rachunek_po_zwrocie_z_depozytu">
+<g id="pole / b2c_rachunek_po_zwrocie_z_depozytu_prognozowany_strona_09">
+<text id="#b2c_rachunek_po_zwrocie_z_depozytu_prognozowany_strona_09" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="508" y="516.41">X XXX</tspan></text>
+<g id="stale / jednostka lub dopisek_50">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="8" font-weight="bold" letter-spacing="-0.02em"><tspan x="539.154" y="516.41">PLN</tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="537" y="516.41"> </tspan></text>
+</g>
+</g>
+<text id="etykieta / rachunek_po_zwrocie_z_depozytu" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="372" y="517.387">Rachunek po zwrocie z depozytu</tspan></text>
+</g>
+<g id="wykres_png / b2c / strona_09 / rachunek_prognoza">
+<circle id="_oszczednosc_nowy_rachunek_znacznik" cx="366.5" cy="528.5" r="2.5" fill="#80EABB"/>
+<g id="Group 1192_2">
+<g id="_jenostki_wykres_aktualny_rachunek_2">
+<text id="_0,00_28" transform="translate(297.029 579.813)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="17.5846" y="8.58444">0,00</tspan></text>
+<text id="_1000_2" transform="translate(297.01 558.621)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="15.3248" y="8.58444">1 000</tspan></text>
+<text id="_500_2" transform="translate(297.01 569.73)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="18.8359" y="8.58444">500</tspan></text>
+<text id="_1500_2" transform="translate(297.01 548.254)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="15.692" y="8.58444">1 500</tspan></text>
+<text id="_2000_2" transform="translate(297.01 537.886)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.9981" y="8.58444">2 000</tspan></text>
+<text id="_2500_2" transform="translate(297.01 527.518)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.3653" y="8.58444">2 500</tspan></text>
+<text id="_3000_2" transform="translate(297.01 517.15)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.9247" y="8.58444">3 000</tspan></text>
+<text id="_3500_2" transform="translate(297.01 506.782)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.2919" y="8.58444">3 500</tspan></text>
+<text id="_5000_2" transform="translate(297.01 475.678)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.8268" y="8.58444">5 000</tspan></text>
+<text id="_4000_2" transform="translate(297.01 496.414)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.8415" y="8.58444">4 000</tspan></text>
+<text id="_5500_2" transform="translate(297.01 465.311)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.194" y="8.58444">5 500</tspan></text>
+<text id="_4500_2" transform="translate(297.01 486.046)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.2087" y="8.58444">4 500</tspan></text>
+<text id="_6000_2" transform="translate(297.01 454.943)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.7387" y="8.58444">6 000</tspan></text>
+<text id="_6500_2" transform="translate(297.01 444.575)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.1058" y="8.58444">6 500</tspan></text>
+<text id="_7000_8" transform="translate(297.01 434.207)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.2087" y="8.58444">7 000</tspan></text>
+<text id="_7000_9" transform="translate(298.01 423.839)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.5758" y="8.58444">7 500</tspan></text>
+<text id="_7000_10" transform="translate(298.01 413.471)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.8366" y="8.58444">8 000</tspan></text>
+<text id="_7000_11" transform="translate(298.01 403.104)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.2038" y="8.58444">8 500</tspan></text>
+<text id="_7000_12" transform="translate(298.01 392.736)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="13.7387" y="8.58444">9 000</tspan></text>
+<text id="_7000_13" transform="translate(298.01 382.368)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="14.1058" y="8.58444">9 500</tspan></text>
+<text id="_7000_14" transform="translate(298.01 372)" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="5.01302" letter-spacing="0.025em"><tspan x="11.7726" y="8.58444">10 000</tspan></text>
+</g>
+<path id="_linia_2_2" d="M333.01 581.155L358.01 581.155" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_10_2" d="M333.01 539.97L358.01 539.97" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_6_2" d="M333.01 560.159L358.01 560.159" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_4_2" d="M333.01 570.657L358.01 570.657" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_12_2" d="M333.01 529.472L358.01 529.472" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_14_2" d="M333.01 518.974L358.01 518.974" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_16_2" d="M333.01 508.475L358.01 508.475" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_22_2" d="M333.01 477.789L358.01 477.789" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_18_2" d="M333.01 497.977L358.01 497.977" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_24_4" d="M333.01 467.291L358.01 467.291" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_24_5" d="M333.01 430.143L358.01 430.143" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_24_6" d="M333.01 399.457L358.01 399.457" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_27_4" d="M333.01 451.14L358.01 451.14" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_27_5" d="M333.01 414.8L358.01 414.8" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_27_6" d="M333.01 384.113L358.01 384.113" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_8_2" d="M333.01 549.66L358.01 549.66" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_3_2" d="M333.01 575.502L358.01 575.502" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_11_2" d="M333.01 534.317L358.01 534.317" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_7_2" d="M333.01 555.313L358.01 555.313" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_5_2" d="M333.01 565.811L358.01 565.811" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_13_2" d="M333.01 523.819L358.01 523.819" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_15_2" d="M333.01 513.321L358.01 513.321" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_21_2" d="M333.01 482.634L358.01 482.634" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_17_2" d="M333.01 503.63L358.01 503.63" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_23_3" d="M333.01 472.136L358.01 472.136" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_23_4" d="M333.01 435.796L358.01 435.796" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_26_4" d="M333.01 456.792L358.01 456.792" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_26_5" d="M333.01 420.453L358.01 420.453" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_26_6" d="M333.01 388.958L358.01 388.958" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_19_2" d="M333.01 493.132L358.01 493.132" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_25_4" d="M333.01 461.638L358.01 461.638" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_25_5" d="M333.01 425.298L358.01 425.298" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_25_6" d="M333.01 394.611L358.01 394.611" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_28_4" d="M333.01 446.294L358.01 446.294" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_28_5" d="M333.01 409.955L358.01 409.955" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_28_6" d="M333.01 378.46L358.01 378.46" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_29_3" d="M333.01 441.449L358.01 441.449" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_29_4" d="M333.01 404.302L358.01 404.302" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_20_2" d="M333.01 487.479L358.01 487.479" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_9_2" d="M333.01 544.815L358.01 544.815" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+<path id="_linia_1_2" d="M333.01 586L359.01 586" stroke-width="0.25" stroke-linecap="round" stroke="#A3AED0"/>
+</g>
+<g id="_oplaty_stale_aktualny_rachunek_slupek_5">
+<rect id="_oplaty_stale_aktualny_rachunek_slupek_6" x="340.01" y="571.127" width="12" height="14.8726" fill="#FECB99"/>
+</g>
+<g id="_oplaty_stale_aktualny_rachunek_slupek_7">
+<g id="_oplaty_stale_aktualny_rachunek_slupek_8">
+<path d="M340.009 540.556L352.009 540.556L352.009 557.907L340.009 557.907L340.009 540.556Z" fill="#FDB066"/>
+<mask id="stroke0_2449_13763" fill="white">
+<path d="M340.009 540.556L352.009 540.556L352.009 557.907L340.009 557.907L340.009 540.556Z"/>
+</mask>
+<path d="M352.009 540.556L350.009 540.556L350.009 557.907L352.009 557.907L354.009 557.907L354.009 540.556L352.009 540.556ZM340.009 557.907L342.009 557.907L342.009 540.556L340.009 540.556L338.009 540.556L338.009 557.907L340.009 557.907Z" fill="#80EABB" mask="url(#stroke0_2449_13763)"/>
+</g>
+</g>
+<g id="_oplaty_stale_aktualny_rachunek_slupek_9">
+<rect id="_oplaty_stale_aktualny_rachunek_slupek_10" x="340.01" y="557.907" width="12" height="13.2201" fill="#FDB066"/>
+</g>
+<path id="Vector 528" d="M333.01 558H358.01" stroke-linecap="round" stroke="#2B3674"/>
+<g id="_wartosc_skumulowanego_deppozytu_nowy_rachunek_slupek">
+<mask id="path-495-outside-1_2449_13763" maskUnits="userSpaceOnUse" x="340.01" y="468" width="12" height="73" fill="black">
+<rect fill="white" x="340.01" y="468" width="12" height="73"/>
+<path d="M342.01 468L350.01 468L350.01 541L342.01 541L342.01 468Z"/>
+</mask>
+<path d="M342.01 468L350.01 468L350.01 541L342.01 541L342.01 468Z" fill="#FC7C00"/>
+<path d="M342.01 468L350.01 468L350.01 541L342.01 541L342.01 468Z" fill="url(#pattern0_2449_13763)"/>
+<path d="M350.01 468L348.01 468L348.01 541L350.01 541L352.01 541L352.01 468L350.01 468ZM342.01 541L344.01 541L344.01 468L342.01 468L340.01 468L340.01 541L342.01 541Z" fill="#00D477" fill-opacity="0.5" mask="url(#path-495-outside-1_2449_13763)"/>
+</g>
+<path id="_oszczednosc_nowy_rachunek_slupek" d="M340.01 397.5C340.01 396.119 341.129 395 342.51 395L349.51 395C350.89 395 352.01 396.119 352.01 397.5L352.01 468L340.01 468L340.01 397.5Z" fill="#00D477" fill-opacity="0.5"/>
+</g>
+</g>
+<rect x="300.5" y="346.5" width="264" height="247" rx="9.5" stroke="#80EABB"/>
+</g>
+<text id="stopka / numer strony" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="568.642" y="824.387">9/10</tspan></text>
+</g>
+<defs>
+<linearGradient id="paint0_linear_2449_13763" x1="162.5" y1="94" x2="162.5" y2="155" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="#F2F5FB"/>
+</linearGradient>
+<linearGradient id="paint1_linear_2449_13763" x1="432.5" y1="94" x2="432.5" y2="155" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="#F2F5FB"/>
+</linearGradient>
+<clipPath id="clip0_2449_13763">
+<rect x="35" y="118" width="125" height="32" rx="5" fill="white"/>
+</clipPath>
+<clipPath id="clip1_2449_13763">
+<rect x="165" y="118" width="125" height="32" rx="5" fill="white"/>
+</clipPath>
+<clipPath id="clip2_2449_13763">
+<rect x="305" y="118" width="125" height="32" rx="5" fill="white"/>
+</clipPath>
+<clipPath id="clip3_2449_13763">
+<rect x="435" y="118" width="125" height="32" rx="5" fill="white"/>
+</clipPath>
+<clipPath id="clip4_2449_13763">
+<rect width="61" height="11" fill="white" transform="translate(246 39)"/>
+</clipPath>
+<clipPath id="clip5_2449_13763">
+<rect x="30" y="346" width="265" height="248" rx="10" fill="white"/>
+</clipPath>
+<clipPath id="clip6_2449_13763">
+<rect x="300" y="346" width="265" height="248" rx="10" fill="white"/>
+</clipPath>
+<pattern id="pattern0_2449_13763" patternUnits="userSpaceOnUse" patternTransform="matrix(263.729 -1.31677e-05 -1.15501e-05 263.729 214.041 372.132)" preserveAspectRatio="none" viewBox="-0.363281 -1.75781 920.653 920.653" width="1" height="1">
+<use xlink:href="#pattern0_2449_13763_inner" transform="translate(-920.653 -920.653)"/>
+<use xlink:href="#pattern0_2449_13763_inner" transform="translate(0 -920.653)"/>
+<use xlink:href="#pattern0_2449_13763_inner" transform="translate(-920.653 0)"/>
+<g id="pattern0_2449_13763_inner">
+<g id="Group 995">
+<path id="Vector 1406" d="M555.079 919.239C542.617 911.899 180.777 547.071 1.41421 365.574" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1422" d="M744.583 729.734C732.121 722.394 370.28 357.566 190.918 176.069" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1414" d="M650.54 823.779C638.065 816.427 275.761 451.134 96.1681 269.407" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1423" d="M838.63 635.689C826.155 628.337 463.851 263.044 284.258 81.3172" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1410" d="M603.161 871.156C590.686 863.804 228.382 498.511 48.7892 316.784" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1424" d="M791.958 682.358C779.483 675.006 417.179 309.713 237.586 127.986" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1415" d="M697.915 776.403C685.44 769.051 323.136 403.758 143.543 222.031" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1425" d="M884.591 589.727C873.396 581.094 510.345 216.549 330.219 35.3554" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1408" d="M579.122 895.197C566.66 887.857 204.82 523.029 25.4572 341.532" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1426" d="M768.626 705.692C756.164 698.352 394.323 333.524 214.961 152.027" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1416" d="M674.579 799.738C662.104 792.386 299.8 427.093 120.207 245.366" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1427" d="M861.255 613.061C850.061 604.428 487.009 239.883 306.883 58.6894" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1411" d="M627.204 847.114C614.729 839.762 252.425 474.469 72.8322 292.742" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1428" d="M814.587 659.73C803.393 651.097 440.341 286.552 260.215 105.358" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1417" d="M720.54 753.776C709.358 745.156 346.771 381.074 166.875 200.111" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1429" d="M908.634 565.685C896.171 558.345 534.331 193.517 354.969 12.0204" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1407" d="M567.098 907.218C554.636 899.879 192.796 535.05 13.4337 353.554" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1430" d="M756.602 717.713C744.14 710.374 382.3 345.545 202.938 164.049" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1418" d="M662.559 811.758C650.085 804.406 287.78 439.114 108.188 257.387" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1431" d="M849.942 624.375C838.748 615.742 475.697 251.196 295.57 70.0029" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1412" d="M615.184 859.134C602.71 851.782 240.405 486.49 60.8127 304.763" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1432" d="M803.274 671.044C792.08 662.412 429.029 297.866 248.902 116.673" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1419" d="M709.227 765.089C698.046 756.469 335.459 392.388 155.563 211.425" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1433" d="M896.61 577.705C884.148 570.366 522.308 205.538 342.945 24.0409" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1409" d="M591.141 883.176C578.667 875.824 216.362 510.532 36.7697 328.805" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1434" d="M779.938 694.378C768.744 685.746 405.693 321.2 225.566 140.007" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1420" d="M685.891 788.423C674.697 779.791 311.646 415.245 131.52 234.052" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1435" d="M873.278 601.041C860.803 593.688 498.499 228.396 318.906 46.6688" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1413" d="M638.516 835.8C627.322 827.168 264.271 462.622 84.1446 281.429" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1436" d="M826.606 647.709C814.132 640.357 451.827 275.065 272.235 93.3377" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1421" d="M732.563 741.754C720.101 734.415 358.261 369.586 178.899 188.09" fill="none" stroke-width="5" stroke="#8A47FF"/>
+<path id="Vector 1437" d="M920.653 553.664C908.191 546.325 546.351 181.497 366.988 -0.000151038" fill="none" stroke-width="5" stroke="#8A47FF"/>
+</g>
+</g>
+</pattern></defs>
+</svg>

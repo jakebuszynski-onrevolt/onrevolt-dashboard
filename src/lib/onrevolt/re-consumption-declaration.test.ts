@@ -9,11 +9,11 @@ import { mergeReConsumptionDeclaration, shouldSyncReConsumptionDeclaration, sync
 
 function profile(): ReConsumptionProfile {
   return { station: '41', months: Array(12).fill(100), sources: Array(12).fill('standard'),
-    exportSources: Array(12).fill('standard'), annualUsageKwh: 1200, hourlyProfile: { exists: true, rows: 8760 } };
+    exportSources: Array(12).fill('standard'), annualUsageKwh: 1200, hourlyProfile: { exists: true, rows: 8760 }, measurementHistory: [] };
 }
 function emptyProfile(): ReConsumptionProfile {
   return { station: '41', months: null, sources: null, exportSources: null,
-    annualUsageKwh: 1200, hourlyProfile: { exists: false, rows: 0 } };
+    annualUsageKwh: 1200, hourlyProfile: { exists: false, rows: 0 }, measurementHistory: [] };
 }
 const sum = (values: number[]) => Math.round(values.reduce((total, value) => total + value, 0) * 1000) / 1000;
 const serviceInput = { clientId: 'client', projectId: 'project', auditId: 'audit', annualConsumptionKwh: 3650, actorId: 'staff' };

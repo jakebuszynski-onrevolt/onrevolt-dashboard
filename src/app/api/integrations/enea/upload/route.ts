@@ -8,6 +8,7 @@ import { closedMeasurementPeriodKeys, inspectEnergyMeasurementWorkbook } from 'l
 import { prisma } from 'lib/onrevolt/prisma';
 import { preflightProjectReConsumption, ReStationRequiredError, requireProjectReStation, syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
+import { readProjectAnalysisPeriod } from 'lib/onrevolt/project-analysis-period-server';
 
 export const runtime = 'nodejs';
 
@@ -55,7 +56,14 @@ export async function POST(req: NextRequest) {
     ]);
     if (!client) return notFound('Nie znaleziono klienta');
     if (projectId && !project) return notFound('Nie znaleziono projektu tego klienta');
+    let analysisProjectId = projectId;
+    if (!analysisProjectId) {
+      const projects = await prisma.project.findMany({ where: { clientId }, select: { id: true }, take: 2 });
+      if (projects.length === 1) analysisProjectId = projects[0].id;
+    }
     await requireProjectReStation(clientId, projectId);
+    const analysisPeriodResult = analysisProjectId ? await readProjectAnalysisPeriod(analysisProjectId) : undefined;
+    if (analysisProjectId && !analysisPeriodResult) return notFound('Nie znaleziono projektu tego klienta');
 
     const bytes = Buffer.from(await file.arrayBuffer());
     let info;
@@ -66,8 +74,8 @@ export async function POST(req: NextRequest) {
     }
 
     const periodKey = `${info.periodYear}-${String(info.periodMonth).padStart(2, '0')}`;
-    if (!closedMeasurementPeriodKeys().has(periodKey)) {
-      return badRequest(`Miesiąc ${periodKey} jest poza zakresem ostatnich 12 zamkniętych miesięcy`);
+    if (!(analysisPeriodResult ? analysisPeriodResult.period.periodKeys.includes(periodKey) : closedMeasurementPeriodKeys().has(periodKey))) {
+      return badRequest(`Miesiąc ${periodKey} jest poza wybranym okresem analizy`);
     }
 
     let account = await prisma.energyPortalAccount.findFirst({

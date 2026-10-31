@@ -3,7 +3,7 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { Prisma } from '@prisma/client';
 import { writeAuditLog } from './audit';
-import { closedMeasurementPeriodKeys, type EnergyMeasurementWorkbookInfo } from './energy-measurement-document';
+import { type EnergyMeasurementWorkbookInfo } from './energy-measurement-document';
 import { prisma } from './prisma';
 import {
   inspectReConsumptionWorkbook,
@@ -14,6 +14,7 @@ import {
   type ReConsumptionPreflight,
 } from './re-consumption-api';
 import { resolveReStation, type ResolvedReStation } from './re-stations';
+import { readProjectAnalysisPeriod } from './project-analysis-period-server';
 
 export type ReConsumptionSyncResult = {
   status: 'synced' | 'existing' | 'failed';
@@ -99,9 +100,12 @@ export async function preflightProjectReConsumption(input: {
   workbook: EnergyMeasurementWorkbookInfo;
   replaceExisting?: boolean;
 }): Promise<ReConsumptionPreflight> {
-  validateReConsumptionPeriod(input.workbook);
-  const station = await requireProjectReStation(input.clientId, input.projectId);
-  return preflightReConsumptionWorkbook({ ...input, station: station.station });
+  const project = await findProject(input.clientId, input.projectId);
+  const periodResult = await readProjectAnalysisPeriod(project.id);
+  if (!periodResult) throw new Error('Nie znaleziono projektu dla okresu analizy RE');
+  validateReConsumptionPeriod(input.workbook, new Date(), periodResult?.period.periodKeys);
+  const station = await requireProjectReStation(input.clientId, project.id);
+  return preflightReConsumptionWorkbook({ ...input, station: station.station }, { periodKeys: periodResult.period.periodKeys });
 }
 
 const measurementInclude = {
@@ -128,7 +132,7 @@ function assertInside(root: string, target: string) {
   }
 }
 
-async function inspectStoredMeasurement(measurement: StoredMeasurement, now = new Date()) {
+async function inspectStoredMeasurement(measurement: StoredMeasurement, now = new Date(), periodKeys?: readonly string[]) {
   if (!['ACTIVE_IMPORT', 'ACTIVE_EXPORT'].includes(measurement.kind) || measurement.status !== 'DOWNLOADED') {
     throw new Error('RE wymaga pobranego pliku DOWNLOADED energii czynnej pobranej lub oddanej');
   }
@@ -153,7 +157,7 @@ async function inspectStoredMeasurement(measurement: StoredMeasurement, now = ne
   if (!document.sha256 || createHash('sha256').update(bytes).digest('hex') !== document.sha256.toLowerCase()) {
     throw new Error('SHA-256 XLSX nie zgadza się z zapisanym dokumentem');
   }
-  const workbook = inspectReConsumptionWorkbook(bytes, now);
+  const workbook = inspectReConsumptionWorkbook(bytes, now, periodKeys);
   if (workbook.kind !== measurement.kind || workbook.periodYear !== measurement.periodYear || workbook.periodMonth !== measurement.periodMonth) {
     throw new Error('Kierunek lub miesiąc XLSX nie zgadza się z rekordem pomiaru CRM');
   }
@@ -165,12 +169,17 @@ export async function inspectStoredEnergyMeasurementForRe(measurementId: string,
   const measurement = await prisma.energyMeasurementFile.findUniqueOrThrow({ where: { id: measurementId }, include: measurementInclude });
   const projectId = checkScope(measurement, options);
   const project = await findProject(measurement.clientId, projectId);
-  return { measurement, project, ...await inspectStoredMeasurement(measurement) };
+  const periodResult = await readProjectAnalysisPeriod(project.id);
+  if (!periodResult) throw new Error('Nie znaleziono projektu dla okresu analizy RE');
+  return { measurement, project, ...await inspectStoredMeasurement(measurement, new Date(), periodResult.period.periodKeys) };
 }
 
 export async function listReConsumptionMeasurements(clientId: string, projectId?: string) {
   const project = await findProject(clientId, projectId);
-  const periods = Array.from(closedMeasurementPeriodKeys()).map((period) => {
+  const periodResult = await readProjectAnalysisPeriod(project.id);
+  if (!periodResult) throw new Error('Nie znaleziono projektu dla okresu analizy RE');
+  const selectedPeriods = periodResult.period.periodKeys;
+  const periods = selectedPeriods.map((period) => {
     const [periodYear, periodMonth] = period.split('-').map(Number);
     return { periodYear, periodMonth };
   });
@@ -203,7 +212,9 @@ export async function syncEnergyMeasurementToRe(measurementId: string, options: 
     measurement = loaded;
     errorVersion = loaded.updatedAt;
     const project = await findProject(loaded.clientId, projectId);
-    await inspectStoredMeasurement(loaded);
+    const analysisPeriodResult = await readProjectAnalysisPeriod(project.id);
+    if (!analysisPeriodResult) throw new Error('Nie znaleziono projektu dla okresu analizy RE');
+    await inspectStoredMeasurement(loaded, new Date(), analysisPeriodResult.period.periodKeys);
     const linkedStation = await ensureProjectReStation(loaded.clientId, project.id);
     station = linkedStation.station;
 
@@ -212,13 +223,15 @@ export async function syncEnergyMeasurementToRe(measurementId: string, options: 
       if (locked.dashboardStationNumber !== station || locked.dashboardStation !== linkedStation.stationHash) {
         throw new Error('Powiązanie RE zmieniło się podczas synchronizacji; ponów po sprawdzeniu projektu');
       }
+      const lockedPeriodResult = await readProjectAnalysisPeriod(project.id);
+      if (!lockedPeriodResult) throw new Error('Nie znaleziono projektu dla okresu analizy RE');
       const current = await prisma.energyMeasurementFile.findUniqueOrThrow({ where: { id: measurementId }, include: measurementInclude });
       checkScope(current, { ...options, clientId: loaded.clientId, projectId: project.id });
       if (current.documentId !== loaded.documentId) throw new Error('Dokument pomiaru zmienił się podczas synchronizacji');
       measurement = current;
       errorVersion = current.updatedAt;
-      const { bytes, workbook, fileName } = await inspectStoredMeasurement(current);
-      const preflight = await preflightReConsumptionWorkbook({ station, workbook, replaceExisting: options.replaceExisting });
+      const { bytes, workbook, fileName } = await inspectStoredMeasurement(current, new Date(), lockedPeriodResult.period.periodKeys);
+      const preflight = await preflightReConsumptionWorkbook({ station, workbook, replaceExisting: options.replaceExisting }, { periodKeys: lockedPeriodResult.period.periodKeys });
       if (preflight.status === 'existing') {
         if (current.error?.startsWith(reErrorPrefix)) throw new Error('Poprzednia synchronizacja wymaga weryfikacji. Potwierdź zastąpienie profilu w RE.');
         return { status: 'existing', station, message: preflight.message };
@@ -232,7 +245,7 @@ export async function syncEnergyMeasurementToRe(measurementId: string, options: 
       });
       errorVersion = marked.updatedAt;
       try {
-        const result = await uploadReConsumptionWorkbook({ station, bytes, fileName, replaceExisting: options.replaceExisting });
+        const result = await uploadReConsumptionWorkbook({ station, bytes, fileName, replaceExisting: options.replaceExisting }, { periodKeys: lockedPeriodResult.period.periodKeys });
         await writeAuditLog({
           actorId: options.actorId, clientId: current.clientId,
           entityType: 'EnergyMeasurementFile', entityId: measurementId, action: 'SYNC_RE_CONSUMPTION_XLSX',

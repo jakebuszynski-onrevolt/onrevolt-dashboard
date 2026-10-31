@@ -10,6 +10,7 @@ import {
   uploadReConsumptionWorkbook,
   type ReConsumptionProfile,
 } from './re-consumption-api';
+import { inspectEnergyMeasurementWorkbook } from './energy-measurement-document';
 
 const now = new Date('2026-09-09T10:00:00Z');
 const baseUrl = 'https://re.example.test/re/setup_func.php';
@@ -53,12 +54,13 @@ function profile(overrides: Partial<ReConsumptionProfile> = {}): ReConsumptionPr
     station: '41', months: Array(12).fill(100), sources: Array(12).fill('standard'),
     exportSources: Array(12).fill('standard'), annualUsageKwh: 1200,
     hourlyProfile: { exists: true, rows: 8760, firstUpdate: null, lastUpdate: null },
+    measurementHistory: [],
     ...overrides,
   };
 }
 
 function receipt(file = bytes, overrides: Record<string, unknown> = {}) {
-  const info = inspectReConsumptionWorkbook(file, now);
+  const info = inspectEnergyMeasurementWorkbook(file);
   const data: Record<string, unknown> = profile();
   const index = info.periodMonth - 1;
   if (info.kind === 'ACTIVE_IMPORT') {
@@ -68,6 +70,13 @@ function receipt(file = bytes, overrides: Record<string, unknown> = {}) {
   data[info.kind === 'ACTIVE_IMPORT' ? 'imported' : 'exported'] = {
     month: info.periodMonth, sourceYear: info.periodYear, totalKwh: info.totalKwh,
   };
+  data.measurementHistory = [{
+    year: info.periodYear,
+    month: info.periodMonth,
+    direction: info.kind === 'ACTIVE_IMPORT' ? 'import' : 'export',
+    rows: info.rowsCount,
+    totalKwh: info.totalKwh,
+  }];
   return { ...data, ...overrides };
 }
 
@@ -166,19 +175,25 @@ for (const direction of ['import', 'export'] as const) {
   const info = inspectReConsumptionWorkbook(file, now);
   const field = direction === 'import' ? 'sources' : 'exportSources';
   test(`${direction}: existing XLSX blocks POST even when totals match`, async () => {
-    const existing = profile({ [field]: Array(12).fill('xlsx') });
+    const existing = profile({ [field]: Array(12).fill('xlsx'), measurementHistory: [{
+      year: info.periodYear, month: info.periodMonth, direction, rows: info.rowsCount, totalKwh: info.totalKwh,
+    }] });
     const mock = mockHttp([json(existing)]);
     await assert.rejects(uploadReConsumptionWorkbook({ ...input, bytes: file }, mock.options), ReConsumptionConflictError);
     assert.equal(mock.calls.length, 1);
   });
   test(`${direction}: preflight exposes conflict for caller confirmation`, async () => {
-    const mock = mockHttp([json(profile({ [field]: Array(12).fill('xlsx') }))]);
+    const mock = mockHttp([json(profile({ [field]: Array(12).fill('xlsx'), measurementHistory: [{
+      year: info.periodYear, month: info.periodMonth, direction, rows: info.rowsCount, totalKwh: info.totalKwh,
+    }] }))]);
     const result = await preflightReConsumptionWorkbook({ station: '41', workbook: info }, mock.options);
     assert.equal(result.status, 'existing');
     assert.match(result.message, /Potwierdź zastąpienie profilu w RE/);
   });
   test(`${direction}: explicit replacement permits upload`, async () => {
-    const mock = mockHttp([json(profile({ [field]: Array(12).fill('xlsx') })), json(receipt(file))]);
+    const mock = mockHttp([json(profile({ [field]: Array(12).fill('xlsx'), measurementHistory: [{
+      year: info.periodYear, month: info.periodMonth, direction, rows: info.rowsCount, totalKwh: info.totalKwh,
+    }] })), json(receipt(file))]);
     await uploadReConsumptionWorkbook({ ...input, bytes: file, replaceExisting: true }, mock.options);
     assert.equal(mock.calls.length, 2);
   });
@@ -222,8 +237,10 @@ const invalidReceipts: Array<[string, Record<string, unknown>]> = [
   ['total exceeds tolerance', { imported: { month: 1, sourceYear: 2026, totalKwh: 744.002 } }],
   ['non-numeric total', { imported: { month: 1, sourceYear: 2026, totalKwh: '744' } }],
   ['unexpected second channel', { exported: { month: 1, sourceYear: 2026, totalKwh: 1 } }],
-  ['source not marked XLSX', { sources: Array(12).fill('standard') }],
-  ['monthly total differs', { months: Array(12).fill(10) }],
+  ['missing exact-year history entry', { measurementHistory: [] }],
+  ['history direction differs', { measurementHistory: [{ year: 2026, month: 1, direction: 'export', rows: 744, totalKwh: 744 }] }],
+  ['history row count differs', { measurementHistory: [{ year: 2026, month: 1, direction: 'import', rows: 743, totalKwh: 744 }] }],
+  ['history total differs', { measurementHistory: [{ year: 2026, month: 1, direction: 'import', rows: 744, totalKwh: 744.002 }] }],
   ['hourly profile missing', { hourlyProfile: { exists: false, rows: 0 } }],
 ];
 for (const [label, overrides] of invalidReceipts) {
@@ -252,6 +269,16 @@ for (const malformed of [
   profile({ months: [1] }), profile({ sources: undefined }), profile({ exportSources: undefined }),
   profile({ sources: ['bad'] as never }), profile({ station: 'other' }),
   profile({ annualUsageKwh: undefined }), profile({ hourlyProfile: undefined }),
+  profile({ measurementHistory: undefined }),
+  profile({ measurementHistory: [{ year: '2026', month: 1, direction: 'import', rows: 744, totalKwh: 744 }] as never }),
+  profile({ measurementHistory: [{ year: 2026, month: 13, direction: 'import', rows: 744, totalKwh: 744 }] as never }),
+  profile({ measurementHistory: [{ year: 2026, month: 1, direction: 'both', rows: 744, totalKwh: 744 }] as never }),
+  profile({ measurementHistory: [{ year: 2026, month: 1, direction: 'import', rows: 744.5, totalKwh: 744 }] as never }),
+  profile({ measurementHistory: [{ year: 2026, month: 1, direction: 'import', rows: 744, totalKwh: '744' }] as never }),
+  profile({ measurementHistory: [
+    { year: 2026, month: 1, direction: 'import', rows: 744, totalKwh: 744 },
+    { year: 2026, month: 1, direction: 'import', rows: 744, totalKwh: 744 },
+  ] as never }),
 ]) {
   test(`fails closed on malformed profile ${JSON.stringify(malformed).slice(0, 70)}`, async () => {
     const mock = mockHttp([json(malformed)]);
@@ -259,6 +286,12 @@ for (const malformed of [
     assert.equal(mock.calls.length, 1);
   });
 }
+
+test('missing measurementHistory in the live API profile fails closed', async () => {
+  const mock = mockHttp([json(profile({ measurementHistory: undefined }))]);
+  await assert.rejects(readReConsumptionProfile('41', mock.options), /Nieprawidłowa odpowiedź profilu RE/);
+  assert.equal(mock.calls.length, 1);
+});
 
 test('rejects mismatched station at both GET and POST', async () => {
   for (const responses of [[json(profile({ station: '42' }))], [json(profile()), json(receipt(bytes, { station: '42' }))]]) {
@@ -288,6 +321,67 @@ test('rejects current and older months before any HTTP call', async () => {
     await assert.rejects(uploadReConsumptionWorkbook({ ...input, bytes: bytesFor(reportRows('pobrana', year, month)) }, mock.options), /12 zamkniętych/);
     assert.equal(mock.calls.length, 0);
   }
+});
+
+test('project period keys, including year, govern upload eligibility', async () => {
+  const excluded = mockHttp([]);
+  await assert.rejects(() => uploadReConsumptionWorkbook(input, {
+    ...excluded.options, periodKeys: ['2025-01', '2025-12'],
+  }), /wybranym okresem/u);
+  assert.equal(excluded.calls.length, 0);
+
+  const included = mockHttp([json(profile()), json(receipt())]);
+  await uploadReConsumptionWorkbook(input, {
+    ...included.options, periodKeys: ['2025-12', '2026-01'],
+  });
+  assert.equal(included.calls.length, 2);
+});
+
+test('same month in another year is ready even when the legacy monthly source is XLSX', async () => {
+  const file = bytesFor(reportRows('pobrana', 2026, 1));
+  const info = inspectReConsumptionWorkbook(file, now);
+  const existing = profile({
+    sources: ['xlsx', ...Array(11).fill('standard')],
+    measurementHistory: [{ year: 2025, month: 1, direction: 'import', rows: 744, totalKwh: 744 }],
+  });
+  const mock = mockHttp([json(existing)]);
+  const result = await preflightReConsumptionWorkbook({ station: '41', workbook: info }, {
+    ...mock.options, periodKeys: ['2025-01', '2026-01'],
+  });
+  assert.equal(result.status, 'ready');
+});
+
+test('exact year, month and direction in history requires explicit replacement', async () => {
+  const existing = profile({ measurementHistory: [{ year: 2026, month: 1, direction: 'import', rows: 744, totalKwh: 744 }] });
+  const mock = mockHttp([json(existing)]);
+  const result = await preflightReConsumptionWorkbook({ station: '41', workbook }, mock.options);
+  assert.equal(result.status, 'existing');
+  assert.match(result.message, /2026-01/u);
+});
+
+test('history entries for opposite directions do not block each other', async () => {
+  const exportFile = bytesFor(reportRows('oddana', 2026, 1));
+  const exportWorkbook = inspectReConsumptionWorkbook(exportFile, now);
+  const existingImport = profile({ measurementHistory: [{
+    year: 2026, month: 1, direction: 'import', rows: 744, totalKwh: 744,
+  }] });
+  const exportMock = mockHttp([json(existingImport)]);
+  assert.equal((await preflightReConsumptionWorkbook({ station: '41', workbook: exportWorkbook }, exportMock.options)).status, 'ready');
+
+  const importMock = mockHttp([json(profile({ measurementHistory: [{
+    year: 2026, month: 1, direction: 'export', rows: exportWorkbook.rowsCount, totalKwh: exportWorkbook.totalKwh,
+  }] }))]);
+  assert.equal((await preflightReConsumptionWorkbook({ station: '41', workbook }, importMock.options)).status, 'ready');
+});
+
+test('upload receipt confirms an archived year without requiring latest monthly pattern updates', async () => {
+  const file = bytesFor(reportRows('pobrana', 2025, 1));
+  const info = inspectEnergyMeasurementWorkbook(file);
+  const oldYearReceipt = receipt(file, { months: Array(12).fill(100), sources: Array(12).fill('standard') });
+  const mock = mockHttp([json(profile()), json(oldYearReceipt)]);
+  await uploadReConsumptionWorkbook({ ...input, bytes: file }, { ...mock.options, periodKeys: ['2025-01'] });
+  assert.equal(mock.calls.length, 2);
+  assert.equal(info.periodYear, 2025);
 });
 
 test('rejects invalid station, non-XLSX, truncated workbook and wrong first sheet before HTTP', async () => {

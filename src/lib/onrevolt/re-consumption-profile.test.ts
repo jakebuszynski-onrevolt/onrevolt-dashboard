@@ -4,6 +4,7 @@ import { prisma } from './prisma';
 import { rePrisma } from './re-stations';
 import type { ReConsumptionProfile } from './re-consumption-api';
 import { buildReEnergyUsageProfile, readProjectReConsumptionProfile } from './re-consumption-profile';
+import { resolveProjectAnalysisPeriod } from './project-analysis-period';
 
 const profile = (): ReConsumptionProfile => ({ station: '41', months: null, sources: null, exportSources: null,
   annualUsageKwh: 3650, hourlyProfile: { exists: false, rows: 0 } });
@@ -69,16 +70,75 @@ test('historyStart selects the calendar year and excludes earlier actual records
   assert.equal(result.months[0].importSource, 'standard');
 });
 
+test('explicit rolling period keeps actual dates and annual shares within its twelve months', t => {
+  timezone(t);
+  const period = resolveProjectAnalysisPeriod('2025-10', new Date('2026-10-30T12:00:00.000Z'));
+  const result = buildReEnergyUsageProfile({ profile: profile(), analysisPeriod: period,
+    dashboard: { account: { dateStart: '2024-08-27' }, energy: { datetime: '2026-10-02 12:00:00' },
+      usageData: { records: [actualRecord('2025-10-01'), actualRecord('2026-09-30'), actualRecord('2026-10-01')] } } });
+
+  assert.deepEqual(result.months.map(month => month.key), period.periodKeys);
+  assert.equal(result.months[0].importSource, 'part');
+  assert.equal(result.months[11].importSource, 'part');
+  assert.equal(result.measuredDays, 2);
+  assert.equal(result.annualKwh, result.months.reduce((sum, month) => sum + month.totalKwh, 0));
+  assert.ok(Math.abs(result.months.reduce((sum, month) => sum + month.sharePercent, 0) - 100) < 1e-8);
+});
+
+test('XLSX from a different year remains a forecast pattern in an explicit period', () => {
+  const p = xlsx();
+  p.exportSources.fill('standard');
+  const years = { imports: Array<number | null>(12).fill(null), exports: Array<number | null>(12).fill(null) };
+  years.imports[0] = 2025;
+  const period = resolveProjectAnalysisPeriod('2026-01', new Date('2027-02-15T12:00:00.000Z'));
+  const result = buildReEnergyUsageProfile({ profile: p, dashboard: dashboard(), hourly: january(),
+    hourlySourceYears: years, analysisPeriod: period });
+
+  assert.equal(result.months[0].key, '2026-01');
+  assert.equal(result.months[0].importSource, 'forecast');
+  assert.equal(result.months[0].sourceFiles, 0);
+  assert.match(result.warnings.join(' '), /pochodzi z 2025; pokazano go jako prognozę dla 2026/);
+  assert.equal(result.measuredDays, 0);
+});
+
 function linked(t: TestContext, hasMeasurements: boolean, fixture: {
   profile?: ReConsumptionProfile; metadata?: Record<string, unknown>; rows?: Record<string, unknown>[];
+  history?: Record<string, unknown>[];
+  analysisStartMonth?: string | null;
+  project?: {
+    offerWorkspace?: { input?: unknown } | null;
+    energyAudits?: Array<Record<string, unknown>>;
+    investmentSite?: { latitude?: unknown; longitude?: unknown } | null;
+  };
+  pvRows?: Array<[string, number, number?]>;
+  pvUrls?: string[];
+  projectQuery?: (args: any) => void;
 } = {}) {
   const previous = process.env.ONREVOLT_RE_DATABASE_URL;
   process.env.ONREVOLT_RE_DATABASE_URL = 'mysql://test:test@localhost:1/unused';
   t.after(() => { if (previous == null) delete process.env.ONREVOLT_RE_DATABASE_URL; else process.env.ONREVOLT_RE_DATABASE_URL = previous; });
   const originalFind = prisma.project.findFirst;
-  prisma.project.findFirst = (async () => ({ dashboardStation: 'token', dashboardStationNumber: '41' })) as typeof originalFind;
+  prisma.project.findFirst = (async (args: any) => {
+    fixture.projectQuery?.(args);
+    return {
+      dashboardStation: 'token', dashboardStationNumber: '41',
+      offerWorkspace: fixture.project?.offerWorkspace ?? null,
+      energyAudits: fixture.project?.energyAudits || [],
+      investmentSite: fixture.project?.investmentSite ?? null,
+    };
+  }) as unknown as typeof originalFind;
   t.after(() => { prisma.project.findFirst = originalFind; });
-  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ ok: true, data: fixture.profile || profile() })));
+  const originalRaw = prisma.$queryRaw;
+  prisma.$queryRaw = (async () => [{ analysisStartMonth: fixture.analysisStartMonth ?? null }]) as typeof originalRaw;
+  t.after(() => { prisma.$queryRaw = originalRaw; });
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.searchParams.get('api') === 'pv') {
+      fixture.pvUrls?.push(url.toString());
+      return new Response(JSON.stringify(fixture.pvRows || []));
+    }
+    return new Response(JSON.stringify({ ok: true, data: { ...(fixture.profile || profile()), measurementHistory: [] } }));
+  });
   const queries: string[] = [];
   const db = rePrisma(), originalQuery = db.$queryRawUnsafe;
   db.$queryRawUnsafe = (async (sql: string) => {
@@ -87,6 +147,7 @@ function linked(t: TestContext, hasMeasurements: boolean, fixture: {
     if (sql.startsWith('SHOW COLUMNS')) return [{ Field: 'station' }, { Field: 'station_hash' }];
     if (sql.includes('DATE_FORMAT')) return [{ dateStart: '2026-08-27', annualUsageKwh: 500, pvSizeKwp: 8, lat: 52, lon: 16, ...fixture.metadata }];
     if (sql.includes('FROM EnergyMeter_users_usage_hourly')) return fixture.rows || [];
+    if (sql.includes('FROM EnergyMeter_users_usage_history')) return fixture.history || [];
     if (sql.startsWith('SELECT 1 FROM EnergyMeter ')) return hasMeasurements ? [{ 1: 1 }] : [];
     return [{ station: '41', station_hash: 'token' }];
   }) as typeof originalQuery;
@@ -94,12 +155,146 @@ function linked(t: TestContext, hasMeasurements: boolean, fixture: {
   return queries;
 }
 
-test('confirmed absence uses indexed existence and explicit profile-only, not CLI', async t => {
+function januaryDbRows() {
+  return january().map(([stamp, imported, exported]) => ({
+    month_no: 1,
+    day_no: Number(stamp.slice(8, 10)),
+    hour_no: Number(stamp.slice(11, 13)),
+    kwh: imported,
+    export_kwh: exported,
+    source: 'xlsx',
+    source_year: 2025,
+    export_source: 'xlsx',
+    export_source_year: 2025,
+  }));
+}
+
+test('confirmed absence uses indexed existence and the effective default period, not CLI', async t => {
   const queries = linked(t, false);
   const result = await readProjectReConsumptionProfile('project', { clientId: 'client' });
   assert.equal(result.source, 'RE'); assert.equal(result.station, '41'); assert.equal(result.measuredDays, 0);
+  const period = resolveProjectAnalysisPeriod(null);
+  assert.equal(result.analysisStartMonth, period.startMonth);
+  assert.deepEqual(result.months.map(month => month.key), period.periodKeys);
   assert.ok(queries.includes('SELECT 1 FROM EnergyMeter USE INDEX (station) WHERE station=? LIMIT 1'));
   assert.ok(queries.every(sql => !/\b(UPDATE|INSERT|ALTER|DELETE|COUNT)\b/i.test(sql)));
+});
+
+test('explicit project period overrides RE station dateStart and returns exactly those months', async t => {
+  linked(t, false, { analysisStartMonth: '2025-10', metadata: { dateStart: '2024-08-27' } });
+  const result = await readProjectReConsumptionProfile('project', { clientId: 'client' });
+  const period = resolveProjectAnalysisPeriod('2025-10');
+  assert.equal(result.analysisStartMonth, period.startMonth);
+  assert.deepEqual(result.months.map(month => month.key), period.periodKeys);
+  assert.equal(result.months[0].key, '2025-10');
+  assert.equal(result.months[11].key, '2026-09');
+  assert.equal(result.measuredDays, 0);
+});
+
+test('CRM PV 9.9 kWp zastępuje RE metadata 0, lokalizacja projektu i okres trafiają do pobrania PV', async t => {
+  const pvUrls: string[] = [];
+  const queries = linked(t, false, {
+    profile: xlsx(),
+    metadata: { dateStart: '2024-08-27', pvSizeKwp: 0, lat: 51, lon: 17 },
+    rows: januaryDbRows(),
+    analysisStartMonth: '2025-10',
+    project: {
+      energyAudits: [{ existingPvKw: 9.9 }],
+      investmentSite: { latitude: 52.23, longitude: 21.01 },
+    },
+    pvRows: series('2025-10-01', '2026-10-01', () => 1000),
+    pvUrls,
+    projectQuery: args => {
+      assert.ok(args.select.offerWorkspace.select.input);
+      assert.deepEqual(args.select.energyAudits, {
+        select: { existingPvKw: true, roofTiltDeg: true, roofOrientation: true }, take: 1,
+      });
+      assert.deepEqual(args.select.investmentSite, { select: { latitude: true, longitude: true } });
+    },
+  });
+
+  const result = await readProjectReConsumptionProfile('project', { clientId: 'client' });
+  const januaryMonth = result.months.find(month => month.key === '2026-01');
+  const pvRequest = new URL(pvUrls[0]);
+
+  assert.ok(Math.abs((januaryMonth?.totalKwh || 0) - 744 * (1 + 9.9 * 1.05 - 0.5)) < 1e-7);
+  assert.equal(pvRequest.searchParams.get('lat'), '52.23');
+  assert.equal(pvRequest.searchParams.get('lon'), '21.01');
+  assert.equal(pvRequest.searchParams.get('from'), '2025-10-01');
+  assert.equal(pvRequest.searchParams.get('to'), '2026-10-01');
+  assert.ok(queries.every(sql => !/\b(UPDATE|INSERT|ALTER|DELETE)\b/i.test(sql)));
+});
+
+test('workspace PV ma pierwszeństwo przed audytem i RE, a sam audyt jest źródłem bez workspace', async t => {
+  for (const source of [
+    { offerWorkspace: { input: { existingPv: { powerKw: 4.2, tiltDegrees: 30, azimuthDegrees: 180, lossPercent: 14 } } },
+      energyAudits: [{ existingPvKw: 9.9 }] },
+    { offerWorkspace: null, energyAudits: [{ existingPvKw: 4.2 }] },
+  ]) {
+    const pvUrls: string[] = [];
+    const queries = linked(t, false, {
+      profile: xlsx(), metadata: { pvSizeKwp: 8 }, rows: januaryDbRows(), analysisStartMonth: '2025-10',
+      project: { ...source, investmentSite: { latitude: 53.1, longitude: 18.6 } },
+      pvRows: series('2025-10-01', '2026-10-01', () => 1000), pvUrls,
+    });
+    const result = await readProjectReConsumptionProfile('project');
+    const januaryMonth = result.months.find(month => month.key === '2026-01');
+    const pvRequest = new URL(pvUrls[0]);
+    assert.ok(Math.abs((januaryMonth?.totalKwh || 0) - 744 * (1 + 4.2 * 1.05 - 0.5)) < 1e-7);
+    assert.equal(pvRequest.searchParams.get('lat'), '53.1');
+    assert.equal(pvRequest.searchParams.get('lon'), '18.6');
+    assert.ok(queries.every(sql => !/\b(UPDATE|INSERT|ALTER|DELETE)\b/i.test(sql)));
+  }
+});
+
+test('projektowe 0/null nie spadają do RE ani telemetrii, a brak lokalizacji CRM nie używa RE', async t => {
+  for (const powerKw of [0, null]) {
+    assert.throws(() => buildReEnergyUsageProfile({
+      profile: xlsx(),
+      dashboard: { account: { dateStart: '2026-01-01', pvSizeKwp: 8, lat: 51, lon: 17 },
+        rawEnergy: { installedPowerKw: 12 }, pvData: { records: [{ quarters: [{ powerW: 12000 }] }] } },
+      hourly: january(),
+      projectPv: { powerKw, latitude: 52, longitude: 21 },
+    }), /Brak mocy PV/);
+  }
+
+  for (const powerKw of [0, null]) {
+    const pvUrls: string[] = [];
+    const queries = linked(t, false, {
+      profile: xlsx(), metadata: { pvSizeKwp: 8, lat: 51, lon: 17 }, rows: januaryDbRows(), analysisStartMonth: '2025-10',
+      project: { offerWorkspace: { input: { existingPv: { powerKw } } }, investmentSite: { latitude: 52, longitude: 21 } },
+      pvUrls,
+    });
+    await assert.rejects(readProjectReConsumptionProfile('project'), /Brak mocy PV/);
+    assert.deepEqual(pvUrls, []);
+    assert.ok(queries.every(sql => !/\b(UPDATE|INSERT|ALTER|DELETE)\b/i.test(sql)));
+  }
+
+  const queries = linked(t, false, {
+    profile: xlsx(), metadata: { pvSizeKwp: 8, lat: 51, lon: 17 }, rows: januaryDbRows(), analysisStartMonth: '2025-10',
+    project: { energyAudits: [{ existingPvKw: 9.9 }], investmentSite: null },
+    pvRows: series('2025-10-01', '2026-10-01', () => 1000),
+  });
+  await assert.rejects(readProjectReConsumptionProfile('project'), /Brak lokalizacji projektu do pobrania danych PV/);
+  assert.ok(queries.every(sql => !/\b(UPDATE|INSERT|ALTER|DELETE)\b/i.test(sql)));
+});
+
+test('explicit RE XLSX pattern uses source-year bookkeeping and is not relabeled as a measurement', async t => {
+  const p = xlsx();
+  p.exportSources.fill('standard');
+  const rows = Array.from({ length: 31 * 24 }, (_, hour) => ({ month_no: 1, day_no: Math.floor(hour / 24) + 1,
+    hour_no: hour % 24, kwh: 1, export_kwh: 0, source: 'xlsx', source_year: 2025,
+    export_source: 'standard', export_source_year: null }));
+  const queries = linked(t, false, { profile: p, rows, analysisStartMonth: '2025-10' });
+  const result = await readProjectReConsumptionProfile('project');
+  const january = result.months.find(month => month.key === '2026-01');
+
+  assert.ok(queries.some(sql => sql.includes('source_year') && sql.includes('export_source_year')));
+  assert.ok(queries.every(sql => !/\b(UPDATE|INSERT|ALTER|DELETE)\b/i.test(sql)));
+  assert.equal(january?.importSource, 'forecast');
+  assert.equal(january?.sourceFiles, 0);
+  assert.match(result.warnings.join(' '), /pochodzi z 2025; pokazano go jako prognozę dla 2026/);
+  assert.equal(result.measuredDays, 0);
 });
 
 test('a measured station surfaces CLI failure instead of using declaration or files', async t => {
@@ -108,6 +303,22 @@ test('a measured station surfaces CLI failure instead of using declaration or fi
   process.env.ONREVOLT_PHP_BIN = 'nonexistent-re-profile-test-php';
   t.after(() => { if (previous == null) delete process.env.ONREVOLT_PHP_BIN; else process.env.ONREVOLT_PHP_BIN = previous; });
   await assert.rejects(readProjectReConsumptionProfile('project'), /odczytać dashboardu RE/);
+});
+
+test('archived June from the requested year replaces latest pattern hours, totals and forecast labels', async t => {
+  const p = profile();
+  p.months = Array(12).fill(100); p.sources = Array(12).fill('manual'); p.sources[5] = 'xlsx';
+  p.exportSources = Array(12).fill('standard'); p.hourlyProfile = { exists: true, rows: 720 };
+  const rows = Array.from({ length: 720 }, (_, i) => ({ month_no: 6, day_no: Math.floor(i / 24) + 1,
+    hour_no: i % 24, kwh: 2, export_kwh: 0, source: 'xlsx', source_year: 2026, export_source: 'standard', export_source_year: null }));
+  const history = [2025, 2026].flatMap(year => rows.map(row => ({ year_no: year, month_no: 6,
+    day_no: row.day_no, hour_no: row.hour_no, direction: 'import', kwh: year === 2025 ? 0.5 : 2 })));
+  linked(t, false, { profile: p, rows, history, analysisStartMonth: '2025-06' });
+  const result = await readProjectReConsumptionProfile('project');
+  const june = result.months.find(month => month.key === '2025-06');
+  assert.equal(june?.totalKwh, 360);
+  assert.equal(june?.importSource, 'xlsx');
+  assert.ok(!result.warnings.some(warning => warning.includes('pochodzi z 2026')));
 });
 
 test('import-only XLSX with existing PV warns but does not invent self-consumption', () => {
@@ -130,12 +341,14 @@ test('complete measured month overrides import-only XLSX and suppresses its warn
 
 test('unlinked project reads only its scoped annual declaration', async t => {
   const originalFind = prisma.project.findFirst, originalAudit = prisma.energyAudit.findUnique;
+  const originalRaw = prisma.$queryRaw;
   prisma.project.findFirst = (async (args: any) => {
     assert.deepEqual(args.where, { id: 'project', clientId: 'client' });
     return { dashboardStation: null, dashboardStationNumber: null };
   }) as typeof originalFind;
   prisma.energyAudit.findUnique = (async () => ({ annualConsumptionKwh: 3650 })) as unknown as typeof originalAudit;
-  t.after(() => { prisma.project.findFirst = originalFind; prisma.energyAudit.findUnique = originalAudit; });
+  prisma.$queryRaw = (async () => [{ analysisStartMonth: null }]) as typeof originalRaw;
+  t.after(() => { prisma.project.findFirst = originalFind; prisma.energyAudit.findUnique = originalAudit; prisma.$queryRaw = originalRaw; });
   t.mock.method(globalThis, 'fetch', async () => { throw new Error('Unexpected RE request'); });
   const result = await readProjectReConsumptionProfile('project', { clientId: 'client' });
   assert.equal(result.source, undefined); assert.equal(result.months.length, 12);
@@ -173,9 +386,10 @@ for (const [name, from, to] of [['calendar', '2026-01-01', '2027-01-01'], ['RE r
 test('database month/day rows retain February 29 in a leap-year projection', async t => {
   const p = xlsx(); p.sources.fill('manual'); p.sources[1] = 'xlsx'; p.exportSources.fill('standard');
   const rows = Array.from({ length: 29 * 24 }, (_, hour) => ({ month_no: 2, day_no: Math.floor(hour / 24) + 1,
-    hour_no: hour % 24, kwh: 1, export_kwh: 0 }));
-  linked(t, false, { profile: p, metadata: { dateStart: '2028-08-27' }, rows });
+    hour_no: hour % 24, kwh: 1, export_kwh: 0, source: 'xlsx', source_year: 2024,
+    export_source: 'standard', export_source_year: null }));
+  linked(t, false, { profile: p, metadata: { dateStart: '2028-08-27' }, rows, analysisStartMonth: '2023-03' });
   const result = await readProjectReConsumptionProfile('project');
-  assert.equal(result.months[1].key, '2028-02'); assert.equal(result.months[1].totalKwh, 29 * 24);
-  assert.equal(result.months[1].weekdayDays + result.months[1].weekendDays, 29);
+  assert.equal(result.months[11].key, '2024-02'); assert.equal(result.months[11].totalKwh, 29 * 24);
+  assert.equal(result.months[11].weekdayDays + result.months[11].weekendDays, 29);
 });

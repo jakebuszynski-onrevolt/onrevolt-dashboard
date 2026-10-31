@@ -34,6 +34,21 @@ try {
     } elseif ($action === 'catalog') {
         $data = $repo->catalog((int)$input['osdId'], (int)$input['tariffId'], \OnRevolt\Pricing\ClientTariffs::date($input['date']));
         if (!$data) throw new RuntimeException('Wymaga uzupełnienia: brak cen katalogowych dla tej daty.', 422);
+    } elseif ($action === 'catalog-history') {
+        $from = \OnRevolt\Pricing\ClientTariffs::date($input['from']);
+        $until = \OnRevolt\Pricing\ClientTariffs::date($input['until']);
+        $cursor = new DateTimeImmutable($from, new DateTimeZone('Europe/Warsaw'));
+        $end = new DateTimeImmutable($until, new DateTimeZone('Europe/Warsaw'));
+        if ($end <= $cursor || $cursor->diff($end)->days > 370) throw new InvalidArgumentException('Nieprawidłowy zakres cennika oferty.');
+        $data = ['strict' => true, 'revision' => 0, 'byDate' => [], 'issues' => []];
+        while ($cursor < $end) {
+            $date = $cursor->format('Y-m-d');
+            $tariff = $repo->catalog((int)$input['osdId'], (int)$input['tariffId'], $date);
+            $data['byDate'][$date] = $tariff;
+            if (!$tariff) $data['issues'][] = ['date' => $date, 'message' => 'Brak historycznych cen katalogowych.'];
+            $cursor = $cursor->modify('+1 day');
+        }
+        $data = \OnRevolt\Pricing\ClientTariffs::packHistory($data);
     } elseif ($action === 'history') {
         if ($profile && ($profile['station'] ?? null) !== ($scope['station'] ?? null)) throw new RuntimeException('Powiązanie taryf ze stacją zmieniło się. Użyj „Połącz z EMS” w zakładce Taryfy.', 409);
         $data = $profile && ($profile['periods'] || $repo->evidence($profile['id'])) ? $repo->history($profile, $input['from'], $input['until']) : null;

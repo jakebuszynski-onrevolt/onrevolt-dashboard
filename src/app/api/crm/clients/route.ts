@@ -7,6 +7,7 @@ import { isOperationalPipelineStageCode, projectStatusStageCode } from 'lib/onre
 import { locationMapProviderValues } from 'lib/onrevolt/location-maps';
 import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser, hasStaffPermission } from 'lib/onrevolt/staff-server';
 import { prepareClientTariffBinding } from 'lib/onrevolt/client-tariffs-server';
+import { readAnalysisAccountMeasurements } from 'lib/onrevolt/project-analysis-measurements';
 
 const clientTypes = new Set(['UNKNOWN', 'B2C', 'B2B', 'B2C_B2B']);
 const locationMapProviderSet = new Set<string>(locationMapProviderValues);
@@ -366,6 +367,11 @@ export async function GET(req: NextRequest) {
         },
       });
       if (!client) return notFound('Nie znaleziono klienta');
+      for (const account of client.energyPortalAccounts) {
+        if (account.projectId) {
+          account.measurementFiles = (await readAnalysisAccountMeasurements(account.id, account.projectId)).files;
+        }
+      }
       return jsonResponse({ ok: true, data: client });
     }
 

@@ -6,7 +6,7 @@ const Chart = dynamic(() => import('react-apexcharts'), {
 });
 
 const BarChart = (props) => {
-  const { chartData, chartOptions } = props;
+  const { chartData, chartOptions, height = '100%' } = props;
 
   return (
     // @ts-ignore
@@ -14,7 +14,7 @@ const BarChart = (props) => {
       options={chartOptions}
       type="bar"
       width="100%"
-      height="100%"
+      height={height}
       series={chartData}
     />
   );

@@ -500,6 +500,7 @@ model Project {
   investmentSite         InvestmentSite?         @relation(fields: [investmentSiteId], references: [id], onDelete: SetNull)
   clientType             ClientType              @default(UNKNOWN)
   title                  String
+  analysisStartMonth     String?                 @db.VarChar(7)
   status                 ProjectStatus           @default(LEAD)
   stageId                String?
   stage                  PipelineStage?          @relation(fields: [stageId], references: [id])
@@ -523,6 +524,8 @@ model Project {
   existingAssets         ProjectExistingAsset[]
   configurations         Configuration[]
   offers                 Offer[]
+  offerWorkspace         OfferWorkspace?
+  offerCalculationSnapshots OfferWorkspaceCalculationSnapshot[]
   contracts              Contract[]
   installations          Installation[]
   documents              Document[]
@@ -548,6 +551,51 @@ model Project {
   @@index([source])
   @@index([dashboardStation])
   @@index([dashboardStationNumber])
+}
+
+model OfferWorkspace {
+  projectId       String   @id
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  revision        Int      @default(1)
+  schemaVersion   Int      @default(1)
+  sourceRevision  String   @db.VarChar(64)
+  input           Json
+  createdById     String
+  updatedById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model OfferWorkspaceCalculationSnapshot {
+  id                String   @id @default(cuid())
+  jobId             String   @unique @db.VarChar(36)
+  actorId           String   @db.VarChar(191)
+  projectId         String
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  admission         OfferWorkspaceCalculationSnapshotAdmission?
+  sourceRevision    String   @db.Char(64)
+  draftHash         String   @db.Char(64)
+  algorithmVersion  String   @db.VarChar(64)
+  pricesAsOf        String?  @db.VarChar(10)
+  sourceDependencyStamp String? @db.Char(64)
+  targetOperatorId  Int?
+  targetTariffId     Int?
+  currentSettlement String?  @db.VarChar(16)
+  targetSettlement  String?  @db.VarChar(16)
+  mode              String   @db.VarChar(16)
+  completed         Int
+  total             Int
+  result            Json
+  deadlineAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  @@index([actorId, projectId, sourceRevision, draftHash, algorithmVersion, pricesAsOf, sourceDependencyStamp], map: "OfferCalcSnapshot_lookup_idx")
+}
+
+model OfferWorkspaceCalculationSnapshotAdmission {
+  jobId     String                           @id @db.VarChar(36)
+  snapshot  OfferWorkspaceCalculationSnapshot @relation(fields: [jobId], references: [jobId], onDelete: Cascade)
+  admittedAt DateTime                        @default(now())
 }
 
 model EnergyAudit {

@@ -37,6 +37,7 @@ export default function AdminLayout({
         setHovered={setHovered}
       />
       <Box
+        data-crm-content="true"
         float="right"
         minHeight="100vh"
         height="100%"

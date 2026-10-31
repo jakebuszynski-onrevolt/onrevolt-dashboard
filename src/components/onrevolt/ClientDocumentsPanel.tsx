@@ -30,7 +30,7 @@ import {
 import Card from 'components/card/Card';
 import DocumentImagePreviewModal from 'components/onrevolt/DocumentImagePreviewModal';
 import type { InvoiceRecognitionResult } from 'lib/onrevolt/invoice-recognition';
-import { ChangeEvent, useMemo, useState } from 'react';
+import { ChangeEvent, DragEvent, useMemo, useRef, useState } from 'react';
 import {
   MdDeleteOutline,
   MdDownload,
@@ -43,6 +43,7 @@ import {
 
 type Props = {
   mode: 'files' | 'formal' | 'invoices';
+  variant?: 'default' | 'energy';
   clientId: string;
   projectId?: string;
   documents: any[];
@@ -51,7 +52,7 @@ type Props = {
   expectedTariff?: string;
 };
 
-type PanelProps = Omit<Props, 'mode'>;
+type PanelProps = Omit<Props, 'mode' | 'variant'>;
 
 type InvoiceDuplicate = {
   kind: 'IDENTICAL' | 'INVOICE_NUMBER';
@@ -164,10 +165,11 @@ async function readResponse(response: Response) {
 }
 
 export default function ClientDocumentsPanel(props: Props) {
-  if (props.mode === 'invoices') {
-    return <ClientInvoicesPanel {...props} />;
+  const { mode, variant, ...panelProps } = props;
+  if (mode === 'invoices') {
+    return <ClientInvoicesPanel {...panelProps} variant={variant || 'default'} />;
   }
-  return <ClientFilesPanel {...props} documentMode={props.mode} />;
+  return <ClientFilesPanel {...panelProps} documentMode={mode} />;
 }
 
 function ClientFilesPanel({
@@ -319,9 +321,12 @@ function ClientInvoicesPanel({
   onChanged,
   expectedPpeNumber,
   expectedTariff,
-}: PanelProps) {
+  variant,
+}: PanelProps & { variant: 'default' | 'energy' }) {
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [recognition, setRecognition] = useState<InvoiceRecognitionResult | null>(null);
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [amountGross, setAmountGross] = useState('');
@@ -362,6 +367,7 @@ function ClientInvoicesPanel({
       && normalizedTariff(expectedTariff) !== normalizedTariff(invoiceTariff),
   );
   const assignmentMismatch = ppeMismatch || tariffMismatch;
+  const compactEnergy = variant === 'energy';
 
   function populate(result: InvoiceRecognitionResult) {
     const fields = result.fields;
@@ -384,8 +390,7 @@ function ClientInvoicesPanel({
     setReplaceExistingConfirmed(false);
   }
 
-  async function selectInvoice(event: ChangeEvent<HTMLInputElement>) {
-    const selected = event.target.files?.[0] || null;
+  async function recognizeInvoice(selected: File | null) {
     setFile(selected);
     setRecognition(null);
     setDuplicateInvoice(null);
@@ -395,6 +400,8 @@ function ClientInvoicesPanel({
     setNotice('');
     if (!selected) return;
     if (!selected.name.toLowerCase().endsWith('.pdf')) {
+      setFile(null);
+      setFileInputKey((value) => value + 1);
       setError('Rozpoznawanie obsługuje obecnie tylko faktury PDF.');
       return;
     }
@@ -423,6 +430,16 @@ function ClientInvoicesPanel({
     } finally {
       setBusy('');
     }
+  }
+
+  function selectInvoice(event: ChangeEvent<HTMLInputElement>) {
+    void recognizeInvoice(event.target.files?.[0] || null);
+  }
+
+  function dropInvoice(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDraggingFile(false);
+    void recognizeInvoice(event.dataTransfer.files?.[0] || null);
   }
 
   async function upload() {
@@ -507,19 +524,84 @@ function ClientInvoicesPanel({
   );
 
   return (
-    <Flex direction="column" gap="20px">
-      <Card p="22px">
-        <Text color={textColor} fontSize="lg" fontWeight="800">Dodaj fakturę ENEA</Text>
-        <Text color={mutedColor} mb="16px">
-          Wybierz PDF. System rozpozna dane, które sprawdzisz przed zapisaniem.
-        </Text>
+    <Flex direction="column" gap={compactEnergy ? '14px' : '20px'}>
+      <Card
+        p={compactEnergy ? '0' : '22px'}
+        bg={compactEnergy ? 'transparent' : undefined}
+        boxShadow={compactEnergy ? 'none' : undefined}
+        border={compactEnergy ? '0' : undefined}
+      >
+        {compactEnergy ? (
+          <Box mb="12px">
+            <Text color={textColor} fontSize="md" fontWeight="800">Faktury za energię</Text>
+            <Text color={mutedColor} fontSize="sm">Dodaj dokumenty, sprawdź okresy i zatwierdź wartości.</Text>
+          </Box>
+        ) : (
+          <>
+            <Text color={textColor} fontSize="lg" fontWeight="800">Dodaj fakturę ENEA</Text>
+            <Text color={mutedColor} mb="16px">
+              Wybierz PDF. System rozpozna dane, które sprawdzisz przed zapisaniem.
+            </Text>
+          </>
+        )}
         {error ? <Alert status="error" mb="12px"><AlertIcon />{error}</Alert> : null}
         {message ? <Alert status="success" mb="12px"><AlertIcon />{message}</Alert> : null}
         {notice ? <Alert status="info" mb="12px"><AlertIcon />{notice}</Alert> : null}
-        <FormControl isRequired maxW="620px">
-          <FormLabel>Faktura PDF</FormLabel>
-          <Input key={fileInputKey} type="file" accept=".pdf,application/pdf" p="5px" onChange={selectInvoice} />
-        </FormControl>
+        {compactEnergy ? (
+          <Box
+            onDragEnter={(event) => { event.preventDefault(); setIsDraggingFile(true); }}
+            onDragOver={(event) => event.preventDefault()}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsDraggingFile(false);
+            }}
+            onDrop={dropInvoice}
+            border="1px dashed"
+            borderColor={isDraggingFile ? 'purple.500' : 'purple.300'}
+            bg={isDraggingFile ? 'purple.100' : 'purple.50'}
+            borderRadius="8px"
+            px={{ base: '12px', md: '16px' }}
+            py="12px"
+            transition="background 120ms ease, border-color 120ms ease"
+          >
+            <Input
+              key={fileInputKey}
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,application/pdf"
+              display="none"
+              onChange={selectInvoice}
+            />
+            <Flex align="center" gap="12px" wrap="wrap">
+              <Icon as={MdUploadFile} boxSize="24px" color="purple.600" flexShrink={0} />
+              <Box flex="1" minW="180px">
+                <Text color={textColor} fontWeight="700" fontSize="sm">Wgraj faktury</Text>
+                <Text color={mutedColor} fontSize="xs">PDF (jedyny obsługiwany format)</Text>
+                {file ? <Text color="purple.700" fontSize="xs" mt="2px" noOfLines={1}>{file.name}</Text> : null}
+              </Box>
+              <Button
+                size="sm"
+                colorScheme="purple"
+                variant="outline"
+                leftIcon={<Icon as={MdUploadFile} />}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Wybierz plik
+              </Button>
+            </Flex>
+          </Box>
+        ) : (
+          <FormControl isRequired maxW="620px">
+            <FormLabel>Faktura PDF</FormLabel>
+            <Input
+              key={fileInputKey}
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,application/pdf"
+              p="5px"
+              onChange={selectInvoice}
+            />
+          </FormControl>
+        )}
 
         {busy === 'recognize' ? (
           <Flex mt="18px" align="center" gap="10px">
@@ -529,7 +611,16 @@ function ClientInvoicesPanel({
         ) : null}
 
         {recognition ? (
-          <Box mt="20px" pt="18px" borderTop="1px solid" borderColor={borderColor}>
+          <Box
+            mt={compactEnergy ? '14px' : '20px'}
+            pt={compactEnergy ? '14px' : '18px'}
+            borderTop="1px solid"
+            borderColor={borderColor}
+            sx={compactEnergy ? {
+              '& .chakra-form__label': { fontSize: 'xs', mb: '4px' },
+              '& .chakra-input, & .chakra-select': { minHeight: '36px', fontSize: 'sm' },
+            } : undefined}
+          >
             <Flex gap="8px" wrap="wrap" mb="16px">
               <Badge colorScheme="blue">ENEA</Badge>
               <Badge>Parser {recognition.parser.version}</Badge>
@@ -728,7 +819,12 @@ function ClientInvoicesPanel({
           </Box>
         ) : null}
       </Card>
-      <DocumentsList mode="invoices" documents={shown} onChanged={onChanged} />
+      <DocumentsList
+        mode="invoices"
+        documents={shown}
+        onChanged={onChanged}
+        compactEnergy={compactEnergy}
+      />
     </Flex>
   );
 }
@@ -737,10 +833,12 @@ function DocumentsList({
   mode,
   documents,
   onChanged,
+  compactEnergy = false,
 }: {
   mode: 'files' | 'formal' | 'invoices';
   documents: any[];
   onChanged: () => Promise<void> | void;
+  compactEnergy?: boolean;
 }) {
   const [editing, setEditing] = useState<any | null>(null);
   const [previewDocument, setPreviewDocument] = useState<any | null>(null);
@@ -750,6 +848,7 @@ function DocumentsList({
   const textColor = useColorModeValue('secondaryGray.900', 'white');
   const mutedColor = useColorModeValue('secondaryGray.600', 'secondaryGray.400');
   const borderColor = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
+  const tableHeaderBg = useColorModeValue('white', 'gray.800');
 
   function beginEdit(document: any) {
     setEditing({
@@ -821,19 +920,127 @@ function DocumentsList({
   }
 
   return (
-    <Card p="22px">
-      <Flex justify="space-between" mb="14px">
-        <Box>
-          <Text color={textColor} fontSize="lg" fontWeight="800">
-            {mode === 'invoices' ? 'Faktury' : mode === 'formal' ? 'Dokumenty formalne' : 'Zdjęcia i pliki'}
-          </Text>
-          <Text color={mutedColor}>{documents.length} dokumentów</Text>
-        </Box>
-      </Flex>
+    <Card
+      p={compactEnergy ? '0' : '22px'}
+      bg={compactEnergy ? 'transparent' : undefined}
+      boxShadow={compactEnergy ? 'none' : undefined}
+      border={compactEnergy ? '0' : undefined}
+    >
+      {!compactEnergy ? (
+        <Flex justify="space-between" mb="14px">
+          <Box>
+            <Text color={textColor} fontSize="lg" fontWeight="800">
+              {mode === 'invoices' ? 'Faktury' : mode === 'formal' ? 'Dokumenty formalne' : 'Zdjęcia i pliki'}
+            </Text>
+            <Text color={mutedColor}>{documents.length} dokumentów</Text>
+          </Box>
+        </Flex>
+      ) : null}
       {error ? <Alert status="error" mb="12px"><AlertIcon />{error}</Alert> : null}
       {message ? <Alert status="success" mb="12px"><AlertIcon />{message}</Alert> : null}
-      <Flex direction="column" gap="10px">
-        {documents.map((document) => {
+      {compactEnergy ? (
+        <Box maxH="370px" overflow="auto" border="1px solid" borderColor={borderColor} borderRadius="8px">
+          <Table size="sm" minW="820px">
+            <Thead position="sticky" top="0" zIndex="1" bg={tableHeaderBg}>
+              <Tr>
+                <Th fontSize="xs" textTransform="none">Dokument / okres</Th>
+                <Th fontSize="xs" textTransform="none">Pobór / oddanie</Th>
+                <Th fontSize="xs" textTransform="none" isNumeric>Rachunek brutto</Th>
+                <Th fontSize="xs" textTransform="none">Status</Th>
+                <Th fontSize="xs" textTransform="none" textAlign="right">Działania</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
+              {documents.map((document) => {
+                const recognition = recognitionOf(document);
+                const consumption = recognition?.fields?.consumption;
+                const totalFromMonths = (field: 'consumptionBeforeBalancingKwh' | 'exportedAfterBalancingKwh') => {
+                  const monthly = consumption?.monthly || [];
+                  const values = monthly.map((month) => month[field]);
+                  if (!values.length || values.some((value) => value == null)) return null;
+                  return values.reduce((total, value) => total + Number(value), 0);
+                };
+                const purchasedEnergy = consumption?.totalBeforeBalancingKwh
+                  ?? totalFromMonths('consumptionBeforeBalancingKwh');
+                const exportedEnergy = consumption?.exportedAfterBalancingKwh
+                  ?? totalFromMonths('exportedAfterBalancingKwh');
+                const complete = Boolean(
+                  document.invoiceNumber
+                  && document.amountGross != null
+                  && document.billingPeriodFrom
+                  && document.billingPeriodTo
+                  && document.documentDate
+                  && document.invoicePpeNumber
+                  && document.invoiceTariff,
+                );
+                const period = document.billingPeriodFrom && document.billingPeriodTo
+                  ? `${dateLabel(document.billingPeriodFrom)} – ${dateLabel(document.billingPeriodTo)}`
+                  : 'Uzupełnij okres rozliczeniowy';
+                return (
+                  <Tr key={document.id}>
+                    <Td maxW="260px">
+                      <Text color={textColor} fontWeight="700" fontSize="sm" noOfLines={1} title={document.invoiceNumber || document.title}>
+                        {document.invoiceNumber || document.title}
+                      </Text>
+                      <Text color={mutedColor} fontSize="xs" noOfLines={1}>{period}</Text>
+                    </Td>
+                    <Td>
+                      <Text fontSize="xs" whiteSpace="nowrap">
+                        Pobór: {purchasedEnergy == null ? '—' : kwh(purchasedEnergy)}
+                      </Text>
+                      <Text color={mutedColor} fontSize="xs" whiteSpace="nowrap">
+                        Oddanie: {exportedEnergy == null ? '—' : kwh(exportedEnergy)}
+                      </Text>
+                    </Td>
+                    <Td isNumeric whiteSpace="nowrap" fontWeight="700">
+                      {document.amountGross == null ? '—' : money(document.amountGross)}
+                    </Td>
+                    <Td>
+                      <Badge colorScheme={complete ? 'green' : 'orange'}>
+                        {complete ? 'Zatwierdzona' : 'Do sprawdzenia'}
+                      </Badge>
+                    </Td>
+                    <Td>
+                      <Flex gap="4px" align="center" justify="flex-end" whiteSpace="nowrap">
+                        <Button size="xs" variant="outline" onClick={() => beginEdit(document)}>
+                          Podgląd / edytuj
+                        </Button>
+                        <Tooltip label="Pobierz fakturę">
+                          <IconButton
+                            as="a"
+                            href={`/api/documents/${document.id}/file?download=1`}
+                            aria-label="Pobierz fakturę"
+                            icon={<MdDownload />}
+                            size="sm"
+                            variant="outline"
+                          />
+                        </Tooltip>
+                        <Tooltip label="Usuń fakturę">
+                          <IconButton
+                            aria-label="Usuń fakturę"
+                            icon={<MdDeleteOutline />}
+                            size="sm"
+                            variant="outline"
+                            colorScheme="red"
+                            onClick={() => remove(document)}
+                            isLoading={busy === document.id}
+                          />
+                        </Tooltip>
+                      </Flex>
+                    </Td>
+                  </Tr>
+                );
+              })}
+              {!documents.length ? (
+                <Tr><Td colSpan={5} color={mutedColor} textAlign="center" py="8">Brak dodanych faktur.</Td></Tr>
+              ) : null}
+            </Tbody>
+          </Table>
+        </Box>
+      ) : null}
+      {(!compactEnergy || editing) ? (
+      <Flex direction="column" gap="10px" mt={compactEnergy ? '12px' : undefined}>
+        {documents.filter((document) => !compactEnergy || editing?.id === document.id).map((document) => {
           const isEditing = editing?.id === document.id;
           const image = document.mimeType?.startsWith('image/');
           const recognition = recognitionOf(document);
@@ -916,6 +1123,19 @@ function DocumentsList({
                       Zapisz
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setEditing(null)}>Anuluj</Button>
+                    {compactEnergy ? (
+                      <Button
+                        as="a"
+                        href={`/api/documents/${document.id}/file`}
+                        target="_blank"
+                        rel="noreferrer"
+                        size="sm"
+                        variant="ghost"
+                        leftIcon={<MdOpenInNew />}
+                      >
+                        Podgląd oryginału
+                      </Button>
+                    ) : null}
                   </Flex>
                 </>
               ) : (
@@ -1002,8 +1222,9 @@ function DocumentsList({
             </Box>
           );
         })}
-        {!documents.length ? <Text color={mutedColor}>Brak dokumentów w tej sekcji.</Text> : null}
+        {!documents.length && !compactEnergy ? <Text color={mutedColor}>Brak dokumentów w tej sekcji.</Text> : null}
       </Flex>
+      ) : null}
       <DocumentImagePreviewModal
         document={previewDocument}
         isOpen={Boolean(previewDocument)}

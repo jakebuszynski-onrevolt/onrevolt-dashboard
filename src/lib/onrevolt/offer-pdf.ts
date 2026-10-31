@@ -30,7 +30,7 @@ function safeFilePart(value: string) {
 
 function pdfHtml(svgPages: string[]) {
   return `<!doctype html>
-  <html lang="pl"><head><meta charset="utf-8"><style>
+  <html lang="pl"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"><style>
     @page { size: A4; margin: 0; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #f1f4fa; }
@@ -46,10 +46,16 @@ export async function generateOfferPdf(offer: any) {
   }
   const coverImageDataUrl = await loadOfferCoverImageDataUrl(offer);
   const svgPages = renderAllOfferSvgPages(offer, { coverImageDataUrl });
+  return generateSvgPagesPdf(svgPages);
+}
+
+export async function generateSvgPagesPdf(svgPages: string[]) {
+  if (!svgPages.length || svgPages.length > 20) throw new Error('Nieprawidłowa liczba stron dokumentu.');
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim() || undefined;
   const browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
   try {
     const page = await browser.newPage({ viewport: { width: 794, height: 1123 }, deviceScaleFactor: 1 });
+    await page.route('**/*', route => route.abort());
     await page.setContent(pdfHtml(svgPages), { waitUntil: 'load' });
     await page.evaluate(() => document.fonts.ready);
     return Buffer.from(await page.pdf({

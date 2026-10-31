@@ -29,6 +29,16 @@ function fixture(reference: string | null = null, missing = false) {
       validateReConsumptionPeriod: () => undefined,
       preflightReConsumptionWorkbook: async () => { state.profileRequests++; return { status: 'ready', station: '41' }; },
     },
+    './project-analysis-period-server': {
+      readProjectAnalysisPeriod: async (projectId: string) => ({
+        projectId,
+        storedStartMonth: '2025-10',
+        period: { periodKeys: Array.from({ length: 12 }, (_, index) => {
+          const date = new Date(Date.UTC(2025, 9 + index, 1));
+          return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+        }) },
+      }),
+    },
     './re-stations': {
       resolveReStation: async (ref: string) => {
         state.resolutions++;

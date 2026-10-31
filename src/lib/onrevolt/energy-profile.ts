@@ -30,6 +30,7 @@ export type EnergyUsageProfile = {
   station?: string;
   measuredDays?: number;
   pvIncluded?: boolean;
+  analysisStartMonth?: string;
 };
 
 type MeasurementFile = {

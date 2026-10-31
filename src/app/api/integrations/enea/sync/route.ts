@@ -21,10 +21,12 @@ import { prisma } from 'lib/onrevolt/prisma';
 import { callClientTariffs, clientTariffScope } from 'lib/onrevolt/client-tariffs-server';
 import { inspectStoredEnergyMeasurementForRe, ReStationRequiredError, requireProjectReStation, syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
+import { readProjectAnalysisPeriod } from 'lib/onrevolt/project-analysis-period-server';
 
 export const runtime = 'nodejs';
 
 const eneaKinds: EneaMeasurementKind[] = ['ACTIVE_IMPORT', 'ACTIVE_EXPORT'];
+class AnalysisPeriodSelectionError extends Error {}
 
 function syncErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -78,12 +80,13 @@ async function markAccountSync(accountId: string, status: string, message: strin
   });
 }
 
-function requestedMonths(body: Record<string, any>) {
+function requestedMonths(body: Record<string, any>, periodKeys: readonly string[] = Array.from(closedMeasurementPeriodKeys()).sort()) {
+  const allowedKeys = new Set(periodKeys);
   const periodYear = Number(body.periodYear);
   const periodMonth = Number(body.periodMonth);
   if (Number.isInteger(periodYear) && Number.isInteger(periodMonth) && periodMonth >= 1 && periodMonth <= 12) {
-    if (!closedMeasurementPeriodKeys().has(`${periodYear}-${String(periodMonth).padStart(2, '0')}`)) {
-      throw new Error('Wybierz miesiąc z ostatnich 12 zamkniętych miesięcy');
+    if (!allowedKeys.has(`${periodYear}-${String(periodMonth).padStart(2, '0')}`)) {
+      throw new AnalysisPeriodSelectionError('Wybierz miesiąc z wybranego okresu analizy projektu');
     }
     const lastDay = new Date(Date.UTC(periodYear, periodMonth, 0)).getUTCDate();
     return [{
@@ -94,9 +97,13 @@ function requestedMonths(body: Record<string, any>) {
     }];
   }
 
-  const monthsRaw = Number(body.months || 12);
-  const months = Number.isFinite(monthsRaw) ? Math.min(Math.max(Math.floor(monthsRaw), 1), 12) : 12;
-  return getClosedMonths(months);
+  const monthsRaw = Number(body.months || periodKeys.length);
+  const months = Number.isFinite(monthsRaw) ? Math.min(Math.max(Math.floor(monthsRaw), 1), periodKeys.length) : periodKeys.length;
+  return periodKeys.slice(-months).map((period) => {
+    const [year, month] = period.split('-').map(Number);
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return { year, month, dateFrom: `${period}-01`, dateTo: `${period}-${String(lastDay).padStart(2, '0')}` };
+  });
 }
 
 async function existingDownloaded(accountId: string, kind: EneaMeasurementKind, year: number, month: number) {
@@ -177,7 +184,6 @@ export async function POST(req: NextRequest) {
     accountId = optionalString(body, 'accountId');
     const clientId = optionalString(body, 'clientId');
     const force = body.force === true;
-    const months = requestedMonths(body);
 
     const account = accountId
       ? await prisma.energyPortalAccount.findUnique({ where: { id: accountId } })
@@ -190,6 +196,9 @@ export async function POST(req: NextRequest) {
 
     if (!account) return notFound('Nie znaleziono konta ENEA do synchronizacji');
     if (account.operator !== 'ENEA') return badRequest('Automatyczna synchronizacja jest teraz dostępna tylko dla ENEA');
+    const analysisPeriodResult = account.projectId ? await readProjectAnalysisPeriod(account.projectId) : undefined;
+    if (account.projectId && !analysisPeriodResult) return notFound('Nie znaleziono projektu dla konta ENEA');
+    const months = requestedMonths(body, analysisPeriodResult?.period.periodKeys);
     await requireProjectReStation(account.clientId, account.projectId || undefined);
     if (!account.login || !account.encryptedPassword) {
       return badRequest('Konto ENEA wymaga loginu i zapisanego hasła');
@@ -400,6 +409,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     if (error instanceof ReStationRequiredError) return badRequest(error.message);
+    if (error instanceof AnalysisPeriodSelectionError) return badRequest(error.message);
     if (accountId) {
       await markAccountSync(accountId, 'FAILED', syncErrorMessage(error)).catch(() => undefined);
     }

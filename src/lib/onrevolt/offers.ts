@@ -22,6 +22,8 @@ import {
   offerReportTemplateVersion,
 } from 'lib/onrevolt/offer-report';
 import { randomUUID } from 'node:crypto';
+import { energyInvoicesInAnalysisPeriod } from './client-energy-summary';
+import { readProjectAnalysisPeriod } from './project-analysis-period-server';
 
 type OfferCreateInput = {
   projectId: string;
@@ -40,6 +42,38 @@ type OfferCreateInput = {
   descriptionAfter?: string;
   notes?: string;
 };
+
+type OfferInvoicePeriod = { startMonth: string; endDate: string };
+type OfferInvoiceCycle = {
+  billingCycleMonths: number | null;
+  billingPeriodFrom: string | Date | null;
+  billingPeriodTo: string | Date | null;
+};
+
+export function selectOfferInvoiceForAnalysisPeriod<T extends OfferInvoiceCycle>(
+  invoices: readonly T[],
+  period: OfferInvoicePeriod,
+): T | null {
+  return energyInvoicesInAnalysisPeriod(invoices, period).included.find((invoice) => invoice.billingCycleMonths != null) || null;
+}
+
+async function offerInvoiceCycleForProject(prisma: PrismaClient, projectId: string): Promise<OfferInvoiceCycle | null> {
+  const periodSource = await readProjectAnalysisPeriod(projectId);
+  if (!periodSource) return null;
+  const { period } = periodSource;
+  const invoices = await prisma.document.findMany({
+    where: {
+      projectId,
+      type: 'FAKTURA_PRAD',
+      billingCycleMonths: { not: null },
+      billingPeriodFrom: { lte: new Date(`${period.endDate}T23:59:59.999Z`) },
+      billingPeriodTo: { gte: new Date(`${period.startMonth}-01T00:00:00.000Z`) },
+    },
+    select: { billingCycleMonths: true, billingPeriodFrom: true, billingPeriodTo: true },
+    orderBy: [{ documentDate: 'desc' }, { createdAt: 'desc' }],
+  });
+  return selectOfferInvoiceForAnalysisPeriod(invoices, period);
+}
 
 function money(value: unknown) {
   const number = Number(value ?? 0);
@@ -557,8 +591,7 @@ export async function createOfferFromConfiguration(prisma: PrismaClient, input: 
     const account = draft.project.energyPortalAccounts[0];
     const operator = String(current.osd_name || account?.operator || '');
     const annualConsumptionKwh = finiteNumber(draft.data.energySnapshot.usageProfile?.annualKwh ?? audit.annualConsumptionKwh);
-    const invoice = await prisma.document.findFirst({ where: { projectId: input.projectId, type: 'FAKTURA_PRAD', billingCycleMonths: { not: null } },
-      select: { billingCycleMonths: true }, orderBy: [{ documentDate: 'desc' }, { createdAt: 'desc' }] });
+    const invoice = await offerInvoiceCycleForProject(prisma, input.projectId);
     const billingCycleMonths = invoice?.billingCycleMonths || 1;
     const target = await loadEnergyTariffSnapshots({ operator, tariffCodes: [input.tariffAfter], annualUsageKwh: annualConsumptionKwh,
       billingCycleMonths, connectionPowerKw: finiteNumber(audit.connectionPowerKw) });
@@ -664,15 +697,7 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
       where: { projectId: existing.projectId },
       orderBy: { updatedAt: 'desc' },
     }),
-    prisma.document.findFirst({
-      where: {
-        projectId: existing.projectId,
-        type: 'FAKTURA_PRAD',
-        billingCycleMonths: { not: null },
-      },
-      select: { billingCycleMonths: true },
-      orderBy: [{ documentDate: 'desc' }, { createdAt: 'desc' }],
-    }),
+    offerInvoiceCycleForProject(prisma, existing.projectId),
   ]);
   if (!audit) {
     throw new OfferRecalculationError('Najpierw zapisz dane zużycia w zakładce „Dane energetyczne”.');

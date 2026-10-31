@@ -32,10 +32,22 @@ import Card from 'components/card/Card';
 import OfferDocument from 'components/onrevolt/OfferDocument';
 import InvestmentLocationPicker from 'components/onrevolt/InvestmentLocationPicker';
 import ClientDocumentsPanel from 'components/onrevolt/ClientDocumentsPanel';
+import ClientEnergyWorkspace, { type EnergyWorkspaceSettings } from 'components/onrevolt/ClientEnergyWorkspace';
+import ClientEnergyPv, { useClientEnergyPv } from 'components/onrevolt/ClientEnergyPv';
+import ClientEnergySummary, {
+  areClientEnergySummaryLoadStatesEqual,
+  getClientEnergySummaryRequestKey,
+  isCurrentClientEnergySummaryLoadState,
+  resolveClientAnnualConsumption,
+  type ClientEnergySummaryLoadState,
+} from 'components/onrevolt/ClientEnergySummary';
+import ClientAnalysisPeriod, { useClientAnalysisPeriod } from 'components/onrevolt/ClientAnalysisPeriod';
+import { energyInvoicesInAnalysisPeriod } from 'lib/onrevolt/client-energy-summary';
 import ClientSiteAuditPanel from 'components/onrevolt/ClientSiteAuditPanel';
 import ClientTariffsPanel from 'components/onrevolt/ClientTariffsPanel';
 import MeasurementPointsPanel from 'components/onrevolt/MeasurementPointsPanel';
 import ConfiguratorWorkspace from 'components/onrevolt/ConfiguratorWorkspace';
+import dynamic from 'next/dynamic';
 import {
   getDefaultEnergyTariff,
   getDefaultTargetEnergyTariff,
@@ -73,6 +85,9 @@ import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDele
 type ClientProfileProps = {
   clientId: string;
 };
+
+const OfferWorkspacePanel = dynamic(() => import('components/onrevolt/OfferWorkspacePanel'), { ssr: false });
+const offerWorkspaceEnabled = process.env.NEXT_PUBLIC_OFFER_WORKSPACE_ENABLED === '1';
 
 function AutoGrowingTextarea({ onInput, rows = 4, value, ...props }: TextareaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -224,6 +239,7 @@ type EnergyUsageMonth = {
 };
 
 type EnergyUsageProfile = {
+  analysisStartMonth?: string;
   annualKwh: number;
   months: EnergyUsageMonth[];
   source?: 'RE';
@@ -304,9 +320,10 @@ type ReStationStatus = {
   firmware?: ReStationFirmwareStatus | null;
 };
 
-type EnergyDataSettings = {
+type EnergyDataSettings = EnergyWorkspaceSettings & {
   auditId: string;
   status: string;
+  profileSource: string;
   hasOperatorData: boolean;
   hasEnergyInvoices: boolean;
   annualConsumptionKwh: string;
@@ -563,6 +580,7 @@ const emptyEnergyAccount: EnergyAccountForm = {
 const emptyEnergyDataSettings: EnergyDataSettings = {
   auditId: '',
   status: 'DRAFT',
+  profileSource: 'ANNUAL_DECLARATION',
   hasOperatorData: false,
   hasEnergyInvoices: false,
   annualConsumptionKwh: '',
@@ -575,6 +593,9 @@ const emptyEnergyDataSettings: EnergyDataSettings = {
   heatingSource: '',
   heatingSourceDetail: '',
   connectionPowerKw: '',
+  existingPvKw: '',
+  existingBatteryKwh: '',
+  phaseCount: '',
 };
 
 const clientTypeOptions = [
@@ -768,13 +789,18 @@ function energyDataSettingsFromClient(client: any, project?: any): EnergyDataSet
     || (client?.energyPortalAccounts || [])[0];
   const hasDownloadedMeasurements = Boolean(account?.measurementFiles?.some((file: any) => file.status === 'DOWNLOADED'));
   const invoices = energyInvoiceDocuments(client, project.id);
+  const hasOperatorData = audit?.hasOperatorData ?? (audit?.profileSource === 'OPERATOR_HOURLY' || hasDownloadedMeasurements);
+  const hasEnergyInvoices = audit?.hasEnergyInvoices ?? invoices.length > 0;
+  const profileSource = audit?.profileSource || (hasOperatorData ? 'OPERATOR_HOURLY' : hasEnergyInvoices ? 'MONTHLY_MANUAL' : 'ANNUAL_DECLARATION');
 
   return {
     auditId: audit?.id || '',
     status: audit?.status || 'DRAFT',
-    hasOperatorData: audit?.hasOperatorData ?? (audit?.profileSource === 'OPERATOR_HOURLY' || hasDownloadedMeasurements),
-    hasEnergyInvoices: audit?.hasEnergyInvoices ?? invoices.length > 0,
-    annualConsumptionKwh: audit?.annualConsumptionKwh == null ? '' : String(audit.annualConsumptionKwh),
+    profileSource,
+    hasOperatorData,
+    hasEnergyInvoices,
+    annualConsumptionKwh: profileSource === 'ANNUAL_DECLARATION' && audit?.annualConsumptionKwh != null
+      ? String(audit.annualConsumptionKwh) : '',
     terrainType: audit?.terrainType || '',
     buildingType: audit?.buildingType || '',
     roofShape: audit?.roofShape || '',
@@ -784,6 +810,9 @@ function energyDataSettingsFromClient(client: any, project?: any): EnergyDataSet
     heatingSource: audit?.heatingSource || '',
     heatingSourceDetail: audit?.heatingSourceDetail || '',
     connectionPowerKw: audit?.connectionPowerKw == null ? '' : String(audit.connectionPowerKw),
+    existingPvKw: audit?.existingPvKw == null ? '' : String(audit.existingPvKw),
+    existingBatteryKwh: audit?.existingBatteryKwh == null ? '' : String(audit.existingBatteryKwh),
+    phaseCount: audit?.phaseCount == null ? '' : String(audit.phaseCount),
   };
 }
 
@@ -828,27 +857,11 @@ function rapidCommandLabel(command?: string | null) {
   }[String(command || '')] || command || 'Polecenie Solis';
 }
 
-function closedEnergyMonths(count: number, now = new Date()): EnergyMonthRow[] {
-  const months: EnergyMonthRow[] = [];
-  const cursor = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-
-  for (let index = 0; index < count; index += 1) {
-    const year = cursor.getFullYear();
-    const month = cursor.getMonth() + 1;
-    months.push({
-      key: `${year}-${String(month).padStart(2, '0')}`,
-      year,
-      month,
-      label: `${String(month).padStart(2, '0')}.${year}`,
-    });
-    cursor.setMonth(cursor.getMonth() - 1);
-  }
-
-  return months;
-}
-
-function energyMonthRows(files: EnergyMeasurementFileRow[], count = 12) {
-  const rows = closedEnergyMonths(count);
+function energyMonthRows(files: EnergyMeasurementFileRow[], periodKeys: readonly string[]) {
+  const rows: EnergyMonthRow[] = [...periodKeys].reverse().map(key => {
+    const [year, month] = key.split('-').map(Number);
+    return { key, year, month, label: `${String(month).padStart(2, '0')}.${year}` };
+  });
   const byKey = new Map(rows.map((row) => [row.key, row]));
 
   for (const file of files) {
@@ -937,12 +950,15 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const energyXlsxInputRef = useRef<HTMLInputElement>(null);
   const [energyMessage, setEnergyMessage] = useState('');
   const [energyError, setEnergyError] = useState('');
-  const [energyProfile, setEnergyProfile] = useState<EnergyUsageProfile | null>(null);
+  const [storedEnergyProfile, setEnergyProfile] = useState<EnergyUsageProfile | null>(null);
+  const [energyProfileKey, setEnergyProfileKey] = useState('');
   const [energyProfileLoading, setEnergyProfileLoading] = useState(false);
+  const [energyProfileLoadState, setEnergyProfileLoadState] = useState<{
+    key: string; status: 'loading' | 'ready' | 'error'; error?: string;
+  } | null>(null);
   const [energyProfileSyncing, setEnergyProfileSyncing] = useState(false);
   const [energyDeclarationRetryAllowed, setEnergyDeclarationRetryAllowed] = useState(false);
   const energyProfileRequest = useRef(0);
-  const [energyProfileError, setEnergyProfileError] = useState('');
   const [selectedEnergyProfileMonth, setSelectedEnergyProfileMonth] = useState('');
   const [energyDataSettings, setEnergyDataSettings] = useState<EnergyDataSettings>(emptyEnergyDataSettings);
   const [energyDataSaving, setEnergyDataSaving] = useState(false);
@@ -951,6 +967,11 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [energyOverviewSaving, setEnergyOverviewSaving] = useState(false);
   const [energyOverviewMessage, setEnergyOverviewMessage] = useState('');
   const [energyOverviewError, setEnergyOverviewError] = useState('');
+  const [analysisFiles, setAnalysisFiles] = useState<{ key: string; files: EnergyMeasurementFileRow[] } | null>(null);
+  const [analysisFilesError, setAnalysisFilesError] = useState<{ key: string; error: string } | null>(null);
+  const [analysisRefreshKey, setAnalysisRefreshKey] = useState(0);
+  const [analysisSelectionPending, setAnalysisSelectionPending] = useState(false);
+  const [energySummaryLoadState, setEnergySummaryLoadState] = useState<ClientEnergySummaryLoadState | null>(null);
   const [energyTariffCatalog, setEnergyTariffCatalog] = useState<EnergyTariffCatalog>([]);
   const [energyTariffCatalogLoading, setEnergyTariffCatalogLoading] = useState(false);
   const [energyTariffCatalogError, setEnergyTariffCatalogError] = useState('');
@@ -998,6 +1019,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [selectedClientOfferId, setSelectedClientOfferId] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('projectId') || '');
   const [activeTabIndex, setActiveTabIndex] = useState(0);
+  const [showOfferWorkspace, setShowOfferWorkspace] = useState(offerWorkspaceEnabled && searchParams.get('offerWorkspace') === '1');
   const [activeJourneyKey, setActiveJourneyKey] = useState<ClientJourneyKey | null>(null);
   const [staffUsers, setStaffUsers] = useState<StaffOption[]>([]);
   const [projectCreating, setProjectCreating] = useState(false);
@@ -1014,6 +1036,54 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const activeProject = client?.projects?.find((item: any) => item.id === selectedProjectId)
     || client?.projects?.[0];
   const activeProjectId = activeProject?.id || '';
+  const analysisPeriod = useClientAnalysisPeriod(activeProjectId);
+  const analysisStartMonth = analysisPeriod.period?.startMonth;
+  const activeEnergyProfileKey = JSON.stringify([activeProjectId, analysisStartMonth || '', analysisRefreshKey]);
+  const energyProfile = energyProfileKey === activeEnergyProfileKey ? storedEnergyProfile : null;
+  const analysisFilesKey = JSON.stringify([activeProjectId, analysisPeriod.period?.startMonth, energyAccount.id,
+    energyAccount.lastSyncAt, energyAccount.measurementFiles?.map(file => file.id + file.status + file.downloadedAt).join('|'), analysisRefreshKey]);
+  const energySummaryRefreshKey = JSON.stringify([analysisPeriod.period?.startMonth || '', energyAccount.lastSyncAt,
+    energyAccount.measurementFiles?.map(file => file.id + file.status + file.downloadedAt).join('|'), analysisRefreshKey]);
+  const energySummaryRequestKey = getClientEnergySummaryRequestKey(activeProjectId, energySummaryRefreshKey);
+  const energySummaryRequestKeyRef = useRef(energySummaryRequestKey);
+  energySummaryRequestKeyRef.current = energySummaryRequestKey;
+  const onEnergySummaryLoadStateChange = useCallback((state: ClientEnergySummaryLoadState) => {
+    if (!isCurrentClientEnergySummaryLoadState(state, energySummaryRequestKeyRef.current)) return;
+    setEnergySummaryLoadState(current => areClientEnergySummaryLoadStatesEqual(current, state) ? current : state);
+  }, []);
+  const onAnalysisSelectionPendingChange = useCallback((pending: boolean) => setAnalysisSelectionPending(pending), []);
+  useEffect(() => {
+    const controller = new AbortController();
+    setAnalysisFilesError(null);
+    if (!activeProjectId || !analysisPeriod.period || !energyAccount.id) return;
+    const params = new URLSearchParams({ clientId, projectId: activeProjectId });
+    void fetch(`/api/crm/clients/energy-account?${params}`, { cache: 'no-store', signal: controller.signal })
+      .then(async response => {
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Nie udało się odczytać plików wybranego okresu.');
+        if (payload.analysisStartMonth !== analysisPeriod.period?.startMonth) throw new Error('Okres zmienił się w innej karcie. Odśwież okres analizy.');
+        if (!controller.signal.aborted) setAnalysisFiles({ key: analysisFilesKey,
+          files: payload.data.find((account: any) => account.id === energyAccount.id)?.measurementFiles || [] });
+      }).catch(reason => {
+        if (!controller.signal.aborted) setAnalysisFilesError({ key: analysisFilesKey, error: reason instanceof Error ? reason.message : String(reason) });
+      });
+    return () => controller.abort();
+    // The key includes the project, selected period, account and file refresh markers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisFilesKey, clientId]);
+  const energyPv = useClientEnergyPv(activeProjectId, energyDataSettings.existingPvKw,
+    value => setEnergyDataSettings(current => ({ ...current, existingPvKw: value })),
+    activeTabIndex === 9 && !!analysisPeriod.period && !analysisPeriod.saving, analysisPeriod.period?.startMonth);
+  const reloadPv = energyPv.reload;
+  const reloadAnalysisPeriod = analysisPeriod.reload;
+  const periodLoadError = analysisPeriod.error;
+  const retryCurrentEnergyAnalysis = useCallback(() => {
+    setAnalysisRefreshKey(value => value + 1);
+    reloadPv();
+    if (periodLoadError) reloadAnalysisPeriod();
+  }, [reloadPv, periodLoadError, reloadAnalysisPeriod]);
+  const energyPvSourceProjectRef = useRef(energyPv.source?.projectId);
+  energyPvSourceProjectRef.current = energyPv.source?.projectId;
   const energyProjectRef = useRef(activeProjectId);
   energyProjectRef.current = activeProjectId;
   const activeProjectStationRef = activeProject?.dashboardStationNumber || activeProject?.dashboardStation || '';
@@ -1101,7 +1171,11 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       setSelectedProjectId(loadedProject?.id || '');
       setForm(formFromClient(clientPayload.data, loadedProject));
       setEnergyAccount(energyAccountFromClient(clientPayload.data, loadedProject?.id));
-      setEnergyDataSettings(energyDataSettingsFromClient(clientPayload.data, loadedProject));
+      setEnergyDataSettings(current => ({
+        ...energyDataSettingsFromClient(clientPayload.data, loadedProject),
+        ...(loadedProject?.id && energyPvSourceProjectRef.current === loadedProject.id
+          ? { existingPvKw: current.existingPvKw } : {}),
+      }));
       const firstConfiguration = loadedProject?.configurations?.find((configuration: any) => configuration.status !== 'ARCHIVED');
       const firstOffer = loadedProject?.offers?.[0];
       setSelectedClientConfigurationIds((current) => {
@@ -1133,9 +1207,10 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
   const loadEnergyProfile = useCallback(async () => {
     const requestId = ++energyProfileRequest.current;
+    const requestKey = activeEnergyProfileKey;
     setEnergyProfileLoading(true);
     setEnergyProfile(null);
-    setEnergyProfileError('');
+    setEnergyProfileLoadState({ key: requestKey, status: 'loading' });
     try {
       const params = new URLSearchParams({ clientId });
       if (activeProjectId) params.set('projectId', activeProjectId);
@@ -1144,8 +1219,14 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       if (requestId !== energyProfileRequest.current) return;
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
 
-      const profile = payload.data as EnergyUsageProfile;
+      const profile = payload.data as EnergyUsageProfile | null;
+      if (!profile) throw new Error('Brak profilu zużycia dla wybranego okresu.');
+      if (analysisStartMonth && profile.analysisStartMonth !== analysisStartMonth) {
+        throw new Error('Okres zmienił się w innej karcie. Odśwież okres analizy.');
+      }
       setEnergyProfile(profile);
+      setEnergyProfileKey(requestKey);
+      setEnergyProfileLoadState({ key: requestKey, status: 'ready' });
       setSelectedEnergyProfileMonth((current) => (
         profile.months?.some((month) => month.key === current)
           ? current
@@ -1154,11 +1235,12 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     } catch (e) {
       if (requestId !== energyProfileRequest.current) return;
       setEnergyProfile(null);
-      setEnergyProfileError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      setEnergyProfileLoadState({ key: requestKey, status: 'error', error: message });
     } finally {
       if (requestId === energyProfileRequest.current) setEnergyProfileLoading(false);
     }
-  }, [activeProjectId, clientId]);
+  }, [activeEnergyProfileKey, activeProjectId, clientId, analysisStartMonth]);
 
   const loadEnergyTariffCatalog = useCallback(async () => {
     setEnergyTariffCatalogLoading(true);
@@ -1205,9 +1287,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
   useEffect(() => {
     load();
-    loadEnergyProfile();
-    loadEnergyTariffCatalog();
-  }, [load, loadEnergyProfile, loadEnergyTariffCatalog]);
+  }, [load]);
+  useEffect(() => { loadEnergyProfile(); }, [loadEnergyProfile]);
+  useEffect(() => { loadEnergyTariffCatalog(); }, [loadEnergyTariffCatalog]);
 
   useEffect(() => { setEnergyDeclarationRetryAllowed(false); }, [activeProjectId]);
 
@@ -1252,7 +1334,10 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setSelectedProjectId(projectId);
     setForm(formFromClient(client, project));
     setEnergyAccount(energyAccountFromClient(client, projectId));
-    setEnergyDataSettings(energyDataSettingsFromClient(client, project));
+    setEnergyDataSettings(current => ({
+      ...energyDataSettingsFromClient(client, project),
+      ...(energyPvSourceProjectRef.current === projectId ? { existingPvKw: current.existingPvKw } : {}),
+    }));
   }
 
   async function createProject() {
@@ -1329,12 +1414,23 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       || getDefaultTargetEnergyTariff(operator);
   }
 
-  function updateEnergyOverview(key: keyof EnergyDataSettings, value: string) {
-    setEnergyDataSettings((current) => ({
-      ...current,
-      [key]: value,
-      ...(key === 'heatingSource' ? { heatingSourceDetail: '' } : {}),
-    }));
+  function updateEnergyOverview(key: keyof EnergyWorkspaceSettings, value: string | boolean) {
+    setEnergyDataSettings((current) => {
+      const next = {
+        ...current,
+        [key]: value,
+        ...(key === 'heatingSource' ? { heatingSourceDetail: '' } : {}),
+      };
+      if (key === 'annualConsumptionKwh') return { ...next, profileSource: 'ANNUAL_DECLARATION' };
+      if (key === 'hasOperatorData' || key === 'hasEnergyInvoices') {
+        if (next.hasOperatorData) return { ...next, profileSource: 'OPERATOR_HOURLY' };
+        if (next.hasEnergyInvoices) return { ...next, profileSource: 'MONTHLY_MANUAL' };
+        if (current.hasOperatorData || current.hasEnergyInvoices) {
+          return { ...next, annualConsumptionKwh: '' };
+        }
+      }
+      return next;
+    });
   }
 
   function updateEnergyAccount(
@@ -1354,17 +1450,24 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   }
 
   function resolvedEnergySource(requireConsumption: boolean) {
-    const invoiceSummary = summarizeEnergyInvoices(energyInvoiceDocuments(client, activeProject?.id));
+    const invoiceSummary = summarizeEnergyInvoices(energyInvoicesInAnalysisPeriod(energyInvoiceDocuments(client, activeProject?.id), analysisPeriod.period).included);
     const manualAnnualKwh = Number(energyDataSettings.annualConsumptionKwh);
-    const annualConsumptionKwh = energyDataSettings.hasOperatorData && Number(energyProfile?.annualKwh) > 0
-      ? Number(energyProfile?.annualKwh)
-      : energyDataSettings.hasEnergyInvoices && invoiceSummary.annualizedKwh > 0
-        ? invoiceSummary.annualizedKwh
-        : Number.isFinite(manualAnnualKwh) && manualAnnualKwh > 0
-          ? manualAnnualKwh
-          : undefined;
+    const profileStatus = energyProfileLoadState?.key === activeEnergyProfileKey ? energyProfileLoadState.status : 'loading';
+    const manualSourceSelected = !energyDataSettings.hasOperatorData && !energyDataSettings.hasEnergyInvoices
+      && energyDataSettings.profileSource === 'ANNUAL_DECLARATION';
+    const annualConsumptionKwh = resolveClientAnnualConsumption({
+      hasOperatorData: energyDataSettings.hasOperatorData,
+      hasEnergyInvoices: energyDataSettings.hasEnergyInvoices,
+      profileStatus,
+      profileAnnualKwh: energyProfile?.annualKwh,
+      invoiceAnnualKwh: invoiceSummary.annualizedKwh,
+      manualSourceSelected,
+      manualAnnualKwh,
+    });
 
-    if (requireConsumption && !energyDataSettings.hasOperatorData && !energyDataSettings.hasEnergyInvoices && !annualConsumptionKwh) {
+    if (requireConsumption && !annualConsumptionKwh) {
+      if (energyDataSettings.hasOperatorData) throw new Error('Bieżący profil operatora nie zawiera rocznego zużycia dla wybranego okresu.');
+      if (energyDataSettings.hasEnergyInvoices) throw new Error('Brak faktur z rozpoznanym zużyciem w wybranym okresie.');
       throw new Error('Podaj roczne zużycie energii albo dodaj faktury z rozpoznanym zużyciem.');
     }
 
@@ -1374,7 +1477,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
         ? 'OPERATOR_HOURLY'
         : energyDataSettings.hasEnergyInvoices
           ? 'MONTHLY_MANUAL'
-          : 'ANNUAL_DECLARATION',
+          : energyDataSettings.profileSource,
     };
   }
 
@@ -1398,14 +1501,24 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       heatingSource: energyDataSettings.heatingSource,
       heatingSourceDetail: energyDataSettings.heatingSourceDetail,
       connectionPowerKw: energyDataSettings.connectionPowerKw,
+      existingPvKw: energyPv.dirty ? (energyDataSettings.existingPvKw === '' ? null : energyDataSettings.existingPvKw) : undefined,
+      existingBatteryKwh: energyDataSettings.existingBatteryKwh === '' ? null : energyDataSettings.existingBatteryKwh,
+      phaseCount: energyDataSettings.phaseCount === '' ? null : energyDataSettings.phaseCount,
+      pvSettings: energyPv.saveSettings(),
     };
   }
 
-  async function saveEnergyOverview() {
+  async function saveEnergyOverview(requireConsumption = false) {
     const project = activeProject;
     if (!project?.id) {
       setEnergyOverviewError('Najpierw utwórz lub wybierz projekt klienta.');
-      return;
+      return false;
+    }
+    if (analysisDataNotReady) {
+      setEnergyOverviewError(analysisDataPending
+        ? 'Proszę czekać – przeliczam dane dla wybranego okresu.'
+        : 'Nie można zapisać danych bez wczytanego okresu analizy.');
+      return false;
     }
 
     setEnergyOverviewSaving(true);
@@ -1415,14 +1528,16 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       const auditResponse = await fetch('/api/energy-audits', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(energyOverviewPayload(project.id, false)),
+        body: JSON.stringify(energyOverviewPayload(project.id, requireConsumption)),
       });
       const auditPayload = await auditResponse.json();
-      if (energyProjectRef.current !== project.id) return;
+      if (energyProjectRef.current !== project.id) return false;
+      energyPv.saved(auditPayload.pvRevision);
       setEnergyDeclarationRetryAllowed(auditPayload.reDeclarationSync?.retryAllowed === true);
       if (!auditResponse.ok || !auditPayload.ok) {
         throw new Error(auditPayload.message || auditPayload.error || `HTTP ${auditResponse.status}`);
       }
+      setAnalysisRefreshKey(value => value + 1);
 
       const accountResponse = await fetch('/api/crm/clients/energy-account', {
         method: 'POST',
@@ -1437,21 +1552,32 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
           password: energyAccount.password || undefined,
           ppeNumber: energyAccount.ppeNumber,
           portalPpeId: energyAccount.portalPpeId,
+          meterNumber: energyAccount.meterNumber,
           notes: energyAccount.notes,
         }),
       });
       const accountPayload = await accountResponse.json();
+      if (energyProjectRef.current !== project.id) return false;
       if (!accountResponse.ok || !accountPayload.ok) {
         throw new Error(accountPayload.message || accountPayload.error || `HTTP ${accountResponse.status}`);
       }
 
-      setEnergyDataSettings((current) => ({ ...current, auditId: auditPayload.data.id }));
+      setEnergyDataSettings((current) => ({
+        ...current,
+        auditId: auditPayload.data.id,
+        profileSource: auditPayload.data.profileSource || current.profileSource,
+        annualConsumptionKwh: (auditPayload.data.profileSource || current.profileSource) !== 'ANNUAL_DECLARATION'
+          ? ''
+          : auditPayload.data.annualConsumptionKwh == null ? current.annualConsumptionKwh : String(auditPayload.data.annualConsumptionKwh),
+      }));
       setEnergyAccount(energyAccountFromRecord(accountPayload.data));
       window.dispatchEvent(new Event('client-tariffs-changed'));
       setEnergyOverviewMessage('Zapisano dane do oferty.');
       await Promise.all([load(true), loadEnergyProfile()]);
+      return true;
     } catch (e) {
       setEnergyOverviewError(e instanceof Error ? e.message : String(e));
+      return false;
     } finally {
       setEnergyOverviewSaving(false);
     }
@@ -1461,6 +1587,12 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     const project = activeProject;
     if (!project?.id) {
       setEnergyDataError('Najpierw utwórz lub wybierz projekt klienta.');
+      return;
+    }
+    if (analysisDataNotReady) {
+      setEnergyDataError(analysisDataPending
+        ? 'Proszę czekać – przeliczam dane dla wybranego okresu.'
+        : 'Nie można zapisać danych bez wczytanego okresu analizy.');
       return;
     }
 
@@ -1475,6 +1607,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       });
       const payload = await response.json();
       if (energyProjectRef.current !== project.id) return;
+      energyPv.saved(payload.pvRevision);
       setEnergyDeclarationRetryAllowed(payload.reDeclarationSync?.retryAllowed === true);
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
 
@@ -1482,11 +1615,13 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
         ...current,
         auditId: payload.data.id,
         status: payload.data.status || current.status,
-        annualConsumptionKwh: payload.data.annualConsumptionKwh == null
-          ? current.annualConsumptionKwh
-          : String(payload.data.annualConsumptionKwh),
+        profileSource: payload.data.profileSource || current.profileSource,
+        annualConsumptionKwh: (payload.data.profileSource || current.profileSource) !== 'ANNUAL_DECLARATION'
+          ? ''
+          : payload.data.annualConsumptionKwh == null ? current.annualConsumptionKwh : String(payload.data.annualConsumptionKwh),
       }));
       setEnergyDataMessage('Zapisano źródła danych o zużyciu.');
+      setAnalysisRefreshKey(value => value + 1);
       await Promise.all([load(true), loadEnergyProfile()]);
     } catch (e) {
       setEnergyDataError(e instanceof Error ? e.message : String(e));
@@ -1915,8 +2050,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     }))
   ));
   const projectStatus = projectStatusLabel(project.status || form.status);
-  const energyFiles = energyAccount.measurementFiles || [];
-  const energyMonths = energyMonthRows(energyFiles);
+  const energyFiles = analysisFiles?.key === analysisFilesKey ? analysisFiles.files : [];
+  const energyMonths = energyMonthRows(energyFiles, analysisPeriod.period?.periodKeys || []);
   const energyRange = energyMonths.length
     ? `${energyMonths[energyMonths.length - 1].label} - ${energyMonths[0].label}`
     : '';
@@ -1932,6 +2067,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const stationIdentityLocked = Boolean(stationToken && stationNumber);
   const isAdmin = currentUser?.systemRole === 'ADMIN';
   const canManageEnergy = isAdmin || currentUser?.permissions?.includes('energy.manage') === true;
+  const canUseOfferWorkspace = canManageEnergy && (isAdmin || currentUser?.permissions?.includes('offers.manage') === true);
   const canEditStationIdentity = isAdmin || !stationIdentityLocked;
   const stationActionLabel = hasStationAssociation ? 'Uzupełnij z RE' : 'Utwórz stację';
   const selectedUsageMonth = energyProfile?.months?.find((month) => month.key === selectedEnergyProfileMonth)
@@ -1956,35 +2092,84 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   });
   const maxMonthlyKwh = Math.max(1, ...(energyProfile?.months || []).map((month) => month.totalKwh));
   const maxHourlyKwh = Math.max(1, ...(selectedUsageMonth?.hourly || []).map((value) => value));
-  const projectEnergyInvoices = energyInvoiceDocuments(client, project?.id);
+  const analysisInvoices = energyInvoicesInAnalysisPeriod(energyInvoiceDocuments(client, project?.id), analysisPeriod.period);
+  const projectEnergyInvoices = analysisInvoices.included;
   const invoiceConsumptionSummary = summarizeEnergyInvoices(projectEnergyInvoices);
   const manualAnnualConsumptionKwh = Number(energyDataSettings.annualConsumptionKwh);
-  const operatorAnnualConsumptionKwh = energyDataSettings.hasOperatorData && Number(energyProfile?.annualKwh) > 0
-    ? Number(energyProfile?.annualKwh)
-    : 0;
-  const invoiceAnnualConsumptionKwh = energyDataSettings.hasEnergyInvoices && invoiceConsumptionSummary.annualizedKwh > 0
-    ? invoiceConsumptionSummary.annualizedKwh
-    : 0;
-  const shouldShowManualAnnualConsumption = !operatorAnnualConsumptionKwh && !invoiceAnnualConsumptionKwh;
-  const sharedAnnualConsumptionKwh = energyProfile?.source === 'RE' ? Number(energyProfile.annualKwh) : 0;
-  const acceptedAnnualConsumptionKwh = sharedAnnualConsumptionKwh || operatorAnnualConsumptionKwh
-    || invoiceAnnualConsumptionKwh
-    || (Number.isFinite(manualAnnualConsumptionKwh) && manualAnnualConsumptionKwh > 0
-      ? manualAnnualConsumptionKwh
-      : 0);
+  const profileReadyForCurrentPeriod = energyProfileLoadState?.key === activeEnergyProfileKey && energyProfileLoadState.status === 'ready';
+  const manualSourceSelected = !energyDataSettings.hasOperatorData && !energyDataSettings.hasEnergyInvoices
+    && energyDataSettings.profileSource === 'ANNUAL_DECLARATION';
+  const shouldShowManualAnnualConsumption = !energyDataSettings.hasOperatorData && !energyDataSettings.hasEnergyInvoices;
+  const acceptedSourceAnnualConsumptionKwh = resolveClientAnnualConsumption({
+    hasOperatorData: energyDataSettings.hasOperatorData,
+    hasEnergyInvoices: energyDataSettings.hasEnergyInvoices,
+    profileStatus: energyProfileLoadState?.key === activeEnergyProfileKey ? energyProfileLoadState.status : 'loading',
+    profileAnnualKwh: energyProfile?.annualKwh,
+    invoiceAnnualKwh: invoiceConsumptionSummary.annualizedKwh,
+    manualSourceSelected,
+    manualAnnualKwh: manualAnnualConsumptionKwh,
+  }) || 0;
+  const operatorAnnualConsumptionKwh = energyDataSettings.hasOperatorData ? acceptedSourceAnnualConsumptionKwh : 0;
+  const invoiceAnnualConsumptionKwh = !energyDataSettings.hasOperatorData && energyDataSettings.hasEnergyInvoices
+    ? acceptedSourceAnnualConsumptionKwh : 0;
+  const sharedAnnualConsumptionKwh = profileReadyForCurrentPeriod && energyProfile?.source === 'RE' ? Number(energyProfile.annualKwh) : 0;
+  const acceptedAnnualConsumptionKwh = sharedAnnualConsumptionKwh || acceptedSourceAnnualConsumptionKwh;
   const acceptedConsumptionSource = sharedAnnualConsumptionKwh > 0
     ? 'Wspólny profil RE'
-    : operatorAnnualConsumptionKwh > 0
+    : energyDataSettings.hasOperatorData && operatorAnnualConsumptionKwh > 0
     ? 'Profil godzinowy OSD'
-    : invoiceAnnualConsumptionKwh > 0
+    : !energyDataSettings.hasOperatorData && energyDataSettings.hasEnergyInvoices && invoiceAnnualConsumptionKwh > 0
       ? 'Zużycie rozpoznane z faktur'
-      : acceptedAnnualConsumptionKwh > 0
+      : manualSourceSelected && acceptedAnnualConsumptionKwh > 0
         ? 'Deklaracja klienta'
+          : energyDataSettings.hasOperatorData && energyProfileLoadState?.key === activeEnergyProfileKey && energyProfileLoadState.status === 'error'
+            ? 'Błąd odczytu profilu operatora'
         : energyDataSettings.hasOperatorData
           ? 'Oczekiwanie na dane operatora'
           : energyDataSettings.hasEnergyInvoices
             ? 'Faktury bez rozpoznanego zużycia'
             : 'Brak danych do obliczeń';
+
+  const currentProfileLoadState = energyProfileLoadState?.key === activeEnergyProfileKey ? energyProfileLoadState : null;
+  const activeEnergyProfileError = currentProfileLoadState?.status === 'error' ? currentProfileLoadState.error || '' : '';
+  const currentFilesError = analysisFilesError?.key === analysisFilesKey ? analysisFilesError.error : '';
+  const currentSummaryLoadState = isCurrentClientEnergySummaryLoadState(energySummaryLoadState, energySummaryRequestKey)
+    ? energySummaryLoadState
+    : null;
+  const periodPending = !!activeProjectId && (analysisSelectionPending || analysisPeriod.loading || analysisPeriod.saving
+    || (!analysisPeriod.period && !analysisPeriod.error));
+  const filesPending = !!activeProjectId && !!analysisPeriod.period && !!energyAccount.id
+    && analysisFiles?.key !== analysisFilesKey && !currentFilesError;
+  const profilePending = !!activeProjectId && !!analysisPeriod.period
+    && (!currentProfileLoadState || currentProfileLoadState.status === 'loading');
+  const summaryPending = activeTabIndex === 9 && !!activeProjectId && !!analysisPeriod.period
+    && (!currentSummaryLoadState || currentSummaryLoadState.status === 'loading');
+  const pvRequired = activeTabIndex === 9 && !!analysisPeriod.period && Number(energyDataSettings.existingPvKw) > 0;
+  const pvError = pvRequired ? energyPv.error || energyPv.estimate?.error || '' : '';
+  const pvPending = pvRequired && (energyPv.loading || energyPv.calculating
+    || (!energyPv.source && !pvError)
+    || (!!energyPv.source && energyPv.complete && !energyPv.estimate && !pvError));
+  const analysisDataPending = periodPending || filesPending || profilePending || summaryPending || pvPending;
+  const analysisDataNotReady = analysisDataPending || (!!activeProjectId && !analysisPeriod.period);
+  const analysisErrors = [
+    analysisPeriod.error ? `Okres: ${analysisPeriod.error}` : '',
+    currentFilesError ? `Pliki: ${currentFilesError}` : '',
+    currentProfileLoadState?.status === 'error' ? `Profil: ${currentProfileLoadState.error || 'nie udało się odczytać profilu.'}` : '',
+    currentSummaryLoadState?.status === 'error' ? `Podsumowanie: ${currentSummaryLoadState.error || 'nie udało się odczytać pomiarów.'}` : '',
+    pvError ? `PV: ${pvError}` : '',
+  ].filter(Boolean);
+  const analysisWarnings = [
+    ...(currentSummaryLoadState?.status === 'ready' ? currentSummaryLoadState.warnings || [] : []),
+    ...(profileReadyForCurrentPeriod ? energyProfile?.warnings || [] : []),
+    energyAccount.id && energyMonths.some(row => row.importFile?.status !== 'DOWNLOADED')
+      ? `Brak pobranego pliku poboru w ${energyMonths.filter(row => row.importFile?.status !== 'DOWNLOADED').length} z 12 miesięcy.` : '',
+    analysisInvoices.crossingCount ? `Faktury przecinające granice okresu: ${analysisInvoices.crossingCount}.` : '',
+    analysisInvoices.undatedCount ? `Faktury bez prawidłowych dat: ${analysisInvoices.undatedCount}.` : '',
+    pvRequired && !pvPending && !pvError && !energyPv.complete ? 'Brakuje parametrów lub lokalizacji do prognozy PV.' : '',
+    energyDataSettings.hasOperatorData && profileReadyForCurrentPeriod && !operatorAnnualConsumptionKwh
+      ? 'Profil operatora nie zawiera rocznego zużycia dla wybranego okresu.' : '',
+  ].filter(Boolean);
+  const uniqueAnalysisWarnings = [...new Set(analysisWarnings)];
   const taskCreateParams = new URLSearchParams({ scope: 'all', clientId, create: '1' });
   if (project?.id) taskCreateParams.set('projectId', project.id);
   const taskCreateUrl = `/admin/tasks?${taskCreateParams.toString()}`;
@@ -2024,7 +2209,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     clientType: project?.clientType || client?.clientType,
     hasContactChannel: Boolean(contact.phone || contact.email),
     hasAddress: Boolean(site.fullAddress || site.addressLine || contact.investmentAddress || project.locationAddress),
-    energyAccounts: (client?.energyPortalAccounts || []).filter((account: any) => !project?.id || account.projectId === project.id),
+    energyAccounts: (client?.energyPortalAccounts || []).filter((account: any) => !project?.id || account.projectId === project.id)
+      .map((account: any) => ({ ...account, measurementFiles: energyFiles.filter(file => file.status === 'DOWNLOADED' && file.kind === 'ACTIVE_IMPORT') })),
     energyData: {
       hasConsumptionData: acceptedAnnualConsumptionKwh > 0,
       terrainType: energyDataSettings.terrainType,
@@ -3228,9 +3414,30 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                 );
               }
 
+              if (offerWorkspaceEnabled && canUseOfferWorkspace && showOfferWorkspace && project?.id) {
+                return (
+                  <TabPanel key={tab} px="0">
+                    <OfferWorkspacePanel
+                      key={project.id}
+                      projectId={project.id}
+                      actorId={currentUser?.id || undefined}
+                      canEdit={canUseOfferWorkspace}
+                      onBack={() => setShowOfferWorkspace(false)}
+                    />
+                  </TabPanel>
+                );
+              }
+
               return (
                 <TabPanel key={tab} px="0">
                   <Flex direction="column" gap="20px">
+                    {offerWorkspaceEnabled && canUseOfferWorkspace && project?.id ? (
+                      <Flex justify="flex-end">
+                        <Button leftIcon={<MdEdit />} variant="outline" onClick={() => setShowOfferWorkspace(true)}>
+                          Nowy kreator oferty
+                        </Button>
+                      </Flex>
+                    ) : null}
                     {configurationContent}
                     <Card p="22px">
                       <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" align={{ lg: 'center' }} mb="18px">
@@ -4404,295 +4611,80 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
             if (tab === 'Dane energetyczne') {
               return (
                 <TabPanel key={tab} px="0">
-                  <Flex direction="column" gap="20px">
-                    <Card p={{ base: '16px', md: '18px' }}>
-                      <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="12px" align={{ lg: 'center' }}>
-                        <Box>
-                          <Text color={textColor} fontSize="lg" fontWeight="800">Dane do oferty</Text>
-                          <Text color={mutedColor} fontSize="sm">Podstawowe informacje o obiekcie, rozliczeniu i ogrzewaniu.</Text>
+                  <ClientEnergyWorkspace
+                    key={project.id}
+                    analysisPeriod={<>
+                      <ClientAnalysisPeriod state={analysisPeriod} onPendingChange={onAnalysisSelectionPendingChange}
+                        disabled={!canManageEnergy || energyOverviewSaving || energyDataSaving || energyXlsxUploading || energySyncing || energyProfileSyncing || !!energyMonthAction} />
+                      {analysisDataPending ? <Alert status="info" borderRadius="8px" mt="10px" alignItems="center">
+                        <Spinner size="sm" mr="10px" />
+                        <Box flex="1">
+                          <Text fontWeight="600">Proszę czekać – przeliczam dane dla wybranego okresu.</Text>
+                          {analysisErrors.length > 0 && <Text fontSize="sm">Część źródeł zwróciła błąd: {analysisErrors[0]}</Text>}
                         </Box>
-                        <Button colorScheme="purple" size="sm" onClick={saveEnergyOverview} isLoading={energyOverviewSaving}>
-                          Zapisz dane do oferty
-                        </Button>
-                      </Flex>
-
-                      {energyOverviewError ? (
-                        <Alert status="error" borderRadius="8px" mt="12px">
-                          <AlertIcon />
-                          {energyOverviewError}
-                        </Alert>
-                      ) : null}
-                      {energyOverviewMessage ? (
-                        <Alert status="success" borderRadius="8px" mt="12px">
-                          <AlertIcon />
-                          {energyOverviewMessage}
-                        </Alert>
-                      ) : null}
-                      {energyTariffCatalogError ? (
-                        <Alert status="warning" borderRadius="8px" mt="12px">
-                          <AlertIcon />
-                          {energyTariffCatalogError}
-                        </Alert>
-                      ) : null}
-
-                      <Box mt="14px">
-                        <Text color={textColor} fontSize="sm" fontWeight="800" mb="8px">Dane środowiskowe</Text>
-                        <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} gap="10px">
-                          <FormControl>
-                            <FormLabel mb="5px" fontSize="sm">Typ budynku</FormLabel>
-                            <Select size="sm" value={energyDataSettings.buildingType} onChange={(event) => updateEnergyOverview('buildingType', event.target.value)}>
-                              <option value="">Nie określono</option>
-                              {buildingTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </Select>
-                          </FormControl>
-                          <FormControl>
-                            <FormLabel mb="5px" fontSize="sm">Rodzaj terenu</FormLabel>
-                            <Select size="sm" value={energyDataSettings.terrainType} onChange={(event) => updateEnergyOverview('terrainType', event.target.value)}>
-                              <option value="">Nie określono</option>
-                              {terrainTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </Select>
-                          </FormControl>
-                          <FormControl>
-                            <FormLabel mb="5px" fontSize="sm">Rodzaj dachu</FormLabel>
-                            <Select size="sm" value={energyDataSettings.roofShape} onChange={(event) => updateEnergyOverview('roofShape', event.target.value)}>
-                              <option value="">Nie określono</option>
-                              {roofShapeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </Select>
-                          </FormControl>
-                        </SimpleGrid>
-                      </Box>
-
-                      <Box mt="14px" pt="12px" borderTop="1px solid" borderColor={borderColor}>
-                        <Text color={textColor} fontSize="sm" fontWeight="800" mb="8px">Dane rozliczeniowe</Text>
-                        <ClientTariffsPanel compact clientId={clientId} projectId={activeProjectId} onOpen={() => selectPrimaryTab(14)} onHistoryChange={setHasTariffHistory} />
-                        <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} gap="10px">
-                          <FormControl display={hasTariffHistory ? 'none' : undefined}>
-                            <FormLabel mb="5px" fontSize="sm">OSD</FormLabel>
-                            <Select
-                              size="sm"
-                              value={energyAccount.operator}
-                              onChange={(event) => updateEnergyAccount('operator', event.target.value)}
-                              isDisabled={energyTariffCatalogLoading || !energyTariffCatalog.length}
-                            >
-                              {energyTariffCatalogLoading ? <option>Ładowanie...</option> : null}
-                              {energyTariffCatalog.map((operator) => (
-                                <option key={operator.code} value={operator.code}>{operator.label}</option>
-                              ))}
-                            </Select>
-                          </FormControl>
-                          <FormControl display={hasTariffHistory ? 'none' : undefined}>
-                            <FormLabel mb="5px" fontSize="sm">Taryfa</FormLabel>
-                            <Select
-                              size="sm"
-                              value={energyAccount.tariff}
-                              onChange={(event) => updateEnergyAccount('tariff', event.target.value)}
-                              isDisabled={energyTariffCatalogLoading || !tariffsForOperator(energyAccount.operator).length}
-                            >
-                              {tariffsForOperator(energyAccount.operator).map((tariff) => (
-                                <option key={tariff.id} value={tariff.code}>{tariff.label}</option>
-                              ))}
-                            </Select>
-                          </FormControl>
-                          <FormControl>
-                            <FormLabel mb="5px" fontSize="sm">System rozliczeniowy</FormLabel>
-                            <Select size="sm" value={energyDataSettings.settlementSystem} onChange={(event) => updateEnergyOverview('settlementSystem', event.target.value)}>
-                              <option value="">Nie określono</option>
-                              {settlementSystemOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </Select>
-                          </FormControl>
-                          <FormControl>
-                            <FormLabel mb="5px" fontSize="sm">Moc przyłączeniowa [kW]</FormLabel>
-                            <Input size="sm" type="number" min="0" step="0.1" value={energyDataSettings.connectionPowerKw} onChange={(event) => updateEnergyOverview('connectionPowerKw', event.target.value)} />
-                          </FormControl>
-                          <FormControl>
-                            <FormLabel mb="5px" fontSize="sm">Dostawca energii</FormLabel>
-                            <Select size="sm" value={energyDataSettings.energySupplier} onChange={(event) => updateEnergyOverview('energySupplier', event.target.value)}>
-                              <option value="">Nie określono</option>
-                              {energySupplierOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </Select>
-                          </FormControl>
-                          <FormControl>
-                            <FormLabel mb="5px" fontSize="sm">Rodzaj przyłącza</FormLabel>
-                            <Select size="sm" value={energyDataSettings.connectionType} onChange={(event) => updateEnergyOverview('connectionType', event.target.value)}>
-                              <option value="">Nie określono</option>
-                              {connectionTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </Select>
-                          </FormControl>
-                        </SimpleGrid>
-                      </Box>
-
-                      <Box mt="14px" pt="12px" borderTop="1px solid" borderColor={borderColor}>
-                        <Text color={textColor} fontSize="sm" fontWeight="800" mb="8px">Energia cieplna</Text>
-                        <SimpleGrid columns={{ base: 1, md: 2 }} gap="10px">
-                          <FormControl>
-                            <FormLabel mb="5px" fontSize="sm">Źródło ciepła</FormLabel>
-                            <Select size="sm" value={energyDataSettings.heatingSource} onChange={(event) => updateEnergyOverview('heatingSource', event.target.value)}>
-                              <option value="">Nie określono</option>
-                              {heatSourceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </Select>
-                          </FormControl>
-                          <FormControl>
-                            <FormLabel mb="5px" fontSize="sm">Rodzaj źródła ciepła</FormLabel>
-                            <Select
-                              size="sm"
-                              value={energyDataSettings.heatingSourceDetail}
-                              onChange={(event) => updateEnergyOverview('heatingSourceDetail', event.target.value)}
-                              isDisabled={!getHeatSourceDetailOptions(energyDataSettings.heatingSource).length}
-                            >
-                              <option value="">
-                                {getHeatSourceDetailOptions(energyDataSettings.heatingSource).length ? 'Nie określono' : 'Nie dotyczy'}
-                              </option>
-                              {getHeatSourceDetailOptions(energyDataSettings.heatingSource).map((option) => (
-                                <option key={option.value} value={option.value}>{option.label}</option>
-                              ))}
-                            </Select>
-                          </FormControl>
-                        </SimpleGrid>
-                      </Box>
-                    </Card>
-
-                    <Card p="22px">
-                      <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" align={{ lg: 'center' }}>
-                        <Box>
-                          <Text color={textColor} fontSize="lg" fontWeight="800">Źródła danych o zużyciu</Text>
-                          <Text color={mutedColor}>Wybierz dostępne dane. System użyje najdokładniejszego źródła do obliczeń.</Text>
-                        </Box>
-                        <Button colorScheme="purple" onClick={saveEnergyDataSettings} isLoading={energyDataSaving}>
-                          {energyDeclarationRetryAllowed ? 'Ponów zapis źródeł w RE' : 'Zapisz źródła danych'}
-                        </Button>
-                      </Flex>
-
-                      {energyDataError ? (
-                        <Alert status="error" borderRadius="8px" mt="16px">
-                          <AlertIcon />
-                          {energyDataError}
-                        </Alert>
-                      ) : null}
-                      {energyDataMessage ? (
-                        <Alert status="success" borderRadius="8px" mt="16px">
-                          <AlertIcon />
-                          {energyDataMessage}
-                        </Alert>
-                      ) : null}
-
-                      <SimpleGrid columns={{ base: 1, lg: 2 }} gap="12px" mt="18px">
-                        <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="14px">
-                          <Checkbox
-                            isChecked={energyDataSettings.hasOperatorData}
-                            onChange={(event) => setEnergyDataSettings((current) => ({
-                              ...current,
-                              hasOperatorData: event.target.checked,
-                            }))}
-                          >
-                            <Text color={textColor} fontWeight="800">Mam dane od operatora</Text>
-                          </Checkbox>
-                          <Text color={mutedColor} fontSize="sm" mt="6px" pl="24px">
-                            Dostęp do portalu OSD i godzinowych plików pomiarowych.
-                          </Text>
-                        </Box>
-                        <Box border="1px solid" borderColor={borderColor} borderRadius="8px" p="14px">
-                          <Checkbox
-                            isChecked={energyDataSettings.hasEnergyInvoices}
-                            onChange={(event) => setEnergyDataSettings((current) => ({
-                              ...current,
-                              hasEnergyInvoices: event.target.checked,
-                            }))}
-                          >
-                            <Text color={textColor} fontWeight="800">Mam faktury za energię</Text>
-                          </Checkbox>
-                          <Text color={mutedColor} fontSize="sm" mt="6px" pl="24px">
-                            Zużycie zostanie odczytane z rozpoznanych okresów rozliczeniowych.
-                          </Text>
-                        </Box>
-                      </SimpleGrid>
-
-                      <SimpleGrid columns={{ base: 1, lg: shouldShowManualAnnualConsumption ? 2 : 1 }} gap="16px" mt="18px" alignItems="end">
-                        <Box>
-                          <Text color={mutedColor} fontSize="sm" fontWeight="700">Źródło przyjęte do obliczeń</Text>
-                          <Flex align="center" gap="8px" mt="5px" wrap="wrap">
-                            <Badge colorScheme={acceptedAnnualConsumptionKwh > 0 ? 'green' : 'orange'} px="9px" py="5px" borderRadius="8px">
-                              {acceptedConsumptionSource}
-                            </Badge>
-                            <Text color={textColor} fontWeight="800">
-                              {acceptedAnnualConsumptionKwh > 0 ? `${formatKwh(acceptedAnnualConsumptionKwh)} kWh/rok` : 'Do uzupełnienia'}
-                            </Text>
-                          </Flex>
-                          {energyDataSettings.hasEnergyInvoices ? (
-                            <Text color={mutedColor} fontSize="sm" mt="8px">
-                              Faktury z rozpoznanym zużyciem: {invoiceConsumptionSummary.invoiceCount}. Suma: {formatKwh(invoiceConsumptionSummary.totalKwh)} kWh
-                              {invoiceConsumptionSummary.coveredMonths > 0 ? ` za około ${invoiceConsumptionSummary.coveredMonths} mies.` : '.'}
-                            </Text>
-                          ) : null}
-                        </Box>
-
-                        {shouldShowManualAnnualConsumption ? (
-                          <FormControl isRequired={!energyDataSettings.hasOperatorData && !energyDataSettings.hasEnergyInvoices}>
-                            <FormLabel>Roczne zużycie przyjęte do obliczeń [kWh]</FormLabel>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={energyDataSettings.annualConsumptionKwh}
-                              onChange={(event) => setEnergyDataSettings((current) => ({
-                                ...current,
-                                annualConsumptionKwh: event.target.value,
-                              }))}
-                              placeholder="np. 6000"
-                            />
-                            <Text color={mutedColor} fontSize="xs" mt="6px">
-                              {energyDataSettings.hasOperatorData
-                                ? 'Dane operatora nie zawierają jeszcze profilu. Tymczasowo możesz podać zużycie roczne ręcznie.'
-                                : energyDataSettings.hasEnergyInvoices
-                                  ? 'Dodaj fakturę z rozpoznanym zużyciem. Do czasu jej dodania możesz podać zużycie roczne ręcznie.'
-                                  : 'Wpisz deklarację klienta, gdy nie mamy danych z OSD ani faktur z rozpoznanym zużyciem.'}
-                            </Text>
-                          </FormControl>
-                        ) : null}
-                      </SimpleGrid>
-                    </Card>
-
-                    {energyDataSettings.hasEnergyInvoices ? (
-                      <ClientDocumentsPanel
-                        mode="invoices"
-                        clientId={clientId}
-                        projectId={activeProject?.id}
-                        documents={projectEnergyInvoices}
-                        expectedPpeNumber={energyAccount.id ? energyAccount.ppeNumber : ''}
-                        expectedTariff={energyAccount.id ? energyAccount.tariff : ''}
-                        onChanged={() => load(true)}
-                      />
-                    ) : null}
-
-                    {energyDataSettings.hasOperatorData ? <Card p="22px">
+                        {analysisErrors.length > 0 && <Button size="sm" variant="outline" onClick={retryCurrentEnergyAnalysis}>Ponów odczyt</Button>}
+                      </Alert> : analysisErrors.length > 0 ? <Alert status="error" borderRadius="8px" mt="10px" alignItems="center">
+                        <AlertIcon /><Box flex="1"><Text fontWeight="600">Nie udało się przeliczyć wszystkich danych.</Text>
+                          <Text fontSize="sm">{analysisErrors[0]}</Text></Box>
+                        <Button size="sm" variant="outline" onClick={retryCurrentEnergyAnalysis}>Ponów odczyt</Button>
+                      </Alert> : uniqueAnalysisWarnings.length > 0 ? <Alert status="warning" borderRadius="8px" mt="10px">
+                        <AlertIcon /><Box><Text fontWeight="600">Dane dla okresu są niepełne.</Text>
+                          <Text fontSize="sm">{uniqueAnalysisWarnings.slice(0, 2).join(' ')}</Text></Box>
+                      </Alert> : null}
+                    </>}
+                    periodBusy={analysisPeriod.saving}
+                    settings={energyDataSettings}
+                    pvDisabled={energyOverviewSaving || energyDataSaving || energyPv.loading || !energyPv.source || !!energyPv.error}
+                    pvFields={<ClientEnergyPv state={energyPv} power={energyDataSettings.existingPvKw}
+                      onPowerChange={value => updateEnergyOverview('existingPvKw', value)} disabled={energyOverviewSaving || energyDataSaving} />}
+                    onChange={updateEnergyOverview}
+                    operator={energyAccount.operator}
+                    tariff={energyAccount.tariff}
+                    onAccountChange={updateEnergyAccount}
+                    catalog={energyTariffCatalog}
+                    catalogLoading={energyTariffCatalogLoading}
+                    hasTariffHistory={hasTariffHistory}
+                    tariffSummary={<ClientTariffsPanel compact clientId={clientId} projectId={activeProjectId} onOpen={() => selectPrimaryTab(14)} onHistoryChange={setHasTariffHistory} />}
+                    range={energyRange}
+                    measurementMonths={energyMonths.filter(row => row.importFile?.status === 'DOWNLOADED').length}
+                    invoiceCount={invoiceConsumptionSummary.invoiceCount}
+                    annualKwh={acceptedAnnualConsumptionKwh}
+                    annualSource={acceptedConsumptionSource}
+                    manualAnnualVisible={shouldShowManualAnnualConsumption}
+                    saving={energyOverviewSaving || analysisPeriod.saving || analysisDataNotReady}
+                    onSave={() => void saveEnergyOverview()}
+                    onPrepareOffer={canUseOfferWorkspace ? async () => {
+                      if (!await saveEnergyOverview(true)) return;
+                      setActiveTabIndex(4);
+                      setActiveJourneyKey('offer');
+                      if (offerWorkspaceEnabled) setShowOfferWorkspace(true);
+                    } : undefined}
+                    alerts={<>
+                      {energyOverviewError && <Alert status="error"><AlertIcon />{energyOverviewError}</Alert>}
+                      {energyOverviewMessage && <Alert status="success"><AlertIcon />{energyOverviewMessage}</Alert>}
+                      {energyTariffCatalogError && <Alert status="warning"><AlertIcon />{energyTariffCatalogError}</Alert>}
+                    </>}
+                    sourceAlerts={<>
+                      {energyDataError && <Alert status="error"><AlertIcon />{energyDataError}</Alert>}
+                      {energyDataMessage && <Alert status="success"><AlertIcon />{energyDataMessage}</Alert>}
+                    </>}
+                    sourceActions={<Flex justify="flex-end" mt="18px">
+                      <Button size="sm" variant="outline" onClick={saveEnergyDataSettings} isLoading={energyDataSaving}>
+                        {energyDeclarationRetryAllowed ? 'Ponów przekazanie deklaracji do RE' : 'Zapisz źródła danych'}
+                      </Button>
+                    </Flex>}
+                    invoices={<ClientDocumentsPanel variant="energy" mode="invoices" clientId={clientId}
+                      projectId={activeProject?.id} documents={projectEnergyInvoices}
+                      expectedPpeNumber={energyAccount.id ? energyAccount.ppeNumber : ''}
+                      expectedTariff={energyAccount.id ? energyAccount.tariff : ''}
+                      onChanged={() => load(true)} />}
+                    measurements={<>
+                      {energyDataSettings.hasOperatorData ? <Box className="energy-operator-panel">
                     <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" mb="18px">
                       <Box>
                         <Text color={textColor} fontSize="lg" fontWeight="800">Dane pomiarowe operatora</Text>
                         <Text color={mutedColor}>Ostatnia synchronizacja: {formatDateTime(energyAccount.lastSyncAt)}</Text>
                       </Box>
-                      <Flex gap="10px" align="center" wrap="wrap">
-                        {energyAccount.lastSyncStatus ? (
-                          <Badge colorScheme={energyAccount.lastSyncStatus === 'OK' ? 'green' : 'orange'} px="10px" py="6px" borderRadius="8px">
-                            {energyAccount.lastSyncStatus}
-                          </Badge>
-                        ) : null}
-                        <Button
-                          colorScheme="purple"
-                          onClick={() => saveEnergyAccount()}
-                          isLoading={energySaving}
-                        >
-                          Zapisz dostęp
-                        </Button>
-                        {energyAccount.operator === 'ENEA' ? (
-                          <Button
-                            colorScheme="blue"
-                            variant="outline"
-                            onClick={syncEnea}
-                            isLoading={energySyncing}
-                          >
-                            Uzupełnij braki ENEA
-                          </Button>
-                        ) : null}
-                      </Flex>
                     </Flex>
 
                     {energyError ? (
@@ -4722,6 +4714,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                           }}
                         />
                         <Box
+                          className="energy-upload-zone"
                           role="button"
                           tabIndex={0}
                           aria-label="Dodaj godzinowe pliki XLSX ENEA"
@@ -4767,26 +4760,32 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                                 {energyXlsxUploading ? 'Dodawanie plików...' : 'Upuść XLSX tutaj'}
                               </Text>
                               <Text color={mutedColor} fontSize="sm">
-                                Miesięczne pliki godzinowe ENEA z ostatnich 12 zamkniętych miesięcy. Możesz wybrać kilka plików naraz.
+                                Miesięczne pliki godzinowe ENEA z wybranego okresu analizy. Możesz wybrać kilka plików naraz.
                               </Text>
                             </Box>
                           </Flex>
                         </Box>
 
-                        <Flex align="center" gap="10px" mt="20px" mb="12px">
-                          <Text color={textColor} fontWeight="800">Automatyczne pobieranie z portalu ENEA</Text>
-                          <Badge colorScheme="gray">opcjonalne</Badge>
-                        </Flex>
                       </Box>
                     ) : null}
 
-                    <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px">
+                    <Flex justify="space-between" mt="20px" gap="12px"><Text fontWeight="600">Dostępność pomiarów</Text><Text color={mutedColor}>{energyMonths.filter(row => row.importFile?.status === 'DOWNLOADED').length}/12 miesięcy z plikiem poboru</Text></Flex>
+<div className="energy-coverage">{[...energyMonths].reverse().map(row => {
+  const ready = row.importFile?.status === 'DOWNLOADED';
+  return <div className="energy-coverage-item" data-ready={ready} key={row.key}><span>{row.label}</span><strong>{ready ? 'Pobór zapisany' : 'Brak poboru'}</strong><small>{row.exportFile?.status === 'DOWNLOADED' ? 'Oddanie zapisane' : 'Brak oddania'}</small></div>;
+})}</div>
+<details className="energy-portal"><summary>Dostęp do portalu operatora</summary>
+<SimpleGrid columns={{ base: 1, md: 2 }} gap="16px">
                       <FormControl>
                         <FormLabel>Numer PPE</FormLabel>
                         <Input value={energyAccount.ppeNumber} onChange={(event) => updateEnergyAccount('ppeNumber', event.target.value)} />
                       </FormControl>
 
-                      {energyAccount.operator === 'ENEA' ? (
+                      <FormControl>
+  <FormLabel>Numer licznika</FormLabel>
+  <Input value={energyAccount.meterNumber} onChange={(event) => updateEnergyAccount('meterNumber', event.target.value)} />
+</FormControl>
+{energyAccount.operator === 'ENEA' ? (
                         <>
                           <FormControl>
                             <FormLabel>Użytkownik ENEA</FormLabel>
@@ -4819,7 +4818,31 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       <Textarea value={energyAccount.notes} onChange={(event) => updateEnergyAccount('notes', event.target.value)} rows={3} />
                     </FormControl>
 
-                    {energyAccount.operator === 'ENEA' ? <Box mt="22px">
+<Flex mt="16px" justify="flex-end"><Flex gap="10px" align="center" wrap="wrap">
+                        {energyAccount.lastSyncStatus ? (
+                          <Badge colorScheme={energyAccount.lastSyncStatus === 'OK' ? 'green' : 'orange'} px="10px" py="6px" borderRadius="8px">
+                            {energyAccount.lastSyncStatus}
+                          </Badge>
+                        ) : null}
+                        <Button
+                          colorScheme="purple"
+                          onClick={() => saveEnergyAccount()}
+                          isLoading={energySaving}
+                        >
+                          Zapisz dostęp
+                        </Button>
+                        {energyAccount.operator === 'ENEA' ? (
+                          <Button
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={syncEnea}
+                            isLoading={energySyncing}
+                          >
+                            Uzupełnij braki ENEA
+                          </Button>
+                        ) : null}
+                      </Flex></Flex>
+</details>{energyAccount.operator === 'ENEA' ? <details className="energy-files"><summary>Pliki miesięczne i synchronizacja ENEA</summary><Box mt="12px">
                       <Text color={textColor} fontSize="md" fontWeight="800" mb="10px">Dane pomiarowe ENEA</Text>
                       {energyRange ? (
                         <Text color={mutedColor} mb="10px">Zakres 12 pełnych miesięcy: {energyRange}</Text>
@@ -4909,136 +4932,31 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       ) : (
                         <Text color={mutedColor}>Brak pobranych plików ENEA.</Text>
                       )}
+                    </Box></details> : null}
                     </Box> : null}
-                    </Card> : null}
-
-                      <Card p="22px">
-                        <Flex justify="space-between" gap="16px" align="start" wrap="wrap" mb="14px">
-                          <Box>
-                            <Text color={textColor} fontSize="lg" fontWeight="800">Profil zużycia</Text>
-                            <Text color={mutedColor}>
-                              {energyProfile ? `Suma: ${formatKwh(energyProfile.annualKwh)} kWh/rok${energyProfile.source === 'RE' ? ' · profil RE' : ''}` : 'Brak profilu zużycia'}
-                            </Text>
-                          </Box>
-                          <Flex gap="8px" align="center">
-                            {energyMonths.some((row) => row.importFile || row.exportFile) ? (
-                              <Button size="sm" variant="outline" leftIcon={<MdRefresh />} isLoading={energyProfileSyncing}
-                                onClick={() => syncEnergyProfileToRe()}>Przekaż XLSX do RE</Button>
-                            ) : null}
-                            <Tooltip label="Odśwież profil RE"><IconButton size="sm" variant="ghost" aria-label="Odśwież profil RE" icon={<MdRefresh />}
-                              isLoading={energyProfileLoading} onClick={() => loadEnergyProfile()} /></Tooltip>
-                          </Flex>
-                        </Flex>
-
-                        {energyProfileError ? (
-                          <Alert status="warning" borderRadius="8px" mb="16px">
-                            <AlertIcon />
-                            {energyProfileError}
-                          </Alert>
-                        ) : null}
-
-                        {energyProfileLoading && !energyProfile ? (
-                          <Text color={mutedColor}>Ładowanie profilu zużycia...</Text>
-                        ) : !energyProfile?.months?.length ? (
-                          <Text color={mutedColor}>Brak danych profilu zużycia.</Text>
-                        ) : (
-                          <>
-                            <Box overflowX="auto" pb="4px">
-                              <SimpleGrid columns={12} gap="8px" minW="1400px">
-                              {calendarUsageMonths.map((month) => {
-                                const hasData = month.hasData ?? month.sourceFiles > 0;
-                                const active = hasData && selectedUsageMonth?.key === month.key;
-                                const height = hasData && month.totalKwh > 0
-                                  ? Math.max(8, Math.round((month.totalKwh / maxMonthlyKwh) * 100))
-                                  : 0;
-                                return (
-                                  <Box
-                                    as="button"
-                                    type="button"
-                                    key={month.key}
-                                    disabled={!hasData}
-                                    onClick={() => hasData && setSelectedEnergyProfileMonth(month.key)}
-                                    textAlign="left"
-                                    border="1px solid"
-                                    borderColor={active ? 'yellow.400' : borderColor}
-                                    borderRadius="8px"
-                                    p="8px"
-                                    bg={active ? 'whiteAlpha.100' : 'transparent'}
-                                    cursor={hasData ? 'pointer' : 'default'}
-                                  >
-                                    <Text color={hasData ? textColor : mutedColor} fontSize="md" fontWeight="800" textAlign="center">
-                                      {hasData ? formatKwh(month.totalKwh) : '--'}
-                                    </Text>
-                                    <Flex h="72px" align="end" justify="center" bg="blackAlpha.200" borderRadius="6px" overflow="hidden" mt="6px">
-                                      <Box
-                                        w="58%"
-                                        h={`${height}%`}
-                                        bgGradient="linear(to-t, cyan.400, yellow.300)"
-                                        borderTopRadius="6px"
-                                        opacity={hasData ? 1 : 0}
-                                      />
-                                    </Flex>
-                                    <Text color={textColor} fontSize="sm" fontWeight="800" mt="6px" textAlign="center" whiteSpace="nowrap">
-                                      {month.label}
-                                    </Text>
-                                    <Text color={mutedColor} fontSize="sm" textAlign="center">
-                                      {hasData ? `${month.sharePercent.toFixed(1)}%` : '--'}
-                                    </Text>
-                                    {(['importSource', 'exportSource'] as const).map((key, direction) => {
-                                      const source = month[key];
-                                      const label = source === 'xlsx' ? 'XLSX' : source === 'real' ? 'real' : source === 'part' ? 'part'
-                                        : source === 'forecast' ? 'prognoza' : source === 'manual' ? 'ręcznie'
-                                          : source === 'standard' && direction === 0 ? 'roczne' : '--';
-                                      const color = source === 'xlsx' ? 'yellow.600' : source === 'real' ? 'teal.500'
-                                        : source === 'part' ? 'cyan.600' : mutedColor;
-                                      const details = source === 'part' ? 'Część okresu zmierzona, pozostała część z profilu'
-                                        : source === 'forecast' ? 'Prognoza na podstawie pomiarów'
-                                          : source === 'standard' && direction === 0 ? 'Oszacowanie z rocznego zużycia'
-                                            : label === '--' ? 'Brak danych' : label;
-                                      return <Tooltip key={key} label={`${direction === 0 ? 'Pobór' : 'Oddanie'}: ${details}`}>
-                                        <Text fontSize="xs" color={color} textAlign="center" mt="2px">{direction === 0 ? '↓' : '↑'} {label}</Text>
-                                      </Tooltip>;
-                                    })}
-                                  </Box>
-                                );
-                              })}
-                              </SimpleGrid>
-                            </Box>
-
-                            {selectedUsageMonth ? (
-                              <Box mt="22px">
-                                <Text color={textColor} fontWeight="800" mb="12px">
-                                  Rozkład zużycia w trakcie dnia - {selectedUsageMonth.label}
-                                </Text>
-                                <SimpleGrid columns={{ base: 12, md: 24 }} gap="6px">
-                                  {selectedUsageMonth.hourly.map((value, hour) => {
-                                    const height = Math.max(6, Math.round((value / maxHourlyKwh) * 100));
-                                    return (
-                                      <Box key={hour}>
-                                        <Tooltip label={`${String(hour).padStart(2, '0')}:00 - ${formatKwhPrecise(value)} kWh`}>
-                                          <Flex h="98px" align="end" justify="center" bg="blackAlpha.200" borderRadius="6px" overflow="hidden">
-                                            <Box w="100%" h={`${height}%`} bg="teal.400" />
-                                          </Flex>
-                                        </Tooltip>
-                                        <Text color={mutedColor} fontSize="xs" textAlign="center" mt="6px">
-                                          {String(hour).padStart(2, '0')}
-                                        </Text>
-                                      </Box>
-                                    );
-                                  })}
-                                </SimpleGrid>
-                              </Box>
-                            ) : null}
-
-                            {energyProfile.warnings?.length ? (
-                              <Text color={mutedColor} fontSize="sm" mt="14px">
-                                {energyProfile.warnings.slice(0, 2).join('; ')}
-                              </Text>
-                            ) : null}
-                          </>
-                        )}
-                      </Card>
-                  </Flex>
+                    </>}
+                    summary={<>
+                      <Flex justify="flex-end" gap="8px" mb="14px" wrap="wrap">
+                        {energyMonths.some(row => row.importFile || row.exportFile) && <Button size="sm" variant="outline" leftIcon={<MdRefresh />} isLoading={energyProfileSyncing} onClick={() => syncEnergyProfileToRe()}>Przekaż XLSX do RE</Button>}
+                        <Tooltip label="Odśwież profil"><IconButton aria-label="Odśwież profil zużycia" icon={<MdRefresh />} size="sm" variant="outline" isLoading={energyProfileLoading} onClick={() => loadEnergyProfile()} /></Tooltip>
+                      </Flex>
+                      {activeEnergyProfileError && <Alert status="warning"><AlertIcon />
+                        {activeEnergyProfileError}
+                      </Alert>}
+                      {(analysisInvoices.crossingCount > 0 || analysisInvoices.undatedCount > 0) && <Alert status="warning"><AlertIcon />
+                        W podsumowaniu uwzględniamy faktury w całości z wybranego okresu. Faktury przecinające jego granice: {analysisInvoices.crossingCount}; bez prawidłowych dat: {analysisInvoices.undatedCount}.
+                      </Alert>}
+                      <ClientEnergySummary key={`${project.id}:${analysisPeriod.period?.startMonth}`} projectId={project.id} profile={energyProfile} analysisStartMonth={analysisPeriod.period?.startMonth}
+                        annualConsumptionKwh={acceptedAnnualConsumptionKwh}
+                        consumptionSource={acceptedConsumptionSource}
+                        hasPv={Number(energyDataSettings.existingPvKw) > 0}
+                        invoices={projectEnergyInvoices}
+                        refreshKey={energySummaryRefreshKey}
+                        profileLoading={energyProfileLoading}
+                        maskValues={analysisDataPending || !analysisPeriod.period}
+                        onLoadStateChange={onEnergySummaryLoadStateChange} />
+                    </>}
+                  />
                 </TabPanel>
               );
             }

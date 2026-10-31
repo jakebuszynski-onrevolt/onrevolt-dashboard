@@ -1,0 +1,313 @@
+<svg width="595" height="843" viewBox="0 0 595 843" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="01 &#226;&#128;&#148; Dane klienta">
+<rect width="595" height="842.034" fill="#EEF1F9"/>
+<g id="grafika / report_logo" clip-path="url(#clip0_2449_8720)">
+<path id="Vector" d="M52.0695 35.189C49.8217 35.189 47.9553 35.9007 46.5249 37.2852C45.0945 38.6698 44.3588 40.4296 44.3588 42.4871C44.3588 44.5446 45.0945 46.3432 46.5521 47.7148C48.0098 49.0865 49.9443 49.7852 52.3011 49.7852C55.1075 49.7852 57.2599 48.763 58.704 46.7573L58.7585 46.6796L56.102 45.2045L56.0202 45.1657L55.9657 45.2433C55.162 46.3432 53.9359 46.8996 52.3283 46.8996C51.1704 46.8996 50.1623 46.6279 49.3585 46.0844C48.582 45.5668 48.0779 44.8163 47.8463 43.8717H59.2762V43.794C59.3715 43.2635 59.4124 42.8624 59.4124 42.5518C59.4124 40.5332 58.7176 38.7863 57.3553 37.3629C55.9794 35.9136 54.2083 35.189 52.0695 35.189ZM49.2223 38.9545C49.9715 38.3722 50.9115 38.0746 52.0423 38.0746C53.0368 38.0746 53.9086 38.3463 54.6443 38.9027C55.3527 39.4203 55.8295 40.2097 56.0475 41.2449H47.8191C48.0371 40.2873 48.5139 39.5109 49.2223 38.9545Z" fill="#009A44"/>
+<path id="Vector_2" d="M40.8168 41.1413C41.0211 41.0378 41.2255 40.9213 41.4026 40.7919C41.6342 40.6237 41.8658 40.4555 42.0701 40.2614C42.1655 40.1708 42.2608 40.0673 42.3562 39.9767C42.5197 39.8085 42.6695 39.6273 42.8194 39.4332C42.8739 39.3556 42.9284 39.278 42.9965 39.2003C43.4052 38.6051 43.7049 37.9322 43.8547 37.2205C43.8547 37.1817 43.882 37.1299 43.882 37.0911C43.9501 36.7417 44.0046 36.3794 44.0046 36.0041V35.9394C44.0046 35.5771 43.9501 35.2148 43.882 34.8525C43.882 34.8137 43.8547 34.7619 43.8547 34.7231C43.6913 34.0114 43.4052 33.3385 42.9965 32.7433C42.942 32.6656 42.8875 32.588 42.8194 32.5104C42.6695 32.3163 42.5197 32.148 42.3562 31.9669C42.2608 31.8763 42.1791 31.7728 42.0701 31.6822C41.8658 31.4881 41.6342 31.3199 41.4026 31.1517C41.2118 31.0223 41.0211 30.9187 40.8168 30.8023C40.7759 30.7764 40.7487 30.7764 40.7078 30.7505L40.6533 30.7246C39.7814 30.2717 38.8142 30 37.7652 30H30V49.397H33.5148V41.9436H36.5936L41.1165 49.3452L41.1437 49.397H45.4486L40.4898 41.2966C40.4898 41.2966 40.6124 41.2448 40.6533 41.2189M37.7788 38.7604H33.5284V33.1703H37.7788C39.3591 33.1703 40.6397 34.4255 40.6669 35.9653C40.6397 37.5181 39.3727 38.7604 37.7788 38.7604Z" fill="#009A44"/>
+<path id="Vector_3" d="M118.986 38.6566V35.6158H115.403V31.7726H112.079V35.6158H109.423V38.6566H112.079V45.1396C112.079 46.9512 112.624 48.2193 113.687 48.9051C114.436 49.3839 115.54 49.6297 116.984 49.6297C117.57 49.6297 118.305 49.5909 118.986 49.5133V46.6535C118.21 46.6924 117.447 46.7053 116.916 46.6665C116.412 46.6406 116.03 46.5112 115.785 46.2783C115.54 46.0583 115.417 45.6701 115.417 45.1266V38.6437H119L118.986 38.6566Z" fill="#1A1A1A"/>
+<path id="Vector_4" d="M82.3675 42.5777C82.3675 40.559 81.6455 38.8121 80.2287 37.4017C78.8119 35.9912 77.0818 35.2795 75.0792 35.2795C73.0766 35.2795 71.3192 35.9912 70.134 37.4146V35.6419H66.8099V55H70.134V47.7666C71.3055 49.1641 72.9676 49.8758 75.0792 49.8758C77.1907 49.8758 78.8119 49.1641 80.2287 47.7666C81.6455 46.3691 82.3675 44.6222 82.3675 42.5777ZM74.6023 38.2946C75.8693 38.2946 76.9455 38.7086 77.7902 39.5109C78.6348 40.3132 79.0571 41.3484 79.0571 42.5777C79.0571 43.807 78.6348 44.8422 77.7902 45.6444C76.9455 46.4467 75.8829 46.8608 74.6023 46.8608C73.3218 46.8608 72.2592 46.4467 71.4145 45.6444C70.5699 44.8422 70.1476 43.807 70.1476 42.5777C70.1476 41.3484 70.5699 40.3132 71.4145 39.5109C72.2592 38.7086 73.3218 38.2946 74.6023 38.2946Z" fill="#1A1A1A"/>
+<path id="Vector_5" d="M91.1271 49.8758C93.2796 49.8758 95.1187 49.1641 96.6036 47.7666C98.0885 46.3691 98.8378 44.6222 98.8378 42.5777C98.8378 40.5332 98.0885 38.7863 96.6036 37.3888C95.1187 35.9912 93.2796 35.2795 91.1271 35.2795C88.9746 35.2795 87.1628 35.9912 85.6642 37.3888C84.1657 38.7863 83.4164 40.5332 83.4164 42.5777C83.4164 44.6222 84.1793 46.3691 85.6642 47.7666C87.1491 49.1641 88.9883 49.8758 91.1271 49.8758ZM87.9938 39.5497C88.8384 38.7475 89.8874 38.3463 91.1271 38.3463C92.3668 38.3463 93.4158 38.7475 94.2604 39.5497C95.1051 40.352 95.5274 41.3613 95.5274 42.5777C95.5274 43.794 95.1051 44.8034 94.2604 45.6056C93.4158 46.4079 92.3668 46.809 91.1271 46.809C89.8874 46.809 88.8384 46.4079 87.9938 45.6056C87.1491 44.8034 86.7268 43.794 86.7268 42.5777C86.7268 41.3613 87.1491 40.352 87.9938 39.5497Z" fill="#1A1A1A"/>
+<path id="Vector_6" d="M103.347 37.6085V35.6287H100.023V49.5132H103.347V42.5127C103.347 41.1411 103.783 40.1577 104.628 39.5624C105.486 38.9672 106.508 38.6954 107.679 38.7731H107.788V35.3699H107.679C105.636 35.3699 104.178 36.1204 103.347 37.5955V37.6085Z" fill="#1A1A1A"/>
+<path id="Vector_7" d="M63.6353 43.0176V42.914C63.6353 41.2707 65.1884 40.4943 65.1884 39.0321C65.1884 37.9063 64.2211 36.9875 63.0359 36.9875C61.8507 36.9875 60.8834 37.9063 60.8834 39.0321C60.8834 40.4555 62.4365 41.2448 62.4365 42.914V43.0176C62.4365 44.6868 60.8834 45.075 60.8834 46.8996C60.8834 48.0253 61.8507 48.9441 63.0359 48.9441C64.2211 48.9441 65.1884 48.0253 65.1884 46.8996C65.1884 45.1785 63.6353 44.6609 63.6353 43.0176Z" fill="#009A44"/>
+</g>
+<g id="grafika / zdjecie_satelitarne">
+<rect x="215" y="94" width="350" height="249" rx="10" fill="white"/>
+</g>
+<g id="sekcja / instalacja_fotowoltaiczna">
+<rect x="30" y="748" width="535" height="64" rx="10" fill="url(#paint0_linear_2449_8720)"/>
+<text id="etykieta / instalacja_fotowoltaiczna" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="766.41">Instalacja fotowoltaiczna</tspan></text>
+<g id="_instalacja_fotowoltaiczna_pole">
+<g id="blok / instalacja_fotowoltaiczna">
+<rect x="36" y="773" width="170" height="32" rx="5" fill="white"/>
+<text id="etykieta / instalacja_fotowoltaiczna_2" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="41" y="783.887">Instalacja fotowoltaiczna</tspan></text>
+<text id="#b2c_instalacja_fotowoltaiczna_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="41" y="797.41">Instalacja</tspan></text>
+</g>
+</g>
+<g id="_moc_instalacji_fotowoltaicznej_pole">
+<g id="blok / moc_instalacji_fotowoltaicznej">
+<rect x="209" y="773" width="170" height="32" rx="5" fill="white"/>
+<text id="etykieta / moc_instalacji_fotowoltaicznej" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="214" y="783.887">Moc instalacji fotowoltaicznej</tspan></text>
+<text id="#b2c_moc_instalacji_fotowoltaicznej_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="214" y="797.41">XX</tspan></text>
+<text id="etykieta / kwp" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="353.423" y="797.41">kWp</tspan></text>
+</g>
+</g>
+<g id="_miejsce_instalacji_fotowoltaicznej_pole">
+<g id="blok / miejsce_instalacji_fotowoltaicznej">
+<rect x="382" y="773" width="170" height="32" rx="5" fill="white"/>
+<text id="etykieta / miejsce_instalacji_fotowoltaicznej" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="387" y="783.887">Miejsce instalacji fotowoltaicznej</tspan></text>
+<text id="#b2c_miejsce_instalacji_fotowoltaicznej_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="387" y="797.41">Miejsce</tspan></text>
+</g>
+</g>
+</g>
+<g id="marka / dostarczone_przez">
+<path id="Vector_8" d="M240.003 48.4927H243.594V50H237.831V48.936L241.289 44.1184H237.979V42.6111H243.446V43.6751L240.003 48.4927Z" fill="#1A1A1A"/>
+<path id="Vector_9" d="M231.423 46.9853C231.541 47.5468 231.812 47.9803 232.235 48.2857C232.659 48.5813 233.176 48.7291 233.787 48.7291C234.634 48.7291 235.27 48.4237 235.693 47.8128L237.009 48.5813C236.28 49.6551 235.201 50.1921 233.772 50.1921C232.57 50.1921 231.6 49.8276 230.861 49.0985C230.122 48.3596 229.753 47.4286 229.753 46.3055C229.753 45.2021 230.117 44.281 230.846 43.5421C231.575 42.7933 232.511 42.4189 233.654 42.4189C234.738 42.4189 235.624 42.7982 236.314 43.5568C237.014 44.3154 237.363 45.2366 237.363 46.3203C237.363 46.4878 237.344 46.7094 237.304 46.9853H231.423ZM231.408 45.6848H235.753C235.644 45.0839 235.393 44.6307 234.999 44.3253C234.615 44.0199 234.161 43.8672 233.639 43.8672C233.048 43.8672 232.556 44.0297 232.162 44.3548C231.767 44.68 231.516 45.1233 231.408 45.6848Z" fill="#1A1A1A"/>
+<path id="Vector_10" d="M225.831 48.4927H229.422V50H223.659V48.936L227.117 44.1184H223.806V42.6111H229.274V43.6751L225.831 48.4927Z" fill="#1A1A1A"/>
+<path id="Vector_11" d="M220.765 43.8525C221.169 42.9363 221.928 42.4781 223.041 42.4781V44.2072C222.43 44.1677 221.898 44.3155 221.445 44.6505C220.992 44.9756 220.765 45.5175 220.765 46.276V50.0001H219.169V42.6111H220.765V43.8525Z" fill="#1A1A1A"/>
+<path id="Vector_12" d="M214.339 42.4189C215.353 42.4189 216.22 42.7982 216.939 43.5568C217.659 44.3056 218.018 45.2218 218.018 46.3055C218.018 47.3991 217.659 48.3202 216.939 49.069C216.22 49.8177 215.353 50.1921 214.339 50.1921C213.215 50.1921 212.353 49.7783 211.752 48.9507V52.9555H210.156V42.6111H211.752V43.6751C212.353 42.8377 213.215 42.4189 214.339 42.4189ZM212.417 48.005C212.861 48.4483 213.417 48.67 214.087 48.67C214.757 48.67 215.314 48.4483 215.757 48.005C216.201 47.5518 216.422 46.9853 216.422 46.3055C216.422 45.6257 216.201 45.0642 215.757 44.6208C215.314 44.1677 214.757 43.9411 214.087 43.9411C213.417 43.9411 212.861 44.1677 212.417 44.6208C211.974 45.0642 211.752 45.6257 211.752 46.3055C211.752 46.9853 211.974 47.5518 212.417 48.005Z" fill="#1A1A1A"/>
+<path id="Vector_13" d="M199.708 46.9853C199.826 47.5468 200.097 47.9803 200.521 48.2857C200.944 48.5813 201.462 48.7291 202.073 48.7291C202.92 48.7291 203.555 48.4237 203.979 47.8128L205.294 48.5813C204.565 49.6551 203.486 50.1921 202.058 50.1921C200.856 50.1921 199.885 49.8276 199.147 49.0985C198.408 48.3596 198.038 47.4286 198.038 46.3055C198.038 45.2021 198.403 44.281 199.132 43.5421C199.861 42.7933 200.797 42.4189 201.94 42.4189C203.023 42.4189 203.91 42.7982 204.6 43.5568C205.299 44.3154 205.649 45.2366 205.649 46.3203C205.649 46.4878 205.629 46.7094 205.59 46.9853H199.708ZM199.693 45.6848H204.038C203.93 45.0839 203.678 44.6307 203.284 44.3253C202.9 44.0199 202.447 43.8672 201.925 43.8672C201.334 43.8672 200.841 44.0297 200.447 44.3548C200.053 44.68 199.802 45.1233 199.693 45.6848Z" fill="#1A1A1A"/>
+<path id="Vector_14" d="M194.192 42.4189C195.039 42.4189 195.724 42.6899 196.246 43.2317C196.768 43.7736 197.029 44.5174 197.029 45.4632V50H195.433V45.6257C195.433 45.074 195.285 44.6504 194.99 44.3548C194.694 44.0593 194.29 43.9115 193.778 43.9115C193.216 43.9115 192.763 44.0888 192.418 44.4435C192.074 44.7883 191.901 45.3203 191.901 46.0395V50H190.305V42.6111H191.901V43.5568C192.384 42.7982 193.147 42.4189 194.192 42.4189Z" fill="#1A1A1A"/>
+<path id="Vector_15" d="M185.256 50.1921C184.172 50.1921 183.251 49.8177 182.493 49.069C181.734 48.3202 181.355 47.3991 181.355 46.3055C181.355 45.212 181.734 44.2908 182.493 43.5421C183.251 42.7933 184.172 42.4189 185.256 42.4189C186.35 42.4189 187.271 42.7933 188.02 43.5421C188.778 44.2908 189.158 45.212 189.158 46.3055C189.158 47.3991 188.778 48.3202 188.02 49.069C187.271 49.8177 186.35 50.1921 185.256 50.1921ZM183.616 47.9754C184.059 48.4187 184.606 48.6404 185.256 48.6404C185.906 48.6404 186.453 48.4187 186.897 47.9754C187.34 47.5321 187.562 46.9754 187.562 46.3055C187.562 45.6356 187.34 45.079 186.897 44.6356C186.453 44.1923 185.906 43.9706 185.256 43.9706C184.606 43.9706 184.059 44.1923 183.616 44.6356C183.173 45.079 182.951 45.6356 182.951 46.3055C182.951 46.9754 183.173 47.5321 183.616 47.9754Z" fill="#1A1A1A"/>
+<path id="Vector_16" d="M177.433 48.4927H181.024V50H175.261V48.936L178.719 44.1184H175.409V42.6111H180.876V43.6751L177.433 48.4927Z" fill="#1A1A1A"/>
+<path id="Vector_17" d="M171.445 50.1921C170.331 50.1921 169.4 49.8177 168.652 49.069C167.913 48.3202 167.543 47.3991 167.543 46.3055C167.543 45.2021 167.913 44.281 168.652 43.5421C169.4 42.7933 170.331 42.4189 171.445 42.4189C172.164 42.4189 172.819 42.5914 173.41 42.9362C174.001 43.281 174.445 43.744 174.74 44.3253L173.366 45.1233C173.198 44.7686 172.942 44.4928 172.597 44.2957C172.262 44.0888 171.873 43.9854 171.43 43.9854C170.78 43.9854 170.233 44.2071 169.79 44.6504C169.356 45.0937 169.139 45.6454 169.139 46.3055C169.139 46.9656 169.356 47.5173 169.79 47.9606C170.233 48.404 170.78 48.6256 171.43 48.6256C171.863 48.6256 172.253 48.5222 172.597 48.3153C172.952 48.1084 173.218 47.8326 173.395 47.4877L174.77 48.271C174.454 48.8621 174.001 49.33 173.41 49.6749C172.819 50.0197 172.164 50.1921 171.445 50.1921Z" fill="#1A1A1A"/>
+<path id="Vector_18" d="M165.144 43.8525C165.548 42.9363 166.307 42.4781 167.42 42.4781V44.2072C166.809 44.1677 166.277 44.3155 165.824 44.6505C165.371 44.9756 165.144 45.5175 165.144 46.276V50.0001H163.548V42.6111H165.144V43.8525Z" fill="#1A1A1A"/>
+<path id="Vector_19" d="M160.387 42.6111H161.983V50H160.387V48.936C159.786 49.7734 158.924 50.1921 157.801 50.1921C156.786 50.1921 155.92 49.8177 155.2 49.069C154.481 48.3104 154.122 47.3892 154.122 46.3055C154.122 45.212 154.481 44.2908 155.2 43.5421C155.92 42.7933 156.786 42.4189 157.801 42.4189C158.924 42.4189 159.786 42.8327 160.387 43.6603V42.6111ZM156.383 48.005C156.826 48.4483 157.383 48.67 158.052 48.67C158.722 48.67 159.279 48.4483 159.722 48.005C160.166 47.5518 160.387 46.9853 160.387 46.3055C160.387 45.6257 160.166 45.0642 159.722 44.6208C159.279 44.1677 158.722 43.9411 158.052 43.9411C157.383 43.9411 156.826 44.1677 156.383 44.6208C155.939 45.0642 155.718 45.6257 155.718 46.3055C155.718 46.9853 155.939 47.5518 156.383 48.005Z" fill="#1A1A1A"/>
+<path id="Vector_20" d="M153.686 44.148H151.854V47.6947C151.854 48.0001 151.923 48.2218 152.061 48.3597C152.199 48.4878 152.401 48.5617 152.667 48.5814C152.943 48.5912 153.282 48.5863 153.686 48.5666V50C152.465 50.1478 151.588 50.0444 151.056 49.6897C150.524 49.3252 150.258 48.6602 150.258 47.6947V44.148H148.898V42.6111H150.258V41.0151L151.854 40.5422V42.6111H153.686V44.148Z" fill="#1A1A1A"/>
+<path id="Vector_21" d="M144.769 44.6504C144.769 44.8967 144.902 45.0937 145.168 45.2415C145.444 45.3794 145.774 45.5026 146.158 45.611C146.553 45.7095 146.947 45.8277 147.341 45.9656C147.735 46.1035 148.065 46.34 148.331 46.675C148.607 47.0001 148.745 47.4138 148.745 47.9163C148.745 48.6256 148.469 49.1823 147.917 49.5862C147.375 49.9901 146.69 50.1921 145.863 50.1921C145.134 50.1921 144.508 50.0394 143.986 49.734C143.464 49.4286 143.085 49.0049 142.848 48.4631L144.223 47.6651C144.479 48.3744 145.026 48.7291 145.863 48.7291C146.7 48.7291 147.119 48.4532 147.119 47.9015C147.119 47.6651 146.981 47.473 146.705 47.3252C146.439 47.1774 146.109 47.0543 145.715 46.9557C145.331 46.8474 144.942 46.7242 144.548 46.5863C144.154 46.4484 143.819 46.2218 143.543 45.9065C143.277 45.5814 143.144 45.1725 143.144 44.68C143.144 44.0002 143.4 43.4534 143.912 43.0396C144.434 42.6258 145.08 42.4189 145.848 42.4189C146.459 42.4189 147.001 42.5569 147.474 42.8327C147.956 43.0987 148.326 43.4731 148.582 43.9558L147.237 44.7095C146.981 44.1479 146.518 43.8672 145.848 43.8672C145.543 43.8672 145.287 43.9361 145.08 44.0741C144.873 44.2021 144.769 44.3942 144.769 44.6504Z" fill="#1A1A1A"/>
+<path id="Vector_22" d="M138.431 50.1921C137.348 50.1921 136.426 49.8177 135.668 49.069C134.909 48.3202 134.53 47.3991 134.53 46.3055C134.53 45.212 134.909 44.2908 135.668 43.5421C136.426 42.7933 137.348 42.4189 138.431 42.4189C139.525 42.4189 140.446 42.7933 141.195 43.5421C141.953 44.2908 142.333 45.212 142.333 46.3055C142.333 47.3991 141.953 48.3202 141.195 49.069C140.446 49.8177 139.525 50.1921 138.431 50.1921ZM136.791 47.9754C137.234 48.4187 137.781 48.6404 138.431 48.6404C139.082 48.6404 139.628 48.4187 140.072 47.9754C140.515 47.5321 140.737 46.9754 140.737 46.3055C140.737 45.6356 140.515 45.079 140.072 44.6356C139.628 44.1923 139.082 43.9706 138.431 43.9706C137.781 43.9706 137.234 44.1923 136.791 44.6356C136.348 45.079 136.126 45.6356 136.126 46.3055C136.126 46.9754 136.348 47.5321 136.791 47.9754Z" fill="#1A1A1A"/>
+<path id="Vector_23" d="M131.783 39.6555H133.379V50H131.783V48.936C131.182 49.7734 130.32 50.1921 129.197 50.1921C128.182 50.1921 127.315 49.8177 126.596 49.069C125.877 48.3104 125.517 47.3892 125.517 46.3055C125.517 45.212 125.877 44.2908 126.596 43.5421C127.315 42.7933 128.182 42.419 129.197 42.419C130.32 42.419 131.182 42.8327 131.783 43.6603V39.6555ZM127.778 48.005C128.222 48.4483 128.778 48.67 129.448 48.67C130.118 48.67 130.675 48.4483 131.118 48.005C131.561 47.5518 131.783 46.9853 131.783 46.3055C131.783 45.6258 131.561 45.0642 131.118 44.6209C130.675 44.1677 130.118 43.9411 129.448 43.9411C128.778 43.9411 128.222 44.1677 127.778 44.6209C127.335 45.0642 127.113 45.6258 127.113 46.3055C127.113 46.9853 127.335 47.5518 127.778 48.005Z" fill="#1A1A1A"/>
+</g>
+<g id="marka / onrevolt_logo" clip-path="url(#clip1_2449_8720)">
+<path id="Vector_24" d="M306.114 43.9894V42.3554H304.264V40.2928H302.547V42.3518H301.172V43.9857H302.547V47.4807C302.547 48.4552 302.826 49.1366 303.376 49.503C303.766 49.7631 304.334 49.8913 305.081 49.8913C305.382 49.8913 305.761 49.8693 306.118 49.829V48.294C305.717 48.316 305.319 48.3196 305.044 48.305C304.784 48.2903 304.587 48.2207 304.457 48.0998C304.331 47.9789 304.264 47.7701 304.264 47.4844V43.9894H306.114Z" fill="#1A1A1A"/>
+<path id="Vector_25" d="M281.44 46.4809V46.4259C281.44 45.543 282.239 45.1327 282.239 44.345C282.239 43.7405 281.741 43.2496 281.128 43.2496C280.515 43.2496 280.017 43.7405 280.017 44.345C280.017 45.1107 280.816 45.532 280.816 46.4259V46.4809C280.816 47.3748 280.017 47.5873 280.017 48.5618C280.017 49.1662 280.515 49.6572 281.128 49.6572C281.741 49.6572 282.239 49.1662 282.239 48.5618C282.239 47.6385 281.44 47.3638 281.44 46.4809Z" fill="#8A47FF"/>
+<path id="Vector_26" d="M275.658 42.191C274.495 42.191 273.529 42.5684 272.789 43.3157C272.046 44.0631 271.671 45.001 271.671 46.1074C271.671 47.2137 272.054 48.1773 272.804 48.9136C273.555 49.65 274.558 50.0237 275.777 50.0237C277.23 50.0237 278.344 49.4778 279.084 48.3971L279.117 48.3494L277.742 47.5581L277.701 47.5325L277.675 47.5728C277.259 48.1626 276.628 48.463 275.795 48.463C275.193 48.463 274.677 48.3165 274.261 48.0234C273.863 47.745 273.599 47.3456 273.477 46.8327H279.388L279.396 46.7888C279.437 46.5067 279.455 46.2869 279.455 46.1183C279.455 45.0339 279.099 44.0961 278.389 43.3341C277.683 42.572 276.761 42.191 275.658 42.191ZM274.186 44.206C274.573 43.8909 275.063 43.7334 275.643 43.7334C276.156 43.7334 276.609 43.8836 276.988 44.1767C277.356 44.4588 277.597 44.8837 277.709 45.4369H273.455C273.566 44.9204 273.811 44.5101 274.183 44.206H274.186Z" fill="#8A47FF"/>
+<path id="Vector_27" d="M269.806 45.4039C269.91 45.3453 270.014 45.2867 270.11 45.2171C270.233 45.1292 270.348 45.0339 270.456 44.9313C270.508 44.8837 270.552 44.8288 270.601 44.7775C270.686 44.6859 270.764 44.587 270.838 44.4881C270.868 44.4478 270.898 44.4038 270.928 44.3635C271.139 44.0411 271.292 43.6821 271.374 43.3011C271.377 43.2791 271.385 43.2534 271.388 43.2315C271.426 43.041 271.452 42.8468 271.452 42.649V42.6123C271.452 42.4145 271.426 42.2203 271.388 42.0298C271.385 42.0078 271.377 41.9822 271.374 41.9602C271.292 41.5792 271.139 41.2202 270.928 40.8978C270.898 40.8538 270.868 40.8135 270.838 40.7732C270.764 40.6707 270.686 40.5754 270.601 40.4838C270.552 40.4325 270.508 40.3776 270.456 40.3299C270.348 40.2274 270.233 40.1321 270.11 40.0442C270.014 39.9746 269.91 39.916 269.806 39.8573C269.783 39.8427 269.772 39.8427 269.75 39.828L269.724 39.8134C269.274 39.5716 268.773 39.425 268.23 39.425H264.21V49.8368H266.03V45.8362H267.621L269.958 49.8112L269.973 49.8368H272.202L269.638 45.4882C269.664 45.4735 269.698 45.4626 269.724 45.4479M268.23 44.129H266.03V41.1249H268.23C269.048 41.1249 269.709 41.799 269.72 42.627C269.709 43.4586 269.048 44.129 268.23 44.129Z" fill="#8A47FF"/>
+<path id="Vector_28" d="M251.732 42.191C250.629 42.191 249.681 42.572 248.908 43.3231C248.136 44.0741 247.745 45.012 247.745 46.1074C247.745 47.2028 248.136 48.1406 248.908 48.8916C249.681 49.6427 250.629 50.0237 251.732 50.0237C252.836 50.0237 253.798 49.6427 254.564 48.8916C255.329 48.1406 255.719 47.2028 255.719 46.1074C255.719 45.012 255.329 44.0741 254.564 43.3231C253.798 42.572 252.843 42.191 251.732 42.191ZM253.352 47.7303C252.918 48.1589 252.375 48.3751 251.736 48.3751C251.097 48.3751 250.554 48.1589 250.12 47.7303C249.685 47.3017 249.466 46.7558 249.466 46.1074C249.466 45.4589 249.685 44.913 250.12 44.4844C250.554 44.0558 251.097 43.8396 251.736 43.8396C252.375 43.8396 252.918 44.0558 253.352 44.4844C253.787 44.913 254.006 45.4589 254.006 46.1074C254.006 46.7558 253.787 47.3017 253.352 47.7303Z" fill="#1A1A1A"/>
+<path id="Vector_29" d="M260.316 42.191C259.317 42.191 258.559 42.5317 258.057 43.2058V42.3815H256.34V49.8368H258.057V45.8472C258.057 45.1512 258.228 44.6273 258.562 44.2902C258.897 43.9532 259.346 43.7847 259.896 43.7847C260.398 43.7847 260.795 43.9276 261.081 44.2096C261.368 44.4917 261.513 44.9057 261.513 45.4369V49.8405H263.229V45.2757C263.229 44.3269 262.958 43.5649 262.423 43.019C261.888 42.4731 261.178 42.1947 260.312 42.1947H260.316V42.191Z" fill="#1A1A1A"/>
+<path id="Vector_30" d="M294.111 42.191C293.007 42.191 292.056 42.572 291.287 43.3231C290.514 44.0741 290.124 45.012 290.124 46.1074C290.124 47.2028 290.514 48.1406 291.287 48.8916C292.06 49.6427 293.007 50.0237 294.111 50.0237C295.214 50.0237 296.177 49.6427 296.942 48.8916C297.711 48.1406 298.098 47.2028 298.098 46.1074C298.098 45.012 297.708 44.0741 296.942 43.3231C296.177 42.572 295.222 42.191 294.111 42.191ZM295.727 47.7303C295.292 48.1589 294.75 48.3751 294.111 48.3751C293.472 48.3751 292.929 48.1589 292.495 47.7303C292.06 47.3017 291.841 46.7558 291.841 46.1074C291.841 45.4589 292.06 44.913 292.495 44.4844C292.929 44.0558 293.472 43.8396 294.111 43.8396C294.75 43.8396 295.292 44.0558 295.727 44.4844C296.162 44.913 296.381 45.4589 296.381 46.1074C296.381 46.7558 296.162 47.3017 295.727 47.7303Z" fill="#1A1A1A"/>
+<path id="Vector_31" d="M300.496 40.2643H298.85V49.8334H300.496V40.2643Z" fill="#1A1A1A"/>
+<path id="Vector_32" d="M286.488 47.8839L284.448 42.4105L284.437 42.3776L282.453 42.3739L285.499 49.8072L285.511 49.8402H287.45L290.478 42.4472L290.508 42.3739L288.524 42.3776L286.488 47.8839Z" fill="#1A1A1A"/>
+</g>
+<g id="01 / naglowek">
+<rect x="30" y="60" width="535" height="29" rx="10" fill="white"/>
+<text id="#b2c_nazwa_klienta_report_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="79.092">Imi&#x119; i nazwisko klienta</tspan></text>
+<text id="#b2c_nr_reform_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" font-weight="bold" letter-spacing="-0.02em"><tspan x="451.627" y="79.092">NR XX/XX/XX/XX/X</tspan></text>
+</g>
+<g id="sekcja / dane_firmy">
+<rect x="30" y="94" width="180" height="146" rx="10" fill="url(#paint1_linear_2449_8720)"/>
+<text id="etykieta / dane_firmy" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="112.41">Dane firmy</tspan></text>
+<g id="_nazwa_firmy_pole">
+<g id="blok / imie_i_nazwisko">
+<rect x="35" y="119" width="170" height="50" rx="5" fill="white"/>
+<text id="etykieta / imie_i_nazwisko" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="40" y="129.887">Imi&#x119; i nazwisko</tspan></text>
+<text id="#b2c_imie_i_nazwisko_report_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="40" y="145.41">Imi&#x119; i nazwisko</tspan></text>
+</g>
+</g>
+<g id="_adres_pole">
+<g id="blok / adres">
+<rect x="35" y="174" width="170" height="60" rx="5" fill="white"/>
+<text id="etykieta / adres" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="40" y="184.887">Adres</tspan></text>
+<text id="#b2c_adres_report_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="40" y="199.91">Ulica, numer lokalu,&#10;</tspan><tspan x="40" y="212.91">kod pocztowy, miasto</tspan></text>
+</g>
+</g>
+</g>
+<g id="sekcja / dane_kontaktowe">
+<rect x="30" y="245" width="180" height="98" rx="10" fill="url(#paint2_linear_2449_8720)"/>
+<text id="etykieta / dane_kontaktowe" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="262.41">Dane kontaktowe</tspan></text>
+<g id="_mail_pole">
+<g id="blok / mail">
+<rect x="35" y="270" width="170" height="32" rx="5" fill="white"/>
+<text id="etykieta / mail" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="40" y="280.887">Mail</tspan></text>
+<text id="#b2c_mail_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="40" y="294.41">Adres mailowy</tspan></text>
+</g>
+</g>
+<g id="_telefon_pole">
+<g id="blok / telefon">
+<rect x="35" y="306" width="170" height="32" rx="5" fill="white"/>
+<text id="etykieta / telefon" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="40" y="316.887">Telefon</tspan></text>
+<text id="#b2c_telefon_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="40" y="330.41">XX XXX XXX XXX</tspan></text>
+</g>
+</g>
+</g>
+<text id="stopka / numer strony" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="570.532" y="824.387">1/10</tspan></text>
+<g id="sekcja / dane_rozliczeniowe">
+<rect x="30" y="417" width="535" height="101" rx="10" fill="url(#paint3_linear_2449_8720)"/>
+<text id="etykieta / dane_rozliczeniowe" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="435.41">Dane rozliczeniowe&#10;</tspan></text>
+<g id="_moc_przylaczeniowa_pole">
+<g id="blok / moc_przylaczeniowa">
+<rect x="35" y="444" width="170" height="32" rx="5" fill="white"/>
+<text id="etykieta / moc_przylaczeniowa" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="40" y="454.887">Moc przy&#x142;&#x105;czeniowa</tspan></text>
+<g id="pole / b2c_moc_przylaczeniowa_strona_01">
+<text id="#b2c_moc_przylaczeniowa_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="40" y="468.41">XX</tspan></text>
+<text id="stale / jednostka lub dopisek" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="52" y="468.41"> kW</tspan></text>
+</g>
+</g>
+</g>
+<g id="_operator_systemu_dystrybucyjnego_pole">
+<g id="blok / operator_systemu_dystrybucyjnego">
+<rect x="35" y="481" width="170" height="32" rx="5" fill="white"/>
+<text id="etykieta / operator_systemu_dystrybucyjnego" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="40" y="491.887">Operator systemu dystrybucyjnego</tspan></text>
+<text id="#b2c_operator_systemu_dystrybucyjnego_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="40" y="505.41">Operator</tspan></text>
+</g>
+</g>
+<g id="_system_rozliczeniowy_pole">
+<g id="blok / system_rozliczeniowy">
+<rect x="210" y="444" width="170" height="32" rx="5" fill="white"/>
+<text id="etykieta / system_rozliczeniowy" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="215" y="454.887">System rozliczeniowy &#10;</tspan></text>
+<text id="#b2c_system_rozliczeniowy_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="215" y="468.41">System rozliczeniowy</tspan></text>
+</g>
+</g>
+<g id="_dostawca_energii_elektrycznej_pole">
+<g id="blok / dostawca_energii_elektrycznej">
+<rect x="210" y="481" width="170" height="32" rx="5" fill="white"/>
+<text id="etykieta / dostawca_energii_elektrycznej" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="215" y="491.887">Dostawca energii elektrycznej&#10;</tspan></text>
+<text id="#b2c_dostawca_energii_elektrycznej_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="215" y="505.41">Dostawca&#10;</tspan></text>
+</g>
+</g>
+<g id="_taryfa_pole">
+<g id="blok / taryfa">
+<rect x="385" y="444" width="175" height="32" rx="5" fill="white"/>
+<text id="etykieta / taryfa" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="390" y="454.887">Taryfa</tspan></text>
+<text id="#b2c_dane_rozliczeniowe_taryfa_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="390" y="468.41">XX</tspan></text>
+</g>
+</g>
+<g id="_rodzaj_przylacza_pole">
+<g id="blok / rodzaj_przylacza">
+<rect x="385" y="481" width="175" height="32" rx="5" fill="white"/>
+<text id="etykieta / rodzaj_przylacza" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="390" y="491.887">Rodzaj przy&#x142;&#x105;cza</tspan></text>
+<text id="#b2c_rodzaj_przylacza_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="390" y="505.41">Rodzaj przy&#x142;&#x105;cza</tspan></text>
+</g>
+</g>
+</g>
+<g id="sekcja / energia_cieplna">
+<rect x="30" y="523" width="350" height="64" rx="10" fill="url(#paint4_linear_2449_8720)"/>
+<text id="etykieta / energia_cieplna" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="541.41">Energia cieplna&#10;</tspan></text>
+<g id="_zrodlo_ciepla_pole">
+<g id="blok / zrodlo_ciepla">
+<rect x="35" y="550" width="170" height="32" rx="5" fill="white"/>
+<text id="etykieta / zrodlo_ciepla" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="40" y="560.887">&#x179;r&#xf3;d&#x142;o ciep&#x142;a</tspan></text>
+<text id="#b2c_zrodlo_ciepla_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="40" y="574.41">&#x179;r&#xf3;d&#x142;o ciep&#x142;a</tspan></text>
+</g>
+</g>
+<g id="_rodzaj_ciepla_pole">
+<g id="blok / rodzaj_zrodla_ciepla">
+<g clip-path="url(#clip2_2449_8720)">
+<rect x="210" y="550" width="165" height="32" rx="5" fill="white"/>
+<text id="etykieta / rodzaj_zrodla_ciepla" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="215" y="560.887">Rodzaj &#x17a;r&#xf3;d&#x142;a ciep&#x142;a</tspan></text>
+<text id="#b2c_rodzaj_zrodla_ciepla_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="215" y="574.41">Rodzaj &#x17a;r&#xf3;d&#x142;a ciep&#x142;a</tspan></text>
+</g>
+</g>
+</g>
+</g>
+<g id="sekcja / roczny_rachunek_za_energie">
+<rect x="385" y="523" width="180" height="220" rx="10" fill="url(#paint5_linear_2449_8720)"/>
+<text id="etykieta / roczny_rachunek_za_energie" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="395" y="541.41">Roczny rachunek za energi&#x119;&#10;</tspan></text>
+<g id="_oplaty_stale_i_dystrybucyjne_pole">
+<g id="blok / oplaty_stale_i_dystrybucyjne">
+<rect x="390" y="548" width="170" height="50" rx="5" fill="white"/>
+<text id="etykieta / oplaty_stale_i_dystrybucyjne" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="395" y="558.887">Op&#x142;aty sta&#x142;e i dystrybucyjne</tspan></text>
+<text id="etykieta / pln" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" letter-spacing="-0.02em"><tspan x="533.894" y="591.092">PLN</tspan></text>
+<g id="pole / b2c_oplaty_stale_i_dystrybucyjne_strona_01">
+<text id="#b2c_oplaty_stale_i_dystrybucyjne_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" letter-spacing="-0.02em"><tspan x="395" y="591.092">X XXX,XX</tspan></text>
+<g id="stale / jednostka lub dopisek_2">
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-style="italic" font-weight="300" letter-spacing="-0.02em"><tspan x="445.947" y="591.092">brutto</tspan></text>
+<text fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" letter-spacing="-0.02em"><tspan x="443" y="591.092"> </tspan></text>
+</g>
+</g>
+</g>
+</g>
+<g id="_zakup_energii_pole">
+<g id="blok / zakup_energii">
+<rect x="390" y="603" width="170" height="50" rx="5" fill="white"/>
+<text id="etykieta / zakup_energii" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="395" y="613.887">Zakup energii</tspan></text>
+</g>
+<text id="etykieta / pln_2" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" letter-spacing="-0.02em"><tspan x="533.894" y="645.092">PLN</tspan></text>
+<g id="pole / b2c_zakup_energii_strona_01">
+<text id="#b2c_zakup_energii_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" letter-spacing="-0.02em"><tspan x="395" y="645.092">X XXX,XX</tspan></text>
+<text id="stale / jednostka lub dopisek_3" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-style="italic" font-weight="300" letter-spacing="-0.02em"><tspan x="443" y="645.41"> brutto</tspan></text>
+</g>
+</g>
+<g id="blok / twoj_rachunek">
+<g id="_twoj_rachunek_pole">
+<rect x="390.25" y="658.25" width="169.5" height="79.5" rx="4.75" fill="white"/>
+<rect x="390.25" y="658.25" width="169.5" height="79.5" rx="4.75" stroke="#FF0000" stroke-width="0.5"/>
+</g>
+<text id="etykieta / pln_3" fill="#FF3B30" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" font-weight="bold" letter-spacing="-0.02em"><tspan x="532.675" y="731.092">PLN</tspan></text>
+<text id="etykieta / twoj_rachunek" fill="#FF3B30" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" font-weight="bold" letter-spacing="-0.02em"><tspan x="395" y="668.887">Tw&#xf3;j rachunek </tspan></text>
+<g id="pole / b2c_twoj_rachunek_strona_01">
+<text id="#b2c_twoj_rachunek_strona_01" fill="#FF3B30" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" font-weight="bold" letter-spacing="-0.02em"><tspan x="395" y="731.092">X XXX,XX</tspan></text>
+<g id="stale / jednostka lub dopisek_4">
+<text fill="#FF3B30" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="12" font-weight="bold" letter-spacing="-0.02em"><tspan x="448" y="731.092"> </tspan></text>
+<text fill="#FF3B30" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-style="italic" font-weight="300" letter-spacing="-0.02em"><tspan x="450.584" y="731.092">brutto</tspan></text>
+</g>
+</g>
+</g>
+</g>
+<g id="sekcja / urzadzenia_posiadane_planowane_o_duzym_poborze_energii">
+<rect x="30" y="591" width="350" height="152" rx="10" fill="url(#paint6_linear_2449_8720)"/>
+<text id="etykieta / urzadzenia_posiadane_planowane_o_duzym_poborze_energii" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="609.41">Urz&#x105;dzenia posiadane/planowane o du&#x17c;ym poborze energii &#10;</tspan></text>
+<g id="blok / posiadane_urzadzenia_o_duzym_poborze_energii">
+<g id="_posiadane_urzadzenia_o_duzym_poborze_energii_pole">
+<rect x="35" y="618" width="170" height="120" rx="5" fill="white"/>
+</g>
+<text id="etykieta / posiadane_urzadzenia_o_duzym_poborze_energii" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="40" y="628.887">Posiadane urz&#x105;dzenia o du&#x17c;ym poborze energii</tspan></text>
+<text id="#b2c_posiadane_urzadzenia_o_duzym_poborze_energii_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="40" y="642.41">Posiadane urz&#x105;dzenia</tspan></text>
+</g>
+<g id="blok / planowane_urzadzenia_o_duzym_poborze_energii">
+<g id="_planowane_urzadzenia_o_duzym_poborze_energii_pole">
+<rect x="210" y="618" width="165" height="120" rx="5" fill="white"/>
+</g>
+<text id="etykieta / planowane_urzadzenia_o_duzym_poborze_energii" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="215" y="628.887">Planowane urz&#x105;dzenia o du&#x17c;ym poborze energii</tspan></text>
+<text id="#b2c_planowane_urzadzenia_o_duzym_poborze_energii_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="215" y="642.41">Planowane urz&#x105;dzenia</tspan></text>
+</g>
+</g>
+<g id="sekcja / dane_srodowiskowe">
+<rect x="30" y="348" width="535" height="64" rx="10" fill="url(#paint7_linear_2449_8720)"/>
+<text id="etykieta / dane_srodowiskowe" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="40" y="366.41">Dane &#x15b;rodowiskowe</tspan></text>
+<g id="_rodzaj_terenu_pole">
+<g id="blok / rodzaj_terenu">
+<rect x="35" y="375" width="170" height="32" rx="5" fill="white"/>
+<text id="etykieta / rodzaj_terenu" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="40" y="385.887">Rodzaj terenu</tspan></text>
+<text id="#b2c_rodzaj_terenu_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="40" y="399.41">Rodzaj terenu</tspan></text>
+</g>
+</g>
+<g id="_rodzaj_dachu_pole">
+<g id="blok / rodzaj_dachu">
+<rect x="210" y="375" width="170" height="32" rx="5" fill="white"/>
+<text id="etykieta / rodzaj_dachu" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="215" y="385.887">Rodzaj dachu</tspan></text>
+<text id="#b2c_rodzaj_dachu_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="215" y="399.41">Rodzaj dachu</tspan></text>
+</g>
+</g>
+<g id="_typ_budynku__pole">
+<g id="blok / typ_budynku">
+<rect x="385" y="375" width="175" height="32" rx="5" fill="white"/>
+<text id="etykieta / typ_budynku" fill="#A3AED0" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="7" letter-spacing="-0.02em"><tspan x="390" y="385.887">Typ budynku</tspan></text>
+<text id="#b2c_typ_budynku_strona_01" fill="#2B3674" style="white-space: pre" xml:space="preserve" font-family="DM Sans" font-size="10" letter-spacing="-0.02em"><tspan x="390" y="399.41">Typ budynku</tspan></text>
+</g>
+</g>
+</g>
+</g>
+<defs>
+<linearGradient id="paint0_linear_2449_8720" x1="297.5" y1="812" x2="297.5" y2="748" gradientUnits="userSpaceOnUse">
+<stop stop-color="#F2F5FB"/>
+<stop offset="1" stop-color="white"/>
+</linearGradient>
+<linearGradient id="paint1_linear_2449_8720" x1="120" y1="94" x2="120" y2="240" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="#F2F5FB"/>
+</linearGradient>
+<linearGradient id="paint2_linear_2449_8720" x1="120" y1="245" x2="120" y2="343" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="#F2F5FB"/>
+</linearGradient>
+<linearGradient id="paint3_linear_2449_8720" x1="297.5" y1="417" x2="297.5" y2="518" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="#F2F5FB"/>
+</linearGradient>
+<linearGradient id="paint4_linear_2449_8720" x1="205" y1="523" x2="205" y2="587" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="#F2F5FB"/>
+</linearGradient>
+<linearGradient id="paint5_linear_2449_8720" x1="475" y1="523" x2="475" y2="743" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="#F2F5FB"/>
+</linearGradient>
+<linearGradient id="paint6_linear_2449_8720" x1="205" y1="591" x2="205" y2="743" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="#F2F5FB"/>
+</linearGradient>
+<linearGradient id="paint7_linear_2449_8720" x1="297.5" y1="348" x2="297.5" y2="412" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="#F2F5FB"/>
+</linearGradient>
+<clipPath id="clip0_2449_8720">
+<rect width="89" height="25" fill="white" transform="translate(30 30)"/>
+</clipPath>
+<clipPath id="clip1_2449_8720">
+<rect width="61" height="11" fill="white" transform="translate(246 39)"/>
+</clipPath>
+<clipPath id="clip2_2449_8720">
+<rect x="210" y="550" width="165" height="32" rx="5" fill="white"/>
+</clipPath>
+</defs>
+</svg>

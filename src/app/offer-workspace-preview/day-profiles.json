@@ -1,0 +1,3050 @@
+[
+  {
+    "period": "2025-10",
+    "dayType": "workday",
+    "date": "2025-10-01",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 0.719,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 0.312,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.46,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.702,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 0.698,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 0.674,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0.662,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0.716,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 1.439,
+        "exportKwh": 0
+      },
+      {
+        "hour": 9,
+        "importKwh": 4.76,
+        "exportKwh": 0
+      },
+      {
+        "hour": 10,
+        "importKwh": 4.095,
+        "exportKwh": 0
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 3.336
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 2.843
+      },
+      {
+        "hour": 13,
+        "importKwh": 0,
+        "exportKwh": 1.452
+      },
+      {
+        "hour": 14,
+        "importKwh": 4.259,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 0.485,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 2.25,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 0.727,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 0.518,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 1.856,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 2.351,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 1.878,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 1.512,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 0.841,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2025-10",
+    "dayType": "free",
+    "date": "2025-10-04",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 1.323,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 1.261,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 1.349,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 1.268,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 1.236,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 1.248,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 1.212,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0.57,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 3.376,
+        "exportKwh": 0
+      },
+      {
+        "hour": 9,
+        "importKwh": 1.801,
+        "exportKwh": 0
+      },
+      {
+        "hour": 10,
+        "importKwh": 2.703,
+        "exportKwh": 0
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 2.917
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 1.791
+      },
+      {
+        "hour": 13,
+        "importKwh": 0,
+        "exportKwh": 0.459
+      },
+      {
+        "hour": 14,
+        "importKwh": 0,
+        "exportKwh": 0.146
+      },
+      {
+        "hour": 15,
+        "importKwh": 0.274,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 0.208,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 5.266,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 2.789,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 1.575,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 1.573,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 1.584,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 1.386,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 1.095,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2025-11",
+    "dayType": "free",
+    "date": "2025-11-01",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 1.396,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 0.988,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.803,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.911,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 1.297,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 1.404,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 1.51,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0.999,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 0,
+        "exportKwh": 0.993
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 2.274
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 1.313
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 1.056
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 0.521
+      },
+      {
+        "hour": 13,
+        "importKwh": 0.077,
+        "exportKwh": 0
+      },
+      {
+        "hour": 14,
+        "importKwh": 0.991,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 2.196,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 0.56,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 0.283,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 0.284,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 0.623,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 0.671,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 0.671,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 0.675,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 0.809,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2025-11",
+    "dayType": "workday",
+    "date": "2025-11-03",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 1.348,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 0.315,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.31,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.691,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 0.691,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 0.582,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0.57,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0.833,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 0.282,
+        "exportKwh": 0
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 0.131
+      },
+      {
+        "hour": 10,
+        "importKwh": 0.485,
+        "exportKwh": 0
+      },
+      {
+        "hour": 11,
+        "importKwh": 0.213,
+        "exportKwh": 0
+      },
+      {
+        "hour": 12,
+        "importKwh": 2.84,
+        "exportKwh": 0
+      },
+      {
+        "hour": 13,
+        "importKwh": 0.206,
+        "exportKwh": 0
+      },
+      {
+        "hour": 14,
+        "importKwh": 0.421,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 0.218,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 1.371,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 0.965,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 1.407,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 4.045,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 2.925,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 2.461,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 2.319,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 1.936,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2025-12",
+    "dayType": "workday",
+    "date": "2025-12-01",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 2.169,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 1.981,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 1.682,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 1.923,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 1.61,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 1.763,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 2.005,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 1.731,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 1.745,
+        "exportKwh": 0
+      },
+      {
+        "hour": 9,
+        "importKwh": 0.952,
+        "exportKwh": 0
+      },
+      {
+        "hour": 10,
+        "importKwh": 0.945,
+        "exportKwh": 0
+      },
+      {
+        "hour": 11,
+        "importKwh": 0.653,
+        "exportKwh": 0
+      },
+      {
+        "hour": 12,
+        "importKwh": 0.929,
+        "exportKwh": 0
+      },
+      {
+        "hour": 13,
+        "importKwh": 1.026,
+        "exportKwh": 0
+      },
+      {
+        "hour": 14,
+        "importKwh": 1.666,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 2.052,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 3.427,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 4.986,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 4.551,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 6.186,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 5.154,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 5.183,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 4.746,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 4.669,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2025-12",
+    "dayType": "free",
+    "date": "2025-12-06",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 2.123,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 1.986,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 1.4,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 1.415,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 1.394,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 1.391,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 1.448,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 1.522,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 1.673,
+        "exportKwh": 0
+      },
+      {
+        "hour": 9,
+        "importKwh": 2.02,
+        "exportKwh": 0
+      },
+      {
+        "hour": 10,
+        "importKwh": 1.802,
+        "exportKwh": 0
+      },
+      {
+        "hour": 11,
+        "importKwh": 1.329,
+        "exportKwh": 0
+      },
+      {
+        "hour": 12,
+        "importKwh": 1.792,
+        "exportKwh": 0
+      },
+      {
+        "hour": 13,
+        "importKwh": 3.019,
+        "exportKwh": 0
+      },
+      {
+        "hour": 14,
+        "importKwh": 2.1,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 2.812,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 2.391,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 1.936,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 2.814,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 2.964,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 3.123,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 3.251,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 2.692,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 2.347,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-01",
+    "dayType": "free",
+    "date": "2026-01-01",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 2.518,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 2.114,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 1.934,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 1.992,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 1.705,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 1.91,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 1.741,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 1.826,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 1.905,
+        "exportKwh": 0
+      },
+      {
+        "hour": 9,
+        "importKwh": 1.485,
+        "exportKwh": 0
+      },
+      {
+        "hour": 10,
+        "importKwh": 1.914,
+        "exportKwh": 0
+      },
+      {
+        "hour": 11,
+        "importKwh": 1.995,
+        "exportKwh": 0
+      },
+      {
+        "hour": 12,
+        "importKwh": 2.047,
+        "exportKwh": 0
+      },
+      {
+        "hour": 13,
+        "importKwh": 2.579,
+        "exportKwh": 0
+      },
+      {
+        "hour": 14,
+        "importKwh": 4.09,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 3.13,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 2.976,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 2.149,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 2.545,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 2.781,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 2.337,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 2.227,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 2.741,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 1.921,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-01",
+    "dayType": "workday",
+    "date": "2026-01-02",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 1.837,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 1.49,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 1.312,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 1.186,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 0.987,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 1.054,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 1.758,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 1.262,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 1.256,
+        "exportKwh": 0
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 0.402
+      },
+      {
+        "hour": 10,
+        "importKwh": 0.668,
+        "exportKwh": 0
+      },
+      {
+        "hour": 11,
+        "importKwh": 5.792,
+        "exportKwh": 0
+      },
+      {
+        "hour": 12,
+        "importKwh": 6.589,
+        "exportKwh": 0
+      },
+      {
+        "hour": 13,
+        "importKwh": 6.236,
+        "exportKwh": 0
+      },
+      {
+        "hour": 14,
+        "importKwh": 6.626,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 7.562,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 6.723,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 5.051,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 7.155,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 7.28,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 7.671,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 7.428,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 4.787,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 2.434,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-02",
+    "dayType": "free",
+    "date": "2026-02-01",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 1.265,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 3.444,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 3.332,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 2.754,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 3.332,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 2.766,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 2.575,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 3.243,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 0.811,
+        "exportKwh": 0
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 1.261
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 2.73
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 2.149
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 2.086
+      },
+      {
+        "hour": 13,
+        "importKwh": 0,
+        "exportKwh": 0.253
+      },
+      {
+        "hour": 14,
+        "importKwh": 0.333,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 4.803,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 5.294,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 4.521,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 5.957,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 6.652,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 6.407,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 6.164,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 6.392,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 5.86,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-02",
+    "dayType": "workday",
+    "date": "2026-02-02",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 5.297,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 3.482,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 3.307,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 2.894,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 3.35,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 2.778,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 3.513,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 3.551,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 3.064,
+        "exportKwh": 0
+      },
+      {
+        "hour": 9,
+        "importKwh": 2.636,
+        "exportKwh": 0
+      },
+      {
+        "hour": 10,
+        "importKwh": 1.564,
+        "exportKwh": 0
+      },
+      {
+        "hour": 11,
+        "importKwh": 2.115,
+        "exportKwh": 0
+      },
+      {
+        "hour": 12,
+        "importKwh": 3.401,
+        "exportKwh": 0
+      },
+      {
+        "hour": 13,
+        "importKwh": 2.734,
+        "exportKwh": 0
+      },
+      {
+        "hour": 14,
+        "importKwh": 3.255,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 3.36,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 3.763,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 4.377,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 4.279,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 2.128,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 4.206,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 4.054,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 4.064,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 3.266,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-03",
+    "dayType": "free",
+    "date": "2026-03-01",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 2.507,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 1.4,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 1.193,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.894,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 1.338,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 1.279,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 1.292,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0,
+        "exportKwh": 0.423
+      },
+      {
+        "hour": 8,
+        "importKwh": 0,
+        "exportKwh": 3.199
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 3.465
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 4.873
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 2.007
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 0.495
+      },
+      {
+        "hour": 13,
+        "importKwh": 0.253,
+        "exportKwh": 0
+      },
+      {
+        "hour": 14,
+        "importKwh": 0,
+        "exportKwh": 0.573
+      },
+      {
+        "hour": 15,
+        "importKwh": 0,
+        "exportKwh": 0.045
+      },
+      {
+        "hour": 16,
+        "importKwh": 0.724,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 1.282,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 1.281,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 2.789,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 2.906,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 2.706,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 2.103,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 2.113,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-03",
+    "dayType": "workday",
+    "date": "2026-03-02",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 1.846,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 1.764,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 1.697,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 1.849,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 1.964,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 1.684,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 3.142,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0.584,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 0,
+        "exportKwh": 2.204
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 3.798
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 4.032
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 4.134
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 5.488
+      },
+      {
+        "hour": 13,
+        "importKwh": 0,
+        "exportKwh": 4.553
+      },
+      {
+        "hour": 14,
+        "importKwh": 0,
+        "exportKwh": 4.384
+      },
+      {
+        "hour": 15,
+        "importKwh": 0,
+        "exportKwh": 2.033
+      },
+      {
+        "hour": 16,
+        "importKwh": 0,
+        "exportKwh": 0.046
+      },
+      {
+        "hour": 17,
+        "importKwh": 1.151,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 1.124,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 2.185,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 1.239,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 3.066,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 1.958,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 1.884,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-04",
+    "dayType": "workday",
+    "date": "2026-04-01",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 3.655,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 3.338,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 3.431,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 3.54,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 3.432,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 3.708,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 3.738,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 2.23,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 0.379,
+        "exportKwh": 0
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 0.555
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 4.417
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 6.035
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 4.876
+      },
+      {
+        "hour": 13,
+        "importKwh": 0,
+        "exportKwh": 4.311
+      },
+      {
+        "hour": 14,
+        "importKwh": 0,
+        "exportKwh": 6.749
+      },
+      {
+        "hour": 15,
+        "importKwh": 0,
+        "exportKwh": 5.177
+      },
+      {
+        "hour": 16,
+        "importKwh": 0,
+        "exportKwh": 1.224
+      },
+      {
+        "hour": 17,
+        "importKwh": 0.386,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 1.107,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 2.14,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 1.865,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 1.45,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 1.833,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 1.679,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-04",
+    "dayType": "free",
+    "date": "2026-04-04",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 1.578,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 1.256,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.363,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 1.127,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 1.272,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 0.955,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0.845,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0.897,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 0.549,
+        "exportKwh": 0
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 0.43
+      },
+      {
+        "hour": 10,
+        "importKwh": 0.432,
+        "exportKwh": 0
+      },
+      {
+        "hour": 11,
+        "importKwh": 1.274,
+        "exportKwh": 0
+      },
+      {
+        "hour": 12,
+        "importKwh": 5.85,
+        "exportKwh": 0
+      },
+      {
+        "hour": 13,
+        "importKwh": 3.73,
+        "exportKwh": 0
+      },
+      {
+        "hour": 14,
+        "importKwh": 3.733,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 3.588,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 4.094,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 5.355,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 6.181,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 1.392,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 0.86,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 5.529,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 5.358,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 0.984,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-05",
+    "dayType": "free",
+    "date": "2026-05-01",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 0.837,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 0.474,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.371,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.736,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 1.142,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 1.214,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0.559,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0,
+        "exportKwh": 0.098
+      },
+      {
+        "hour": 8,
+        "importKwh": 0,
+        "exportKwh": 1.985
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 3.355
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 4.787
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 7.108
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 7.357
+      },
+      {
+        "hour": 13,
+        "importKwh": 0,
+        "exportKwh": 7.385
+      },
+      {
+        "hour": 14,
+        "importKwh": 0,
+        "exportKwh": 6.697
+      },
+      {
+        "hour": 15,
+        "importKwh": 0,
+        "exportKwh": 5.552
+      },
+      {
+        "hour": 16,
+        "importKwh": 0,
+        "exportKwh": 3.942
+      },
+      {
+        "hour": 17,
+        "importKwh": 0,
+        "exportKwh": 1.908
+      },
+      {
+        "hour": 18,
+        "importKwh": 0,
+        "exportKwh": 0.075
+      },
+      {
+        "hour": 19,
+        "importKwh": 0.56,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 0.7,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 0.7,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 0.746,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 0.705,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-05",
+    "dayType": "workday",
+    "date": "2026-05-04",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 0.7,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 0.321,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.319,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.316,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 0.318,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 0.32,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0.072,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0.527,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 0,
+        "exportKwh": 2.762
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 1.94
+      },
+      {
+        "hour": 10,
+        "importKwh": 0.418,
+        "exportKwh": 0
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 0.349
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 1.071
+      },
+      {
+        "hour": 13,
+        "importKwh": 0,
+        "exportKwh": 1.29
+      },
+      {
+        "hour": 14,
+        "importKwh": 0,
+        "exportKwh": 0.925
+      },
+      {
+        "hour": 15,
+        "importKwh": 0,
+        "exportKwh": 2.1
+      },
+      {
+        "hour": 16,
+        "importKwh": 0,
+        "exportKwh": 1.183
+      },
+      {
+        "hour": 17,
+        "importKwh": 0,
+        "exportKwh": 1.166
+      },
+      {
+        "hour": 18,
+        "importKwh": 0.126,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 1.997,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 3.174,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 3.624,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 1.332,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 0.361,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-06",
+    "dayType": "workday",
+    "date": "2026-06-01",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 0.417,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 0.313,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.327,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.317,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 0.319,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 0.066,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0,
+        "exportKwh": 0.199
+      },
+      {
+        "hour": 7,
+        "importKwh": 0,
+        "exportKwh": 1.58
+      },
+      {
+        "hour": 8,
+        "importKwh": 0,
+        "exportKwh": 3.689
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 4.609
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 4.444
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 5.893
+      },
+      {
+        "hour": 12,
+        "importKwh": 1.602,
+        "exportKwh": 0
+      },
+      {
+        "hour": 13,
+        "importKwh": 4.884,
+        "exportKwh": 0
+      },
+      {
+        "hour": 14,
+        "importKwh": 1.564,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 0,
+        "exportKwh": 4.697
+      },
+      {
+        "hour": 16,
+        "importKwh": 1.548,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 5.656,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 5.825,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 1.539,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 1.437,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 1.138,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 1.794,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 1.352,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-06",
+    "dayType": "free",
+    "date": "2026-06-04",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 0.347,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 0.322,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.302,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.293,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 0.309,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 0.078,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0,
+        "exportKwh": 0.247
+      },
+      {
+        "hour": 7,
+        "importKwh": 0,
+        "exportKwh": 2.385
+      },
+      {
+        "hour": 8,
+        "importKwh": 0,
+        "exportKwh": 4.227
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 5.819
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 6.631
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 7.586
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 5.807
+      },
+      {
+        "hour": 13,
+        "importKwh": 0,
+        "exportKwh": 3.155
+      },
+      {
+        "hour": 14,
+        "importKwh": 3.685,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 5.335,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 6.428,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 7.684,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 4.877,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 0.577,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 1.032,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 2.09,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 1.345,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 1.286,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-07",
+    "dayType": "workday",
+    "date": "2026-07-01",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 6.975,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 7.041,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 4.923,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.717,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 0.707,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 0.332,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0,
+        "exportKwh": 0.209
+      },
+      {
+        "hour": 7,
+        "importKwh": 0.364,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 0,
+        "exportKwh": 0.102
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 0.022
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 0.069
+      },
+      {
+        "hour": 11,
+        "importKwh": 1.055,
+        "exportKwh": 0
+      },
+      {
+        "hour": 12,
+        "importKwh": 0.094,
+        "exportKwh": 0
+      },
+      {
+        "hour": 13,
+        "importKwh": 0,
+        "exportKwh": 0.241
+      },
+      {
+        "hour": 14,
+        "importKwh": 0,
+        "exportKwh": 0.917
+      },
+      {
+        "hour": 15,
+        "importKwh": 0,
+        "exportKwh": 0.252
+      },
+      {
+        "hour": 16,
+        "importKwh": 0,
+        "exportKwh": 0.45
+      },
+      {
+        "hour": 17,
+        "importKwh": 0,
+        "exportKwh": 0.695
+      },
+      {
+        "hour": 18,
+        "importKwh": 0,
+        "exportKwh": 0.004
+      },
+      {
+        "hour": 19,
+        "importKwh": 0.083,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 0.225,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 0.249,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 0.245,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 0.249,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-07",
+    "dayType": "free",
+    "date": "2026-07-04",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 0.25,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 0.252,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.251,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.249,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 0.253,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 0.074,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0,
+        "exportKwh": 0.334
+      },
+      {
+        "hour": 7,
+        "importKwh": 0,
+        "exportKwh": 1.033
+      },
+      {
+        "hour": 8,
+        "importKwh": 0,
+        "exportKwh": 1.072
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 2.021
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 2.693
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 5.63
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 6.833
+      },
+      {
+        "hour": 13,
+        "importKwh": 0,
+        "exportKwh": 6.726
+      },
+      {
+        "hour": 14,
+        "importKwh": 0,
+        "exportKwh": 7.225
+      },
+      {
+        "hour": 15,
+        "importKwh": 0,
+        "exportKwh": 5.717
+      },
+      {
+        "hour": 16,
+        "importKwh": 0,
+        "exportKwh": 4.443
+      },
+      {
+        "hour": 17,
+        "importKwh": 0,
+        "exportKwh": 2.786
+      },
+      {
+        "hour": 18,
+        "importKwh": 0,
+        "exportKwh": 1.223
+      },
+      {
+        "hour": 19,
+        "importKwh": 0.256,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 1.476,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 0.791,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 0.757,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 0.556,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-08",
+    "dayType": "free",
+    "date": "2026-08-01",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 0.464,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 0.441,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.461,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.446,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 0.449,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 1.004,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0.162,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0,
+        "exportKwh": 0.05
+      },
+      {
+        "hour": 8,
+        "importKwh": 0,
+        "exportKwh": 0.324
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 0.374
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 1.385
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 3.25
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 6.519
+      },
+      {
+        "hour": 13,
+        "importKwh": 0,
+        "exportKwh": 2.117
+      },
+      {
+        "hour": 14,
+        "importKwh": 0,
+        "exportKwh": 0.677
+      },
+      {
+        "hour": 15,
+        "importKwh": 0,
+        "exportKwh": 0.295
+      },
+      {
+        "hour": 16,
+        "importKwh": 0,
+        "exportKwh": 0.503
+      },
+      {
+        "hour": 17,
+        "importKwh": 0.107,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 0.311,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 0.324,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 0.424,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 1.29,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 2.05,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 1.468,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-08",
+    "dayType": "workday",
+    "date": "2026-08-03",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 0.673,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 0.278,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.23,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.229,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 0.23,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 0.203,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0.108,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0,
+        "exportKwh": 0.116
+      },
+      {
+        "hour": 8,
+        "importKwh": 0,
+        "exportKwh": 2.137
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 2.564
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 5.606
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 7.224
+      },
+      {
+        "hour": 12,
+        "importKwh": 0,
+        "exportKwh": 6.113
+      },
+      {
+        "hour": 13,
+        "importKwh": 0,
+        "exportKwh": 1.601
+      },
+      {
+        "hour": 14,
+        "importKwh": 0,
+        "exportKwh": 0.811
+      },
+      {
+        "hour": 15,
+        "importKwh": 0,
+        "exportKwh": 4.407
+      },
+      {
+        "hour": 16,
+        "importKwh": 3.659,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 3.762,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 0,
+        "exportKwh": 0.436
+      },
+      {
+        "hour": 19,
+        "importKwh": 0.784,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 2.323,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 1.296,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 0.689,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 1.626,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-09",
+    "dayType": "workday",
+    "date": "2026-09-01",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 0.242,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 0.223,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.215,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.21,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 0.219,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 0.22,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0.153,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0.401,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 0,
+        "exportKwh": 0.113
+      },
+      {
+        "hour": 9,
+        "importKwh": 0,
+        "exportKwh": 0.979
+      },
+      {
+        "hour": 10,
+        "importKwh": 0,
+        "exportKwh": 1.565
+      },
+      {
+        "hour": 11,
+        "importKwh": 0,
+        "exportKwh": 2.001
+      },
+      {
+        "hour": 12,
+        "importKwh": 0.46,
+        "exportKwh": 0
+      },
+      {
+        "hour": 13,
+        "importKwh": 2.864,
+        "exportKwh": 0
+      },
+      {
+        "hour": 14,
+        "importKwh": 0.54,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 2.518,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 2.789,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 2.925,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 3.981,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 2.866,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 1.767,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 1.297,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 1.683,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 1.177,
+        "exportKwh": 0
+      }
+    ]
+  },
+  {
+    "period": "2026-09",
+    "dayType": "free",
+    "date": "2026-09-05",
+    "hours": [
+      {
+        "hour": 0,
+        "importKwh": 0.691,
+        "exportKwh": 0
+      },
+      {
+        "hour": 1,
+        "importKwh": 0.26,
+        "exportKwh": 0
+      },
+      {
+        "hour": 2,
+        "importKwh": 0.239,
+        "exportKwh": 0
+      },
+      {
+        "hour": 3,
+        "importKwh": 0.24,
+        "exportKwh": 0
+      },
+      {
+        "hour": 4,
+        "importKwh": 0.237,
+        "exportKwh": 0
+      },
+      {
+        "hour": 5,
+        "importKwh": 0.234,
+        "exportKwh": 0
+      },
+      {
+        "hour": 6,
+        "importKwh": 0.312,
+        "exportKwh": 0
+      },
+      {
+        "hour": 7,
+        "importKwh": 0.34,
+        "exportKwh": 0
+      },
+      {
+        "hour": 8,
+        "importKwh": 0.327,
+        "exportKwh": 0
+      },
+      {
+        "hour": 9,
+        "importKwh": 0.289,
+        "exportKwh": 0
+      },
+      {
+        "hour": 10,
+        "importKwh": 3.139,
+        "exportKwh": 0
+      },
+      {
+        "hour": 11,
+        "importKwh": 4.472,
+        "exportKwh": 0
+      },
+      {
+        "hour": 12,
+        "importKwh": 4.727,
+        "exportKwh": 0
+      },
+      {
+        "hour": 13,
+        "importKwh": 5.025,
+        "exportKwh": 0
+      },
+      {
+        "hour": 14,
+        "importKwh": 5.026,
+        "exportKwh": 0
+      },
+      {
+        "hour": 15,
+        "importKwh": 5.557,
+        "exportKwh": 0
+      },
+      {
+        "hour": 16,
+        "importKwh": 5.122,
+        "exportKwh": 0
+      },
+      {
+        "hour": 17,
+        "importKwh": 4.495,
+        "exportKwh": 0
+      },
+      {
+        "hour": 18,
+        "importKwh": 3.811,
+        "exportKwh": 0
+      },
+      {
+        "hour": 19,
+        "importKwh": 1.151,
+        "exportKwh": 0
+      },
+      {
+        "hour": 20,
+        "importKwh": 0.946,
+        "exportKwh": 0
+      },
+      {
+        "hour": 21,
+        "importKwh": 0.92,
+        "exportKwh": 0
+      },
+      {
+        "hour": 22,
+        "importKwh": 1.604,
+        "exportKwh": 0
+      },
+      {
+        "hour": 23,
+        "importKwh": 1.805,
+        "exportKwh": 0
+      }
+    ]
+  }
+]
