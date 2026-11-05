@@ -105,14 +105,15 @@ test('two PV sets cannot be billed together while only one is simulated', async 
   assert.ok(result.reasons.some(reason => reason.includes('najwyżej jeden zestaw PV')));
 });
 
-test('unknown target opening balance is not zeroed and does not hide independently computable target results', async () => {
+test('unknown opening balance is estimated at zero without changing the saved draft', async () => {
   const input = fixture();
   input.draft.calculation!.initialDepositPln = null;
   const missingBalance = await calculateOfferWorkspaceScenario(input);
-  assert.equal(missingBalance.status, 'blocked');
-  assert.ok(missingBalance.reasons.some(reason => reason.includes('jawnego salda początkowego')));
-  assert.equal(missingBalance.baselineAnnualCostPln, null);
-  assert.equal(missingBalance.tariffOnlyAnnualCostPln, null);
+  assert.equal(missingBalance.status, 'ready');
+  assert.ok(missingBalance.warnings.some(reason => reason.includes('przyjęto 0 zł')));
+  assert.notEqual(missingBalance.baselineAnnualCostPln, null);
+  assert.notEqual(missingBalance.tariffOnlyAnnualCostPln, null);
+  assert.equal(input.draft.calculation!.initialDepositPln, null);
   input.draft.calculation!.initialDepositPln = 0;
   delete input.baselineHistory.byDate['2026-03-29'];
   const missingPrice = await calculateOfferWorkspaceScenario(input);
@@ -124,7 +125,7 @@ test('unknown target opening balance is not zeroed and does not hide independent
   assert.equal(missingPrice.annualSavingsPln, null);
 });
 
-test('unknown current net-metering balance leaves target net-billing and hardware comparison available', async () => {
+test('unknown current net-metering balance estimates the baseline and preserves target comparison', async () => {
   const input = fixture();
   input.draft.currentSettlement = 'NET_METERING';
   input.draft.targetSettlement = 'NET_BILLING';
@@ -132,29 +133,46 @@ test('unknown current net-metering balance leaves target net-billing and hardwar
   input.draft.calculation!.initialDepositPln = 0;
   const result = await calculateOfferWorkspaceScenario(input);
   assert.equal(result.status, 'ready', result.reasons.join('; '));
-  assert.equal(result.baselineAnnualCostPln, null);
-  assert.equal(result.baselineBill, undefined);
+  assert.notEqual(result.baselineAnnualCostPln, null);
+  assert.ok(result.baselineBill);
   assert.notEqual(result.tariffOnlyAnnualCostPln, null);
   assert.notEqual(result.proposedAnnualCostPln, null);
-  assert.equal(result.annualSavingsPln, null);
-  assert.equal(result.tariffOnlyAnnualSavingsPln, null);
+  assert.notEqual(result.annualSavingsPln, null);
+  assert.notEqual(result.tariffOnlyAnnualSavingsPln, null);
   assert.equal(result.hardwareAnnualSavingsPln, 0);
-  assert.ok(result.warnings.some(reason => reason.includes('nieznane saldo początkowe')));
+  assert.ok(result.warnings.some(reason => reason.includes('przyjęto 0 kWh')));
+  assert.ok(!result.warnings.some(reason => reason.includes('cyklu rozliczeniowego; przyjęto 2 miesiące')));
+  assert.equal(input.draft.calculation!.initialCreditKwh, null);
 });
 
-test('missing billing assumptions preserve known configuration price without inventing a bill', async () => {
+test('missing balance with existing lots is never silently replaced by zero', async () => {
+  const input = fixture();
+  input.draft.calculation!.initialDepositPln = null;
+  input.draft.calculation!.initialDepositLots = [{ amountPln: 100, creditedMonth: '2025-12', expiresMonth: '2026-12', refundCapPln: 0 }];
+  const result = await calculateOfferWorkspaceScenario(input);
+  assert.equal(result.status, 'blocked');
+  assert.ok(!result.warnings.some(reason => reason.includes('przyjęto 0 zł')));
+  assert.equal(input.draft.calculation!.initialDepositLots.length, 1);
+});
+
+test('missing billing assumptions estimate a two-month cycle without mutating the draft', async () => {
   const input = fixture();
   addPvTemplate(input);
   input.draft.calculation!.billingCycleMonths = null;
+  input.draft.calculation!.billingCycleStartMonth = null;
   input.draft.calculation!.initialDepositPln = null;
   const result = await calculateOfferWorkspaceScenario(input);
-  assert.equal(result.status, 'blocked');
+  assert.equal(result.status, 'ready', result.reasons.join('; '));
   assert.equal(result.systemCostPln, 1230);
-  assert.equal(result.baselineAnnualCostPln, null);
-  assert.equal(result.tariffOnlyAnnualCostPln, null);
-  assert.equal(result.proposedAnnualCostPln, null);
-  assert.ok(result.warnings.some(reason => reason.includes('cykl rozliczeniowy')));
-  assert.ok(result.warnings.some(reason => reason.includes('depozyt początkowy')));
+  assert.notEqual(result.baselineAnnualCostPln, null);
+  assert.notEqual(result.tariffOnlyAnnualCostPln, null);
+  assert.notEqual(result.proposedAnnualCostPln, null);
+  assert.ok(result.warnings.some(reason => reason.includes('cyklu rozliczeniowego; przyjęto 2 miesiące')));
+  assert.ok(result.warnings.some(reason => reason.includes('pierwszy miesiąc danych (2026-01) jako kotwicę')));
+  assert.ok(result.warnings.some(reason => reason.includes('przyjęto 0 zł')));
+  assert.ok(result.recommendationReasons?.some(reason => reason.includes('przyjęto 2 miesiące')));
+  assert.equal(input.draft.calculation!.billingCycleMonths, null);
+  assert.equal(input.draft.calculation!.billingCycleStartMonth, null);
 });
 
 test('VAT review keeps target-tariff and hardware estimates but does not invent sale price or payback', async () => {
@@ -215,6 +233,24 @@ test('net-metering accepts dated credit and an explicit multi-month cycle anchor
   assert.equal(result.baselineBill?.totals.creditUsedKwh, 100);
   assert.equal(result.tariffOnlyBill?.totals.creditUsedKwh, 100);
   assert.equal(result.proposedBill?.totals.creditUsedKwh, 100);
+  assert.ok(!result.warnings.some(reason => reason.includes('Szacunek rachunku:')));
+});
+
+test('unknown net-metering cycle assumes two months and anchors to the first Warsaw energy month', async () => {
+  const input = fixture();
+  input.draft.currentSettlement = 'NET_METERING';
+  input.draft.targetSettlement = 'NET_METERING';
+  input.draft.calculation!.billingCycleMonths = null;
+  input.draft.calculation!.billingCycleStartMonth = null;
+  input.draft.calculation!.initialCreditKwh = 0;
+
+  const result = await calculateOfferWorkspaceScenario(input);
+  assert.equal(result.status, 'ready', result.reasons.join('; '));
+  assert.ok(result.warnings.some(reason => reason.includes('cyklu rozliczeniowego; przyjęto 2 miesiące')));
+  assert.ok(result.warnings.some(reason => reason.includes('pierwszy miesiąc danych (2026-01) jako kotwicę')));
+  assert.ok(result.recommendationReasons?.some(reason => reason.includes('jako kotwicę')));
+  assert.equal(input.draft.calculation!.billingCycleMonths, null);
+  assert.equal(input.draft.calculation!.billingCycleStartMonth, null);
 });
 
 test('net-metering battery is explicitly blocked, not silently simulated as net-billing', async () => {
@@ -255,6 +291,10 @@ test('accepted tax estimate uses 12 percent after grant and is not certified eco
   assert.equal(result.paybackYears, null);
   assert.ok(result.estimatedPaybackYears! > 0);
   assert.equal(result.estimatedAnnualSavingsPln?.length, 20);
+  assert.equal(result.estimatedAnnualTargetCostPln?.length, 20);
+  assert.equal(result.estimatedAnnualTariffOnlyCostPln?.length, 20);
+  assert.deepEqual(result.estimatedAnnualSavingsPln,
+    result.estimatedAnnualTariffOnlyCostPln!.map((cost, index) => cost - result.estimatedAnnualTargetCostPln![index]));
   assert.ok(result.warnings.some(warning => warning.includes('wystarczający dochód')));
 });
 

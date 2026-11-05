@@ -38,6 +38,39 @@ test('missing export is not replaced by zero for PV installations', () => {
   const result = buildOfferWorkspaceEnergy(data);
   assert.equal(result.totals.loadKwh, null);
 });
+
+test('operator estimated readings remain usable with explicit provenance, not missing hours', () => {
+  const data = input();
+  data.intervals[0].import!.source = 'estimated';
+  data.intervals[0].export!.source = 'estimated';
+  const result = buildOfferWorkspaceEnergy(data);
+  assert.deepEqual(result.totals, { loadKwh: 5, pvKwh: 4, directKwh: 3 });
+  assert.equal(result.intervals![0].importKwh, 2);
+  assert.equal(result.intervals![0].exportKwh, 1);
+  assert.ok(result.issues.some(issue => issue.includes('operatora: 1 godz.')));
+});
+
+test('estimated quarter is summed once and marks the containing hour as estimated', () => {
+  const data = input();
+  data.intervals = [0, 15, 30, 45].map(minute => interval(`2026-01-01T11:${String(minute).padStart(2, '0')}:00.000Z`, `2026-01-01T12:${String(minute).padStart(2, '0')}:00+01:00`, 0.5, 0.25, 15));
+  data.intervals[1].import!.source = 'estimated';
+  const result = buildOfferWorkspaceEnergy(data);
+  assert.equal(result.intervals![0].importKwh, 2);
+  assert.equal(result.totals.loadKwh, 5);
+  assert.ok(result.issues.some(issue => issue.includes('operatora: 1 godz.')));
+  data.intervals[1].export = null;
+  assert.equal(buildOfferWorkspaceEnergy(data).totals.loadKwh, null);
+});
+
+test('operator estimates without PV are not labelled as a PV model', () => {
+  const data = input();
+  data.intervals[0].import!.source = 'estimated';
+  data.intervals[0].export = null;
+  const result = buildOfferWorkspaceEnergy({ ...data, noPv: true, pvHours: [] });
+  assert.equal(result.quality, 'MEASURED_IMPORT');
+  assert.equal(result.totals.loadKwh, 2);
+  assert.ok(result.issues.some(issue => issue.includes('szacowane przez operatora')));
+});
 test('model versus observed export discrepancy is explicit and follows RE clipping', () => {
   const data = input();
   data.pvHours[0].pvKwh = 0.25;

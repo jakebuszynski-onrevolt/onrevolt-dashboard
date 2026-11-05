@@ -1,5 +1,5 @@
 import { sumConfiguration } from './calculator';
-import { resolveTemplateItemCosts, type PriceableTemplateItem } from './configuration-templates';
+import { resolveTemplateItemCosts, resolveTemplateItemSaleVat, type PriceableTemplateItem } from './configuration-templates';
 import type { ConfigurationVatMode } from './configuration-vat';
 import type { CalculationInput, CalculationResult, ConfigurationTotals } from './calculator';
 
@@ -151,7 +151,7 @@ function templateSaleVatRate(mode: ConfigurationVatMode, item: OfferCandidateTem
   if (mode === 'REDUCED_8') return 0.08;
   if (mode === 'STANDARD_23') return 0.23;
   if (mode === 'REVIEW') throw new Error('Tryb VAT wymaga przeglądu');
-  const rate = finiteNumber(item.saleVatRate, `stawka VAT sprzedaży (${item.description || item.product?.name || item.id})`);
+  const rate = resolveTemplateItemSaleVat(item);
   if (rate !== 0.08 && rate !== 0.23) {
     throw new Error(`Stawka VAT sprzedaży musi wynosić 8% albo 23% (${item.description || item.product?.name || item.id})`);
   }

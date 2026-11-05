@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { emptyOfferWorkspaceDraft } from './offer-workspace';
+import { emptyOfferWorkspaceDraft, parseOfferWorkspaceDraft } from './offer-workspace';
 
 const routePath = path.resolve(__dirname, '../../app/api/projects/[id]/offer-workspace/route.ts');
 const routeCode = ts.transpileModule(readFileSync(routePath, 'utf8'), {
@@ -57,7 +57,7 @@ function fixture(options: { deniedPermission?: string; notFound?: boolean; confl
       hasStaffPermission: (_user: unknown, permission: string) => permission !== 'energy.manage' || options.canReadEnergy !== false,
     },
     'lib/onrevolt/offer-workspace': {
-      parseOfferWorkspaceDraft: (value: unknown) => value,
+      parseOfferWorkspaceDraft,
     },
     'lib/onrevolt/offer-workspace-server': {
       OfferWorkspaceNotFoundError,
@@ -133,6 +133,7 @@ test('PUT wymaga offers.manage, waliduje rewizję i zwraca 409 dla konfliktu', a
   const invalid = fixture();
   assert.equal((await invalid.exports.PUT(invalid.req({ ...body, expectedRevision: -1 }), invalid.context)).status, 400);
   assert.equal((await invalid.exports.PUT(invalid.req({ ...body, sourceRevision: 'stale' }), invalid.context)).status, 400);
+  assert.equal((await invalid.exports.PUT(invalid.req({ ...body, acceptedPricingRevision: 'stale' }), invalid.context)).status, 400);
   assert.equal(typeof invalid.exports.POST, 'undefined');
 });
 
@@ -141,7 +142,10 @@ test('PUT deleguje kompletny szkic i aktualną rewizję do zapisu', async () => 
   const input = emptyOfferWorkspaceDraft();
   input.description.before = 'Stan obecny';
   const result = await state.exports.PUT(state.req({
-    expectedRevision: 3, sourceRevision: 'a'.repeat(64), input,
+    expectedRevision: 3,
+    sourceRevision: 'a'.repeat(64),
+    acceptedPricingRevision: `pricing-v1-${'c'.repeat(16)}`,
+    input: { ...input, _pricingSnapshot: { revision: 'forged' } },
   }), state.context);
   assert.equal(result.status, 200);
   assert.equal(state.calls[0].value, 'offers.manage');
@@ -149,5 +153,7 @@ test('PUT deleguje kompletny szkic i aktualną rewizję do zapisu', async () => 
   assert.equal(state.calls[1].value.projectId, 'project-1');
   assert.equal(state.calls[1].value.expectedRevision, 3);
   assert.equal(state.calls[1].value.sourceRevision, 'a'.repeat(64));
+  assert.equal(state.calls[1].value.acceptedPricingRevision, `pricing-v1-${'c'.repeat(16)}`);
   assert.equal(state.calls[1].value.input.description.before, 'Stan obecny');
+  assert.equal('_pricingSnapshot' in state.calls[1].value.input, false);
 });

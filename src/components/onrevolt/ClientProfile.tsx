@@ -27,10 +27,11 @@ import {
   Tooltip,
   useColorModeValue,
 } from '@chakra-ui/react';
-import type { TextareaProps } from '@chakra-ui/react';
 import Card from 'components/card/Card';
+import ClientOverview, { type OverviewNote } from 'components/onrevolt/ClientOverview';
+import DeleteProjectButton from 'components/onrevolt/DeleteProjectButton';
+import ClientDetailsForm, { resetClientDetails } from 'components/onrevolt/ClientDetailsForm';
 import OfferDocument from 'components/onrevolt/OfferDocument';
-import InvestmentLocationPicker from 'components/onrevolt/InvestmentLocationPicker';
 import ClientDocumentsPanel from 'components/onrevolt/ClientDocumentsPanel';
 import ClientEnergyWorkspace, { type EnergyWorkspaceSettings } from 'components/onrevolt/ClientEnergyWorkspace';
 import ClientEnergyPv, { useClientEnergyPv } from 'components/onrevolt/ClientEnergyPv';
@@ -77,7 +78,7 @@ import {
   isValidSolisSmartPortFanSettings,
   parseSolisFanTemperatureC,
 } from 'lib/onrevolt/solis-fan';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MdAdd, MdArchive, MdAssignment, MdBuild, MdCheck, MdContentCopy, MdDeleteOutline, MdEdit, MdExpandLess, MdExpandMore, MdOpenInNew, MdPrint, MdRefresh, MdSystemUpdateAlt, MdTroubleshoot, MdUploadFile, MdVpnKey } from 'react-icons/md';
@@ -89,53 +90,51 @@ type ClientProfileProps = {
 const OfferWorkspacePanel = dynamic(() => import('components/onrevolt/OfferWorkspacePanel'), { ssr: false });
 const offerWorkspaceEnabled = process.env.NEXT_PUBLIC_OFFER_WORKSPACE_ENABLED === '1';
 
-function AutoGrowingTextarea({ onInput, rows = 4, value, ...props }: TextareaProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const minHeightRef = useRef(0);
-  const widthRef = useRef(0);
-
-  const resize = useCallback(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    if (!minHeightRef.current) minHeightRef.current = textarea.offsetHeight;
-    textarea.style.height = 'auto';
-    const borderHeight = textarea.offsetHeight - textarea.clientHeight;
-    textarea.style.height = `${Math.max(textarea.scrollHeight + borderHeight, minHeightRef.current)}px`;
-  }, []);
-
-  useLayoutEffect(() => {
-    resize();
-  }, [resize, value]);
-
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea || typeof ResizeObserver === 'undefined') return;
-
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry.contentRect.width === widthRef.current) return;
-      widthRef.current = entry.contentRect.width;
-      resize();
-    });
-    observer.observe(textarea);
-    return () => observer.disconnect();
-  }, [resize]);
-
-  return (
-    <Textarea
-      {...props}
-      ref={textareaRef}
-      value={value}
-      rows={rows}
-      overflowY="hidden"
-      resize="none"
-      onInput={(event) => {
-        onInput?.(event);
-        resize();
-      }}
-    />
-  );
+function offerWorkspaceDraftKey(userId: string, projectId: string): string {
+  return JSON.stringify([userId, projectId]);
 }
+
+type OfferWorkspaceAutoOpenContext = {
+  enabled: boolean;
+  authorized: boolean;
+  projectId: string;
+  userId: string;
+  tabIndex: number;
+  journeyKey: ClientJourneyKey | null;
+};
+
+function isCurrentOfferWorkspaceAutoOpenContext(
+  request: OfferWorkspaceAutoOpenContext,
+  current: OfferWorkspaceAutoOpenContext,
+): boolean {
+  return request.enabled === current.enabled
+    && request.authorized === current.authorized
+    && request.projectId === current.projectId
+    && request.userId === current.userId
+    && request.tabIndex === current.tabIndex
+    && request.journeyKey === current.journeyKey;
+}
+
+function shouldAutoOpenSavedOfferWorkspace(input: {
+  context: OfferWorkspaceAutoOpenContext;
+  responseOk: boolean;
+  payload: unknown;
+}): boolean {
+  const { context } = input;
+  if (!context.enabled || !context.authorized || !context.projectId || !context.userId
+    || context.tabIndex !== 4 || context.journeyKey === 'contract' || !input.responseOk
+    || !input.payload || typeof input.payload !== 'object') return false;
+
+  const envelope = input.payload as {
+    ok?: unknown;
+    data?: { projectId?: unknown; draft?: unknown } | null;
+  };
+  return envelope.ok === true
+    && envelope.data?.projectId === context.projectId
+    && envelope.data.draft !== null
+    && typeof envelope.data.draft === 'object';
+}
+
 
 type CurrentUser = {
   id?: string | null;
@@ -375,7 +374,7 @@ type ActivityRow = {
   title: string;
   body?: string | null;
   occurredAt: string;
-  actor?: { name?: string | null } | null;
+  actor?: { name?: string | null; avatarUrl?: string | null } | null;
 };
 
 const tabs = [
@@ -948,6 +947,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [energyXlsxUploading, setEnergyXlsxUploading] = useState(false);
   const [energyXlsxDragActive, setEnergyXlsxDragActive] = useState(false);
   const energyXlsxInputRef = useRef<HTMLInputElement>(null);
+  const [overviewNoteDrafts, setOverviewNoteDrafts] = useState<Record<string, { title: string; body: string }>>({});
+  const [deletingLegacyNote, setDeletingLegacyNote] = useState(false);
   const [energyMessage, setEnergyMessage] = useState('');
   const [energyError, setEnergyError] = useState('');
   const [storedEnergyProfile, setEnergyProfile] = useState<EnergyUsageProfile | null>(null);
@@ -1020,9 +1021,12 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('projectId') || '');
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [showOfferWorkspace, setShowOfferWorkspace] = useState(offerWorkspaceEnabled && searchParams.get('offerWorkspace') === '1');
+  const [savedOfferWorkspaceDraftKeys, setSavedOfferWorkspaceDraftKeys] = useState<Set<string>>(() => new Set());
+  const [dismissedOfferWorkspaceDraftKeys, setDismissedOfferWorkspaceDraftKeys] = useState<Set<string>>(() => new Set());
   const [activeJourneyKey, setActiveJourneyKey] = useState<ClientJourneyKey | null>(null);
   const [staffUsers, setStaffUsers] = useState<StaffOption[]>([]);
   const [projectCreating, setProjectCreating] = useState(false);
+  const [projectDeleting, setProjectDeleting] = useState(false);
   const [activities, setActivities] = useState<ActivityRow[]>([]);
   const [activityType, setActivityType] = useState('NOTE');
   const [activityTitle, setActivityTitle] = useState('');
@@ -1030,15 +1034,76 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [activitySaving, setActivitySaving] = useState(false);
   const offerSectionRef = useRef<HTMLDivElement>(null);
   const contractSectionRef = useRef<HTMLDivElement>(null);
+  const offerWorkspaceDraftChecks = useRef(new Set<string>());
+  const offerWorkspaceAutoOpenRequest = useRef(0);
   const textColor = useColorModeValue('secondaryGray.900', 'white');
   const mutedColor = useColorModeValue('secondaryGray.600', 'secondaryGray.400');
   const borderColor = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
   const activeProject = client?.projects?.find((item: any) => item.id === selectedProjectId)
     || client?.projects?.[0];
   const activeProjectId = activeProject?.id || '';
+  const isAdmin = currentUser?.systemRole === 'ADMIN';
+  const canManageEnergy = isAdmin || currentUser?.permissions?.includes('energy.manage') === true;
+  const canUseOfferWorkspace = canManageEnergy && (isAdmin || currentUser?.permissions?.includes('offers.manage') === true);
+  const offerWorkspaceAutoOpenContext: OfferWorkspaceAutoOpenContext = {
+    enabled: offerWorkspaceEnabled,
+    authorized: canUseOfferWorkspace,
+    projectId: activeProjectId,
+    userId: currentUser?.id || '',
+    tabIndex: activeTabIndex,
+    journeyKey: activeJourneyKey,
+  };
+  const offerWorkspaceAutoOpenContextKey = JSON.stringify([
+    offerWorkspaceAutoOpenContext.enabled,
+    offerWorkspaceAutoOpenContext.authorized,
+    offerWorkspaceAutoOpenContext.projectId,
+    offerWorkspaceAutoOpenContext.userId,
+    offerWorkspaceAutoOpenContext.tabIndex,
+    offerWorkspaceAutoOpenContext.journeyKey,
+  ]);
+  const offerWorkspaceAutoOpenContextRef = useRef(offerWorkspaceAutoOpenContext);
+  offerWorkspaceAutoOpenContextRef.current = offerWorkspaceAutoOpenContext;
+
+  useEffect(() => {
+    const context = offerWorkspaceAutoOpenContextRef.current;
+    if (!context.enabled || !context.authorized || !context.projectId || !context.userId
+      || context.tabIndex !== 4 || context.journeyKey === 'contract' || showOfferWorkspace) return;
+
+    const checkKey = offerWorkspaceDraftKey(context.userId, context.projectId);
+    if (offerWorkspaceDraftChecks.current.has(checkKey)) return;
+
+    const controller = new AbortController();
+    const requestId = ++offerWorkspaceAutoOpenRequest.current;
+    void fetch(`/api/projects/${encodeURIComponent(context.projectId)}/offer-workspace`, {
+      cache: 'no-store',
+      signal: controller.signal,
+    }).then(async (response) => {
+      const payload: unknown = await response.json();
+      if (controller.signal.aborted || requestId !== offerWorkspaceAutoOpenRequest.current
+        || !isCurrentOfferWorkspaceAutoOpenContext(context, offerWorkspaceAutoOpenContextRef.current)) return;
+
+      const envelope = payload && typeof payload === 'object'
+        ? payload as { ok?: unknown; data?: { projectId?: unknown } | null }
+        : null;
+      if (!response.ok || envelope?.ok !== true || envelope.data?.projectId !== context.projectId) return;
+
+      offerWorkspaceDraftChecks.current.add(checkKey);
+      if (shouldAutoOpenSavedOfferWorkspace({ context, responseOk: response.ok, payload })) {
+        setSavedOfferWorkspaceDraftKeys((current) => new Set(current).add(checkKey));
+      }
+    }).catch(() => undefined);
+
+    return () => {
+      controller.abort();
+      if (offerWorkspaceAutoOpenRequest.current === requestId) offerWorkspaceAutoOpenRequest.current += 1;
+    };
+  }, [offerWorkspaceAutoOpenContextKey, showOfferWorkspace]);
+
   const analysisPeriod = useClientAnalysisPeriod(activeProjectId);
   const analysisStartMonth = analysisPeriod.period?.startMonth;
   const activeEnergyProfileKey = JSON.stringify([activeProjectId, analysisStartMonth || '', analysisRefreshKey]);
+  const activeEnergyProfileKeyRef = useRef(activeEnergyProfileKey);
+  activeEnergyProfileKeyRef.current = activeEnergyProfileKey;
   const energyProfile = energyProfileKey === activeEnergyProfileKey ? storedEnergyProfile : null;
   const analysisFilesKey = JSON.stringify([activeProjectId, analysisPeriod.period?.startMonth, energyAccount.id,
     energyAccount.lastSyncAt, energyAccount.measurementFiles?.map(file => file.id + file.status + file.downloadedAt).join('|'), analysisRefreshKey]);
@@ -1206,8 +1271,11 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   }, [clientId, selectedProjectId]);
 
   const loadEnergyProfile = useCallback(async () => {
-    const requestId = ++energyProfileRequest.current;
     const requestKey = activeEnergyProfileKey;
+    if (requestKey !== activeEnergyProfileKeyRef.current) return;
+    const requestId = ++energyProfileRequest.current;
+    const isCurrentRequest = () => requestId === energyProfileRequest.current
+      && requestKey === activeEnergyProfileKeyRef.current;
     setEnergyProfileLoading(true);
     setEnergyProfile(null);
     setEnergyProfileLoadState({ key: requestKey, status: 'loading' });
@@ -1216,7 +1284,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       if (activeProjectId) params.set('projectId', activeProjectId);
       const response = await fetch(`/api/integrations/enea/profile?${params.toString()}`, { cache: 'no-store' });
       const payload = await response.json();
-      if (requestId !== energyProfileRequest.current) return;
+      if (!isCurrentRequest()) return;
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
 
       const profile = payload.data as EnergyUsageProfile | null;
@@ -1233,14 +1301,14 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
           : profile.months?.[profile.months.length - 1]?.key || ''
       ));
     } catch (e) {
-      if (requestId !== energyProfileRequest.current) return;
+      if (!isCurrentRequest()) return;
       setEnergyProfile(null);
       const message = e instanceof Error ? e.message : String(e);
       setEnergyProfileLoadState({ key: requestKey, status: 'error', error: message });
     } finally {
-      if (requestId === energyProfileRequest.current) setEnergyProfileLoading(false);
+      if (isCurrentRequest()) setEnergyProfileLoading(false);
     }
-  }, [activeEnergyProfileKey, activeProjectId, clientId, analysisStartMonth]);
+  }, [activeEnergyProfileKey, activeProjectId, activeEnergyProfileKeyRef, clientId, analysisStartMonth]);
 
   const loadEnergyTariffCatalog = useCallback(async () => {
     setEnergyTariffCatalogLoading(true);
@@ -1331,6 +1399,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
   function selectProject(projectId: string) {
     const project = client?.projects?.find((item: any) => item.id === projectId);
+    offerWorkspaceAutoOpenRequest.current += 1;
+    setShowOfferWorkspace(false);
     setSelectedProjectId(projectId);
     setForm(formFromClient(client, project));
     setEnergyAccount(energyAccountFromClient(client, projectId));
@@ -1338,6 +1408,26 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       ...energyDataSettingsFromClient(client, project),
       ...(energyPvSourceProjectRef.current === projectId ? { existingPvKw: current.existingPvKw } : {}),
     }));
+  }
+
+  function openOfferWorkspace() {
+    offerWorkspaceAutoOpenRequest.current += 1;
+    if (activeProjectId) {
+      setDismissedOfferWorkspaceDraftKeys((current) => {
+        const next = new Set(current);
+        next.delete(activeOfferWorkspaceDraftKey);
+        return next;
+      });
+    }
+    setShowOfferWorkspace(true);
+  }
+
+  function closeOfferWorkspace() {
+    offerWorkspaceAutoOpenRequest.current += 1;
+    setShowOfferWorkspace(false);
+    if (activeProjectId) {
+      setDismissedOfferWorkspaceDraftKeys((current) => new Set(current).add(activeOfferWorkspaceDraftKey));
+    }
   }
 
   async function createProject() {
@@ -1390,6 +1480,58 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     } finally {
       setActivitySaving(false);
     }
+  }
+
+  async function addOverviewNote(input: { title: string; body: string }) {
+    const response = await fetch('/api/activities', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...input, type: 'NOTE', clientId, projectId: activeProject?.id }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || 'Nie udało się zapisać notatki.');
+    setActivities(current => [payload.data, ...current.filter(item => item.id !== payload.data.id)]);
+  }
+
+  async function editOverviewNote(note: OverviewNote, input: { title: string; body: string }) {
+    const legacy = note.id === 'legacy-client-note';
+    if (legacy && (saving || form.notes !== note.body)) {
+      throw new Error('Najpierw zakończ zapisywanie lub wycofaj niezapisane zmiany danych klienta.');
+    }
+    if (legacy) setDeletingLegacyNote(true);
+    try {
+      const response = await fetch(`/api/activities/${encodeURIComponent(note.id)}?clientId=${encodeURIComponent(clientId)}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...input, expectedTitle: note.title, expectedBody: note.body ?? null }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || 'Nie udało się zapisać notatki.');
+      if (legacy) {
+        setClient((current: any) => current ? { ...current, notes: payload.data.body } : current);
+        setForm(current => current.notes === note.body ? { ...current, notes: payload.data.body } : current);
+      } else setActivities(current => current.map(item => item.id === note.id ? payload.data : item));
+    } finally { if (legacy) setDeletingLegacyNote(false); }
+  }
+
+  async function deleteOverviewNote(note: OverviewNote) {
+    if (note.id === 'legacy-client-note' && saving) {
+      throw new Error('Trwa zapisywanie danych klienta. Poczekaj na zakończenie zapisu.');
+    }
+    if (note.id === 'legacy-client-note' && form.notes !== note.body) {
+      throw new Error('Notatka ma niezapisane zmiany w Danych klienta. Najpierw zapisz lub wycofaj jej edycję.');
+    }
+    if (note.id === 'legacy-client-note') setDeletingLegacyNote(true);
+    try {
+      const response = await fetch(`/api/activities/${encodeURIComponent(note.id)}?clientId=${encodeURIComponent(clientId)}`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expectedBody: note.body || '' }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || 'Nie udało się usunąć notatki.');
+      if (note.id === 'legacy-client-note') {
+        setClient((current: any) => current ? { ...current, notes: null } : current);
+        setForm(current => current.notes === note.body ? { ...current, notes: '' } : current);
+      } else setActivities(current => current.filter(item => item.id !== note.id));
+    } finally { if (note.id === 'legacy-client-note') setDeletingLegacyNote(false); }
   }
 
   function selectStage(stageId: string) {
@@ -1524,6 +1666,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setEnergyOverviewSaving(true);
     setEnergyOverviewError('');
     setEnergyOverviewMessage('');
+    let auditSaved = false;
     try {
       const auditResponse = await fetch('/api/energy-audits', {
         method: 'POST',
@@ -1537,7 +1680,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       if (!auditResponse.ok || !auditPayload.ok) {
         throw new Error(auditPayload.message || auditPayload.error || `HTTP ${auditResponse.status}`);
       }
-      setAnalysisRefreshKey(value => value + 1);
+      auditSaved = true;
 
       const accountResponse = await fetch('/api/crm/clients/energy-account', {
         method: 'POST',
@@ -1573,12 +1716,13 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       setEnergyAccount(energyAccountFromRecord(accountPayload.data));
       window.dispatchEvent(new Event('client-tariffs-changed'));
       setEnergyOverviewMessage('Zapisano dane do oferty.');
-      await Promise.all([load(true), loadEnergyProfile()]);
+      await load(true);
       return true;
     } catch (e) {
       setEnergyOverviewError(e instanceof Error ? e.message : String(e));
       return false;
     } finally {
+      if (auditSaved) setAnalysisRefreshKey(value => value + 1);
       setEnergyOverviewSaving(false);
     }
   }
@@ -1599,6 +1743,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setEnergyDataSaving(true);
     setEnergyDataError('');
     setEnergyDataMessage('');
+    let auditSaved = false;
     try {
       const response = await fetch('/api/energy-audits', {
         method: 'POST',
@@ -1610,6 +1755,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       energyPv.saved(payload.pvRevision);
       setEnergyDeclarationRetryAllowed(payload.reDeclarationSync?.retryAllowed === true);
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+      auditSaved = true;
 
       setEnergyDataSettings((current) => ({
         ...current,
@@ -1621,16 +1767,17 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
           : payload.data.annualConsumptionKwh == null ? current.annualConsumptionKwh : String(payload.data.annualConsumptionKwh),
       }));
       setEnergyDataMessage('Zapisano źródła danych o zużyciu.');
-      setAnalysisRefreshKey(value => value + 1);
-      await Promise.all([load(true), loadEnergyProfile()]);
+      await load(true);
     } catch (e) {
       setEnergyDataError(e instanceof Error ? e.message : String(e));
     } finally {
+      if (auditSaved) setAnalysisRefreshKey(value => value + 1);
       setEnergyDataSaving(false);
     }
   }
 
   async function saveClient() {
+    if (deletingLegacyNote) return;
     setSaving(true);
     setSaveError('');
     try {
@@ -1648,7 +1795,6 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
           taxId: form.taxId,
           clientProblem: form.clientProblem,
           expectedResult: form.expectedResult,
-          notes: form.notes,
           contact: {
             email: form.email,
             phone: form.phone,
@@ -2065,9 +2211,13 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const stationNumber = form.dashboardStationNumber.trim();
   const hasStationAssociation = Boolean(stationToken || stationNumber);
   const stationIdentityLocked = Boolean(stationToken && stationNumber);
-  const isAdmin = currentUser?.systemRole === 'ADMIN';
-  const canManageEnergy = isAdmin || currentUser?.permissions?.includes('energy.manage') === true;
-  const canUseOfferWorkspace = canManageEnergy && (isAdmin || currentUser?.permissions?.includes('offers.manage') === true);
+  const activeOfferWorkspaceDraftKey = offerWorkspaceDraftKey(offerWorkspaceAutoOpenContext.userId, activeProjectId);
+  const autoOpenSavedOfferWorkspace = offerWorkspaceEnabled && canUseOfferWorkspace
+    && activeTabIndex === 4 && activeJourneyKey !== 'contract'
+    && savedOfferWorkspaceDraftKeys.has(activeOfferWorkspaceDraftKey)
+    && !dismissedOfferWorkspaceDraftKeys.has(activeOfferWorkspaceDraftKey);
+  const isOfferWorkspaceOpen = showOfferWorkspace || autoOpenSavedOfferWorkspace;
+
   const canEditStationIdentity = isAdmin || !stationIdentityLocked;
   const stationActionLabel = hasStationAssociation ? 'Uzupełnij z RE' : 'Utwórz stację';
   const selectedUsageMonth = energyProfile?.months?.find((month) => month.key === selectedEnergyProfileMonth)
@@ -2734,7 +2884,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                 value={project.id || ''}
                 onChange={(event) => selectProject(event.target.value)}
                 aria-label="Aktywny projekt"
-                isDisabled={energyProfileSyncing || energyXlsxUploading || energySyncing || energyOverviewSaving || energyDataSaving || Boolean(energyMonthAction)}
+                isDisabled={projectDeleting || projectCreating || energyProfileSyncing || energyXlsxUploading || energySyncing || energyOverviewSaving || energyDataSaving || Boolean(energyMonthAction)}
               >
                 {(client.projects || []).map((item: any) => (
                   <option key={item.id} value={item.id}>{item.title}</option>
@@ -2748,9 +2898,20 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                   variant="outline"
                   onClick={createProject}
                   isLoading={projectCreating}
-                  isDisabled={energyProfileSyncing || energyXlsxUploading || energySyncing || energyOverviewSaving || energyDataSaving || Boolean(energyMonthAction)}
+                  isDisabled={projectDeleting || energyProfileSyncing || energyXlsxUploading || energySyncing || energyOverviewSaving || energyDataSaving || Boolean(energyMonthAction)}
                 />
               </Tooltip>
+              {isAdmin && project.id ? <DeleteProjectButton key={project.id} project={project} clientId={clientId}
+                disabled={saving || projectCreating || energyProfileSyncing || energyXlsxUploading || energySyncing || energyOverviewSaving || energyDataSaving || Boolean(energyMonthAction)}
+                onBusyChange={setProjectDeleting}
+                onDeleted={async () => {
+                  offerWorkspaceAutoOpenRequest.current += 1;
+                  setShowOfferWorkspace(false);
+                  setActiveTabIndex(0);
+                  setActiveJourneyKey(null);
+                  setSaveError('');
+                  await load();
+                }} /> : null}
             </Flex>
             <Flex gap="8px" wrap="wrap" mb="12px">
               <Badge colorScheme="purple">Klient: {clientTypeLabel(client.clientType)}</Badge>
@@ -2763,7 +2924,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
             <Badge colorScheme={project.status === 'ZAKONCZONY' ? 'green' : 'blue'} px="12px" py="6px" borderRadius="8px">
               {projectStatus}
             </Badge>
-            <Button colorScheme="purple" onClick={saveClient} isLoading={saving}>
+            <Button colorScheme="purple" onClick={saveClient} isLoading={saving} isDisabled={deletingLegacyNote || projectDeleting}>
               Zapisz zmiany
             </Button>
           </Flex>
@@ -2846,153 +3007,46 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
         </TabList>
         <TabPanels>
           <TabPanel px="0">
-            <SimpleGrid columns={{ base: 1, xl: 3 }} gap="20px">
-              <Card p="20px"><Text color={mutedColor}>Telefon</Text><Text color={textColor} fontWeight="800">{contact.phone || '-'}</Text></Card>
-              <Card p="20px"><Text color={mutedColor}>Email</Text><Text color={textColor} fontWeight="800">{contact.email || '-'}</Text></Card>
-              <Card p="20px"><Text color={mutedColor}>Adres inwestycji</Text><Text color={textColor} fontWeight="800">{site.fullAddress || site.addressLine || contact.investmentAddress || project.locationAddress || '-'}</Text></Card>
-            </SimpleGrid>
-            <Card p="20px" mt="20px">
-              <Text color={mutedColor} mb="6px">Status projektu</Text>
-              <Badge colorScheme={project.status === 'ZAKONCZONY' ? 'green' : 'blue'} px="12px" py="6px" borderRadius="8px">
-                {projectStatus}
-              </Badge>
-              <Text color={mutedColor} mt="18px" mb="6px">Notatki</Text>
-              <Text color={textColor} whiteSpace="pre-wrap">{form.notes || 'Brak notatek'}</Text>
-            </Card>
+            <ClientOverview
+              noteDraft={overviewNoteDrafts[`${clientId}:${activeProject?.id || ''}`] || { title: '', body: '' }}
+              onNoteDraftChange={draft => setOverviewNoteDrafts(current => ({ ...current, [`${clientId}:${activeProject?.id || ''}`]: draft }))}
+              key={`${clientId}:${project.id || ''}`}
+              name={client?.displayName || form.displayName}
+              phone={contact.phone} email={contact.email}
+              investmentAddress={site.fullAddress || [site.addressLine, [site.postalCode, site.city].filter(Boolean).join(' ')].filter(Boolean).join(', ') || contact.investmentAddress || project.locationAddress}
+              correspondenceAddress={[contact.addressLine, [contact.postalCode, contact.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')}
+              registeredAt={client?.createdAt} owner={project.owner}
+              notes={[
+                ...activities.filter(item => item.type === 'NOTE'),
+                ...(client?.notes?.trim() ? [{ id: 'legacy-client-note', title: 'Notatka ogólna', body: client.notes }] : []),
+              ]}
+              tasks={clientTasks}
+              canWrite={isAdmin || currentUser?.permissions?.includes('crm.write') === true}
+              onOpenClient={() => selectPrimaryTab(1)} onOpenTasks={() => selectPrimaryTab(2)}
+              onAddNote={addOverviewNote} onEditNote={editOverviewNote} onDeleteNote={deleteOverviewNote}
+            />
           </TabPanel>
           <TabPanel px="0">
-            <Flex direction="column" gap="20px">
-              <Card p="22px">
-              <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px">
-                <FormControl isRequired>
-                  <FormLabel>Nazwa / imię i nazwisko</FormLabel>
-                  <Input value={form.displayName} onChange={(event) => updateForm('displayName', event.target.value)} />
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Typ relacji klienta</FormLabel>
-                  <Select value={form.clientType} onChange={(event) => updateForm('clientType', event.target.value)}>
-                    {clientTypeOptions.map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </Select>
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Telefon</FormLabel>
-                  <Input value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} />
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Email</FormLabel>
-                  <Input value={form.email} onChange={(event) => updateForm('email', event.target.value)} />
-                </FormControl>
-                <FormControl>
-                  <FormLabel>NIP</FormLabel>
-                  <Input value={form.taxId} onChange={(event) => updateForm('taxId', event.target.value)} />
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Adres korespondencyjny</FormLabel>
-                  <Input value={form.addressLine} onChange={(event) => updateForm('addressLine', event.target.value)} />
-                </FormControl>
-                <Flex gap="12px">
-                  <FormControl>
-                    <FormLabel>Kod</FormLabel>
-                    <Input value={form.postalCode} onChange={(event) => updateForm('postalCode', event.target.value)} />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Miasto</FormLabel>
-                    <Input value={form.city} onChange={(event) => updateForm('city', event.target.value)} />
-                  </FormControl>
-                </Flex>
-                <InvestmentLocationPicker
-                  address={form.investmentAddress}
-                  latitude={form.latitude}
-                  longitude={form.longitude}
-                  mapProvider={form.mapProvider}
-                  onAddressChange={updateInvestmentAddress}
-                  onMapProviderChange={(value) => updateForm('mapProvider', value)}
-                  onSelect={(result) => setForm((current) => ({
-                    ...current,
-                    investmentAddress: result.address,
-                    latitude: String(result.latitude),
-                    longitude: String(result.longitude),
-                  }))}
-                />
-              </SimpleGrid>
-              <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px" mt="16px">
-                <FormControl>
-                  <FormLabel>Problematyka klienta</FormLabel>
-                  <AutoGrowingTextarea
-                    value={form.clientProblem}
-                    onChange={(event) => updateForm('clientProblem', event.target.value)}
-                  />
-                </FormControl>
-                <FormControl>
-                  <FormLabel>Oczekiwany rezultat</FormLabel>
-                  <AutoGrowingTextarea
-                    value={form.expectedResult}
-                    onChange={(event) => updateForm('expectedResult', event.target.value)}
-                  />
-                </FormControl>
-              </SimpleGrid>
-              <FormControl mt="16px">
-                <FormLabel>Notatki</FormLabel>
-                <Textarea value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} rows={4} />
-              </FormControl>
-              </Card>
-              <Card p="22px">
-                <Box mb="16px">
-                  <Text color={textColor} fontSize="lg" fontWeight="800">Projekt i etap procesu</Text>
-                  <Text color={mutedColor}>Dane operacyjne aktywnego projektu klienta.</Text>
-                </Box>
-                <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px">
-                  <FormControl>
-                    <FormLabel>Nazwa projektu</FormLabel>
-                    <Input value={form.projectTitle} onChange={(event) => updateForm('projectTitle', event.target.value)} />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Typ projektu</FormLabel>
-                    <Select value={form.projectClientType} onChange={(event) => updateForm('projectClientType', event.target.value)}>
-                      {clientTypeOptions.map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Status projektu</FormLabel>
-                    <Input value={projectStatusLabel(form.status)} isReadOnly />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Etap</FormLabel>
-                    <Select value={form.stageId} onChange={(event) => selectStage(event.target.value)}>
-                      <option value="">Brak etapu</option>
-                      {stages.map((stage) => (
-                        <option key={stage.id} value={stage.id}>{stage.name}</option>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Właściciel projektu</FormLabel>
-                    <Select value={form.ownerId} onChange={(event) => updateForm('ownerId', event.target.value)}>
-                      <option value="">Nieprzypisany</option>
-                      {staffUsers.map((user) => (
-                        <option key={user.id} value={user.id}>{user.name}</option>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Następne działanie</FormLabel>
-                    <Input value={form.nextActionTitle} onChange={(event) => updateForm('nextActionTitle', event.target.value)} />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Termin następnego działania</FormLabel>
-                    <Input type="datetime-local" value={form.nextActionAt} onChange={(event) => updateForm('nextActionAt', event.target.value)} />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Adres inwestycji projektu</FormLabel>
-                    <Input value={form.investmentAddress} onChange={(event) => updateInvestmentAddress(event.target.value)} />
-                  </FormControl>
-                </SimpleGrid>
-              </Card>
-            </Flex>
+            <ClientDetailsForm
+              values={form}
+              registeredAt={client?.createdAt}
+              origin={project.source === 'manual' ? 'Wprowadzony ręcznie' : project.source || ''}
+              statusLabel={projectStatusLabel(form.status)}
+              clientTypes={clientTypeOptions}
+              staff={staffUsers}
+              stages={stages}
+              saving={saving}
+              disabled={deletingLegacyNote}
+              onChange={updateForm}
+              onStageChange={selectStage}
+              onAddressChange={updateInvestmentAddress}
+              onLocationSelect={result => setForm(current => ({
+                ...current, investmentAddress: result.address,
+                latitude: String(result.latitude), longitude: String(result.longitude),
+              }))}
+              onSave={saveClient}
+              onCancel={() => setForm(current => resetClientDetails(current, formFromClient(client, activeProject)))}
+            />
           </TabPanel>
           {tabs.slice(2).map((tab) => {
             if (tab === 'Zadania') {
@@ -3414,7 +3468,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                 );
               }
 
-              if (offerWorkspaceEnabled && canUseOfferWorkspace && showOfferWorkspace && project?.id) {
+              if (offerWorkspaceEnabled && canUseOfferWorkspace && isOfferWorkspaceOpen && project?.id) {
                 return (
                   <TabPanel key={tab} px="0">
                     <OfferWorkspacePanel
@@ -3422,7 +3476,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       projectId={project.id}
                       actorId={currentUser?.id || undefined}
                       canEdit={canUseOfferWorkspace}
-                      onBack={() => setShowOfferWorkspace(false)}
+                      onBack={closeOfferWorkspace}
                     />
                   </TabPanel>
                 );
@@ -3433,7 +3487,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                   <Flex direction="column" gap="20px">
                     {offerWorkspaceEnabled && canUseOfferWorkspace && project?.id ? (
                       <Flex justify="flex-end">
-                        <Button leftIcon={<MdEdit />} variant="outline" onClick={() => setShowOfferWorkspace(true)}>
+                        <Button leftIcon={<MdEdit />} variant="outline" onClick={openOfferWorkspace}>
                           Nowy kreator oferty
                         </Button>
                       </Flex>
@@ -3969,7 +4023,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                               {stationActionLabel}
                             </Button>
                           ) : null}
-                          <Button colorScheme="purple" onClick={saveClient} isLoading={saving}>
+                          <Button colorScheme="purple" onClick={saveClient} isLoading={saving} isDisabled={deletingLegacyNote}>
                             Zapisz powiązanie
                           </Button>
                         </Flex>
@@ -4657,7 +4711,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       if (!await saveEnergyOverview(true)) return;
                       setActiveTabIndex(4);
                       setActiveJourneyKey('offer');
-                      if (offerWorkspaceEnabled) setShowOfferWorkspace(true);
+                      if (offerWorkspaceEnabled) openOfferWorkspace();
                     } : undefined}
                     alerts={<>
                       {energyOverviewError && <Alert status="error"><AlertIcon />{energyOverviewError}</Alert>}

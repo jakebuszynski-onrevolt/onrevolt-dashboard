@@ -96,6 +96,12 @@ export async function POST(req: NextRequest) {
 
     const client = await prisma.client.findUnique({ where: { id: clientId }, select: { id: true } });
     if (!client) return notFound('Nie znaleziono klienta');
+    if (projectId) {
+      const project = await prisma.project.findFirst({
+        where: { ...offerWorkspaceProjectWhere(projectId, access.user), clientId }, select: { id: true },
+      });
+      if (!project) return notFound('Nie znaleziono projektu klienta');
+    }
 
     const password = optionalString(body, 'password');
     const clearPassword = body.clearPassword === true;
@@ -115,12 +121,14 @@ export async function POST(req: NextRequest) {
     if (clearPassword) data.encryptedPassword = null;
 
     const existing = id
-      ? await prisma.energyPortalAccount.findUnique({ where: { id }, select: { id: true } })
+      ? await prisma.energyPortalAccount.findFirst({ where: { id, clientId, projectId: projectId ?? null }, select: { id: true } })
       : await prisma.energyPortalAccount.findFirst({
-        where: { clientId, operator: operator as any },
+        where: { clientId, projectId: projectId ?? null, operator: operator as any },
         select: { id: true },
         orderBy: { updatedAt: 'desc' },
       });
+
+    if (id && !existing) return notFound('Nie znaleziono konta operatora w tym projekcie. Odśwież dane.');
 
     const account = existing
       ? await prisma.energyPortalAccount.update({

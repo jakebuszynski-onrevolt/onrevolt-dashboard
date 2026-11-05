@@ -42,6 +42,7 @@ function fixture(options: {
   jobRevision?: string;
   jobStatus?: 'running' | 'completed' | 'failed';
   jobPricesAsOf?: string;
+  jobResult?: Record<string, unknown>;
   freshnessUnverified?: boolean;
   jobOwner?: string;
   jobProject?: string;
@@ -112,8 +113,9 @@ function fixture(options: {
         getForActorProjectPersistent: async (id: string, actorId: string, projectId: string, freshness?: any) => {
           calls.push({ operation: 'lookup-persistent', value: { id, actorId, projectId } });
           if (id !== job.id || actorId !== (options.jobOwner ?? 'staff') || projectId !== (options.jobProject ?? 'project-1')) return null;
+          const result = options.jobResult ?? calculation;
           const view = { ...job, data: job.status === 'completed'
-            ? { ...calculation, pricesAsOf: options.jobPricesAsOf ?? calculation.pricesAsOf } : undefined,
+            ? { ...result, pricesAsOf: options.jobPricesAsOf ?? result.pricesAsOf ?? calculation.pricesAsOf } : undefined,
             dependencyContext: {
               targetOperatorId: draft.targetOperatorId, targetTariffId: draft.targetTariffId,
               currentSettlement: draft.currentSettlement, targetSettlement: draft.targetSettlement,
@@ -225,6 +227,25 @@ test('GET preserves authorized job status on source conflict but withholds stale
   assert.equal(completedBody.job.stale, true);
   assert.equal(completedBody.job.data, undefined);
 
+  const blockedResult = {
+    ...calculation,
+    status: 'blocked',
+    reasons: ['Brak pełnego godzinowego profilu energii do symulacji.'],
+  };
+  const currentBlocked = fixture({ jobStatus: 'completed', jobResult: blockedResult });
+  const currentBlockedResponse = await currentBlocked.exports.GET(currentBlocked.request('GET', undefined, '?jobId=job-1'), currentBlocked.context);
+  const currentBlockedBody = await currentBlockedResponse.json();
+  assert.equal(currentBlockedBody.job.stale, undefined);
+  assert.equal(currentBlockedBody.job.data.status, 'blocked');
+  assert.deepEqual(currentBlockedBody.job.data.reasons, blockedResult.reasons);
+
+  const staleBlocked = fixture({ jobStatus: 'completed', jobResult: blockedResult, freshnessUnverified: true });
+  const staleBlockedResponse = await staleBlocked.exports.GET(staleBlocked.request('GET', undefined, '?jobId=job-1'), staleBlocked.context);
+  const staleBlockedBody = await staleBlockedResponse.json();
+  assert.equal(staleBlockedBody.job.stale, true);
+  assert.equal(staleBlockedBody.job.data, undefined);
+  assert.deepEqual(staleBlockedBody.job.blockedReasons, blockedResult.reasons);
+
   const completed = fixture({ jobStatus: 'completed', persistedDraft: { ...draft, targetOperatorId: 99, targetTariffId: 100 } });
   const status = await completed.exports.GET(completed.request('GET', undefined, '?jobId=job-1'), completed.context);
   assert.equal(status.status, 200);
@@ -240,6 +261,7 @@ test('GET preserves authorized job status on source conflict but withholds stale
   const oldPricesBody = await oldPricesResponse.json();
   assert.equal(oldPricesBody.job.stale, true);
   assert.equal(oldPricesBody.job.data, undefined);
+  assert.equal(oldPricesBody.job.blockedReasons, undefined, 'freshness failure must not expose a usable result');
 
   const restarted = fixture({ jobStatus: 'completed', freshnessUnverified: true });
   const restartedResponse = await restarted.exports.GET(restarted.request('GET', undefined, '?jobId=job-1'), restarted.context);
@@ -247,6 +269,7 @@ test('GET preserves authorized job status on source conflict but withholds stale
   assert.equal(restartedBody.job.status, 'completed');
   assert.equal(restartedBody.job.stale, true);
   assert.equal(restartedBody.job.data, undefined);
+  assert.equal(restartedBody.job.blockedReasons, undefined);
 });
 
 test('GET returns the same not-found response for unknown jobs and jobs owned by another actor or project', async () => {

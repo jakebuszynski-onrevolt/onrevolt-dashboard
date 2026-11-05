@@ -8,6 +8,8 @@ import {
 } from 'lib/onrevolt/offer-workspace-server';
 import { parseOfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
 import { renderOfferWorkspaceDocument } from 'lib/onrevolt/offer-workspace-document';
+import { attachOfferWorkspaceDocumentMap } from 'lib/onrevolt/offer-workspace-document-assets';
+import { loadOfferDocumentTariffLabels } from 'lib/onrevolt/offer-workspace-document-context';
 import { calculateOfferWorkspaceEnergy } from 'lib/onrevolt/offer-workspace-energy-server';
 import { findCompletedOfferCalculationPersistent } from 'lib/onrevolt/offer-workspace-calculation-jobs';
 import { loadOfferCalculationDependencyStamp } from 'lib/onrevolt/offer-workspace-calculation-server';
@@ -90,8 +92,14 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     const calculation = await findCompletedOfferCalculationPersistent({
       actorId: String(access.user.id), projectId: id, sourceRevision: workspace.revision, draft, pricesAsOf, sourceDependencyStamp,
     });
+    let tariffLabels;
+    let tariffLabelIssue = '';
+    try { tariffLabels = await loadOfferDocumentTariffLabels(workspace, draft); }
+    catch { tariffLabelIssue = 'Nie udało się odczytać nazw taryf. Ponów podgląd dokumentu.'; }
     const document = renderOfferWorkspaceDocument({ ...workspace, energy, calculation: calculation ?? undefined }, draft,
-      { templateKey: 'REFORM_B2C/2026_10_V4' });
+      { templateKey: 'REFORM_B2C/2026_10_V4', tariffLabels });
+    await attachOfferWorkspaceDocumentMap(document, workspace);
+    if (tariffLabelIssue) document.limitations.push(tariffLabelIssue);
     if (energyIssue) document.limitations.push(energyIssue);
     if (body.format === 'pdf-draft') {
       if (energyIssue) return jsonResponse({ ok: false, error: `Nie można przygotować PDF: ${energyIssue}` }, { status: 422 });

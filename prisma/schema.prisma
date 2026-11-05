@@ -943,6 +943,9 @@ model ConfigurationTemplateItem {
   purchaseVatRate  Decimal?                    @db.Decimal(5, 4)
   operatingCostNet Decimal?                    @db.Decimal(12, 2)
   marginRate       Decimal?                    @db.Decimal(5, 4)
+  pricingMode      String                      @default("LEGACY") @db.VarChar(16)
+  operatingCostBasis String                    @default("PER_LINE") @db.VarChar(16)
+  catalogPriceId   String?
   saleVatRate      Decimal?                    @db.Decimal(5, 4)
   isOptional       Boolean                     @default(false)
   requiresReview   Boolean                     @default(false)
@@ -1006,6 +1009,9 @@ model ConfigurationItem {
   purchaseVatRate          Decimal                     @db.Decimal(5, 4)
   operatingCostNet         Decimal                     @db.Decimal(12, 2)
   marginRate               Decimal                     @db.Decimal(5, 4)
+  pricingMode              String                      @default("LEGACY") @db.VarChar(16)
+  operatingCostBasis       String                      @default("PER_LINE") @db.VarChar(16)
+  catalogPriceId           String?
   saleVatRate              Decimal                     @db.Decimal(5, 4)
   saleNet                  Decimal                     @db.Decimal(12, 2)
   saleGross                Decimal                     @db.Decimal(12, 2)

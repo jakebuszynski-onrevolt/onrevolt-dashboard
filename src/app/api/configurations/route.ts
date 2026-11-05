@@ -8,7 +8,11 @@ import {
   resolveSaleVatRate,
 } from 'lib/onrevolt/configuration-vat';
 import { configurationDeleteBlockReason, configurationEditBlockReason } from 'lib/onrevolt/configuration-lifecycle';
-import { configurationInvestmentScope, resolveTemplateItemCosts } from 'lib/onrevolt/configuration-templates';
+import {
+  configurationInvestmentScope,
+  resolveTemplateItemCosts,
+  resolveTemplateItemSaleVat,
+} from 'lib/onrevolt/configuration-templates';
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import {
   badRequest,
@@ -35,19 +39,21 @@ const configurationInclude = {
   _count: { select: { offers: true, offerLinks: true, installations: true, stockReservations: true } },
 } as const;
 
-const templateWorkspaceInclude = {
-  items: {
-    include: {
-      product: {
-        include: {
-          prices: { orderBy: { validFrom: 'desc' as const }, take: 1 },
+function templateWorkspaceInclude(asOf = new Date()) {
+  return {
+    items: {
+      include: {
+        product: {
+          include: {
+            prices: { where: { validFrom: { lte: asOf } }, orderBy: { validFrom: 'desc' as const }, take: 1 },
+          },
         },
       },
+      orderBy: { position: 'asc' as const },
     },
-    orderBy: { position: 'asc' as const },
-  },
-  _count: { select: { configs: true } },
-} as const;
+    _count: { select: { configs: true } },
+  } as const;
+}
 
 function optionalNumber(value: unknown) {
   if (value == null || value === '') return undefined;
@@ -77,9 +83,119 @@ function lineInputFromItem(item: Record<string, any>, saleVatMode: Configuration
     operatingCostNet: Number(item.operatingCostNet || 0),
     marginRate: Number(item.marginRate || 0),
     saleVatRate: resolveSaleVatRate(saleVatMode, Number(item.saleVatRate || 0)),
+    operatingCostBasis: item.operatingCostBasis || (item.pricingMode === 'LEGACY' ? 'PER_LINE' : 'PER_UNIT'),
     includeVatSurplus: item.includeVatSurplus !== false,
     forcedSaleNet: item.forcedSaleNet == null || item.forcedSaleNet === '' ? undefined : Number(item.forcedSaleNet),
+  } as Parameters<typeof calculateConfigurationLine>[0] & { operatingCostBasis?: string };
+}
+
+class CatalogPriceChangedError extends Error {}
+
+function pricingModeForItem(item: Record<string, any>) {
+  const mode = item.pricingMode || (item.productId ? 'CATALOG' : 'INDIVIDUAL');
+  if (!['CATALOG', 'INDIVIDUAL', 'LEGACY'].includes(mode)) throw new Error('Nieprawidłowe źródło ceny pozycji');
+  return mode;
+}
+
+function operatingCostBasisForItem(item: Record<string, any>, pricingMode = pricingModeForItem(item)) {
+  if (pricingMode === 'CATALOG') return 'PER_UNIT';
+  return item.operatingCostBasis || (pricingMode === 'LEGACY' ? 'PER_LINE' : 'PER_UNIT');
+}
+
+function costsFromCatalog(item: Record<string, any>, product: any, inheritItemSaleVat = true) {
+  const price = product?.prices?.[0];
+  const label = item.description || product?.name || 'pozycja bez nazwy';
+  if (!product || !price) throw new Error(`Brak aktualnej ceny katalogowej: ${label}`);
+  const resolved = resolveTemplateItemCosts({
+    ...item,
+    product,
+    productId: product.id,
+    pricingMode: 'CATALOG',
+    operatingCostBasis: 'PER_UNIT',
+  });
+  return {
+    ...resolved,
+    saleVatRate: inheritItemSaleVat
+      ? resolveTemplateItemSaleVat({ ...item, product, productId: product.id, pricingMode: 'CATALOG' })
+      : Number(item.saleVatRate || 0),
   };
+}
+
+function costsFromTemplate(item: Record<string, any>, saleVatMode: ConfigurationVatMode) {
+  const pricingMode = pricingModeForItem(item);
+  const operatingCostBasis = operatingCostBasisForItem(item, pricingMode);
+  const costs = pricingMode === 'CATALOG'
+    ? costsFromCatalog(item, item.product, saleVatMode === 'MIXED')
+    : resolveTemplateItemCosts({ ...item, pricingMode, operatingCostBasis });
+  return {
+    ...item,
+    ...costs,
+    pricingMode,
+    operatingCostBasis: costs.operatingCostBasis || operatingCostBasis,
+    saleVatRate: saleVatMode === 'MIXED'
+      ? resolveTemplateItemSaleVat({ ...item, pricingMode })
+      : item.saleVatRate,
+  };
+}
+
+async function resolveConfigurationItemPricing(
+  rawItems: Record<string, any>[],
+  existingItems: Array<Record<string, any>> = [],
+  saleVatMode: ConfigurationVatMode = 'MIXED',
+) {
+  const productIds = Array.from(new Set(rawItems
+    .filter((item) => pricingModeForItem(item) === 'CATALOG' && typeof item.productId === 'string' && item.productId)
+    .map((item) => item.productId as string)));
+  const products = productIds.length
+    ? await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      include: { prices: { where: { validFrom: { lte: new Date() } }, orderBy: { validFrom: 'desc' }, take: 1 } },
+    })
+    : [];
+  const productsById = new Map(products.map((product) => [product.id, product]));
+  const existingById = new Map(existingItems.map((item) => [item.id, item]));
+
+  return rawItems.map((item) => {
+    const pricingMode = pricingModeForItem(item);
+    const operatingCostBasis = operatingCostBasisForItem(item, pricingMode);
+    if (pricingMode !== 'CATALOG') {
+      return { ...item, pricingMode, operatingCostBasis, catalogPriceId: null };
+    }
+
+    const existing = typeof item.id === 'string' ? existingById.get(item.id) : undefined;
+    const canPreserveSavedPrice = existing
+      && existing.productId === item.productId
+      && existing.pricingMode === 'CATALOG'
+      && item._recalculateCatalogPrice !== true;
+    if (canPreserveSavedPrice) {
+      let saleVatRate = existing.saleVatRate;
+      if (saleVatMode === 'MIXED' && item._previewCatalogSaleVat === true) {
+        const product = productsById.get(item.productId);
+        const currentPriceId = product?.prices?.[0]?.id;
+        if (!currentPriceId || currentPriceId !== existing.catalogPriceId) {
+          throw new CatalogPriceChangedError(`Cena katalogowa pozycji „${item.description || 'bez nazwy'}” zmieniła się. Odśwież podgląd przed zapisem.`);
+        }
+        saleVatRate = resolveTemplateItemSaleVat({ ...item, product, pricingMode: 'CATALOG' });
+      }
+      return {
+        ...item,
+        unitPurchaseNet: existing.unitPurchaseNet,
+        purchaseVatRate: existing.purchaseVatRate,
+        operatingCostNet: existing.operatingCostNet,
+        marginRate: existing.marginRate,
+        saleVatRate,
+        pricingMode: 'CATALOG',
+        operatingCostBasis: existing.operatingCostBasis,
+        catalogPriceId: existing.catalogPriceId,
+      };
+    }
+
+    const costs = costsFromCatalog(item, productsById.get(item.productId), saleVatMode === 'MIXED');
+    if (item._requireCurrentCatalogPrice === true && item.catalogPriceId && item.catalogPriceId !== costs.catalogPriceId) {
+      throw new CatalogPriceChangedError(`Cena katalogowa pozycji „${item.description || 'bez nazwy'}” zmieniła się. Odśwież podgląd przed zapisem.`);
+    }
+    return { ...item, ...costs, pricingMode: 'CATALOG', operatingCostBasis };
+  });
 }
 
 function defaultVatBasis(mode: ConfigurationVatMode) {
@@ -102,6 +218,9 @@ function copiedItem(item: any, index: number) {
     operatingCostNet: Number(item.operatingCostNet),
     marginRate: Number(item.marginRate),
     saleVatRate: Number(item.saleVatRate),
+    pricingMode: item.pricingMode || (item.productId ? 'CATALOG' : 'INDIVIDUAL'),
+    operatingCostBasis: item.operatingCostBasis || (item.pricingMode === 'LEGACY' ? 'PER_LINE' : 'PER_UNIT'),
+    catalogPriceId: item.catalogPriceId || undefined,
     saleNet: Number(item.saleNet),
     saleGross: Number(item.saleGross),
     profitNet: Number(item.profitNet),
@@ -128,6 +247,9 @@ function calculatedItemData(item: Record<string, any>, index: number, lineInput:
     operatingCostNet: lineInput.operatingCostNet,
     marginRate: lineInput.marginRate,
     saleVatRate: lineInput.saleVatRate,
+    pricingMode: pricingModeForItem(item) as any,
+    operatingCostBasis: operatingCostBasisForItem(item, pricingModeForItem(item)) as any,
+    catalogPriceId: item.catalogPriceId || undefined,
     saleNet: calculated.saleNet,
     saleGross: calculated.saleGross,
     profitNet: calculated.profitNet,
@@ -156,7 +278,7 @@ function validateConfigurationInput(rawItems: Record<string, any>[], saleVatMode
 }
 
 export async function GET(req: NextRequest) {
-  const access = await authorizeStaffRequest(req);
+  const access = await authorizeStaffRequest(req, 'pricing.read');
   if (!access.ok) return access.response;
   try {
     const workspace = req.nextUrl.searchParams.get('workspace') === '1';
@@ -173,7 +295,7 @@ export async function GET(req: NextRequest) {
     const [templates, projects, products] = await Promise.all([
       prisma.configurationTemplate.findMany({
         where: projectId ? { isActive: true } : undefined,
-        include: templateWorkspaceInclude,
+        include: templateWorkspaceInclude(),
         orderBy: [{ isActive: 'desc' }, { kind: 'asc' }, { clientType: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
       }),
       projectId
@@ -188,7 +310,7 @@ export async function GET(req: NextRequest) {
         })
         : Promise.resolve([]),
       prisma.product.findMany({
-        include: { prices: { orderBy: { validFrom: 'desc' }, take: 1 } },
+        include: { prices: { where: { validFrom: { lte: new Date() } }, orderBy: { validFrom: 'desc' }, take: 1 } },
         orderBy: { name: 'asc' },
       }),
     ]);
@@ -243,7 +365,7 @@ export async function POST(req: NextRequest) {
         prisma.project.findUnique({ where: { id: projectId }, include: { client: true, existingAssets: true } }),
         prisma.configurationTemplate.findMany({
           where: { id: { in: templateIds } },
-          include: templateWorkspaceInclude,
+          include: templateWorkspaceInclude(),
         }),
       ]);
       if (!project) return notFound('Nie znaleziono projektu');
@@ -271,11 +393,7 @@ export async function POST(req: NextRequest) {
           throw new Error(`Szablon ${template.clientType} nie pasuje do projektu ${clientType}`);
         }
 
-        const rawItems = template.items.map((item) => ({
-          ...item,
-          ...resolveTemplateItemCosts(item),
-          saleVatRate,
-        }));
+        const rawItems = template.items.map((item) => ({ ...costsFromTemplate(item, saleVatMode), saleVatRate }));
         const vatBasis = defaultVatBasis(saleVatMode);
         validateConfigurationInput(rawItems, saleVatMode, vatBasis);
         const lineInputs = rawItems.map((item) => lineInputFromItem(item, saleVatMode));
@@ -387,7 +505,7 @@ export async function POST(req: NextRequest) {
     let templateVersion: number | undefined;
 
     if (templateId) {
-      const template = await prisma.configurationTemplate.findUnique({ where: { id: templateId }, include: templateWorkspaceInclude });
+      const template = await prisma.configurationTemplate.findUnique({ where: { id: templateId }, include: templateWorkspaceInclude() });
       if (!template) return notFound('Nie znaleziono szablonu konfiguracji');
       if (!template.isActive) return badRequest('Wybrany szablon jest archiwalny');
       templateVersion = template.version;
@@ -419,17 +537,17 @@ export async function POST(req: NextRequest) {
           vatBasis: defaultVatBasis(saleVatMode),
           requiresReview: template.items.some((item) => item.requiresReview),
           reviewNotes: template.items.some((item) => item.requiresReview) ? 'Szablon zawiera pozycje do weryfikacji' : undefined,
-          items: template.items.map((item) => ({
-            ...item,
-            ...resolveTemplateItemCosts(item),
-            saleVatRate,
-          })),
+          items: template.items.map((item) => ({ ...costsFromTemplate(item, saleVatMode), saleVatRate })),
         };
       }
     }
 
-    const rawItems = Array.isArray(effectiveBody.items) ? effectiveBody.items : [];
     const saleVatMode = requireString(effectiveBody, 'saleVatMode') as ConfigurationVatMode;
+    const rawItems = await resolveConfigurationItemPricing(
+      Array.isArray(effectiveBody.items) ? effectiveBody.items : [],
+      [],
+      saleVatMode,
+    );
     const vatBasis = optionalString(effectiveBody, 'vatBasis');
     validateConfigurationInput(rawItems, saleVatMode, vatBasis);
     const lineInputs = rawItems.map((item) => lineInputFromItem(item, saleVatMode));
@@ -472,6 +590,7 @@ export async function POST(req: NextRequest) {
 
     return jsonResponse({ ok: true, data: configuration }, { status: 201 });
   } catch (error) {
+    if (error instanceof CatalogPriceChangedError) return badRequest(error.message);
     return serverError('Nie udało się zapisać konfiguracji', error);
   }
 }
@@ -493,8 +612,12 @@ export async function PUT(req: NextRequest) {
     });
     if (blockReason) return badRequest(blockReason);
 
-    const rawItems = Array.isArray(body.items) ? body.items : [];
     const saleVatMode = requireString(body, 'saleVatMode') as ConfigurationVatMode;
+    const rawItems = await resolveConfigurationItemPricing(
+      Array.isArray(body.items) ? body.items : [],
+      existing.items as unknown as Array<Record<string, any>>,
+      saleVatMode,
+    );
     const vatBasis = optionalString(body, 'vatBasis');
     validateConfigurationInput(rawItems, saleVatMode, vatBasis);
     const lineInputs = rawItems.map((item) => lineInputFromItem(item, saleVatMode));
@@ -537,6 +660,7 @@ export async function PUT(req: NextRequest) {
     });
     return jsonResponse({ ok: true, data: updated });
   } catch (error) {
+    if (error instanceof CatalogPriceChangedError) return badRequest(error.message);
     return serverError('Nie udało się zaktualizować konfiguracji', error);
   }
 }

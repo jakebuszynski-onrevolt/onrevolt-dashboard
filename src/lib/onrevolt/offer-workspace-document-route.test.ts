@@ -14,7 +14,7 @@ const dependencyStamp = 'd'.repeat(64);
 
 function fixture(options: {
   deniedPermission?: string; canReadEnergy?: boolean; conflict?: boolean; notFound?: boolean; modelError?: boolean;
-  calculation?: unknown; dependencyStamps?: Array<string | null>; dependencyError?: boolean;
+  calculation?: unknown; dependencyStamps?: Array<string | null>; dependencyError?: boolean; labelError?: boolean;
 } = {}) {
   const calls: Array<{ operation: string; value: any }> = [];
   let dependencyStampIndex = 0;
@@ -51,6 +51,18 @@ function fixture(options: {
         return { pageCount: 10, limitations: [], pages: Array.from({ length: 10 }, (_, index) => ({ page: index + 1, svg: '<svg/> ' })) };
       },
     },
+    'lib/onrevolt/offer-workspace-document-assets': {
+      attachOfferWorkspaceDocumentMap: async (document: any) => {
+        calls.push({ operation: 'map', value: document });
+        document.pages[0].svg = '<svg data-map="embedded"/>';
+      },
+    },
+    'lib/onrevolt/offer-workspace-document-context': {
+      loadOfferDocumentTariffLabels: async () => {
+        if (options.labelError) throw new Error('Private tariff loader detail');
+        return { current: 'G11', proposed: 'G13active', currentOperator: 'ENEA' };
+      },
+    },
     'lib/onrevolt/offer-workspace-energy-server': {
       calculateOfferWorkspaceEnergy: async () => { if (options.modelError) throw new Error('Model niedostępny'); return { totals: { loadKwh: 5, pvKwh: 4, directKwh: 3 } }; },
     },
@@ -74,7 +86,7 @@ function fixture(options: {
     },
     'lib/onrevolt/offer-pdf': {
       generateSvgPagesPdf: async (pages: string[]) => {
-        calls.push({ operation: 'pdf', value: pages.length });
+        calls.push({ operation: 'pdf', value: pages.length, pages } as any);
         return Buffer.from('%PDF-1.7');
       },
     },
@@ -117,8 +129,10 @@ test('POST requires project permissions and loads authoritative workspace before
   assert.equal(body.document.pageCount, 10);
   assert.equal(state.calls[0].value, 'offers.manage');
   assert.equal(state.calls.some((call) => call.operation === 'load' && call.value.id === 'project-1'), true);
-  assert.equal(state.calls.at(-1)?.operation, 'render');
-  assert.equal(state.calls.at(-1)?.value.options.templateKey, 'REFORM_B2C/2026_10_V4');
+  assert.equal(state.calls.at(-1)?.operation, 'map');
+  assert.equal(state.calls.find(call => call.operation === 'render')?.value.options.templateKey, 'REFORM_B2C/2026_10_V4');
+  assert.equal(body.document.pages[0].svg, '<svg data-map="embedded"/>');
+  assert.equal(state.calls.find(call => call.operation === 'render')?.value.options.tariffLabels.proposed, 'G13active');
 
   const denied = fixture({ deniedPermission: 'offers.manage' });
   assert.equal((await denied.exports.POST(denied.request({}), { params: Promise.resolve({ id: 'project-1' }) })).status, 403);
@@ -126,6 +140,17 @@ test('POST requires project permissions and loads authoritative workspace before
   const restricted = fixture({ canReadEnergy: false });
   assert.equal((await restricted.exports.POST(restricted.request({}), { params: Promise.resolve({ id: 'project-1' }) })).status, 403);
   assert.equal(restricted.calls.some((call) => call.operation === 'load'), false);
+});
+
+test('unavailable tariff labels leave results intact and expose only a readable warning', async () => {
+  const calculation = { status: 'ready', annualSavingsPln: 123 };
+  const state = fixture({ calculation, labelError: true });
+  const response = await state.exports.POST(state.request({ draft: {} }), { params: Promise.resolve({ id: 'project-1' }) });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.match(body.document.limitations.join(' '), /Nie udało się odczytać nazw taryf/);
+  assert.doesNotMatch(JSON.stringify(body), /Private tariff/);
+  assert.equal(state.calls.find(call => call.operation === 'render')?.value.workspace.calculation, calculation);
 });
 
 test('PDF is rendered from ten authoritative SVG pages, never browser-supplied pages', async () => {
@@ -137,6 +162,7 @@ test('PDF is rendered from ten authoritative SVG pages, never browser-supplied p
   assert.equal(response.headers.get('content-type'), 'application/pdf');
   assert.match(response.headers.get('content-disposition')!, /oferta-robocza/);
   assert.equal(state.calls.find(call => call.operation === 'pdf')?.value, 10);
+  assert.equal((state.calls.find(call => call.operation === 'pdf') as any)?.pages[0], '<svg data-map="embedded"/>');
 });
 
 test('document uses only completed server calculation scoped to actor, project and source revision', async () => {

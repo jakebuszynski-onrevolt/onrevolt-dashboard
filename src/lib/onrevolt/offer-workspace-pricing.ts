@@ -1,5 +1,5 @@
 import { sumConfiguration, type CalculationResult, type ConfigurationTotals } from './calculator';
-import { resolveTemplateItemCosts, type PriceableTemplateItem } from './configuration-templates';
+import { resolveTemplateItemCosts, resolveTemplateItemSaleVat, type PriceableTemplateItem } from './configuration-templates';
 import type { ConfigurationVatMode } from './configuration-vat';
 
 type NumericValue = string | number | { toString(): string };
@@ -97,7 +97,7 @@ function saleVatRate(mode: ConfigurationVatMode, item: OfferWorkspacePricingItem
   if (mode !== 'MIXED') throw new TypeError('Tryb VAT sprzedaży musi być jawny.');
 
   const label = item.description || item.product?.name || item.id;
-  const rate = finiteNumber(item.saleVatRate, `stawka VAT sprzedaży (${label})`);
+  const rate = resolveTemplateItemSaleVat(item);
   if (rate !== 0.08 && rate !== 0.23) {
     throw new Error(`Stawka VAT sprzedaży musi wynosić 8% albo 23% (${label})`);
   }

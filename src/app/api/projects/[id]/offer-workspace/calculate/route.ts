@@ -39,12 +39,18 @@ function noStore(body: unknown, init: ResponseInit = {}) {
 
 function publicJob(job: OfferWorkspaceCalculationJobView, stale = false) {
   const { id, status, completed, total, data, error } = job;
+  const blockedReasons = stale && data?.status === 'blocked' && Array.isArray(data.reasons)
+    ? [...new Set(data.reasons.filter((reason): reason is string => typeof reason === 'string')
+      .map(reason => reason.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 500))
+      .filter(Boolean))].slice(0, 5)
+    : [];
   return {
     id,
     status,
     completed,
     total,
     ...(!stale && data ? { data } : {}),
+    ...(blockedReasons.length ? { blockedReasons } : {}),
     ...(error ? { error } : {}),
     ...(stale ? { stale: true } : {}),
   };

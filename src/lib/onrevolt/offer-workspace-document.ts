@@ -15,6 +15,7 @@ import type { OfferWorkspaceDayProfile } from './offer-workspace-chart-data';
 import type { OfferWorkspaceEnergy } from './offer-workspace-energy';
 import type { OfferWorkspaceCalculation, OfferForecastFlow } from './offer-workspace-calculation-types';
 import { priceOfferWorkspaceConfiguration, type OfferWorkspacePricingResult } from './offer-workspace-pricing';
+import { summarizeOfferSavingsBill, type OfferWorkspaceSavingsBillSummary } from './offer-workspace-savings';
 import {
   OFFER_TEMPLATE_V3_PAGE_COUNT,
   inspectOfferTemplateV3,
@@ -81,6 +82,7 @@ export type OfferWorkspaceDocumentResult = {
 
 export type OfferWorkspaceDocumentOptions = {
   templateKey?: string;
+  tariffLabels?: { current?: string | null; proposed?: string | null; currentOperator?: string | null };
 };
 
 const MISSING_PREFIX = '__OW_DOC_MISSING_';
@@ -222,11 +224,17 @@ function removeDataShapes(container: XmlElement | null) {
   }
 }
 
-function setPlotAxis(plot: XmlElement | null, maxValue: number, tickIds: string[], digits = 0) {
+function setPlotAxis(
+  plot: XmlElement | null,
+  maxValue: number,
+  tickIds: string[],
+  digits = 0,
+  resolveTick: (id: string) => XmlElement | null = (id) => plot ? elementByIdWithin(plot, id) : null,
+) {
   if (!plot) return 0;
   const axisMax = niceAxisMaximum(maxValue);
   tickIds.forEach((id, index) => setElementText(
-    elementByIdWithin(plot, id),
+    resolveTick(id),
     formatNumber(axisMax * index / Math.max(1, tickIds.length - 1), digits),
   ));
   return axisMax;
@@ -244,7 +252,7 @@ function niceAxisMaximum(value: number) {
   const raw = value * 1.05;
   const magnitude = 10 ** Math.floor(Math.log10(raw));
   const fraction = raw / magnitude;
-  const step = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 4 ? 4 : fraction <= 5 ? 5 : 10;
+  const step = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 3 ? 3 : fraction <= 4 ? 4 : fraction <= 5 ? 5 : 10;
   return step * magnitude;
 }
 
@@ -563,6 +571,44 @@ function replaceDailyTemplatePlaceholders(document: XmlDocument, workspace: Offe
 function neutralizeV4DailyTariffLabels(document: XmlDocument) {
   replaceTextMatching(document, /^\(Taryfa jednostrefowa:\s*$/, '(Taryfa: ');
   replaceTextMatching(document, /^\(Taryfa trójstrefowa:\s*$/, '(Taryfa: ');
+}
+
+function setTextOriginX(element: XmlElement, x: number) {
+  const spans = Array.from(element.getElementsByTagName('tspan')) as XmlElement[];
+  if (!spans.length) return;
+  const elementOffsetX = textOrigin(element, 'x') - Number(spans[0].getAttribute('x') || 0);
+  spans.forEach((span) => span.setAttribute('x', String(x - elementOffsetX)));
+}
+
+function v4TextWidth(element: XmlElement) {
+  return fontFor(element).getAdvanceWidth((element.textContent || '').trim(), fontSize(element));
+}
+
+function reflowV4DailyProposedHeader(document: XmlDocument, page: number) {
+  const suffix = String(page).padStart(2, '0');
+  const tariff = uniqueElementById(document, `#b2c_taryfa_prognozowana_strona_${suffix}`);
+  const tariffFollowing = uniqueElementById(document, 'stale / tekst_3');
+  const pv = uniqueElementById(document, `#b2c_moc_pv_prognozowana_strona_${suffix}`);
+  const pvFollowing = uniqueElementById(document, 'stale / tekst_4');
+  const capacity = uniqueElementById(document, `#b2c_pojemnosc_magazynu_prognozowana_strona_${suffix}`);
+  const capacityUnit = uniqueElementById(document, 'stale / jednostka lub dopisek_2');
+  if (!tariff || !tariffFollowing || !pv || !pvFollowing || !capacity || !capacityUnit) return;
+
+  const gap = 2;
+  const tariffX = textOrigin(tariff, 'x');
+  const tariffEnd = tariffX + v4TextWidth(tariff);
+  const tariffFollowingX = Math.max(textOrigin(tariffFollowing, 'x'), tariffEnd + gap);
+  setTextOriginX(tariffFollowing, tariffFollowingX);
+
+  const pvX = Math.max(textOrigin(pv, 'x'), tariffFollowingX + v4TextWidth(tariffFollowing) + gap);
+  setTextOriginX(pv, pvX);
+  const pvFollowingX = Math.max(textOrigin(pvFollowing, 'x'), pvX + v4TextWidth(pv) + gap);
+  setTextOriginX(pvFollowing, pvFollowingX);
+
+  const capacityX = Math.max(textOrigin(capacity, 'x'), pvFollowingX + v4TextWidth(pvFollowing) + gap);
+  setTextOriginX(capacity, capacityX);
+  const capacityUnitX = Math.max(textOrigin(capacityUnit, 'x'), capacityX + v4TextWidth(capacity) + 1.5);
+  setTextOriginX(capacityUnit, capacityUnitX);
 }
 
 function appendHourlyReadings(
@@ -984,7 +1030,7 @@ function selectedTemplateValues(workspace: OfferWorkspaceDocumentData, draft: Of
 
 function forecastPvPower(workspace: OfferWorkspaceDocumentData, draft: OfferWorkspaceDraft) {
   const existingPower = draft.existingPv.powerKw ?? workspace.input.existingPv?.powerKw ?? null;
-  if (draft.pvStrategy !== 'ADD_TEMPLATE') return null;
+  if (draft.pvStrategy === 'KEEP_EXISTING') return validChartValue(existingPower) ? existingPower : null;
   const pvTemplates = selectedTemplateValues(workspace, draft, 'PV');
   if (pvTemplates.length !== 1 || !validChartValue(existingPower) || !validChartValue(pvTemplates[0].powerKw)) return null;
   return existingPower + pvTemplates[0].powerKw!;
@@ -1579,6 +1625,7 @@ function appendDraftStatusFooter(
   page: OfferTemplateV3PageNumber,
   energy: OfferWorkspaceEnergy | null | undefined,
   sourceFields: Set<string>,
+  calculationReady = false,
 ) {
   const root = document.documentElement;
   if (!root) return;
@@ -1595,9 +1642,11 @@ function appendDraftStatusFooter(
   }
   const status = svgShape(document, 'text', {
     x: '30', y: '823', fill: '#2B3674', 'font-family': 'DM Sans', 'font-size': '5.5', 'font-weight': '400',
-    'data-draft-status': 'incomplete',
+    'data-draft-status': calculationReady ? 'estimated' : 'incomplete',
   });
-  status.appendChild(document.createTextNode('SZKIC ROBOCZY · obliczenia finansowe i prognoza systemu niekompletne'));
+  status.appendChild(document.createTextNode(calculationReady
+    ? 'SZKIC ROBOCZY · wyniki obliczeń mają charakter szacunkowy'
+    : 'SZKIC ROBOCZY · obliczenia finansowe i prognoza systemu niekompletne'));
   root.appendChild(status);
 }
 
@@ -1610,12 +1659,18 @@ function v4Semantic(fieldId: string) {
   return fieldId.replace(/^#/, '').replace(/_strona_\d{2}(?:_\d+)?$/, '');
 }
 
-function v4MissingReason(page: OfferTemplateV4PageNumber, semantic: string) {
-  if (page === 4) return 'Brak wyników przyszłej symulacji; danych bieżących nie użyto jako prognozy.';
+function v4MissingReason(page: OfferTemplateV4PageNumber, semantic: string, calculationReady = false) {
+  if (page === 4) return calculationReady
+    ? 'Brak odpowiadającej wartości w gotowym wyniku prognozy; danych bieżących nie użyto jako prognozy.'
+    : 'Brak wyników przyszłej symulacji; danych bieżących nie użyto jako prognozy.';
   if (page >= 5 && page <= 8 && (/(?:^|_)po(?:_|$)/.test(semantic) || /taryfa_prognozowana|moc_pv_prognozowana|pojemnosc_magazynu_prognozowana|oszczednosc|bilans_wartosci_po/.test(semantic))) {
-    return 'Brak obliczeń wariantu docelowego; przykładowej taryfy, magazynu ani wartości finansowych nie użyto.';
+    return calculationReady
+      ? 'Brak odpowiadającej wartości w gotowym wyniku wariantu docelowego; przykładowych wartości nie użyto.'
+      : 'Brak obliczeń wariantu docelowego; przykładowej taryfy, magazynu ani wartości finansowych nie użyto.';
   }
-  if (page === 9) return 'Brak zatwierdzonego wyniku rozliczenia lub symulacji taryfowej; przykładową wartość usunięto.';
+  if (page === 9) return calculationReady
+    ? 'Brak odpowiadającej wartości szczegółowej w gotowym wyniku rozliczenia; przykładową wartość usunięto.'
+    : 'Brak zatwierdzonego wyniku rozliczenia lub symulacji taryfowej; przykładową wartość usunięto.';
   if (page === 10 && /dotac|ulga|po_dofinansowaniach/.test(semantic)) {
     return 'Dotacja, ulga i koszt po finansowaniu pozostają nieznane; nie przyjęto założeń.';
   }
@@ -1752,8 +1807,30 @@ function dailyBillingMeasure(
   return total;
 }
 
+function dailyGrossPurchaseValue(
+  calculation: OfferWorkspaceCalculation | null | undefined,
+  scenario: 'baselineBill' | 'proposedBill',
+  flows: OfferForecastFlow[],
+) {
+  const rows = calculation?.[scenario]?.intervals || [];
+  if (!flows.length || !rows.length) return null;
+  const byUtc = new Map(rows.map((row) => [`${row.startUtc}\u0000${row.endUtc}`, row]));
+  let total = 0;
+  for (const flow of flows) {
+    const row = byUtc.get(`${flow.startUtc}\u0000${flow.endUtc}`);
+    if (!row || ![row.energyCostPln, row.coveredEnergyPln, row.distributionCostPln, row.coveredDistributionPln]
+      .every(Number.isFinite)) return null;
+    total += row.energyCostPln + row.coveredEnergyPln + row.distributionCostPln + row.coveredDistributionPln;
+  }
+  return total;
+}
+
 function calculationMoney(value: number | null | undefined, source: string): MappedValue {
   return typeof value === 'number' && Number.isFinite(value) ? { value: formatNumber(value, 2), source } : null;
+}
+
+function calculationRate(value: number | null | undefined, source: string): MappedValue {
+  return typeof value === 'number' && Number.isFinite(value) ? { value: formatNumber(value, 3), source } : null;
 }
 
 function dailyCashSavings(calculation: OfferWorkspaceCalculation | null | undefined, flows: OfferForecastFlow[]) {
@@ -1846,6 +1923,9 @@ function mapV4Field(
   productRows: Page10ProductRow[],
   pricing: OfferWorkspacePricingResult,
   calculation: OfferWorkspaceCalculation | null | undefined,
+  tariffLabels: OfferWorkspaceDocumentOptions['tariffLabels'],
+  baselineSummary: OfferWorkspaceSavingsBillSummary | null,
+  proposedSummary: OfferWorkspaceSavingsBillSummary | null,
 ): MappedValue {
   const semantic = v4Semantic(fieldId);
   const details = workspace.input.reportDetails;
@@ -1861,9 +1941,14 @@ function mapV4Field(
     b2c_zrodlo_ciepla: [details?.heatingSource, 'input.reportDetails.heatingSource'],
     b2c_rodzaj_zrodla_ciepla: [details?.heatingDetails, 'input.reportDetails.heatingDetails'],
     b2c_dostawca_energii_elektrycznej: [details?.supplier, 'input.reportDetails.supplier'],
+    b2c_operator_systemu_dystrybucyjnego: [tariffLabels?.currentOperator, 'documentContext.tariffLabels.currentOperator'],
   };
   const reportValue = reportFields[semantic];
   if (reportValue) return reportValue[0]?.trim() ? { value: reportValue[0].trim(), source: reportValue[1] } : null;
+
+  if (page === 10 && semantic === 'b2c_imie_i_nazwisko_reform') {
+    return { value: workspace.clientName, source: 'project.clientName' };
+  }
 
   if (page === 1 || page === 2) {
     if (semantic === 'b2c_nazwa_klienta_report' || semantic === 'b2c_imie_i_nazwisko_report') {
@@ -1889,8 +1974,22 @@ function mapV4Field(
       const value = settlement(draft.currentSettlement || workspace.input.settlementMode);
       return value ? { value, source: 'draft.currentSettlement|input.settlementMode' } : null;
     }
-    if (semantic === 'b2c_oplaty_stale_i_dystrybucyjne' || semantic === 'b2c_zakup_energii'
-      || semantic === 'b2c_twoj_rachunek') return null;
+    if (semantic === 'b2c_dane_rozliczeniowe_taryfa') {
+      const label = tariffLabels?.current?.trim();
+      return label ? { value: label, source: 'documentContext.tariffLabels.current' } : null;
+    }
+    if (semantic === 'b2c_oplaty_stale_i_dystrybucyjne') {
+      const totals = baselineSummary?.totals;
+      return totals ? calculationMoney(totals.paidDistributionCostPln + totals.paidFixedCostPln,
+        'calculation.baselineBill.totals.paidDistributionCostPln+paidFixedCostPln') : null;
+    }
+    if (semantic === 'b2c_zakup_energii') {
+      return calculationMoney(baselineSummary?.totals.paidEnergyCostPln,
+        'calculation.baselineBill.totals.paidEnergyCostPln');
+    }
+    if (semantic === 'b2c_twoj_rachunek') {
+      return calculationMoney(calculation?.baselineAnnualCostPln, 'calculation.baselineAnnualCostPln');
+    }
     if (semantic === 'b2c_opis_oferty') {
       const before = draft.description.before.trim();
       const after = draft.description.after.trim();
@@ -1901,6 +2000,9 @@ function mapV4Field(
   }
 
   if (page === 3) {
+    const currentSettlement = draft.currentSettlement ?? (workspace.input.settlementMode === 'NET_METERING'
+      || workspace.input.settlementMode === 'NET_BILLING' ? workspace.input.settlementMode : null);
+    if (isSummaryFinancialField(semantic)) return summaryFinancialField(semantic, baselineSummary, currentSettlement, 'baselineBill');
     if (semantic === 'b2c_okres') {
       const periods = (workspace.energy !== undefined
         ? workspace.energy ? chronologicalEnergyMonths(workspace.energy) : []
@@ -1940,6 +2042,7 @@ function mapV4Field(
   }
 
   if (page === 4) {
+    if (isSummaryFinancialField(semantic)) return summaryFinancialField(semantic, proposedSummary, draft.targetSettlement, 'proposedBill');
     if (semantic === 'b2c_okres_prognozowany') {
       const periods = calculation?.forecastEnergy?.months.map((month) => month.period)
         || calculation?.forecastMeasurements?.months.map((month) => month.period)
@@ -1947,7 +2050,7 @@ function mapV4Field(
       const ordered = [...new Set(periods)].sort();
       return ordered.length ? { value: `${ordered[0]} - ${ordered.at(-1)}`, source: 'calculation.forecastEnergy/forecastMeasurements/forecastFlows.period' } : null;
     }
-    if (/^b2c_(?:calkowite_uzycie_energii_kwh|produkcja_z_pv|autokonsumpcja_z_pv_kwh|autokonsumpcja_z_magazynu_kwh|energia_pobrana_z_sieci_kwh|energia_oddana_do_sieci_kwh)_/.test(semantic)) {
+    if (/^b2c_(?:calkowite_uzycie_energii_kwh|produkcja_z_pv|autokonsumpcja_z_pv_kwh|autokonsumpcja_z_magazynu_kwh|energia_pobrana_z_sieci_kwh|energia_oddana_do_sieci_kwh)_(?:styczen|luty|marzec|kwiecien|maj|czerwiec|lipiec|sierpien|wrzesien|pazdziernik|listopad|grudzien)_(?:prognozowane|prognozowana)$/.test(semantic)) {
       return forecastMonthFieldValue(semantic, calculation);
     }
     if (semantic === 'b2c_energia_oddana_do_sieci_prognozowana') {
@@ -2005,6 +2108,14 @@ function mapV4Field(
   }
 
   if (page >= 5 && page <= 8) {
+    if (semantic.includes('taryfa_aktualna')) {
+      const label = tariffLabels?.current?.trim();
+      return label ? { value: label, source: 'documentContext.tariffLabels.current' } : null;
+    }
+    if (semantic.includes('taryfa_prognozowana')) {
+      const label = tariffLabels?.proposed?.trim();
+      return label ? { value: label, source: 'documentContext.tariffLabels.proposed' } : null;
+    }
     if (/(?:^|_)po(?:_|$)/.test(semantic)) {
       const date = selectedDailyProfileDate(workspace, page);
       const flows = date ? flowRowsByLocalDate(calculation, date) : [];
@@ -2059,7 +2170,8 @@ function mapV4Field(
       }
       if (semantic.includes('_oszczednosc_pln')) return dailyCashSavings(calculation, flows);
       if (semantic.includes('_energia_pobrana_z_sieci_wartosc_po')) {
-        return calculationMoney(dailyBillingMeasure(calculation, 'proposedBill', flows, 'energyCostPln'), 'calculation.proposedBill.intervals.energyCostPln');
+        return calculationMoney(dailyGrossPurchaseValue(calculation, 'proposedBill', flows),
+          'calculation.proposedBill.intervals.energyCostPln+coveredEnergyPln+distributionCostPln+coveredDistributionPln');
       }
       if (semantic.includes('_energia_oddana_do_sieci_wartosc_po')) {
         return calculationMoney(dailyBillingMeasure(calculation, 'proposedBill', flows, 'exportValuePln'), 'calculation.proposedBill.intervals.exportValuePln');
@@ -2074,18 +2186,22 @@ function mapV4Field(
     }
     if (semantic.includes('moc_pv_prognozowana')) {
       const power = forecastPvPower(workspace, draft);
-      return power === null ? null : { value: formatNumber(power, 1), source: 'draft.pvStrategy|templates.powerKw|draft.existingPv.powerKw' };
+      const existingPowerSource = draft.existingPv.powerKw !== null ? 'draft.existingPv.powerKw' : 'input.existingPv.powerKw';
+      const source = draft.pvStrategy === 'KEEP_EXISTING'
+        ? `draft.pvStrategy|${existingPowerSource}`
+        : `draft.pvStrategy|templates.powerKw|${existingPowerSource}`;
+      return power === null ? null : { value: formatNumber(power, 1), source };
     }
     if (semantic.includes('pojemnosc_magazynu_prognozowana')) {
       const capacity = forecastBatteryCapacity(workspace, draft);
       return capacity === null ? null : { value: formatNumber(capacity, 1), source: 'draft.selectedTemplateIds|templates.capacityKwh' };
     }
-    if (/taryfa_prognozowana|moc_pv_prognozowana|pojemnosc_magazynu_prognozowana/.test(semantic)) return null;
-    if (semantic.includes('taryfa_aktualna')) return null;
+    if (/moc_pv_prognozowana|pojemnosc_magazynu_prognozowana/.test(semantic)) return null;
     const currentDate = selectedDailyProfileDate(workspace, page);
     const baselineFlows = currentDate ? flowRowsByLocalDate(calculation, currentDate) : [];
     if (baselineFlows.length && semantic.includes('_energia_pobrana_z_sieci_wartosc')) {
-      return calculationMoney(dailyBillingMeasure(calculation, 'baselineBill', baselineFlows, 'energyCostPln'), 'calculation.baselineBill.intervals.energyCostPln');
+      return calculationMoney(dailyGrossPurchaseValue(calculation, 'baselineBill', baselineFlows),
+        'calculation.baselineBill.intervals.energyCostPln+coveredEnergyPln+distributionCostPln+coveredDistributionPln');
     }
     if (baselineFlows.length && semantic.includes('_energia_oddana_do_sieci_wartosc')) {
       return calculationMoney(dailyBillingMeasure(calculation, 'baselineBill', baselineFlows, 'exportValuePln'), 'calculation.baselineBill.intervals.exportValuePln');
@@ -2137,6 +2253,14 @@ function mapV4Field(
   }
 
   if (page === 9) {
+    if (semantic === 'b2c_taryfa_aktualna') {
+      const label = tariffLabels?.current?.trim();
+      return label ? { value: label, source: 'documentContext.tariffLabels.current' } : null;
+    }
+    if (semantic === 'b2c_taryfa_prognozowana') {
+      const label = tariffLabels?.proposed?.trim();
+      return label ? { value: label, source: 'documentContext.tariffLabels.proposed' } : null;
+    }
     if (semantic === 'b2c_system_rozliczeniowy_aktualny') {
       const value = settlement(draft.currentSettlement || workspace.input.settlementMode);
       return value ? { value, source: 'draft.currentSettlement|input.settlementMode' } : null;
@@ -2147,6 +2271,55 @@ function mapV4Field(
     }
     const baseline = billingTotals(calculation, 'baselineBill');
     const proposed = billingTotals(calculation, 'proposedBill');
+    if (semantic === 'b2c_zakup_energii_cena_kwh_aktualny') {
+      return calculationRate(baselineSummary?.totals.averageEnergyPurchasePlnPerKwh,
+        'calculation.baselineBill.totals.grossPurchaseEnergyCostPln/rateBasisImportKwh');
+    }
+    if (semantic === 'b2c_dystrybucja_energii_cena_kwh_aktualny') {
+      return calculationRate(baselineSummary?.totals.averageDistributionPurchasePlnPerKwh,
+        'calculation.baselineBill.totals.grossPurchaseDistributionCostPln/rateBasisImportKwh');
+    }
+    if (semantic === 'b2c_koszt_zakupu_1kwh_aktualny') {
+      const energy = baselineSummary?.totals.averageEnergyPurchasePlnPerKwh;
+      const distribution = baselineSummary?.totals.averageDistributionPurchasePlnPerKwh;
+      return energy !== null && energy !== undefined && distribution !== null && distribution !== undefined
+        ? calculationRate(energy + distribution,
+          'calculation.baselineBill.totals.grossPurchaseEnergyCostPln/grossPurchaseDistributionCostPln/rateBasisImportKwh')
+        : null;
+    }
+    if (semantic === 'b2c_oplaty_stale_aktualny') {
+      return calculationMoney(baselineSummary?.averageMonthlyFixedCostPln,
+        'calculation.baselineBill.months.fixedCostPln/representedMonths');
+    }
+    if (semantic === 'b2c_zakup_energii_cena_kwh_prognozowany') {
+      return calculationRate(proposedSummary?.totals.averageEnergyPurchasePlnPerKwh,
+        'calculation.proposedBill.totals.grossPurchaseEnergyCostPln/rateBasisImportKwh');
+    }
+    if (semantic === 'b2c_dystrybucja_energii_cena_kwh_prognozowany') {
+      return calculationRate(proposedSummary?.totals.averageDistributionPurchasePlnPerKwh,
+        'calculation.proposedBill.totals.grossPurchaseDistributionCostPln/rateBasisImportKwh');
+    }
+    if (semantic === 'b2c_koszt_zakupu_1kwh_prognozowany') {
+      const energy = proposedSummary?.totals.averageEnergyPurchasePlnPerKwh;
+      const distribution = proposedSummary?.totals.averageDistributionPurchasePlnPerKwh;
+      return energy !== null && energy !== undefined && distribution !== null && distribution !== undefined
+        ? calculationRate(energy + distribution,
+          'calculation.proposedBill.totals.grossPurchaseEnergyCostPln/grossPurchaseDistributionCostPln/rateBasisImportKwh')
+        : null;
+    }
+    if (semantic === 'b2c_oplaty_stale_prognozowany') {
+      return calculationMoney(proposedSummary?.averageMonthlyFixedCostPln,
+        'calculation.proposedBill.months.fixedCostPln/representedMonths');
+    }
+    if (semantic === 'b2c_oplaty_stale_i_dystrybucyjne') {
+      const totals = proposedSummary?.totals;
+      return totals ? calculationMoney(totals.paidDistributionCostPln + totals.paidFixedCostPln,
+        'calculation.proposedBill.totals.paidDistributionCostPln+paidFixedCostPln') : null;
+    }
+    if (semantic === 'b2c_autokonsumpcja_z_magazynu_prognozowana') {
+      const value = sumFlowMeasure(calculation?.forecastFlows || [], 'batteryToLoadKwh');
+      return value === null ? null : calculationMoney(value, 'calculation.forecastFlows.batteryToLoadKwh');
+    }
     if (semantic === 'b2c_zuzycie_energii_aktualne') return workspace.energy
       ? energyMetric(workspace.energy.totals.loadKwh, 'totals.loadKwh', false) : null;
     if (semantic === 'b2c_autokonsumpcja_z_pv_aktualna') return workspace.energy
@@ -2222,15 +2395,15 @@ function mapV4Field(
         ? { value: '—', source: 'template.pricing.quantityUnknown' }
         : { value: formatNumber(row.quantity, Number.isInteger(row.quantity) ? 0 : 2), source: 'template.pricing.quantity' };
       if (semantic.includes('_cena_jednostkowa_brutto_')) return row.includedInSale && row.unitSaleAmount !== null
-        ? { value: formatMoney(row.unitSaleAmount), source: 'template.pricing.unitSaleAmount' }
+        ? { value: formatNumber(row.unitSaleAmount, 2), source: 'template.pricing.unitSaleAmount' }
         : { value: '—', source: row.includedInSale ? 'template.pricing.unitPriceUnknown' : 'template.pricing.notIncluded' };
       if (semantic.includes('_wartosc_brutto_')) return row.includedInSale && row.lineSaleAmount !== null
-        ? { value: formatMoney(row.lineSaleAmount), source: 'template.pricing.lineSaleAmount' }
+        ? { value: formatNumber(row.lineSaleAmount, 2), source: 'template.pricing.lineSaleAmount' }
         : { value: '—', source: row.includedInSale ? 'template.pricing.linePriceUnknown' : 'template.pricing.notIncluded' };
     }
     if (semantic === 'b2c_koszt_systemu') {
       return pricing.systemCostBeforeFinancing === null ? null
-        : { value: formatMoney(pricing.systemCostBeforeFinancing), source: 'template.pricing.systemCostBeforeFinancing' };
+        : { value: formatNumber(pricing.systemCostBeforeFinancing, 2), source: 'template.pricing.systemCostBeforeFinancing' };
     }
     if (semantic === 'b2c_prognozowana_kwota_dotacji_z_programu') return calculationMoney(calculation?.grantPln, 'calculation.grantPln');
     if (semantic === 'b2c_prognozowana_ulga_termomodernizacyjna') return calculationMoney(calculation?.taxReliefPln, 'calculation.taxReliefPln');
@@ -2239,11 +2412,11 @@ function mapV4Field(
   return null;
 }
 
-function setV4WrappedField(element: XmlElement, value: string, maxWidth: number, maxLines: number) {
+function setV4WrappedField(element: XmlElement, value: string, maxWidth: number, maxLines: number, minimumFontSize = 6) {
   const spans = Array.from(element.getElementsByTagName('tspan')) as XmlElement[];
   if (!spans.length) return false;
   const typeface = fontFor(element);
-  const minSize = Math.min(fontSize(element), 6);
+  const minSize = Math.min(fontSize(element), minimumFontSize);
   let size = fontSize(element);
   let lines = wrapText(value, typeface, size, maxWidth);
   while (lines.length > maxLines && size > minSize) {
@@ -2268,16 +2441,306 @@ function setV4WrappedField(element: XmlElement, value: string, maxWidth: number,
   }
   spans.forEach((span, index) => {
     span.setAttribute('x', x);
-    if (index >= 2 || !span.getAttribute('y')) span.setAttribute('y', String(firstY + index * lineHeight));
+    span.setAttribute('y', String(firstY + index * lineHeight));
     span.setAttribute('font-size', String(size));
     setElementText(span, lines[index] || '');
   });
   return truncated;
 }
 
+function textOrigin(element: XmlElement, axis: 'x' | 'y') {
+  const transform = element.getAttribute('transform') || '';
+  const translate = /translate\(\s*([-+\d.]+)(?:[ ,]+([-+\d.]+))?\s*\)/.exec(transform);
+  const offset = translate ? Number(axis === 'x' ? translate[1] : translate[2] || 0) : 0;
+  const span = element.getElementsByTagName('tspan')[0] as XmlElement | undefined;
+  const own = Number(span?.getAttribute(axis) ?? element.getAttribute(axis));
+  return offset + (Number.isFinite(own) ? own : 0);
+}
+
+function fitV4NumberBeforeUnit(element: XmlElement | null, extraLeft = 0) {
+  if (!element || !/^[+\-−]?\d[\d\s]*(?:[.,]\d+)?$/.test((element.textContent || '').trim())) return false;
+  const parent = element.parentNode as XmlElement | null;
+  if (!parent) return false;
+  const unit = Array.from(parent.childNodes).filter((node) => node.nodeType === 1 && node !== element)
+    .map((node) => node as XmlElement)
+    .find((sibling) => /(?:PLN|kWh|kWp|brutto)/i.test(sibling.textContent || ''));
+  if (!unit) return false;
+  const unitX = textOrigin(unit, 'x');
+  const elementX = textOrigin(element, 'x');
+  const endX = unitX - 1.5;
+  const available = endX - (elementX - extraLeft);
+  if (!(available > 0)) return false;
+  const typeface = fontFor(element);
+  const spans = Array.from(element.getElementsByTagName('tspan')) as XmlElement[];
+  if (!spans.length) return false;
+  const value = (element.textContent || '').trim();
+  let size = fontSize(element);
+  while (size > 5.25 && typeface.getAdvanceWidth(value, size) > available) size = Math.max(5.25, size - 0.25);
+  const firstSpanX = Number(spans[0].getAttribute('x') || 0);
+  const elementOffsetX = elementX - firstSpanX;
+  spans.forEach((span) => {
+    span.setAttribute('font-size', String(size));
+    span.setAttribute('x', String(endX - elementOffsetX));
+    span.setAttribute('text-anchor', 'end');
+  });
+  return typeface.getAdvanceWidth(value, size) <= available;
+}
+
+function summaryPurchaseValue(summary: OfferWorkspaceSavingsBillSummary | null, scenario: 'baselineBill' | 'proposedBill'): MappedValue {
+  const totals = summary?.totals;
+  return totals
+    ? calculationMoney(totals.grossPurchaseEnergyCostPln + totals.grossPurchaseDistributionCostPln,
+      `calculation.${scenario}.totals.grossPurchaseEnergyCostPln+grossPurchaseDistributionCostPln`)
+    : null;
+}
+
+function summaryPurchaseRate(summary: OfferWorkspaceSavingsBillSummary | null, scenario: 'baselineBill' | 'proposedBill'): MappedValue {
+  const energy = summary?.totals.averageEnergyPurchasePlnPerKwh;
+  const distribution = summary?.totals.averageDistributionPurchasePlnPerKwh;
+  return energy !== null && energy !== undefined && distribution !== null && distribution !== undefined
+    ? calculationRate(energy + distribution,
+      `calculation.${scenario}.totals.grossPurchaseEnergyCostPln+grossPurchaseDistributionCostPln/rateBasisImportKwh`)
+    : null;
+}
+
+function summaryExportValue(summary: OfferWorkspaceSavingsBillSummary | null, settlement: string | null, scenario: 'baselineBill' | 'proposedBill'): MappedValue {
+  return settlement === 'NET_BILLING'
+    ? calculationMoney(summary?.totals.depositEarnedPln, `calculation.${scenario}.totals.depositEarnedPln`)
+    : null;
+}
+
+function summaryExportRate(summary: OfferWorkspaceSavingsBillSummary | null, settlement: string | null, scenario: 'baselineBill' | 'proposedBill'): MappedValue {
+  const totals = summary?.totals;
+  return settlement === 'NET_BILLING' && totals && totals.billedExportKwh > 0
+    ? calculationRate(totals.depositEarnedPln / totals.billedExportKwh,
+      `calculation.${scenario}.totals.depositEarnedPln/billedExportKwh`)
+    : null;
+}
+
+function summaryFinancialField(
+  semantic: string,
+  summary: OfferWorkspaceSavingsBillSummary | null,
+  settlement: string | null,
+  scenario: 'baselineBill' | 'proposedBill',
+): MappedValue {
+  if (semantic.includes('wartosc_energii_pobranej')) return summaryPurchaseValue(summary, scenario);
+  if (semantic.includes('srednia_cena_1kwh_pln')) return summaryPurchaseRate(summary, scenario);
+  if (semantic.includes('wartosc_energii_oddanej')) return summaryExportValue(summary, settlement, scenario);
+  if (semantic.includes('srednia_cena_1_kwh_pln')) return summaryExportRate(summary, settlement, scenario);
+  return null;
+}
+
+function isSummaryFinancialField(semantic: string) {
+  return /wartosc_energii_(?:oddanej|pobranej)|srednia_cena_1_?kwh_pln/.test(semantic);
+}
+
+function annualBillPlotY(document: XmlDocument, value: number, axisMaximum: number) {
+  const tickIds = [
+    '_wskaznik_1_2', '_wskaznik_2_2', '_wskaznik_3_2', '_wskaznik_1', '_wskaznik_2',
+    '_wskaznik_3', '_wskaznik_4', '_wskaznik_5', '_wskaznik_4_2', '_wskaznik_5_2',
+  ];
+  const baselinePath = elementById(document, '_poziomy_wykres')?.getAttribute('d') || '';
+  const baselineMatch = /^M\s*[-+\d.]+[ ,]+([-+\d.]+)/.exec(baselinePath);
+  const baselineY = baselineMatch ? Number(baselineMatch[1]) : Number.NaN;
+  const tickYs = [baselineY, ...tickIds.map((id) => {
+    const path = elementById(document, id)?.getAttribute('d') || '';
+    const match = /^M\s*[-+\d.]+[ ,]+([-+\d.]+)/.exec(path);
+    return match ? Number(match[1]) : Number.NaN;
+  })];
+  if (!tickYs.every(Number.isFinite) || !(axisMaximum > 0)) return null;
+
+  const tickPosition = value / axisMaximum * (tickYs.length - 1);
+  const lowerTick = Math.min(Math.floor(tickPosition), tickYs.length - 2);
+  const fraction = tickPosition - lowerTick;
+  return tickYs[lowerTick] + (tickYs[lowerTick + 1] - tickYs[lowerTick]) * fraction;
+}
+
+type V4AxisTick = { element: XmlElement; value: number; y: number };
+
+function numericAxisValue(element: XmlElement) {
+  const normalized = (element.textContent || '').trim().replace(/\s/g, '').replace(',', '.');
+  if (!/^[+\-\d.]+$/.test(normalized)) return null;
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : null;
+}
+
+function v4AxisTicks(plot: XmlElement | null): V4AxisTick[] {
+  if (!plot) return [];
+  return (Array.from(plot.getElementsByTagName('text')) as XmlElement[])
+    .flatMap((element) => {
+      const value = numericAxisValue(element);
+      const y = textOrigin(element, 'y');
+      return value !== null && Number.isFinite(y) ? [{ element, value, y }] : [];
+    })
+    .sort((left, right) => left.value - right.value);
+}
+
+function v4AxisY(value: number, axisMaximum: number, ticks: V4AxisTick[]) {
+  if (!(axisMaximum > 0) || ticks.length < 2) return null;
+  const position = Math.max(0, Math.min(ticks.length - 1, value / axisMaximum * (ticks.length - 1)));
+  const lower = Math.min(Math.floor(position), ticks.length - 2);
+  const fraction = position - lower;
+  return ticks[lower].y + (ticks[lower + 1].y - ticks[lower].y) * fraction;
+}
+
+function setV4AxisLabels(ticks: V4AxisTick[], maximum: number, digits: number) {
+  ticks.forEach((tick, index) => setElementText(tick.element,
+    formatNumber(maximum * index / Math.max(1, ticks.length - 1), digits)));
+}
+
+function appendStackedV4Bar(
+  document: XmlDocument,
+  plot: XmlElement,
+  groupId: string,
+  barId: string,
+  x: number,
+  width: number,
+  components: Array<{ key: string; label: string; value: number; color: string }>,
+  maximum: number,
+  ticks: V4AxisTick[],
+) {
+  if (!components.length || components.some((component) => !validChartValue(component.value))) return false;
+  const series = svgShape(document, 'g', { id: groupId });
+  let accumulated = 0;
+  for (const component of components) {
+    const lowerY = v4AxisY(accumulated, maximum, ticks);
+    accumulated += component.value;
+    const upperY = v4AxisY(accumulated, maximum, ticks);
+    if (lowerY === null || upperY === null) return false;
+    const bar = svgShape(document, 'rect', {
+      id: `${barId}-${component.key}`, x: String(x), y: String(upperY), width: String(width),
+      height: String(Math.max(0, lowerY - upperY)), fill: component.color, 'fill-opacity': '0.78',
+    });
+    const title = svgShape(document, 'title', {});
+    title.appendChild(document.createTextNode(`${component.label}: ${formatNumber(component.value, 2)} PLN`));
+    bar.appendChild(title);
+    series.appendChild(bar);
+  }
+  plot.appendChild(series);
+  return true;
+}
+
+function appendV4FinancialComparisonCharts(
+  document: XmlDocument,
+  baseline: OfferWorkspaceSavingsBillSummary | null,
+  proposed: OfferWorkspaceSavingsBillSummary | null,
+  calculation: OfferWorkspaceCalculation | undefined,
+  sourceFields: Set<string>,
+) {
+  const unitCharts = [
+    { id: 'wykres_png / b2c / strona_09 / koszt_kwh_aktualny', suffix: 'current', x: 66, summary: baseline },
+    { id: 'wykres_png / b2c / strona_09 / koszt_kwh_prognoza', suffix: 'proposed', x: 337, summary: proposed },
+  ];
+  const unitMaximum = Math.max(1.2, niceAxisMaximum(Math.max(
+    ...unitCharts.map(({ summary }) => summary
+      ? (summary.totals.averageEnergyPurchasePlnPerKwh || 0) + (summary.totals.averageDistributionPurchasePlnPerKwh || 0)
+      : 0),
+  ) / 1.05));
+  for (const chart of unitCharts) {
+    const plot = uniqueElementById(document, chart.id);
+    const energy = chart.summary?.totals.averageEnergyPurchasePlnPerKwh;
+    const distribution = chart.summary?.totals.averageDistributionPurchasePlnPerKwh;
+    if (!plot || energy == null || distribution == null) continue;
+    const ticks = v4AxisTicks(plot);
+    if (ticks.length < 2) continue;
+    setV4AxisLabels(ticks, unitMaximum, 2);
+    if (appendStackedV4Bar(document, plot, `workspace-calculated-unit-cost-${chart.suffix}`,
+      `workspace-calculated-unit-cost-${chart.suffix}`, chart.x, 11.46, [
+        { key: 'distribution', label: 'Dystrybucja', value: distribution, color: '#FDB066' },
+        { key: 'energy', label: 'Energia', value: energy, color: '#FC7C00' },
+      ], unitMaximum, ticks)) {
+      sourceFields.add(`calculation.${chart.suffix === 'current' ? 'baselineBill' : 'proposedBill'}.totals.grossPurchaseEnergyCostPln/grossPurchaseDistributionCostPln/rateBasisImportKwh`);
+    }
+  }
+
+  const billCharts = [
+    { id: 'wykres_png / b2c / strona_09 / rachunek_aktualny', suffix: 'current', x: 70, summary: baseline,
+      amount: calculation?.baselineAnnualCostPln, color: '#FF9D98' },
+    { id: 'wykres_png / b2c / strona_09 / rachunek_prognoza', suffix: 'proposed', x: 340.01, summary: proposed,
+      amount: calculation?.proposedAnnualCostPln, color: '#00D477' },
+  ];
+  const billMaximum = niceAxisMaximum(Math.max(...billCharts.map(({ amount }) => validChartValue(amount) ? amount : 0)) / 1.05);
+  for (const chart of billCharts) {
+    const plot = uniqueElementById(document, chart.id);
+    const totals = chart.summary?.totals;
+    if (!plot || !validChartValue(chart.amount)) continue;
+    const ticks = v4AxisTicks(plot);
+    if (ticks.length < 2) continue;
+    setV4AxisLabels(ticks, billMaximum, 0);
+    const componentTotal = totals
+      ? totals.paidEnergyCostPln + totals.paidDistributionCostPln + totals.paidFixedCostPln : Number.NaN;
+    const componentsMatchAnnual = Number.isFinite(componentTotal) && Math.abs(componentTotal - chart.amount) <= 0.01;
+    if (appendStackedV4Bar(document, plot, `workspace-calculated-annual-bill-${chart.suffix}`,
+      `workspace-calculated-annual-bill-${chart.suffix}`, chart.x, 12, [
+        ...(componentsMatchAnnual && totals ? [
+          { key: 'fixed', label: 'Opłaty stałe', value: totals.paidFixedCostPln, color: '#FECB99' },
+          { key: 'distribution', label: 'Dystrybucja', value: totals.paidDistributionCostPln, color: '#FDB066' },
+          { key: 'energy', label: 'Energia', value: totals.paidEnergyCostPln, color: '#FC7C00' },
+        ] : [
+          { key: 'total', label: 'Rachunek roczny', value: chart.amount, color: chart.color },
+        ]),
+      ], billMaximum, ticks)) {
+      sourceFields.add(`calculation.${chart.suffix === 'current' ? 'baselineAnnualCostPln' : 'proposedAnnualCostPln'}`);
+      if (componentsMatchAnnual) {
+        sourceFields.add(`calculation.${chart.suffix === 'current' ? 'baselineBill' : 'proposedBill'}.totals.paidEnergyCostPln/paidDistributionCostPln/paidFixedCostPln`);
+      }
+    }
+  }
+}
+
+function appendAnnualBillComparison(document: XmlDocument, calculation: OfferWorkspaceCalculation | undefined) {
+  const plot = uniqueElementById(document, 'grafika / slupki_oszczednosci');
+  const baselineCost = calculation?.baselineAnnualCostPln;
+  const proposedCost = calculation?.proposedAnnualCostPln;
+  if (!plot || !validChartValue(baselineCost) || !validChartValue(proposedCost)) return false;
+
+  removeDataShapes(plot);
+  for (const id of ['_przerywana_1', '_przerywana_2', '_strzalka']) removeElement(elementByIdWithin(plot, id));
+  const tickIds = [
+    '_wartosc_1', '_wartosc_2_2', '_wartosc_4_3', '_wartosc_4_2', '_wartosc_2', '_wartosc_3',
+    '_wartosc_4', '_wartosc_5', '_wartosc_6', '_wartosc_5_2', '_wartosc_6_2',
+  ];
+  const axisMaximum = setPlotAxis(
+    plot,
+    Math.max(baselineCost, proposedCost) / 1.05,
+    tickIds,
+    0,
+    (id) => elementById(document, id),
+  );
+  const baselineY = annualBillPlotY(document, 0, axisMaximum);
+  if (baselineY === null) return false;
+  const series = svgShape(document, 'g', { id: 'workspace-calculated-annual-bill-comparison' });
+  const entries = [
+    { id: 'workspace-calculated-current-annual-cost', x: 113, value: baselineCost, label: 'Aktualnie', title: 'Rachunek roczny aktualny', color: '#FF9D98' },
+    { id: 'workspace-calculated-proposed-annual-cost', x: 162, value: proposedCost, label: 'Z systemem', title: 'Rachunek roczny z systemem', color: '#029B46' },
+  ];
+  for (const entry of entries) {
+    const y = annualBillPlotY(document, entry.value, axisMaximum);
+    if (y === null) return false;
+    const height = baselineY - y;
+    const bar = svgShape(document, 'rect', {
+      id: entry.id, x: String(entry.x), y: String(y), width: '24', height: String(height),
+      fill: entry.color, 'fill-opacity': '0.65',
+    });
+    const title = svgShape(document, 'title', {});
+    title.appendChild(document.createTextNode(`${entry.title}: ${formatNumber(entry.value, 2)} PLN`));
+    bar.appendChild(title);
+    series.appendChild(bar);
+    const label = svgShape(document, 'text', {
+      id: `${entry.id}-label`, x: String(entry.x + 12), y: '768.5', 'text-anchor': 'middle',
+      fill: '#2B3674', 'font-family': 'DM Sans', 'font-size': '5.5',
+    });
+    label.appendChild(document.createTextNode(entry.label));
+    series.appendChild(label);
+  }
+  plot.appendChild(series);
+  return true;
+}
+
 function renderOfferWorkspaceDocumentV4(
   workspace: OfferWorkspaceDocumentData,
   draft: OfferWorkspaceDraft,
+  options: OfferWorkspaceDocumentOptions,
 ): OfferWorkspaceDocumentResult {
   const manifest = inspectOfferTemplateV4();
   const missing = new Map<string, OfferWorkspaceDocumentMissingData>();
@@ -2295,6 +2758,14 @@ function renderOfferWorkspaceDocumentV4(
     sourceFields.add('calculation.warnings');
   }
   const calculationForResults = workspace.calculation?.status === 'ready' ? workspace.calculation : undefined;
+  const baselineSettlement = draft.currentSettlement ?? (
+    workspace.input.settlementMode === 'NET_METERING' || workspace.input.settlementMode === 'NET_BILLING'
+      ? workspace.input.settlementMode : null
+  );
+  const baselineSummary = calculationForResults?.baselineBill
+    ? summarizeOfferSavingsBill(calculationForResults.baselineBill, baselineSettlement) : null;
+  const proposedSummary = calculationForResults?.proposedBill
+    ? summarizeOfferSavingsBill(calculationForResults.proposedBill, draft.targetSettlement) : null;
   const { pricing, rows: selectedRows } = selectedProductRows(workspace, draft);
   const displayRows = page10DisplayRows(selectedRows, pricing);
   if (selectedRows.length) {
@@ -2319,15 +2790,16 @@ function renderOfferWorkspaceDocumentV4(
     for (const field of pageManifest.fields) {
       const sourceElement = uniqueElementById(sourceDocument, field.id);
       if (!sourceElement) throw new Error(`Nie znaleziono jawnego pola ${field.id}.`);
-      const value = mapV4Field(page, field.id, sourceElement.textContent || '', workspace, draft, displayRows, pricing, calculationForResults);
+      const value = mapV4Field(page, field.id, sourceElement.textContent || '', workspace, draft, displayRows, pricing,
+        calculationForResults, options.tariffLabels, baselineSummary, proposedSummary);
       mapped.set(field.id, value);
       values[field.id] = value?.value ?? '—';
       if (value?.source.startsWith('unknown.')) {
-        addV4Missing(missing, page, field.id, v4MissingReason(page, v4Semantic(field.id)));
+        addV4Missing(missing, page, field.id, v4MissingReason(page, v4Semantic(field.id), Boolean(calculationForResults)));
       } else if (value) {
         value.source.split('|').forEach((source) => sourceFields.add(source));
       } else {
-        addV4Missing(missing, page, field.id, v4MissingReason(page, v4Semantic(field.id)));
+        addV4Missing(missing, page, field.id, v4MissingReason(page, v4Semantic(field.id), Boolean(calculationForResults)));
       }
     }
 
@@ -2340,18 +2812,77 @@ function renderOfferWorkspaceDocumentV4(
       setElementText(period, `${periodText})`);
       setElementText(closingParenthesis, '');
     }
+    if (page === 1) {
+      const field = pageManifest.fields.find((item) => mapped.get(item.id)?.source === 'documentContext.tariffLabels.currentOperator');
+      const value = field ? mapped.get(field.id) : null;
+      const element = field ? uniqueElementById(document, field.id) : null;
+      if (field && value && element && setV4WrappedField(element, value.value, 160, 1)) {
+        addV4Missing(missing, page, field.id, 'Nazwa operatora została skrócona, aby zmieściła się w polu.');
+      }
+      const addressField = pageManifest.fields.find((item) => v4Semantic(item.id) === 'b2c_adres_report');
+      const addressValue = addressField ? mapped.get(addressField.id) : null;
+      const addressElement = addressField ? uniqueElementById(document, addressField.id) : null;
+      if (addressField && addressValue && addressElement
+        && setV4WrappedField(addressElement, addressValue.value, 130, 2, 8)) {
+        addV4Missing(missing, page, addressField.id, 'Adres został skrócony, aby zmieścił się w polu.');
+      }
+    }
     if (page === 9) {
-      setElementText(uniqueElementById(document, '_oszczednosc_%'), '');
-      setElementText(uniqueElementById(document, '_opis_oferty_opis'),
-        'Brak potwierdzonych taryf i kalkulacji rozliczenia; oszczędności pozostają nieznane.');
+      const baseline = calculationForResults?.baselineAnnualCostPln;
+      const savings = calculationForResults?.annualSavingsPln;
+      const savingsPercent = baseline !== null && baseline !== undefined && baseline > 0
+        && savings !== null && savings !== undefined && Number.isFinite(savings)
+        ? `${savings >= 0 ? '+' : ''}${formatNumber(savings / baseline * 100, 1)}%` : '';
+      const percentElement = uniqueElementById(document, '_oszczednosc_%');
+      setElementText(percentElement, savingsPercent);
+      if (percentElement && savingsPercent && setV4WrappedField(percentElement, savingsPercent, 25, 1)) {
+        addV4Missing(missing, page, 'calculation.annualSavingsPln/calculation.baselineAnnualCostPln',
+          'Procent oszczędności został skrócony, aby zmieścić się przy słupkach.');
+      }
+      const estimatedPayback = calculationForResults?.estimatedPaybackYears;
+      const paybackText = typeof estimatedPayback === 'number' && Number.isFinite(estimatedPayback) && estimatedPayback >= 0
+        ? estimatedPayback < 1
+          ? 'Szacowany okres zwrotu: poniżej 1 roku (szacunek wieloletni).'
+          : `Szacowany okres zwrotu: ${Math.floor(estimatedPayback)} ${
+            Math.floor(estimatedPayback) === 1 ? 'rok'
+              : Math.floor(estimatedPayback) % 10 >= 2 && Math.floor(estimatedPayback) % 10 <= 4
+                && Math.floor(estimatedPayback) % 100 !== 12 && Math.floor(estimatedPayback) % 100 !== 13
+                && Math.floor(estimatedPayback) % 100 !== 14 ? 'lata' : 'lat'
+          } (pełne lata, zaokrąglono w dół; szacunek wieloletni).`
+        : 'Szacowany okres zwrotu: brak wyniku.';
+      const description = uniqueElementById(document, '_opis_oferty_opis');
+      if (description) {
+        setV4WrappedField(description, `Kalkulacja ma charakter szacunkowy. ${paybackText}`, 515, 3);
+      }
+      if (!calculationForResults || estimatedPayback == null || !Number.isFinite(estimatedPayback) || estimatedPayback < 0) {
+        addV4Missing(missing, page, 'calculation.estimatedPaybackYears',
+          'Brak oszacowanego okresu zwrotu; nie zastąpiono go prostym zwrotem z pierwszego roku.');
+      }
       replaceTextMatching(document, /^Prognozowana kwota dotacji z Programu “Mój Przydomowy Magazyn Energii”$/, 'Dotacja do potwierdzenia');
       replaceTextMatching(document, /^Prognozowana ulga termomodernizacyjna\s*$/, 'Ulga do potwierdzenia');
       replaceTextMatching(document, /^Prognozowany koszt sytemu po dofinansowaniach$/, 'Koszt po finansowaniu do ustalenia');
       for (const group of pageManifest.semanticGroups.filter((item) => item.id.startsWith('sekcja /'))) {
         removeDataShapes(uniqueElementById(document, group.id));
       }
-      removeDataShapes(uniqueElementById(document, 'grafika / slupki_oszczednosci'));
-      suppressedCharts.push({ page, reason: 'Brak wyniku rozliczenia i symulacji; wyczyszczono przykładowe serie finansowe, zachowując osie i układ.' });
+      const chartRendered = appendAnnualBillComparison(document, calculationForResults);
+      if (!chartRendered) {
+        addV4Missing(missing, page, 'calculation.baselineAnnualCostPln/calculation.proposedAnnualCostPln',
+          calculationForResults ? 'Brak nieujemnych rocznych wartości rachunku do wykresu.' : 'Brak gotowej kalkulacji finansowej.' );
+        suppressedCharts.push({ page, reason: calculationForResults
+          ? 'Brak poprawnych rocznych kosztów do wykresu; przykładowe serie finansowe wyczyszczono.'
+          : 'Brak gotowego wyniku kalkulacji; przykładowe serie finansowe wyczyszczono.' });
+      } else {
+        suppressedCharts.push({ page, reason: 'Wykres oszczędności używa rocznych kosztów z kalkulacji; porównania składowych kosztów zakupu i rachunków korzystają z podsumowań calculation.baselineBill/proposedBill.' });
+      }
+      appendV4FinancialComparisonCharts(document, baselineSummary, proposedSummary, calculationForResults, sourceFields);
+      for (const field of pageManifest.fields) {
+        const value = mapped.get(field.id);
+        if (!value?.source.startsWith('documentContext.tariffLabels.')) continue;
+        const element = uniqueElementById(document, field.id);
+        if (element && setV4WrappedField(element, value.value, 250, 1)) {
+          addV4Missing(missing, page, field.id, 'Nazwa taryfy została skrócona, aby zmieściła się w nagłówku.');
+        }
+      }
     }
     if (page === 10) {
       const labelUpdates: Array<[RegExp, string, number | null | undefined]> = [
@@ -2398,8 +2929,6 @@ function renderOfferWorkspaceDocumentV4(
     }
     if (page === 4) {
       removeDataShapes(uniqueElementById(document, 'Group 1205'));
-      const annual = uniqueElementById(document, 'sekcja / podsumowanie_roczne');
-      removeDataShapes(annual);
       const hasForecastChart = calculationForResults
         ? appendMonthlyForecastReadings(document, calculationForResults, sourceFields, missing, uniqueElementById)
         : false;
@@ -2414,6 +2943,7 @@ function renderOfferWorkspaceDocumentV4(
     }
     if (page >= 5 && page <= 8) {
       neutralizeV4DailyTariffLabels(document);
+      reflowV4DailyProposedHeader(document, page);
       const hasProfile = appendHourlyReadings(document, page, workspace, draft, sourceFields, missing, uniqueElementById, 'V4');
       if (!hasProfile) addV4Missing(missing, page, 'energy.dayProfiles/measurements.dayProfiles', 'Brak kompletnego profilu dla strony; przykładowy profil bieżący usunięto.');
       addV4Missing(missing, page, 'simulation.batteryStateOfCharge', 'Brak wyniku magazynu; przykładowe wartości stanu naładowania pozostają usunięte.');
@@ -2427,7 +2957,10 @@ function renderOfferWorkspaceDocumentV4(
         : 'Dane bieżące trafiają wyłącznie do górnego panelu; przyszły panel nie otrzymał pasującej serii kalkulacji.' });
     }
     clearNumericPlaceholders(document);
-    appendDraftStatusFooter(document, page, workspace.energy, sourceFields);
+    for (const field of pageManifest.fields) {
+      if (mapped.get(field.id)?.value) fitV4NumberBeforeUnit(uniqueElementById(document, field.id), page === 9 ? 8 : 0);
+    }
+    appendDraftStatusFooter(document, page, workspace.energy, sourceFields, Boolean(calculationForResults));
     injectFonts(document);
     const svg = new XMLSerializer().serializeToString(document);
     parseSvg(svg, page);
@@ -2444,9 +2977,21 @@ function renderOfferWorkspaceDocumentV4(
     missingData: Array.from(missing.values()),
     suppressedCharts,
     limitations: [
-      ...OFFER_TEMPLATE_V4_LIMITATIONS,
+      ...OFFER_TEMPLATE_V4_LIMITATIONS.filter((item) => !calculationForResults
+        || !item.startsWith('Prognoza, rozliczenia taryfowe, dotacje, ulgi, oszczędności i zwrot')),
+      ...(calculationForResults ? [
+        'Wyniki obliczeń mają charakter szacunkowy; niewypełnione szczegóły pozostają wskazane w missingData.',
+      ] : []),
       'Kosztorys korzysta z aktualnej wyceny katalogowej, klienta i trybu VAT szkicu; system cost jest przed finansowaniem.',
-      'Rozliczenia taryfowe, dotacje, ulgi, oszczędności, zwrot i prognoza wymagają osobnych wyników obliczeń.',
+      ...(!calculationForResults ? [
+        'Rozliczenia taryfowe, dotacje, ulgi, oszczędności, zwrot i prognoza wymagają osobnych wyników obliczeń.',
+      ] : []),
+      ...(draft.targetSettlement === 'NET_BILLING' ? [
+        'Wartość eksportu Net-billing oznacza kwotę przypisaną depozytowi (może uwzględniać mnożnik), nie surową cenę RCE ani gwarantowaną wypłatę.',
+      ] : []),
+      ...((baselineSettlement === 'NET_METERING' || draft.targetSettlement === 'NET_METERING') ? [
+        'Net-metering: oddanie energii jest pokazane ilościowo; nie przypisano eksportowi fikcyjnej ceny PLN.',
+      ] : []),
       ...(workspace.energy ? [
         `Dane energii: jakość ${workspace.energy.quality}; źródło: ${workspace.energy.source}; model: ${workspace.energy.model}.`,
         ...workspace.energy.issues.map((issue) => `Uwaga modelu energii: ${issue}`),
@@ -2706,6 +3251,6 @@ export function renderOfferWorkspaceDocument(
   if (options.templateKey === undefined || options.templateKey === 'REFORM_B2C/2026_10_V3') {
     return renderOfferWorkspaceDocumentV3(workspace, draft);
   }
-  if (options.templateKey === OFFER_TEMPLATE_V4_KEY) return renderOfferWorkspaceDocumentV4(workspace, draft);
+  if (options.templateKey === OFFER_TEMPLATE_V4_KEY) return renderOfferWorkspaceDocumentV4(workspace, draft, options);
   throw new Error(`Nieobsługiwany szablon dokumentu: ${options.templateKey}`);
 }

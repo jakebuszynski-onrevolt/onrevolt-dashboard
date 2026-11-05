@@ -105,6 +105,11 @@ function textById(document: XmlDocument, id: string) {
     .find((element) => element.getAttribute('id') === id)?.textContent?.trim() || '';
 }
 
+function textLinesById(document: XmlDocument, id: string) {
+  const element = elementById(document, id);
+  return element ? Array.from(element.getElementsByTagName('tspan')).map((span) => span.textContent || '').filter(Boolean) : [];
+}
+
 function moneyValue(value: string) {
   return Number(value.replace(/\s/g, '').replace('PLN', '').replace(/\./g, '').replace(',', '.'));
 }
@@ -112,6 +117,13 @@ function moneyValue(value: string) {
 function elementById(document: XmlDocument, id: string) {
   return Array.from(document.getElementsByTagName('*'))
     .find((element) => element.getAttribute('id') === id) as XmlElement | undefined;
+}
+
+function pathMoveY(document: XmlDocument, id: string) {
+  const path = elementById(document, id)?.getAttribute('d') || '';
+  const match = /^M\s*[-+\d.]+[ ,]+([-+\d.]+)/.exec(path);
+  assert.ok(match, `SVG path ${id} should define its first Y coordinate`);
+  return Number(match[1]);
 }
 
 function geometryTree(element: XmlElement): unknown {
@@ -308,6 +320,18 @@ test('actual monthly readings populate measured summaries without deriving PV or
   assert.equal(textById(pageTen, '_cena_jednostkowa_brutto_4'), 'brutto\nCena jednostkowa');
   assert.equal(textById(pageTen, '_nazwa_modelu_3_2'), '', 'unused product rows stay empty instead of getting a dash');
   assert.ok((pageTen.documentElement?.textContent || '').includes('—'), 'unknown selected-product price is marked with a dash');
+});
+
+test('V4 page 3 monthly chart rounds a 2670 kWh peak to a 3000 kWh axis ceiling', () => {
+  const data = workspace();
+  data.measurements.months = data.measurements.months.map((month, index) => ({
+    ...month,
+    importKwh: index === 5 ? 2670 : 300,
+    exportKwh: 100,
+  }));
+  const result = renderOfferWorkspaceDocument(data, emptyOfferWorkspaceDraft(), { templateKey: OFFER_TEMPLATE_V4_KEY });
+  const pageThree = parseSvg(result.pages[2].svg);
+  assert.equal(textById(pageThree, '_1200'), '3 000');
 });
 
 test('renders model energy summaries and monthly/hourly series with explicit provenance', () => {
@@ -711,10 +735,12 @@ test('V4 maps month hash fields by calendar month and never copies current energ
   assert.equal(textById(pageFour, '#b2c_produkcja_z_pv_grudzien_prognozowana_strona_04'), '—');
   const annualSummary = elementById(pageFour, 'sekcja / podsumowanie_roczne')!;
   const exampleFills = new Set(['#fed17f', '#8d96aa', '#006c30', '#fc7c00', '#44e09c', '#00d477']);
-  const remainingExampleShapes = Array.from(annualSummary.getElementsByTagName('*'))
+  const remainingTableFills = Array.from(annualSummary.getElementsByTagName('*'))
     .filter((element) => ['path', 'rect', 'polygon', 'polyline', 'circle', 'ellipse', 'use'].includes((element as XmlElement).localName || ''))
     .filter((element) => exampleFills.has(((element as XmlElement).getAttribute('fill') || '').toLowerCase()));
-  assert.equal(remainingExampleShapes.length, 0, 'future monthly data shapes are cleared while the section/labels remain');
+  assert.ok(remainingTableFills.length > 0, 'source row fills remain behind the monthly values');
+  assert.equal(elementById(pageFour, 'workspace-calculated-forecast-monthly-series'), undefined,
+    'no forecast bars are added without a completed calculation');
   assert.ok(annualSummary.getElementsByTagName('text').length > 0, 'monthly labels and table framing remain');
   assert.ok(result.missingData.some((item) => item.page === 4 && item.fieldKeys.includes('simulation.futureMonthlySeries')));
 });
@@ -735,16 +761,72 @@ test('V4 daily modeled series are scoped to current panels and future panels sta
   assert.ok(currentSeries, 'series is nested under the semantic current panel');
   assert.equal(elementById(futurePanel as unknown as XmlDocument, 'workspace-modelled-hourly-series'), undefined);
   assert.equal(textById(pageFive, '#b2c_moc_instalacji_fotowoltaicznej_strona_05'), '8,2', 'current PV stays in the current panel');
-  assert.equal(textById(pageFive, '#b2c_moc_pv_prognozowana_strona_05'), '—', 'current PV is not copied into the future panel');
+  assert.equal(textById(pageFive, '#b2c_moc_pv_prognozowana_strona_05'), '8,2', 'KEEP_EXISTING carries known PV capacity into the future panel');
   assert.equal(textById(pageFive, '#b2c_dzien_sloneczny_letni_roboczy_zuzycie_energii_suma_kwh_strona_05'), '12,00');
   assert.equal(textById(pageFive, '#b2c_taryfa_prognozowana_strona_05'), '—');
   assert.equal(textById(pageFive, '#b2c_dzien_sloneczny_letni_roboczy_oszczednosc_pln_strona_05'), '—');
   assert.equal(Array.from(futurePanel.getElementsByTagName('*')).some((element) => element.getAttribute('data-series')), false);
 });
 
+test('V4 daily tariff headers reflow long labels and retain known PV under KEEP_EXISTING', () => {
+  const data = workspace();
+  data.energy = energyFixture(data);
+  data.input.existingPv!.powerKw = 9.99;
+  const draft = emptyOfferWorkspaceDraft();
+  draft.existingPv.powerKw = 9.99;
+  draft.pvStrategy = 'KEEP_EXISTING';
+  const result = renderOfferWorkspaceDocument(data, draft, {
+    templateKey: OFFER_TEMPLATE_V4_KEY,
+    tariffLabels: { proposed: 'G13active' },
+  });
+  assert.ok(result.sourceFieldsUsed.includes('draft.existingPv.powerKw'));
+  assert.ok(!result.sourceFieldsUsed.includes('templates.powerKw'));
+  const italicBytes = fs.readFileSync(path.join(process.cwd(), 'public', 'fonts', 'dm-sans', 'DMSans-Italic.ttf'));
+  const italic = parseFont(italicBytes.buffer.slice(italicBytes.byteOffset, italicBytes.byteOffset + italicBytes.byteLength) as ArrayBuffer);
+  const width = (element: XmlElement) => {
+    const span = element.getElementsByTagName('tspan')[0] as XmlElement;
+    const size = Number(span.getAttribute('font-size') || element.getAttribute('font-size') || 8);
+    return italic.getAdvanceWidth((element.textContent || '').trim(), size);
+  };
+  const bounds = (element: XmlElement) => {
+    const span = element.getElementsByTagName('tspan')[0] as XmlElement;
+    const x = Number(span.getAttribute('x'));
+    const textWidth = width(element);
+    return span.getAttribute('text-anchor') === 'end'
+      ? { start: x - textWidth, end: x }
+      : { start: x, end: x + textWidth };
+  };
+
+  for (const page of [5, 6, 7, 8]) {
+    const suffix = String(page).padStart(2, '0');
+    const document = parseSvg(result.pages[page - 1].svg);
+    const tariff = elementById(document, `#b2c_taryfa_prognozowana_strona_${suffix}`)!;
+    const tariffFollowing = elementById(document, 'stale / tekst_3')!;
+    const pv = elementById(document, `#b2c_moc_pv_prognozowana_strona_${suffix}`)!;
+    const pvFollowing = elementById(document, 'stale / tekst_4')!;
+    const capacity = elementById(document, `#b2c_pojemnosc_magazynu_prognozowana_strona_${suffix}`)!;
+    const capacityUnit = elementById(document, 'stale / jednostka lub dopisek_2')!;
+    const tariffBounds = bounds(tariff);
+    const followingBounds = bounds(tariffFollowing);
+    const pvBounds = bounds(pv);
+    const pvFollowingBounds = bounds(pvFollowing);
+    const capacityBounds = bounds(capacity);
+
+    assert.equal(tariff.textContent?.trim(), 'G13active');
+    assert.equal(pv.textContent?.trim(), '10,0', '9.99 kWp is rendered at the established one-decimal precision');
+    assert.ok(followingBounds.start >= tariffBounds.end + 1.5, `page ${page}: tariff does not collide with Fotowoltaika`);
+    assert.ok(pvBounds.start >= followingBounds.end + 1.5, `page ${page}: Fotowoltaika label does not collide with its value`);
+    assert.ok(pvFollowingBounds.start >= pvBounds.end + 1.5, `page ${page}: PV value does not collide with kWp label`);
+    assert.ok(capacityBounds.start >= pvFollowingBounds.end + 1.5, `page ${page}: Magazyn energii label does not collide with capacity`);
+    assert.ok(bounds(capacityUnit).start >= capacityBounds.end + 1.5, `page ${page}: capacity does not collide with kWh unit`);
+    assert.ok(bounds(capacityUnit).end < 550, `page ${page}: daily tariff header stays inside its panel`);
+  }
+});
+
 test('V4 page 10 uses selected catalog pricing and keeps finance outcomes unknown', () => {
   const data = workspace();
   data.templates[0].items[0].quantity = 2;
+  data.templates[0].items[0].product!.name = 'Battery Model X with an intentionally long catalogue description for line wrapping';
   const draft = emptyOfferWorkspaceDraft();
   draft.selectedTemplateIds = ['battery-kit'];
   draft.saleVatMode = 'REDUCED_8';
@@ -753,11 +835,20 @@ test('V4 page 10 uses selected catalog pricing and keeps finance outcomes unknow
   const pageTenText = pageTen.documentElement?.textContent || '';
 
   assert.equal(textById(pageTen, '#b2c_kosztorys_pozycja_1_strona_10'), 'Magazyn energii');
-  assert.equal(textById(pageTen, '#b2c_kosztorys_model_1_strona_10'), 'Acme Battery Model X');
+  const modelLines = textLinesById(pageTen, '#b2c_kosztorys_model_1_strona_10');
+  assert.ok(modelLines.length > 1);
+  assert.equal(modelLines.join(' '), 'Acme Battery Model X with an intentionally long catalogue description for line wrapping');
+  const modelYs = modelLines.map((_, index) => Number(elementById(pageTen, '#b2c_kosztorys_model_1_strona_10')!
+    .getElementsByTagName('tspan')[index].getAttribute('y')));
+  assert.ok(modelYs.every((y, index) => index === 0 || y > modelYs[index - 1]), 'wrapped model lines use distinct baselines');
   assert.equal(textById(pageTen, '#b2c_kosztorys_ilosc_1_strona_10'), '2');
-  assert.equal(textById(pageTen, '#b2c_kosztorys_cena_jednostkowa_brutto_1_strona_10'), '14 850,00 PLN');
-  assert.equal(textById(pageTen, '#b2c_kosztorys_wartosc_brutto_1_strona_10'), '29 700,00 PLN');
-  assert.equal(textById(pageTen, '#b2c_koszt_systemu_strona_10'), '29 700,00 PLN');
+  assert.equal(textById(pageTen, '#b2c_kosztorys_cena_jednostkowa_brutto_1_strona_10'), '14 850,00');
+  assert.equal(textById(pageTen, '#b2c_kosztorys_wartosc_brutto_1_strona_10'), '29 700,00');
+  assert.equal(textById(pageTen, '#b2c_koszt_systemu_strona_10'), '29 700,00');
+  for (const id of ['#b2c_kosztorys_cena_jednostkowa_brutto_1_strona_10',
+    '#b2c_kosztorys_wartosc_brutto_1_strona_10', '#b2c_koszt_systemu_strona_10']) {
+    assert.doesNotMatch(textById(pageTen, id), /PLN/, 'amount text excludes the separate static PLN unit');
+  }
   assert.equal(textById(pageTen, '#b2c_prognozowana_kwota_dotacji_z_programu_strona_10'), '—');
   assert.equal(textById(pageTen, '#b2c_prognozowana_ulga_termomodernizacyjna_strona_10'), '—');
   assert.equal(textById(pageTen, '#b2c_prognozowany_koszt_sytemu_po_dofinansowaniach_strona_10'), '—');
@@ -797,16 +888,19 @@ function billingScenario(intervals: OfferBillingIntervalResult[], amountOverride
 
 test('V4 maps authoritative calculation forecasts, billing outputs, and UTC-matched daily battery flows', () => {
   const data = workspace();
+  data.input.location!.address = 'Daszewicka 23C, 61-328 Poznań, Polska';
   data.energy = energyFixture(data);
+  data.energy.months[0] = { ...data.energy.months[0], period: '2025-08', loadKwh: 100 };
   const draft = emptyOfferWorkspaceDraft();
   draft.selectedTemplateIds = ['battery-kit'];
   draft.saleVatMode = 'REDUCED_8';
+  draft.currentSettlement = 'NET_METERING';
   draft.targetSettlement = 'NET_BILLING';
   const forecastEnergy = energyFixture(data);
   forecastEnergy.totals = { loadKwh: 7200, pvKwh: 8400, directKwh: 2300 };
   forecastEnergy.months = [
     { period: '2026-01', loadKwh: 400, pvKwh: 500, directKwh: 100 },
-    { period: '2026-02', loadKwh: 300, pvKwh: 400, directKwh: 90 },
+    { period: '2025-08', loadKwh: 300, pvKwh: 400, directKwh: 90 },
     { period: '2026-03', loadKwh: 500, pvKwh: 700, directKwh: 150 },
     { period: '2026-05', loadKwh: 900, pvKwh: 1200, directKwh: null },
   ];
@@ -825,49 +919,95 @@ test('V4 maps authoritative calculation forecasts, billing outputs, and UTC-matc
       pvToBatteryKwh: 0.75, batteryToGridKwh: 0.2, socKwh: 0.5,
     };
   });
-  const beforeIntervals = flows.map((flow) => billingInterval(flow.startUtc, flow.endUtc, { cashDuePln: 20 }));
-  const afterIntervals = flows.map((flow) => billingInterval(flow.startUtc, flow.endUtc, { cashDuePln: 10 }));
+  const beforeIntervals = flows.map((flow) => billingInterval(flow.startUtc, flow.endUtc, {
+    energyCostPln: 20, distributionCostPln: 3, fixedCostPln: 1, totalCostPln: 24, cashDuePln: 24,
+  }));
+  const afterIntervals = flows.map((flow) => billingInterval(flow.startUtc, flow.endUtc, {
+    energyCostPln: 10, distributionCostPln: 2, fixedCostPln: 1, totalCostPln: 13,
+    coveredEnergyPln: 1, coveredDistributionPln: 0.5, depositUsedPln: 1.5, cashDuePln: 13,
+  }));
   data.calculation = {
     status: 'ready', reasons: [], warnings: ['Prognoza modelowa, nie gwarancja.'],
     baselineAnnualCostPln: 10000, proposedAnnualCostPln: 4000, annualSavingsPln: 6000,
-    systemCostPln: 29700, costAfterFinancingPln: 17000, paybackYears: 2.8333,
+    systemCostPln: 29700, costAfterFinancingPln: 17000, paybackYears: 2.8333, estimatedPaybackYears: 2.8333,
     grantPln: 5000, taxReliefPln: 3000, rankings: [], recommendedTemplateIds: ['battery-kit'],
     forecastEnergy, forecastMeasurements,
-    baselineBill: billingScenario(beforeIntervals, { energyCostPln: 200, distributionCostPln: 50, fixedCostPln: 25, totalCostPln: 275, cashDuePln: 10000 }),
+    baselineBill: billingScenario(beforeIntervals, {
+      energyCostPln: 200, distributionCostPln: 50, fixedCostPln: 25, totalCostPln: 275, cashDuePln: 10000,
+      billedImportKwh: 248, coveredKwh: 40, coveredEnergyPln: 20,
+    }),
     proposedBill: billingScenario(afterIntervals, { energyCostPln: 90, distributionCostPln: 35, fixedCostPln: 25, totalCostPln: 150, cashDuePln: 4000, depositEarnedPln: 75, depositUsedPln: 40, depositBalancePln: 12, pendingDepositPln: 8, coveredEnergyPln: 25, coveredDistributionPln: 5 }),
     forecastFlows: flows,
   };
+  data.calculation.baselineBill!.totals.totalCostPln = 8556.19;
+  data.calculation.proposedBill!.totals.totalCostPln = 6402.97;
 
-  const result = renderOfferWorkspaceDocument(data, draft, { templateKey: OFFER_TEMPLATE_V4_KEY });
+  const result = renderOfferWorkspaceDocument(data, draft, {
+    templateKey: OFFER_TEMPLATE_V4_KEY,
+    tariffLabels: { current: 'G11', proposed: 'G12', currentOperator: 'Enea Operator' },
+  });
+  const pageOne = parseSvg(result.pages[0].svg);
   const pageThree = parseSvg(result.pages[2].svg);
   const pageFour = parseSvg(result.pages[3].svg);
   const pageFive = parseSvg(result.pages[4].svg);
   const pageNine = parseSvg(result.pages[8].svg);
   const pageTen = parseSvg(result.pages[9].svg);
 
+  assert.equal(textById(pageOne, '#b2c_operator_systemu_dystrybucyjnego_strona_01'), 'Enea Operator');
+  assert.equal(textById(pageOne, '#b2c_dane_rozliczeniowe_taryfa_strona_01'), 'G11');
+  assert.equal(textById(pageOne, '#b2c_oplaty_stale_i_dystrybucyjne_strona_01'), '75,00');
+  assert.equal(textById(pageOne, '#b2c_zakup_energii_strona_01'), '200,00');
+  assert.equal(textById(pageOne, '#b2c_twoj_rachunek_strona_01'), '10 000,00');
+  const addressLines = textLinesById(pageOne, '#b2c_adres_report_strona_01');
+  assert.equal(addressLines.join(' ').replace(/\s+/g, ' ').trim(), 'Daszewicka 23C, 61-328 Poznań, Polska');
+  assert.equal(addressLines.length, 2, 'the long address wraps within the left-hand panel');
+  assert.ok(result.sourceFieldsUsed.includes('documentContext.tariffLabels.currentOperator'));
   assert.equal(textById(pageThree, '#b2c_zuzycie_energii_rok_strona_03'), '3 600', 'baseline remains workspace.energy');
-  assert.equal(textById(pageThree, '#b2c_okres_strona_03'), '2025-10 - 2026-09)');
+  const baselineLowMonth = elementById(pageThree, '#b2c_miesiac_o_malym_zuzyciu_strona_03')!;
+  assert.equal(textById(pageThree, '#b2c_miesiac_o_malym_zuzyciu_strona_03'), '2025-08');
+  assert.equal(baselineLowMonth.getElementsByTagName('tspan')[0].getAttribute('x'), '387');
+  assert.equal(baselineLowMonth.getElementsByTagName('tspan')[0].getAttribute('text-anchor'), null,
+    'year-month values are not treated as signed numbers for unit alignment');
+  assert.equal(textById(pageThree, '#b2c_okres_strona_03'), '2025-08 - 2026-09)');
+  assert.equal(textById(pageThree, '#b2c_wartosc_energii_pobranej_strona_03'), '270,00');
+  assert.equal(textById(pageThree, '#b2c_wartosc_energii_oddanej_strona_03'), '—', 'net-metering export has no fabricated PLN value');
+  assert.equal(textById(pageThree, '#b2c_srednia_cena_1_kwh_pln_strona_03'), '—', 'net-metering export has no fabricated unit rate');
+  assert.equal(textById(pageThree, '#b2c_srednia_cena_1kwh_pln_strona_03'), '0,938');
   assert.equal(textById(pageThree, 'stale / jednostka lub dopisek'), '');
   assert.equal(textById(pageFour, '#b2c_zuzycie_energii_prognozowane_strona_04'), '7 200');
+  assert.equal(textById(pageFour, '#b2c_produkcja_z_pv_prognozowana_strona_04'), '8 400');
   assert.equal(textById(pageFour, '#b2c_calkowite_uzycie_energii_kwh_maj_prognozowane_strona_04'), '900');
   assert.equal(textById(pageFour, '#b2c_autokonsumpcja_z_pv_kwh_maj_prognozowana_strona_04'), '12');
   assert.equal(textById(pageFour, '#b2c_energia_pobrana_z_sieci_kwh_maj_prognozowana_strona_04'), '12');
   assert.equal(textById(pageFour, '#b2c_energia_oddana_do_sieci_kwh_maj_prognozowana_strona_04'), '36');
   assert.equal(textById(pageFour, '#b2c_autokonsumpcja_z_magazynu_kwh_maj_prognozowana_strona_04'), '6');
   assert.equal(textById(pageFour, '#b2c_energia_pobrana_z_sieci_prognozowana_strona_04'), '500');
-  assert.equal(textById(pageFour, '#b2c_wartosc_energii_pobranej_prognozowana_strona_04'), '90,00');
-  assert.equal(textById(pageFour, '#b2c_wartosc_energii_oddanej_prognozowana_strona_04'), '30,00');
+  assert.equal(textById(pageFour, '#b2c_wartosc_energii_pobranej_prognozowana_strona_04'), '155,00', 'purchase value restores covered energy and distribution once');
+  assert.equal(textById(pageFour, '#b2c_wartosc_energii_oddanej_prognozowana_strona_04'), '75,00', 'net-billing export value is the earned deposit');
+  assert.equal(textById(pageFour, '#b2c_srednia_cena_1_kwh_pln_prognozowana_strona_04'), '0,087', 'export average is deposit-based, not raw RCE');
+  assert.equal(textById(pageFour, '#b2c_srednia_cena_1kwh_pln_prognozowana_strona_04'), '0,538', 'purchase average uses gross purchase costs and billed import');
   assert.equal(textById(pageFour, '#b2c_miesiac_o_najwiekszym_zuzyciu_strona_04'), '2026-05');
+  const forecastLowMonth = elementById(pageFour, '#b2c_miesiac_o_malym_zuzyciu_strona_04')!;
+  assert.equal(textById(pageFour, '#b2c_miesiac_o_malym_zuzyciu_strona_04'), '2025-08');
+  assert.equal(forecastLowMonth.getElementsByTagName('tspan')[0].getAttribute('x'), '387');
+  assert.equal(forecastLowMonth.getElementsByTagName('tspan')[0].getAttribute('text-anchor'), null,
+    'forecast year-month values retain their source position');
   assert.equal(textById(pageFour, '#b2c_zuzycie_energii_najwieksze_strona_04'), '900');
   assert.equal(textById(pageFour, '#b2c_miesiac_o_srednim_zuzyciu_strona_04'), '—');
   assert.equal(textById(pageFour, '#b2c_zuzycie_energii_srednie_strona_04'), '525');
+  assert.equal(elementById(pageFour, 'Vector_129')?.getAttribute('fill'), '#FC7C00', 'annual summary keeps its source row fills');
   assert.ok(elementById(pageFour, 'workspace-calculated-forecast-monthly-series'));
   assert.equal(textById(pageFive, '#b2c_dzien_sloneczny_letni_roboczy_energia_pobrana_z_sieci_suma_kwh_po_strona_05'), '12,00');
   assert.equal(textById(pageFive, '#b2c_dzien_sloneczny_letni_roboczy_okres_strona_05'), '2026-05');
   assert.equal(textById(pageFive, '#b2c_dzien_sloneczny_letni_roboczy_autokonsumpcja_z_magazynu_suma_kwh_po_strona_05'), '6,00');
   assert.equal(textById(pageFive, '#b2c_dzien_sloneczny_letni_roboczy_energia_pobrana_do_magazynu_suma_kwh_po_strona_05'), '20,40');
-  assert.equal(textById(pageFive, '#b2c_dzien_sloneczny_letni_roboczy_oszczednosc_pln_strona_05'), '240,00');
-  assert.equal(textById(pageFive, '#b2c_dzien_sloneczny_letni_roboczy_energia_pobrana_z_sieci_wartosc_strona_05'), '240,00');
+  assert.equal(textById(pageFive, '#b2c_dzien_sloneczny_letni_roboczy_oszczednosc_pln_strona_05'), '264,00');
+  assert.equal(textById(pageFive, '#b2c_dzien_sloneczny_letni_roboczy_energia_pobrana_z_sieci_wartosc_strona_05'), '552,00',
+    'current daily purchase includes energy and distribution before any coverage');
+  assert.equal(textById(pageFive, '#b2c_dzien_sloneczny_letni_roboczy_energia_pobrana_z_sieci_wartosc_po_strona_05'), '324,00',
+    'future daily purchase restores both covered components exactly once, without subtracting depositUsed again');
+  assert.equal(textById(pageFive, '#b2c_taryfa_aktualna_strona_05'), 'G11');
+  assert.equal(textById(pageFive, '#b2c_taryfa_prognozowana_strona_05'), 'G12');
   const futureSeries = elementById(pageFive, 'workspace-calculated-future-hourly-series')!;
   const futureBars = Array.from(futureSeries.getElementsByTagName('rect'));
   assert.ok(futureBars.length > 0);
@@ -875,14 +1015,15 @@ test('V4 maps authoritative calculation forecasts, billing outputs, and UTC-matc
   assert.ok(Math.abs(Number(futureBars[0].getAttribute('y')) + Number(futureBars[0].getAttribute('height')) - 477) < 0.001,
     'forecast series is anchored to the lower future plot baseline');
   assert.equal(textById(pageNine, '#b2c_twoj_aktualny_rachunek_roczny_strona_09'), '10 000,00');
-  assert.equal(textById(pageNine, '#b2c_taryfa_aktualna_strona_09'), '—');
-  assert.equal(textById(pageNine, '_oszczednosc_%'), '');
+  assert.equal(textById(pageNine, '#b2c_taryfa_aktualna_strona_09'), 'G11');
+  assert.equal(textById(pageNine, '#b2c_taryfa_prognozowana_strona_09'), 'G12');
+  assert.equal(textById(pageNine, '_oszczednosc_%'), '+60,0%');
   const pageNineText = pageNine.documentElement?.textContent || '';
   assert.ok(!pageNineText.includes('+XX%'));
   assert.ok(!pageNineText.includes('Taryfa przed'));
   assert.ok(!pageNineText.includes('ENEA'));
   assert.ok(!pageNineText.includes('19.10.2026'));
-  assert.ok(pageNineText.includes('Brak potwierdzonych taryf i kalkulacji rozliczenia; oszczędności pozostają nieznane.'));
+  assert.ok(pageNineText.includes('Szacowany okres zwrotu: 2 lata (pełne lata, zaokrąglono w dół; szacunek wieloletni).'));
   assert.equal(textById(pageNine, '#b2c_twoj_nowy_rachunek_z_systemem_strona_09'), '4 000,00');
   assert.equal(textById(pageNine, '#b2c_oszczednosc_strona_09'), '6 000,00');
   assert.equal(textById(pageNine, '#b2c_oszczednosc_procent_strona_09'), '60,0 %');
@@ -891,17 +1032,94 @@ test('V4 maps authoritative calculation forecasts, billing outputs, and UTC-matc
   assert.equal(textById(pageNine, '#b2c_niewykorzystana_wartosc_depozytu_strona_09'), '20,00');
   assert.equal(textById(pageNine, '#b2c_skladnik_staly_sieciowy_aktualny_strona_09_2'), '—');
   assert.equal(textById(pageNine, '#b2c_skladnik_staly_sieciowy_prognozowany_strona_09_2'), '—');
+  assert.equal(textById(pageNine, '#b2c_calkowity_rachunek_brutto_aktualny_strona_09'), '8 556,19');
+  assert.equal(textById(pageNine, '#b2c_calkowity_rachunek_brutto_prognozowany_strona_09'), '6 402,97');
+  const currentTotalSpan = elementById(pageNine, '#b2c_calkowity_rachunek_brutto_aktualny_strona_09')!.getElementsByTagName('tspan')[0];
+  const currentTotalUnitSpan = elementById(pageNine, 'stale / jednostka lub dopisek_27')!.getElementsByTagName('tspan')[0];
+  assert.equal(currentTotalSpan.getAttribute('text-anchor'), 'end');
+  assert.ok(Math.abs(Number(currentTotalSpan.getAttribute('x')) + 1.5 - Number(currentTotalUnitSpan.getAttribute('x'))) < 0.001,
+    'the amount is right-aligned just before its static unit');
   assert.equal(textById(pageNine, '#b2c_zakup_energii_aktualny_strona_09_2'), '200,00');
   assert.equal(textById(pageNine, '#b2c_zakup_energii_prognozowany_strona_09_2'), '90,00');
+  assert.equal(textById(pageNine, '#b2c_zakup_energii_cena_kwh_aktualny_strona_09'), '0,764');
+  assert.equal(textById(pageNine, '#b2c_dystrybucja_energii_cena_kwh_aktualny_strona_09'), '0,174');
+  assert.equal(textById(pageNine, '#b2c_koszt_zakupu_1kwh_aktualny_strona_09'), '0,938');
+  assert.equal(textById(pageNine, '#b2c_oplaty_stale_aktualny_strona_09'), '25,00');
+  assert.equal(textById(pageNine, '#b2c_zakup_energii_cena_kwh_prognozowany_strona_09'), '0,399');
+  assert.equal(textById(pageNine, '#b2c_dystrybucja_energii_cena_kwh_prognozowany_strona_09'), '0,139');
+  assert.equal(textById(pageNine, '#b2c_koszt_zakupu_1kwh_prognozowany_strona_09'), '0,538');
+  assert.equal(textById(pageNine, '#b2c_oplaty_stale_prognozowany_strona_09'), '25,00');
+  assert.equal(textById(pageNine, '#b2c_oplaty_stale_i_dystrybucyjne_strona_09'), '60,00');
+  assert.equal(textById(pageNine, '#b2c_autokonsumpcja_z_magazynu_prognozowana_strona_09'), '6,00');
+  for (const id of ['workspace-calculated-unit-cost-current', 'workspace-calculated-unit-cost-proposed',
+    'workspace-calculated-annual-bill-current', 'workspace-calculated-annual-bill-proposed']) {
+    assert.ok(elementById(pageNine, id), `${id} is rendered from the billing summary`);
+  }
+  assert.equal(elementById(pageNine, 'workspace-calculated-unit-cost-current')!.getElementsByTagName('rect').length, 2);
+  assert.equal(elementById(pageNine, 'workspace-calculated-unit-cost-proposed')!.getElementsByTagName('rect').length, 2);
+  assert.equal(elementById(pageNine, 'workspace-calculated-annual-bill-current')!.getElementsByTagName('rect').length, 1,
+    'an inconsistent bill detail falls back to the authoritative annual total, not a fabricated stack');
+  assert.equal(elementById(pageNine, 'workspace-calculated-annual-bill-proposed')!.getElementsByTagName('rect').length, 1,
+    'an inconsistent bill detail falls back to the authoritative annual total, not a fabricated stack');
+  const billChart = elementById(pageNine, 'workspace-calculated-annual-bill-comparison')!;
+  const billBars = Array.from(billChart.getElementsByTagName('rect'));
+  assert.equal(billBars.length, 2);
+  assert.equal(Number(billBars[0].getAttribute('y')), pathMoveY(pageNine, '_wskaznik_5_2'));
+  assert.equal(Number(billBars[1].getAttribute('y')), pathMoveY(pageNine, '_wskaznik_1'));
+  assert.equal(elementById(pageNine, '_przerywana_1'), undefined);
+  assert.equal(elementById(pageNine, '_przerywana_2'), undefined);
+  assert.equal(elementById(pageNine, '_strzalka'), undefined);
+  assert.ok(elementById(pageNine, '_poziomy_wykres'), 'the chart baseline is retained');
+  assert.ok(elementById(pageNine, '_wskaznik_5_2'), 'the source SVG axis ticks are retained');
+  assert.equal(textById(pageNine, '_wartosc_6_2'), '10 000');
+  assert.ok(result.suppressedCharts.some((item) => item.page === 9 && item.reason.includes('podsumowań calculation.baselineBill/proposedBill')));
+
+  const smallAnnualBill = structuredClone(data);
+  smallAnnualBill.calculation!.baselineAnnualCostPln = 1000;
+  smallAnnualBill.calculation!.proposedAnnualCostPln = 400;
+  smallAnnualBill.calculation!.annualSavingsPln = 600;
+  const smallAnnualResult = renderOfferWorkspaceDocument(smallAnnualBill, draft, { templateKey: OFFER_TEMPLATE_V4_KEY });
+  const smallAnnualPageNine = parseSvg(smallAnnualResult.pages[8].svg);
+  const smallAxisLabel = textById(smallAnnualPageNine, '_wartosc_6_2');
+  const smallBillChart = elementById(smallAnnualPageNine, 'workspace-calculated-annual-bill-comparison')!;
+  const smallCurrentBar = elementById(smallAnnualPageNine, 'workspace-calculated-current-annual-cost')!;
+  const smallProposedBar = elementById(smallAnnualPageNine, 'workspace-calculated-proposed-annual-cost')!;
+  assert.notEqual(smallAxisLabel, '10 000');
+  assert.equal(smallAxisLabel, '1 000');
+  assert.equal(textById(smallAnnualPageNine, '_wartosc_2'), '400');
+  assert.equal(Number(smallCurrentBar.getAttribute('y')), pathMoveY(smallAnnualPageNine, '_wskaznik_5_2'));
+  assert.equal(Number(smallProposedBar.getAttribute('y')), pathMoveY(smallAnnualPageNine, '_wskaznik_1'));
+  assert.equal(smallBillChart.getElementsByTagName('rect').length, 2);
   assert.ok(!(pageNine.documentElement?.textContent || '').includes('29,582'));
   assert.ok(!(pageNine.documentElement?.textContent || '').includes('11,796'));
   assert.equal(textById(pageTen, '#b2c_prognozowana_kwota_dotacji_z_programu_strona_10'), '5 000,00');
   assert.equal(textById(pageTen, '#b2c_prognozowana_ulga_termomodernizacyjna_strona_10'), '3 000,00');
   assert.equal(textById(pageTen, '#b2c_prognozowany_koszt_sytemu_po_dofinansowaniach_strona_10'), '17 000,00');
+  assert.equal(textById(pageTen, '#b2c_imie_i_nazwisko_reform_strona_10'), data.clientName);
   assert.ok(!result.missingData.some((item) => item.fieldKeys.includes('simulation.dayProfiles')),
     'complete forecast profile must not be reported as missing');
   assert.ok(result.sourceFieldsUsed.includes('calculation.forecastFlows.batteryToLoadKwh'));
+  assert.ok(result.sourceFieldsUsed.includes('documentContext.tariffLabels.current'));
   assert.ok(result.limitations.some((item) => item.includes('Prognoza modelowa, nie gwarancja.')));
+  assert.ok(result.limitations.some((item) => item.includes('kwotę przypisaną depozytowi')));
+  assert.doesNotMatch(result.limitations.join(' '), /prognoza.*pozostają nieznane/i);
+  assert.ok(textById(pageNine, 'workspace-calculated-annual-bill-comparison'));
+  assert.ok(pageNine.getElementsByTagName('text')[0]);
+  assert.match(pageNine.documentElement?.textContent || '', /wyniki obliczeń mają charakter szacunkowy/);
+
+  const zeroImport = structuredClone(data);
+  for (const bill of [zeroImport.calculation!.baselineBill!, zeroImport.calculation!.proposedBill!]) {
+    Object.assign(bill.months[0], {
+      importKwh: 0, billedImportKwh: 0, coveredKwh: 0, energyCostPln: 0, distributionCostPln: 0,
+      coveredEnergyPln: 0, coveredDistributionPln: 0,
+    });
+  }
+  const zeroImportResult = renderOfferWorkspaceDocument(zeroImport, draft, { templateKey: OFFER_TEMPLATE_V4_KEY });
+  const zeroImportPageNine = parseSvg(zeroImportResult.pages[8].svg);
+  assert.equal(textById(zeroImportPageNine, '#b2c_zakup_energii_cena_kwh_aktualny_strona_09'), '—');
+  assert.equal(textById(zeroImportPageNine, '#b2c_koszt_zakupu_1kwh_aktualny_strona_09'), '—');
+  assert.equal(textById(zeroImportPageNine, '#b2c_zakup_energii_cena_kwh_prognozowany_strona_09'), '—');
+  assert.equal(textById(zeroImportPageNine, '#b2c_koszt_zakupu_1kwh_prognozowany_strona_09'), '—');
 
   const incomplete = structuredClone(data);
   incomplete.calculation!.proposedBill!.intervals.pop();
@@ -944,6 +1162,7 @@ test('V4 suppresses every forecast and financial result when calculation status 
   assert.equal(textById(pageNine, '#b2c_twoj_aktualny_rachunek_roczny_strona_09'), '—');
   assert.equal(textById(pageNine, '#b2c_twoj_nowy_rachunek_z_systemem_strona_09'), '—');
   assert.equal(textById(pageNine, '#b2c_oszczednosc_strona_09'), '—');
+  assert.equal(elementById(pageNine, 'workspace-calculated-annual-bill-comparison'), undefined);
   assert.equal(textById(pageTen, '#b2c_prognozowana_kwota_dotacji_z_programu_strona_10'), '—');
   assert.equal(textById(pageTen, '#b2c_prognozowana_ulga_termomodernizacyjna_strona_10'), '—');
   assert.equal(textById(pageTen, '#b2c_prognozowany_koszt_sytemu_po_dofinansowaniach_strona_10'), '—');

@@ -45,6 +45,8 @@ test('pozycja katalogowa używa aktualnej ceny, ale zachowuje koszt i marżę sz
     purchaseVatRate: 0.23,
     operatingCostNet: 200,
     marginRate: 0.3,
+    operatingCostBasis: 'PER_LINE',
+    catalogPriceId: null,
   });
 });
 

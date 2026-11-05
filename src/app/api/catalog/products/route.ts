@@ -4,16 +4,13 @@ import { badRequest, forbidden, jsonResponse, notFound, optionalString, readJson
 import { resolveCatalogMediaPath } from 'lib/onrevolt/catalog-media';
 import { prisma } from 'lib/onrevolt/prisma';
 import { productDeleteBlockReason } from 'lib/onrevolt/product-lifecycle';
+import {
+  activeProductPriceInclude,
+  parseProductPriceInput,
+  productPriceChanged,
+  productPriceData,
+} from 'lib/onrevolt/catalog-product-pricing';
 import { authorizeStaffRequest, isAdminUser } from 'lib/onrevolt/staff-server';
-
-type ProductPriceInput = {
-  purchaseNet: number;
-  currentPurchaseNet?: number | null;
-  purchaseVatRate: number;
-  operatingCostNet: number;
-  marginRate: number;
-  currency: string;
-};
 
 const editableStringFields = [
   'sku',
@@ -48,52 +45,9 @@ function parseOptionalInt(body: Record<string, any>, key: string) {
   return number;
 }
 
-function normalizeNumber(value: unknown, key: string) {
-  const normalized = typeof value === 'string' ? value.replace(',', '.').trim() : value;
-  const number = Number(normalized);
-  if (!Number.isFinite(number)) throw new Error(`Pole ${key} musi być liczbą`);
-  return number;
-}
-
-function parsePriceInput(value: unknown): ProductPriceInput | undefined {
-  if (value == null || value === '') return undefined;
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Pole price musi być obiektem');
-  }
-
-  const price = value as Record<string, unknown>;
-  return {
-    purchaseNet: normalizeNumber(price.purchaseNet, 'price.purchaseNet'),
-    currentPurchaseNet: price.currentPurchaseNet == null || price.currentPurchaseNet === ''
-      ? undefined
-      : normalizeNumber(price.currentPurchaseNet, 'price.currentPurchaseNet'),
-    purchaseVatRate: normalizeNumber(price.purchaseVatRate, 'price.purchaseVatRate'),
-    operatingCostNet: normalizeNumber(price.operatingCostNet, 'price.operatingCostNet'),
-    marginRate: normalizeNumber(price.marginRate, 'price.marginRate'),
-    currency: typeof price.currency === 'string' && price.currency.trim() ? price.currency.trim() : 'PLN',
-  };
-}
-
-function decimalNumber(value: unknown) {
-  if (value == null) return null;
-  if (typeof value === 'object' && 'toString' in value) return Number(value.toString());
-  return Number(value);
-}
-
-function priceChanged(current: any, next: ProductPriceInput) {
-  return (
-    decimalNumber(current.purchaseNet) !== next.purchaseNet ||
-    decimalNumber(current.currentPurchaseNet) !== (next.currentPurchaseNet ?? null) ||
-    decimalNumber(current.purchaseVatRate) !== next.purchaseVatRate ||
-    decimalNumber(current.operatingCostNet) !== next.operatingCostNet ||
-    decimalNumber(current.marginRate) !== next.marginRate ||
-    current.currency !== next.currency
-  );
-}
-
 function includeProductDetails() {
   return {
-    prices: { orderBy: { validFrom: 'desc' as const }, take: 1 },
+    prices: activeProductPriceInclude(),
     media: { orderBy: { sortOrder: 'asc' as const } },
   };
 }
@@ -118,7 +72,7 @@ export async function POST(req: NextRequest) {
   if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
-    const price = parsePriceInput(body.price);
+    const price = parseProductPriceInput(body.price);
     const sourceRow = parseOptionalInt(body, 'sourceRow');
     const product = await prisma.product.create({
       data: {
@@ -139,14 +93,7 @@ export async function POST(req: NextRequest) {
         sourceSheet: optionalString(body, 'sourceSheet'),
         sourceRow: sourceRow ?? undefined,
         prices: price ? {
-          create: {
-            purchaseNet: price.purchaseNet,
-            currentPurchaseNet: price.currentPurchaseNet ?? undefined,
-            purchaseVatRate: price.purchaseVatRate,
-            operatingCostNet: price.operatingCostNet,
-            marginRate: price.marginRate,
-            currency: price.currency,
-          },
+          create: productPriceData(price),
         } : undefined,
       },
       include: includeProductDetails(),
@@ -165,7 +112,7 @@ export async function PATCH(req: NextRequest) {
     const id = requireString(body, 'id');
     const existing = await prisma.product.findUnique({
       where: { id },
-      include: { prices: { orderBy: { validFrom: 'desc' }, take: 1 } },
+      include: { prices: activeProductPriceInclude() },
     });
 
     if (!existing) return notFound('Produkt nie istnieje');
@@ -180,7 +127,7 @@ export async function PATCH(req: NextRequest) {
     const sourceRow = parseOptionalInt(body, 'sourceRow');
     if (sourceRow !== undefined) updateData.sourceRow = sourceRow;
 
-    const price = parsePriceInput(body.price);
+    const price = parseProductPriceInput(body.price);
 
     const product = await prisma.$transaction(async (tx) => {
       if (Object.keys(updateData).length) {
@@ -188,16 +135,11 @@ export async function PATCH(req: NextRequest) {
       }
 
       const latestPrice = existing.prices[0];
-      if (price && (!latestPrice || priceChanged(latestPrice, price))) {
+      if (price && (!latestPrice || productPriceChanged(latestPrice, price))) {
         await tx.productPrice.create({
           data: {
             productId: id,
-            purchaseNet: price.purchaseNet,
-            currentPurchaseNet: price.currentPurchaseNet ?? undefined,
-            purchaseVatRate: price.purchaseVatRate,
-            operatingCostNet: price.operatingCostNet,
-            marginRate: price.marginRate,
-            currency: price.currency,
+            ...productPriceData(price),
           },
         });
       }

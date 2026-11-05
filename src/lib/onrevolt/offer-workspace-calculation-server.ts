@@ -12,6 +12,7 @@ import { readOfferPvProfile } from './offer-pv-profile';
 import { configurationInvestmentScope } from './configuration-templates';
 import { enumerateOfferCandidates, type ApprovedConfigurationTemplate } from './offer-candidates';
 import { offerCalculationDependencyHash, offerCalculationPeriodHours } from './offer-workspace-calculation-dependencies';
+import { completeHistoryForSummary } from './client-energy-cost-summary-server';
 
 function finiteNonnegative(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
@@ -34,6 +35,14 @@ function hasNoPaybackClaim(message: string): boolean {
 }
 
 function dateAfter(date: string) { return new Date(Date.parse(date + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10); }
+function historyTariff(history: ClientTariffHistory, date: string): ClientTariffPayload | null {
+  const entry = history.byDate[date];
+  if (typeof entry === 'string') return history.tariffs?.[entry] || null;
+  return entry && typeof entry === 'object' ? entry : null;
+}
+function isOrdinaryMissingPriceIssue(message: string) {
+  return /brak jednoznacznych cen/i.test(message) && !/konflikt/i.test(message);
+}
 function snapshotHistory(tariff: ClientTariffPayload, from: string, until: string): ClientTariffHistory {
   const byDate: ClientTariffHistory['byDate'] = {};
   for (let date = from; date < until; date = dateAfter(date)) byDate[date] = 'scenario';
@@ -62,6 +71,7 @@ async function marketPrices(start: string, end: string, hours: string[], kind: '
 async function financialSources(workspace: OfferWorkspace, draft: OfferWorkspaceDraft, hours: string[]) {
   const startUtc = hours[0], endUtc = new Date(Date.parse(hours.at(-1)!) + 3600000).toISOString();
   const from = offerLocalTime(startUtc).slice(0, 10), until = offerLocalTime(endUtc).slice(0, 10);
+  const dates = [...new Set(hours.map(hour => offerLocalTime(hour).slice(0, 10)))];
   const scope = await clientTariffScope(workspace.clientId, workspace.projectId);
   let loadedBaselineHistory = await loadClientTariffHistory(workspace.clientId, workspace.projectId, from, until);
   const baselineReasons: string[] = [];
@@ -76,13 +86,26 @@ async function financialSources(workspace: OfferWorkspace, draft: OfferWorkspace
       else loadedBaselineHistory = await callClientTariffs<ClientTariffHistory>({ action: 'catalog-history', scope, from, until, osdId: operator.id, tariffId: tariff.id });
     }
   }
-  if (loadedBaselineHistory?.issues.length) {
-    baselineReasons.push(...loadedBaselineHistory.issues.map(issue => `${issue.date}: ${issue.message}`));
+  const baselineAssumptions: string[] = [];
+  if (loadedBaselineHistory) {
+    const originalHistory = loadedBaselineHistory;
+    const completion = await completeHistoryForSummary({
+      history: originalHistory, clientId: workspace.clientId, projectId: workspace.projectId, dates,
+    }, { clientTariffScope, callClientTariffs, tariffToday });
+    baselineAssumptions.push(...completion.assumptions);
+    const resolvedByDate = new Set(dates.filter(date =>
+      !historyTariff(originalHistory, date) && historyTariff(completion.history, date)));
+    loadedBaselineHistory = {
+      ...completion.history,
+      issues: completion.history.issues.filter(issue =>
+        !resolvedByDate.has(issue.date) || !isOrdinaryMissingPriceIssue(issue.message)),
+    };
+    baselineReasons.push(...loadedBaselineHistory.issues.map(issue => `${issue.date}: ${issue.message}`), ...completion.issues);
   }
   const baselineUsable = loadedBaselineHistory !== null && baselineReasons.length === 0;
   const baselineDependency = baselineUsable
-    ? { status: 'available', history: loadedBaselineHistory }
-    : { status: 'incomplete', history: loadedBaselineHistory, reasons: baselineReasons };
+    ? { status: 'available', history: loadedBaselineHistory, assumptions: baselineAssumptions }
+    : { status: 'incomplete', history: loadedBaselineHistory, reasons: baselineReasons, assumptions: baselineAssumptions };
   const baselineHistory = baselineUsable ? loadedBaselineHistory! : unavailableBaselineHistory(from, baselineReasons);
   const pricesAsOf = tariffToday();
   const target = await callClientTariffs<ClientTariffPayload>({ action: 'catalog', scope, date: pricesAsOf, osdId: draft.targetOperatorId, tariffId: draft.targetTariffId });
@@ -96,14 +119,14 @@ async function financialSources(workspace: OfferWorkspace, draft: OfferWorkspace
     rce = draft.targetSettlement === 'NET_BILLING' || (baselineUsable && draft.currentSettlement === 'NET_BILLING')
       ? await marketPrices(startUtc, endUtc, hours, 'RCE') : new Map<string, number>();
   } catch (error) {
-    if (error instanceof OfferMarketDataError) return { reasons: [error.message] };
+    if (error instanceof OfferMarketDataError) return { reasons: [error.message], baselineAssumptions };
     throw error;
   }
   const exportPrices = new Map([...rce].map(([hour, value]) => [hour, Math.max(0, value) * 1.23]));
   const targetHistory = snapshotHistory(target, from, until);
   const sourceDependencyStamp = offerCalculationDependencyHash({ startUtc, endUtc, pricesAsOf,
     baseline: baselineDependency, targetHistory, rdnPricesNet, exportPrices });
-  return { baselineHistory, baselineReasons, targetHistory, rdnPricesNet, exportPrices, pricesAsOf, sourceDependencyStamp };
+  return { baselineHistory, baselineReasons, baselineAssumptions, targetHistory, rdnPricesNet, exportPrices, pricesAsOf, sourceDependencyStamp };
 }
 
 export async function loadOfferCalculationDependencyStamp(workspace: OfferWorkspace, draft: OfferWorkspaceDraft): Promise<string | null> {
@@ -126,8 +149,17 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
   if (!energy.intervals?.length) return blockedOfferCalculation(['Brak pełnych interwałów energii.']);
   const first = energy.intervals[0], last = energy.intervals.at(-1)!;
   const sources = await financialSources(workspace, draft, energy.intervals.map(row => row.startUtc));
-  if ('reasons' in sources) return blockedOfferCalculation(sources.reasons!);
-  const { sourceDependencyStamp, baselineReasons, ...financial } = sources;
+  if ('reasons' in sources) {
+    const result = blockedOfferCalculation(sources.reasons!);
+    result.warnings = [...new Set('baselineAssumptions' in sources ? sources.baselineAssumptions : [])];
+    return result;
+  }
+  const { sourceDependencyStamp, baselineReasons, baselineAssumptions, ...financial } = sources;
+  const attachSourceIdentity = (result: OfferWorkspaceCalculation) => {
+    result.pricesAsOf = financial.pricesAsOf;
+    result.sourceDependencyStamp = sourceDependencyStamp;
+    return result;
+  };
   const common: Omit<OfferCalculationInput, 'draft' | 'addedPvHours'> = { workspace, energy, ...financial };
   const addedProfiles = new Map<string, Map<string, number>>();
   async function calculate(selectedDraft: OfferWorkspaceDraft) {
@@ -151,7 +183,7 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
     const result = await calculateOfferWorkspaceScenario({ ...common, draft: selectedDraft, addedPvHours });
     result.sourceDependencyStamp = sourceDependencyStamp;
     result.pricesAsOf = financial.pricesAsOf;
-    result.warnings = [...new Set([...result.warnings, ...baselineReasons])];
+    result.warnings = [...new Set([...result.warnings, ...baselineReasons, ...baselineAssumptions])];
     return result;
   }
   if (mode === 'selected') { onProgress(0, 1); const result = await calculate(draft); onProgress(1, 1); return result; }
@@ -168,10 +200,10 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
   const candidates = enumeration.candidates;
   if (!candidates.length) {
     const rejectedReasons = enumeration.rejectedReasonList.flatMap(item => item.reasons);
-    return blockedOfferCalculation(rejectedReasons.length ? [...new Set(rejectedReasons)]
-      : ['Brak technicznie dopuszczalnego zestawu do obliczeń.']);
+    return attachSourceIdentity(blockedOfferCalculation(rejectedReasons.length ? [...new Set(rejectedReasons)]
+      : ['Brak technicznie dopuszczalnego zestawu do obliczeń.']));
   }
-  if (candidates.length > 50) return blockedOfferCalculation(['Ponad 50 wariantów: zawęź zakres konfiguracji przed porównaniem.']);
+  if (candidates.length > 50) return attachSourceIdentity(blockedOfferCalculation(['Ponad 50 wariantów: zawęź zakres konfiguracji przed porównaniem.']));
   const rankings: OfferWorkspaceCalculation['rankings'] = [];
   const rankingIds = new Map<string, string>();
   const errors: string[] = [];
@@ -306,7 +338,8 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
     result.paybackYears = null;
     result.warnings.push('Wyniki wariantu są diagnostyczne; rekomendacja i czas zwrotu pozostają wyłączone.');
   }
-  result.warnings.push(...new Set(!winner && bestEstimate ? errors.filter(reason => !hasNoPaybackClaim(reason)) : errors),
-    'Rekomendacja ekonomiczna wymaga potwierdzenia zgodności technicznej wybranego zestawu.');
-  return result;
+  result.warnings = [...new Set([...result.warnings, ...baselineAssumptions,
+    ...(!winner && bestEstimate ? errors.filter(reason => !hasNoPaybackClaim(reason)) : errors),
+    'Rekomendacja ekonomiczna wymaga potwierdzenia zgodności technicznej wybranego zestawu.'])];
+  return attachSourceIdentity(result);
 }

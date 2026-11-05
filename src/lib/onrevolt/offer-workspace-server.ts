@@ -4,7 +4,14 @@ import path from 'node:path';
 import { Prisma, type ClientType, type ConfigurationGoal, type ConfigurationKind, type ConfigurationRoofType } from '@prisma/client';
 import { buildOfferMeasurementSeries, type OfferMeasurementKind, type OfferMeasurementSeries } from './offer-measurements';
 import { buildOfferWorkspaceDayProfiles, type OfferWorkspaceDayProfile } from './offer-workspace-chart-data';
-import { OFFER_WORKSPACE_SCHEMA_VERSION, parseOfferWorkspaceDraft, type OfferWorkspaceDraft, type SavedOfferWorkspaceDraft } from './offer-workspace';
+import {
+  OFFER_WORKSPACE_SCHEMA_VERSION,
+  parseOfferWorkspaceDraft,
+  createOfferWorkspacePricingSnapshot as createPricingSnapshotFromResult,
+  type OfferWorkspaceDraft,
+  type OfferWorkspacePricingSnapshot,
+  type SavedOfferWorkspaceDraft,
+} from './offer-workspace';
 import { configurationInvestmentScope } from './configuration-templates';
 import { prisma } from './prisma';
 import { rePrisma } from './re-stations';
@@ -40,6 +47,7 @@ export type OfferWorkspaceMeasurements = {
   issues: string[];
 };
 export type OfferWorkspaceProductPrice = {
+  id?: string;
   purchaseNet: number;
   currentPurchaseNet: number | null;
   purchaseVatRate: number;
@@ -71,6 +79,9 @@ export type OfferWorkspaceTemplate = {
     quantity: number;
     role: string;
     supplyMode: string;
+    pricingMode?: 'LEGACY' | 'CATALOG' | 'INDIVIDUAL';
+    operatingCostBasis?: 'PER_LINE' | 'PER_UNIT';
+    catalogPriceId?: string | null;
     unitPurchaseNet: number | null;
     purchaseVatRate: number | null;
     operatingCostNet: number | null;
@@ -255,7 +266,7 @@ export function summarizeOfferMeasurementSeries(
   };
 }
 
-function serializeTemplate(template: any, includePricing: boolean): OfferWorkspaceTemplate {
+export function serializeTemplate(template: any, includePricing: boolean): OfferWorkspaceTemplate {
   return {
     id: template.id,
     familyKey: template.familyKey,
@@ -278,6 +289,9 @@ function serializeTemplate(template: any, includePricing: boolean): OfferWorkspa
       quantity: Number(item.quantity),
       role: item.role,
       supplyMode: item.supplyMode,
+      pricingMode: includePricing ? item.pricingMode : undefined,
+      operatingCostBasis: includePricing ? item.operatingCostBasis : undefined,
+      catalogPriceId: includePricing ? item.catalogPriceId : undefined,
       unitPurchaseNet: includePricing ? finiteOrNull(item.unitPurchaseNet) : null,
       purchaseVatRate: includePricing ? finiteOrNull(item.purchaseVatRate) : null,
       operatingCostNet: includePricing ? finiteOrNull(item.operatingCostNet) : null,
@@ -295,6 +309,7 @@ function serializeTemplate(template: any, includePricing: boolean): OfferWorkspa
         availability: item.product.availability,
         powerCapacity: item.product.powerCapacity,
         prices: includePricing ? (item.product.prices || []).map((price: any) => ({
+          id: price.id,
           purchaseNet: Number(price.purchaseNet),
           currentPurchaseNet: finiteOrNull(price.currentPurchaseNet),
           purchaseVatRate: Number(price.purchaseVatRate),
@@ -346,8 +361,12 @@ function roofAzimuthDegrees(value: unknown): number | null {
   return orientation ? azimuths[orientation] ?? null : null;
 }
 
+export function offerWorkspaceEffectiveClientType(projectClientType: ClientType, clientClientType: ClientType) {
+  return projectClientType === 'UNKNOWN' ? clientClientType : projectClientType;
+}
+
 function compatibleTemplateClientTypes(projectClientType: ClientType, clientClientType: ClientType) {
-  const clientType = projectClientType === 'UNKNOWN' ? clientClientType : projectClientType;
+  const clientType = offerWorkspaceEffectiveClientType(projectClientType, clientClientType);
   return Array.from(new Set([clientType, 'B2C_B2B' as const]));
 }
 
@@ -394,13 +413,79 @@ function sourceRevision(source: unknown) {
   return createHash('sha256').update(JSON.stringify(source)).digest('hex');
 }
 
-function savedDraft(row: { revision: number; sourceRevision: string; updatedAt: Date; input: Prisma.JsonValue }): SavedOfferWorkspaceDraft {
+function parseStoredPricingSnapshot(value: unknown): OfferWorkspacePricingSnapshot | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const snapshot = value as Record<string, unknown>;
+  const totals = snapshot.totals;
+  if (snapshot.schemaVersion !== 1
+    || typeof snapshot.revision !== 'string' || !/^pricing-v1-[a-f0-9]{16}$/.test(snapshot.revision)
+    || !Array.isArray(snapshot.selectedTemplateIds) || snapshot.selectedTemplateIds.length > 2
+    || !snapshot.selectedTemplateIds.every((id) => typeof id === 'string')
+    || !['REDUCED_8', 'STANDARD_23', 'MIXED', 'REVIEW'].includes(String(snapshot.saleVatMode))
+    || !['B2C', 'B2B'].includes(String(snapshot.clientType))
+    || !totals || typeof totals !== 'object' || Array.isArray(totals)) return null;
+  const parsedTotals = totals as Record<string, unknown>;
+  if (![parsedTotals.net, parsedTotals.gross].every((amount) => amount === null
+    || typeof amount === 'number' && Number.isFinite(amount))) return null;
+  return {
+    schemaVersion: 1,
+    revision: snapshot.revision,
+    selectedTemplateIds: [...snapshot.selectedTemplateIds] as string[],
+    saleVatMode: snapshot.saleVatMode as OfferWorkspacePricingSnapshot['saleVatMode'],
+    clientType: snapshot.clientType as string,
+    totals: { net: parsedTotals.net as number | null, gross: parsedTotals.gross as number | null },
+  };
+}
+
+export function savedDraft(
+  row: { revision: number; sourceRevision: string; updatedAt: Date; input: Prisma.JsonValue },
+  includePricingSnapshot = true,
+): SavedOfferWorkspaceDraft {
+  const storedInput = row.input && typeof row.input === 'object' && !Array.isArray(row.input)
+    ? row.input as Record<string, unknown> : {};
+  const pricingSnapshot = includePricingSnapshot ? parseStoredPricingSnapshot(storedInput._pricingSnapshot) : null;
   return {
     revision: row.revision,
     sourceRevision: row.sourceRevision,
     updatedAt: row.updatedAt.toISOString(),
     input: parseOfferWorkspaceDraft(row.input),
+    ...(pricingSnapshot ? { pricingSnapshot } : {}),
   };
+}
+
+export function createServerOfferWorkspacePricingSnapshot(
+  input: OfferWorkspaceDraft,
+  templates: any[],
+  clientType: string,
+): OfferWorkspacePricingSnapshot | null {
+  if (!['B2C', 'B2B'].includes(clientType)
+    || typeof createPricingSnapshotFromResult !== 'function'
+    || templates.some((template) => !Array.isArray(template.items))) return null;
+  const { priceOfferWorkspaceConfiguration } = require('./offer-workspace-pricing') as typeof import('./offer-workspace-pricing');
+  const selected = new Set(input.selectedTemplateIds);
+  const pricing = priceOfferWorkspaceConfiguration(
+    templates.filter((template) => selected.has(template.id)),
+    input.saleVatMode,
+    clientType,
+  );
+  return createPricingSnapshotFromResult(input, clientType, pricing, templates.filter((template) => selected.has(template.id)));
+}
+
+export function offerWorkspacePricingSnapshotsMatch(
+  left: OfferWorkspacePricingSnapshot | null,
+  right: OfferWorkspacePricingSnapshot | null,
+) {
+  if (!left && !right) return true;
+  return Boolean(left && right && left.revision === right.revision);
+}
+
+export function offerWorkspacePricingChangeAcknowledged(
+  saved: OfferWorkspacePricingSnapshot | null,
+  current: OfferWorkspacePricingSnapshot | null,
+  acceptedPricingRevision?: string,
+) {
+  if (!saved || saved.revision === current?.revision) return true;
+  return Boolean(current && acceptedPricingRevision === current.revision);
 }
 
 export async function loadProjectOfferWorkspace(
@@ -613,14 +698,14 @@ export async function loadProjectOfferWorkspace(
     clientId: project.clientId,
     projectName: project.title,
     clientName: project.client.displayName,
-    clientType: project.clientType,
+    clientType: offerWorkspaceEffectiveClientType(project.clientType, project.client.clientType),
     period,
     ppeNumber: canReadEnergy ? ppe.ppeNumber : null,
     revision: sourceRevision(source),
     input,
     measurements,
     templates: serializedTemplates,
-    draft: canReadDraft && draft ? savedDraft(draft) : null,
+    draft: canReadDraft && draft ? savedDraft(draft, canReadPricing) : null,
   };
 }
 
@@ -641,6 +726,7 @@ export async function saveProjectOfferWorkspaceDraft(options: {
   expectedRevision: number;
   sourceRevision: string;
   input: OfferWorkspaceDraft;
+  acceptedPricingRevision?: string;
   now: Date;
 }) {
   if (!hasStaffPermission(options.user, 'offers.manage') || !hasStaffPermission(options.user, 'energy.manage')) {
@@ -650,6 +736,10 @@ export async function saveProjectOfferWorkspaceDraft(options: {
   if (freshWorkspace.revision !== options.sourceRevision) {
     throw new OfferWorkspaceConflictError('Dane projektu, pomiarów lub katalogu zmieniły się. Odśwież workspace przed zapisem.');
   }
+  const canReadPricing = hasStaffPermission(options.user, 'pricing.read');
+  const previewPricingSnapshot = canReadPricing
+    ? createServerOfferWorkspacePricingSnapshot(options.input, freshWorkspace.templates, freshWorkspace.clientType)
+    : null;
   await validateOfferWorkspaceTariff(options.input.targetOperatorId, options.input.targetTariffId);
 
   try {
@@ -661,14 +751,39 @@ export async function saveProjectOfferWorkspaceDraft(options: {
       if (!project) throw new OfferWorkspaceNotFoundError();
       const templateClientTypes = compatibleTemplateClientTypes(project.clientType, project.client.clientType);
 
+      let activeTemplates: any[] = [];
       if (options.input.selectedTemplateIds.length) {
-        const activeTemplates = await tx.configurationTemplate.findMany({
+        activeTemplates = await tx.configurationTemplate.findMany({
           where: {
             id: { in: options.input.selectedTemplateIds },
             isActive: true,
             clientType: { in: templateClientTypes },
           },
-          select: { id: true, kind: true },
+          select: {
+            id: true, name: true, kind: true,
+            items: {
+              select: {
+                id: true, position: true, description: true, quantity: true, role: true, supplyMode: true,
+                pricingMode: true, operatingCostBasis: true, catalogPriceId: true,
+                productId: true, unitPurchaseNet: true, purchaseVatRate: true, operatingCostNet: true,
+                marginRate: true, saleVatRate: true, isOptional: true, requiresReview: true,
+                product: {
+                  select: {
+                    id: true, name: true,
+                    prices: {
+                      where: { validFrom: { lte: options.now } },
+                      select: {
+                        id: true, purchaseNet: true, currentPurchaseNet: true, purchaseVatRate: true,
+                        operatingCostNet: true, marginRate: true, saleVatRate: true,
+                      },
+                      orderBy: { validFrom: 'desc' }, take: 1,
+                    },
+                  },
+                },
+              },
+              orderBy: { position: 'asc' },
+            },
+          },
         });
         if (activeTemplates.length !== options.input.selectedTemplateIds.length) {
           throw new OfferWorkspaceConflictError('Wybrany zestaw jest nieaktywny lub niedostępny dla tego typu klienta.');
@@ -682,6 +797,16 @@ export async function saveProjectOfferWorkspaceDraft(options: {
         }
       }
 
+      const clientType = offerWorkspaceEffectiveClientType(project.clientType, project.client.clientType);
+      const pricingSnapshot = createServerOfferWorkspacePricingSnapshot(options.input, activeTemplates, clientType);
+      if (canReadPricing && !offerWorkspacePricingSnapshotsMatch(previewPricingSnapshot, pricingSnapshot)) {
+        throw new OfferWorkspaceConflictError('Ceny konfiguracji zmieniły się przed zapisem. Odśwież workspace i porównaj aktualne sumy.');
+      }
+      const persistedInput = {
+        ...options.input,
+        ...(pricingSnapshot ? { _pricingSnapshot: pricingSnapshot } : {}),
+      } as unknown as Prisma.InputJsonValue;
+
       const existing = await tx.offerWorkspace.findUnique({ where: { projectId: options.projectId } });
       if (options.expectedRevision === 0) {
         if (existing) throw new OfferWorkspaceConflictError('Szkic został już utworzony w innej karcie. Odśwież workspace.');
@@ -690,7 +815,7 @@ export async function saveProjectOfferWorkspaceDraft(options: {
           revision: 1,
           schemaVersion: OFFER_WORKSPACE_SCHEMA_VERSION,
           sourceRevision: options.sourceRevision,
-          input: options.input as unknown as Prisma.InputJsonValue,
+          input: persistedInput,
           createdById: options.user.id,
           updatedById: options.user.id,
         } });
@@ -701,13 +826,23 @@ export async function saveProjectOfferWorkspaceDraft(options: {
           entityId: options.projectId,
           action: 'CREATE',
           before: Prisma.JsonNull,
-          after: { revision: created.revision, sourceRevision: created.sourceRevision, input: options.input } as Prisma.InputJsonValue,
+          after: { revision: created.revision, sourceRevision: created.sourceRevision, input: persistedInput } as Prisma.InputJsonValue,
         } });
-        return savedDraft(created);
+        return savedDraft(created, hasStaffPermission(options.user, 'pricing.read'));
       }
 
       if (!existing || existing.revision !== options.expectedRevision) {
         throw new OfferWorkspaceConflictError('Szkic ma nowszą rewizję. Odśwież workspace przed zapisem.');
+      }
+      const existingInput = existing.input && typeof existing.input === 'object' && !Array.isArray(existing.input)
+        ? existing.input as Record<string, unknown> : {};
+      const existingPricingSnapshot = parseStoredPricingSnapshot(existingInput._pricingSnapshot);
+      if (!offerWorkspacePricingChangeAcknowledged(
+        existingPricingSnapshot,
+        pricingSnapshot,
+        options.acceptedPricingRevision,
+      )) {
+        throw new OfferWorkspaceConflictError('Potwierdź aktualne ceny po porównaniu zapisanych i bieżących sum.');
       }
       const changed = await tx.offerWorkspace.updateMany({
         where: { projectId: options.projectId, revision: options.expectedRevision },
@@ -715,7 +850,7 @@ export async function saveProjectOfferWorkspaceDraft(options: {
           revision: { increment: 1 },
           schemaVersion: OFFER_WORKSPACE_SCHEMA_VERSION,
           sourceRevision: options.sourceRevision,
-          input: options.input as unknown as Prisma.InputJsonValue,
+          input: persistedInput,
           updatedById: options.user.id,
         },
       });
@@ -728,9 +863,9 @@ export async function saveProjectOfferWorkspaceDraft(options: {
         entityId: options.projectId,
         action: 'UPDATE',
         before: { revision: existing.revision, sourceRevision: existing.sourceRevision, input: existing.input as Prisma.InputJsonValue },
-        after: { revision: updated.revision, sourceRevision: updated.sourceRevision, input: options.input } as Prisma.InputJsonValue,
+        after: { revision: updated.revision, sourceRevision: updated.sourceRevision, input: persistedInput } as Prisma.InputJsonValue,
       } });
-      return savedDraft(updated);
+      return savedDraft(updated, hasStaffPermission(options.user, 'pricing.read'));
     });
   } catch (error) {
     if (error instanceof OfferWorkspaceConflictError || error instanceof OfferWorkspaceNotFoundError) throw error;

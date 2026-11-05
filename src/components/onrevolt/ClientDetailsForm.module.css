@@ -1,0 +1,26 @@
+.root { color:var(--details-text); letter-spacing:0; display:flex; flex-direction:column; gap:20px; }
+.section { padding:22px 24px 28px; background:var(--details-bg); border-radius:30px; min-width:0; box-shadow:0 12px 40px rgba(112,144,176,.035); }
+.header { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:30px; margin-bottom:8px; }
+.header h2 { font-size:16px; line-height:22px; font-weight:700; margin:0; }
+.actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.actions button { height:30px; min-width:84px; padding:0 20px; border:1px solid var(--details-line); border-radius:18px; background:var(--details-bg); color:var(--details-text); font-size:11px; font-weight:700; white-space:nowrap; }
+.actions .save { background:#8a47ff; color:#fff; border-color:#8a47ff; min-width:114px; }
+.actions button:disabled { opacity:.5; cursor:not-allowed; }
+.actions button:focus-visible { outline:2px solid #8a47ff; outline-offset:3px; }
+.columns, .projectGrid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
+.column { display:flex; flex-direction:column; gap:14px; min-width:0; }
+.field { min-width:0; }
+.root .field :global(.chakra-form__label) { color:var(--details-muted); font-size:12px; font-weight:700; line-height:16px; margin:0 0 6px 14px; letter-spacing:0; }
+.root .field :global(.chakra-input), .root .field :global(.chakra-select), .root .field :global(.chakra-textarea) { background:var(--details-bg); color:var(--details-text); border:1px solid var(--details-line); border-radius:16px; font-size:14px; line-height:20px; font-weight:400; letter-spacing:0; padding:10px 14px; box-shadow:none; }
+.root .field :global(.chakra-input), .root .field :global(.chakra-select) { height:44px; min-width:0; width:100%; }
+.root .field :global(.chakra-select) { padding-right:34px; text-overflow:ellipsis; }
+.root .field :global(.chakra-textarea) { min-height:124px; }
+.root .field :global(.chakra-input):focus-visible, .root .field :global(.chakra-select):focus-visible, .root .field :global(.chakra-textarea):focus-visible { border-color:#8a47ff; outline:1px solid #8a47ff; }
+.addressHeading { color:var(--details-muted); font-size:12px; font-weight:700; line-height:16px; margin:0 0 0 14px; min-height:66px; }
+.location { min-width:0; border:0; margin-top:26px; padding:0; }
+.root .location :global(.chakra-input), .root .location :global(.chakra-select) { border-radius:16px; font-size:14px; }
+.root .location > :global(.chakra-form-control) > button { border-radius:16px; }
+.projectGrid { row-gap:20px; }
+.projectAddress { grid-column:span 2; }
+@media(max-width:1200px) { .columns, .projectGrid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px 16px; } }
+@media(max-width:640px) { .section { padding:18px 16px 22px; border-radius:22px; } .columns, .projectGrid { grid-template-columns:minmax(0,1fr); gap:24px; } .projectAddress { grid-column:auto; } .addressHeading { min-height:0; margin-bottom:0; } .header { align-items:flex-start; flex-wrap:wrap; margin-bottom:18px; } .actions { margin-left:auto; } }

@@ -78,6 +78,26 @@ test('calculationDisabled blokuje tylko obliczenia, pozostawiając pola edytowal
   assert.doesNotMatch(cycleStartInput || '', /\sdisabled(?:="")?/);
 });
 
+test('uwagi są domyślnie zwinięte, zachowują pełną treść i nie ukrywają blokady wyniku', () => {
+  const markup = renderControls({
+    status: 'blocked', reasons: ['Brak wymaganej taryfy.'],
+    warnings: ['Pierwsze założenie.', 'Drugie założenie.'], recommendationEligible: false,
+    baselineAnnualCostPln: null, proposedAnnualCostPln: null, annualSavingsPln: null,
+    systemCostPln: null, costAfterFinancingPln: null, paybackYears: null,
+    grantPln: null, taxReliefPln: null, rankings: [], recommendedTemplateIds: null,
+  });
+  const details = markup.match(/<details[^>]*data-testid="calculation-warnings"[^>]*>[\s\S]*?<\/details>/)?.[0];
+  assert.ok(details);
+  assert.doesNotMatch(details.split('>')[0], /\sopen(?:[\s=>])/);
+  assert.match(details, /<summary[^>]*>/);
+  assert.match(details, /Uwagi i założenia do wyniku \(2\)/);
+  assert.match(details, /Pierwsze założenie\./);
+  assert.match(details, /Drugie założenie\./);
+  assert.match(markup, /Brak wymaganej taryfy\./);
+  assert.doesNotMatch(details, /Brak wymaganej taryfy\./);
+  assert.doesNotMatch(renderControls(null), /data-testid="calculation-warnings"/);
+});
+
 test('ranking pokazuje lata zwrotu zaokrąglone w dół', () => {
   const calculation: OfferWorkspaceCalculation = {
     status: 'ready', reasons: [], warnings: [], recommendationEligible: true,

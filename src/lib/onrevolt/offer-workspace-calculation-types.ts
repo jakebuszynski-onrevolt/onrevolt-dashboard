@@ -44,6 +44,8 @@ export type OfferWorkspaceCalculation = {
   estimatedPaybackYears?: number | null;
   estimatedRecommendedTemplateIds?: string[] | null;
   estimatedAnnualSavingsPln?: number[];
+  estimatedAnnualTargetCostPln?: number[];
+  estimatedAnnualTariffOnlyCostPln?: number[];
   estimateHorizonYears?: number;
   grantPln: number | null;
   taxReliefPln: number | null;

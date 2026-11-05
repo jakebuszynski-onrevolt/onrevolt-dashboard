@@ -3,6 +3,7 @@ export type CalculationInput = {
   unitPurchaseNet: number;
   purchaseVatRate: number;
   operatingCostNet: number;
+  operatingCostBasis?: 'PER_UNIT' | 'PER_LINE';
   marginRate: number;
   saleVatRate: number;
   includeVatSurplus?: boolean;
@@ -53,7 +54,10 @@ export function calculateConfigurationLine(input: CalculationInput): Calculation
   const purchaseNet = roundMoney(input.unitPurchaseNet * input.quantity);
   const purchaseVatValue = roundMoney(purchaseNet * input.purchaseVatRate);
   const purchaseGross = roundMoney(purchaseNet + purchaseVatValue);
-  const operatingCostNet = roundMoney(input.operatingCostNet);
+  if (input.operatingCostBasis !== undefined && !['PER_UNIT', 'PER_LINE'].includes(input.operatingCostBasis)) {
+    throw new Error('Nieprawidłowy sposób naliczania kosztu realizacji');
+  }
+  const operatingCostNet = roundMoney(input.operatingCostNet * (input.operatingCostBasis === 'PER_UNIT' ? input.quantity : 1));
   const totalCostNet = roundMoney(purchaseNet + operatingCostNet);
   const marginNet = roundMoney(totalCostNet * input.marginRate);
   const saleNet = roundMoney(input.forcedSaleNet ?? (totalCostNet + marginNet));

@@ -6,6 +6,7 @@ import {
   AlertIcon,
   Box,
   Button,
+  Checkbox,
   Divider,
   Flex,
   FormControl,
@@ -24,11 +25,16 @@ import {
   defaultOfferCalculationAssumptions,
   emptyOfferWorkspaceDraft,
   parseOfferWorkspaceDraft,
+  createOfferWorkspacePricingSnapshot,
+  offerWorkspacePricingFreshness,
   type OfferWorkspaceDraft,
+  type OfferWorkspacePricingFreshness,
+  type OfferWorkspacePricingSnapshot,
   type OfferWorkspaceStep,
   type SavedOfferWorkspaceDraft,
 } from 'lib/onrevolt/offer-workspace';
 import { configurationInvestmentScope } from 'lib/onrevolt/configuration-templates';
+import { priceOfferWorkspaceConfiguration } from 'lib/onrevolt/offer-workspace-pricing';
 import type { OfferWorkspaceCalculation } from 'lib/onrevolt/offer-workspace-calculation-types';
 import { tariffToday, type ClientTariffData, type ClientTariffPayload } from 'lib/onrevolt/client-tariffs';
 import { offerTariffCatalogKey, resolveCurrentOfferTariff, type OfferTariffRateState } from 'lib/onrevolt/offer-workspace-tariffs';
@@ -60,6 +66,9 @@ type WorkspaceTemplateItem = {
   quantity: number;
   role: string;
   supplyMode: string;
+  pricingMode?: 'LEGACY' | 'CATALOG' | 'INDIVIDUAL';
+  operatingCostBasis?: 'PER_LINE' | 'PER_UNIT';
+  catalogPriceId?: string | null;
   unitPurchaseNet: number | null;
   purchaseVatRate: number | null;
   operatingCostNet: number | null;
@@ -77,6 +86,7 @@ type WorkspaceTemplateItem = {
     availability: string | null;
     powerCapacity: string | null;
     prices: Array<{
+      id?: string;
       purchaseNet: number;
       currentPurchaseNet: number | null;
       purchaseVatRate: number;
@@ -207,22 +217,36 @@ type OfferWorkspaceCalculationJob = {
   total: number;
   data?: OfferWorkspaceCalculation;
   error?: string;
+  stale?: boolean;
+  blockedReasons?: string[];
 };
 
 export function parseCalculationJob(payload: unknown, response: Response): OfferWorkspaceCalculationJob {
   const body = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
   const job = body.job && typeof body.job === 'object' ? body.job as Record<string, unknown> : null;
   const errorMessage = typeof body.error === 'string' ? body.error : `Błąd żądania (${response.status})`;
+  const blockedReasons = job?.blockedReasons;
+  const invalidBlockedReasons = blockedReasons !== undefined
+    && (!Array.isArray(blockedReasons) || !blockedReasons.every((reason) => typeof reason === 'string'));
   if (!response.ok || body.ok !== true || !job
     || typeof job.id !== 'string'
     || !['running', 'completed', 'failed'].includes(String(job.status))
     || typeof job.completed !== 'number' || !Number.isFinite(job.completed)
-    || typeof job.total !== 'number' || !Number.isFinite(job.total)) {
+    || typeof job.total !== 'number' || !Number.isFinite(job.total)
+    || (job.stale !== undefined && typeof job.stale !== 'boolean')
+    || invalidBlockedReasons) {
     const error = new Error(errorMessage);
     Object.assign(error, { status: response.status });
     throw error;
   }
   return job as OfferWorkspaceCalculationJob;
+}
+
+export function offerWorkspaceCalculationStaleMessage(blockedReasons?: string[]) {
+  const reasons = [...new Set((blockedReasons || []).map((reason) => reason.trim()).filter(Boolean))].slice(0, 5);
+  return reasons.length
+    ? `Wynik kalkulacji jest nieaktualny i został pominięty. Ostatnia próba była zablokowana: ${reasons.join(' ')}`
+    : 'Wynik kalkulacji jest nieaktualny i został pominięty. Uruchom obliczenie ręcznie, aby uzyskać aktualny wynik.';
 }
 
 function waitForCalculationPoll(): Promise<void> {
@@ -360,6 +384,13 @@ function formatNumber(value: number | null | undefined, digits = 1) {
   return new Intl.NumberFormat('pl-PL', { maximumFractionDigits: digits }).format(value);
 }
 
+function formatOfferPrice(value: number | null) {
+  return value == null ? 'Brak wartości' : `${new Intl.NumberFormat('pl-PL', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)} zł`;
+}
+
 function templateKindLabel(kind: string) {
   if (kind.includes('PV')) return 'Fotowoltaika';
   if (kind === 'MAGAZYN') return 'Magazyn energii';
@@ -387,6 +418,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   const [draft, setDraft] = useState<OfferWorkspaceDraft | null>(null);
   const [expectedRevision, setExpectedRevision] = useState(0);
   const [dirty, setDirty] = useState(false);
+  const [acknowledgedPricingRevision, setAcknowledgedPricingRevision] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [conflictKind, setConflictKind] = useState<DraftConflict>(null);
@@ -698,6 +730,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
       // Keep polling the server-owned job when the draft changes; aborting fetch does not stop its worker.
       while (job.status === 'running') {
         if (controller.signal.aborted || requestId !== calculationRequestId.current) return;
+        if (job.stale) throw new Error(offerWorkspaceCalculationStaleMessage(job.blockedReasons));
         setCalculationState((current) => ({ ...current, completed: job.completed, total: job.total }));
         await waitForCalculationPoll();
         const pollParams = new URLSearchParams({ jobId: job.id });
@@ -717,6 +750,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
           }));
         }
       }
+      if (job.stale) throw new Error(offerWorkspaceCalculationStaleMessage(job.blockedReasons));
       if (job.status === 'failed') throw new Error(job.error || 'Obliczenie oferty nie powiodło się.');
       if (!job.data) throw new Error('Zadanie zakończyło się bez wyniku kalkulacji.');
       if (controller.signal.aborted || requestId !== calculationRequestId.current) return;
@@ -763,7 +797,8 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   }, [canEdit, updateDraft]);
 
   async function saveDraft() {
-    if (!workspace || !draft || !canEdit || saving || conflict) return;
+    if (!workspace || !draft || !canEdit || saving || conflict || (!dirty && !pricingIsStale)
+      || (pricingIsStale && !pricingChangeAcknowledged)) return;
     const projectAtStart = projectId;
     const requestGeneration = generation.current;
     const submittedEditSequence = editSequence.current;
@@ -781,7 +816,13 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
-        body: JSON.stringify({ expectedRevision: expectedRevisionAtStart, sourceRevision: sourceRevisionAtStart, input: submittedDraft }),
+        body: JSON.stringify({
+          expectedRevision: expectedRevisionAtStart,
+          sourceRevision: sourceRevisionAtStart,
+          input: submittedDraft,
+          ...(pricingIsStale && pricingChangeAcknowledged && currentPricingSnapshot
+            ? { acceptedPricingRevision: currentPricingSnapshot.revision } : {}),
+        }),
       });
       const saved = parseEnvelope<SavedOfferWorkspaceDraft>(await response.json(), response);
       if (controller.signal.aborted || generation.current !== requestGeneration || projectId !== projectAtStart) return;
@@ -850,6 +891,23 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   }
 
   const selectedTemplates = useMemo(() => workspace?.templates.filter((item) => draft?.selectedTemplateIds.includes(item.id)) || [], [draft?.selectedTemplateIds, workspace?.templates]);
+  const currentPricingSnapshot: OfferWorkspacePricingSnapshot | null = workspace && draft
+    && ['B2C', 'B2B'].includes(workspace.clientType)
+    ? createOfferWorkspacePricingSnapshot(
+      draft,
+      workspace.clientType,
+      priceOfferWorkspaceConfiguration(selectedTemplates, draft.saleVatMode, workspace.clientType),
+      selectedTemplates,
+    )
+    : null;
+  const savedPricingSnapshot = workspace?.draft?.pricingSnapshot;
+  const pricingFreshness: OfferWorkspacePricingFreshness = offerWorkspacePricingFreshness(savedPricingSnapshot, currentPricingSnapshot);
+  const pricingIsStale = pricingFreshness === 'STALE';
+  const pricingChangeAcknowledged = Boolean(currentPricingSnapshot)
+    && acknowledgedPricingRevision === currentPricingSnapshot?.revision;
+  const canSaveDraft = canEdit && !conflict && !saving
+    && (dirty || pricingIsStale)
+    && (!pricingIsStale || pricingChangeAcknowledged);
 
   if (loading) {
     return <Flex minH="320px" align="center" justify="center" gap="12px"><Spinner color="purple.500" /><Text color={muted}>Wczytuję dane projektu i katalogu…</Text></Flex>;
@@ -901,7 +959,14 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
         onChange={updateDraft}
       />
       : step === 'SAVINGS'
-        ? <OfferSavingsScreen workspace={calculatedWorkspace} calculation={calculationState.key === calculationKey ? calculationState.data : null} />
+        ? <OfferSavingsScreen {...screenProps}
+          targetTariffLabel={tariffs?.catalog.flatMap(operator => operator.tariffs.filter(tariff => tariff.id === draft.targetTariffId && operator.id === draft.targetOperatorId).map(tariff => `${operator.name} · ${tariff.code}`))[0] || 'Nie wybrano taryfy'}
+          calculation={calculationState.key === calculationKey ? calculationState.data : null}
+          calculationLoading={calculationState.loading}
+          calculationError={calculationState.key === calculationKey ? calculationState.error : ''}
+          calculationDisabled={!canEdit || conflict || templatePreview}
+          onCalculate={() => calculateOffer('selected')}
+        />
         : step === 'DESCRIPTION'
           ? <OfferDescriptionScreen draft={draft} disabled={!canEdit || conflict} onChange={updateDraft} />
           : <OfferSummaryScreen workspace={calculatedWorkspace} draft={draft} templatePreview={templatePreview} />;
@@ -926,10 +991,10 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
         <Button variant="outline" leftIcon={<MdDownload />} onClick={exportDraft}>Eksport JSON</Button>
         <Tooltip label="Ten etap zapisuje jeden szkic projektu; kolejne warianty nie są jeszcze dostępne."><Box><Button variant="outline" isDisabled>Nowy wariant</Button></Box></Tooltip>
         {workspace.revision ? <Tooltip label={`Rewizja danych źródłowych: ${workspace.revision}`}><IconButton aria-label="Pokaż rewizję danych źródłowych" icon={<MdOutlineInfo />} variant="ghost" size="xs" /></Tooltip> : null}
-        <Button colorScheme="purple" bg="#8a47ff" isLoading={saving} isDisabled={!canEdit || !dirty || conflict} onClick={saveDraft}>Zapisz szkic</Button>
+        <Button colorScheme="purple" bg="#8a47ff" isLoading={saving} isDisabled={!canSaveDraft} onClick={saveDraft}>Zapisz szkic</Button>
       </HStack>
     </Flex>
-    <Text role="status" fontSize="11px" color={conflict ? 'orange.600' : muted} mb="12px" textAlign="right">{status || (dirty ? 'Niezapisane zmiany' : 'Szkic')}{conflict ? ' · konflikt szkicu' : ''}</Text>
+    <Text role="status" fontSize="11px" color={conflict ? 'orange.600' : muted} mb="12px" textAlign="right">{pricingIsStale ? 'Ceny wymagają przeliczenia' : status || (dirty ? 'Niezapisane zmiany' : 'Szkic')}{conflict ? ' · konflikt szkicu' : ''}</Text>
 
     {error && workspace ? <Alert status={conflict ? 'warning' : 'error'} alignItems="flex-start" borderRadius="0"><AlertIcon mt="2px" /><AlertDescription flex="1">
       <Text fontSize="sm">{error}</Text>
@@ -939,6 +1004,25 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
         <Button size="xs" variant="outline" colorScheme="orange" onClick={discardLocalDraft}>Odrzuć lokalne zmiany i wczytaj zapisany szkic</Button>
       </Flex> : null}
     </AlertDescription></Alert> : null}
+    {pricingIsStale && savedPricingSnapshot && currentPricingSnapshot ? <Alert status="warning" alignItems="flex-start" borderRadius="0" mb="14px">
+      <AlertIcon mt="2px" />
+      <AlertDescription flex="1">
+        <Text fontWeight="700">Ceny wymagają przeliczenia</Text>
+        <Text fontSize="sm" mt="4px">Zapisane: netto {formatOfferPrice(savedPricingSnapshot.totals.net)} · brutto {formatOfferPrice(savedPricingSnapshot.totals.gross)}</Text>
+        <Text fontSize="sm">Aktualne: netto {formatOfferPrice(currentPricingSnapshot.totals.net)} · brutto {formatOfferPrice(currentPricingSnapshot.totals.gross)}</Text>
+        <Checkbox
+          mt="8px"
+          isChecked={pricingChangeAcknowledged}
+          isDisabled={!canEdit || conflict}
+          onChange={(event) => setAcknowledgedPricingRevision(event.target.checked ? currentPricingSnapshot.revision : '')}
+        >Potwierdzam nowe ceny przed zapisem</Checkbox>
+      </AlertDescription>
+    </Alert> : null}
+    {workspace.draft && ['NO_BASELINE', 'UNAVAILABLE'].includes(pricingFreshness) ? <Alert status="info" alignItems="flex-start" borderRadius="0" mb="14px">
+      <AlertIcon mt="2px" /><AlertDescription fontSize="sm">{pricingFreshness === 'NO_BASELINE'
+        ? 'Brak dostępnej zapisanej migawki cenowej dla tego szkicu. Nie można porównać poprzednich i aktualnych sum.'
+        : 'Nie można porównać cen dla aktualnego typu klienta; nie wyznaczono nowej sumy.'}</AlertDescription>
+    </Alert> : null}
     {!canEdit ? <Alert status="info" borderRadius="0"><AlertIcon /><AlertDescription fontSize="sm">Masz dostęp do podglądu. Edycja i zapis wymagają uprawnienia do zarządzania ofertami.</AlertDescription></Alert> : null}
     {canEdit && !actorId ? <Alert status="warning" borderRadius="0"><AlertIcon /><AlertDescription fontSize="sm">Brak identyfikatora zalogowanego użytkownika. Lokalna kopia robocza jest wyłączona; zapis na serwerze działa normalnie.</AlertDescription></Alert> : null}
 
@@ -962,7 +1046,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
         <Divider my="18px" />
         <Flex justify="space-between" gap="10px" wrap="wrap">
           <Button size="sm" variant="outline" leftIcon={<MdArrowBack />} isDisabled={currentIndex === 0} onClick={() => changeStep(steps[Math.max(0, currentIndex - 1)].id)}>Wstecz</Button>
-          {currentIndex < steps.length - 1 ? <Button size="sm" colorScheme="purple" rightIcon={<MdArrowForward />} onClick={() => changeStep(steps[currentIndex + 1].id)}>Dalej</Button> : <Button size="sm" colorScheme="purple" leftIcon={<MdSave />} isLoading={saving} isDisabled={!canEdit || !dirty || conflict} onClick={saveDraft}>Zapisz szkic</Button>}
+          {currentIndex < steps.length - 1 ? <Button size="sm" colorScheme="purple" rightIcon={<MdArrowForward />} onClick={() => changeStep(steps[currentIndex + 1].id)}>Dalej</Button> : <Button size="sm" colorScheme="purple" leftIcon={<MdSave />} isLoading={saving} isDisabled={!canSaveDraft} onClick={saveDraft}>Zapisz szkic</Button>}
         </Flex>
       </Box>
     </Grid>

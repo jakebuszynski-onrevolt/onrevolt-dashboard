@@ -62,6 +62,7 @@ import {
   configurationInvestmentScope,
   groupTemplateVariants,
   resolveTemplateItemCosts,
+  resolveTemplateItemSaleVat,
   selectTemplateVariant,
   type ConfigurationInvestmentScope,
 } from 'lib/onrevolt/configuration-templates';
@@ -90,12 +91,14 @@ type ConfiguratorWorkspaceProps = {
 };
 
 type PriceRow = {
+  id?: string;
   purchaseNet: string | number;
   currentPurchaseNet?: string | number | null;
   purchaseVatRate: string | number;
   operatingCostNet: string | number;
   marginRate: string | number;
   saleVatRate?: string | number | null;
+  validFrom?: string | null;
 };
 
 type ProductRow = {
@@ -157,6 +160,9 @@ type TemplateItemRow = {
   operatingCostNet?: string | number | null;
   marginRate?: string | number | null;
   saleVatRate?: string | number | null;
+  pricingMode?: 'CATALOG' | 'INDIVIDUAL' | 'LEGACY';
+  operatingCostBasis?: 'PER_UNIT' | 'PER_LINE';
+  catalogPriceId?: string | null;
   isOptional?: boolean;
   requiresReview?: boolean;
   sourceSheet?: string | null;
@@ -191,6 +197,8 @@ type ConfigurationRow = {
   name: string;
   kind: string;
   status: string;
+  totalPurchaseNet?: string | number | null;
+  totalSaleGross?: string | number | null;
   clientType: string;
   goal?: string | null;
   roofType?: string | null;
@@ -210,6 +218,7 @@ type ConfigurationRow = {
 };
 
 type ConfigItemForm = {
+  id?: string;
   productId: string;
   position: number;
   description: string;
@@ -221,6 +230,12 @@ type ConfigItemForm = {
   operatingCostNet: string;
   marginRate: string;
   saleVatRate: string;
+  pricingMode: 'CATALOG' | 'INDIVIDUAL' | 'LEGACY';
+  operatingCostBasis: 'PER_UNIT' | 'PER_LINE';
+  catalogPriceId?: string | null;
+  requireCurrentCatalogPrice?: boolean;
+  recalculateCatalogPrice?: boolean;
+  previewCatalogSaleVat?: boolean;
   isOptional: boolean;
   requiresReview: boolean;
   sourceSheet?: string | null;
@@ -381,8 +396,10 @@ function supplyModeFromRole(role: string) {
   return ['LABOR', 'FORMALITIES', 'DESIGN', 'LOGISTICS'].includes(role) ? 'SERVICE_ONLY' : 'ONREVOLT_SUPPLIED';
 }
 
-function itemFromTemplate(item: TemplateItemRow): ConfigItemForm {
-  const costs = resolveTemplateItemCosts(item);
+export function itemFromTemplate(item: TemplateItemRow, inheritItemSaleVat = true): ConfigItemForm {
+  const pricingMode = item.pricingMode || 'LEGACY';
+  const operatingCostBasis = item.operatingCostBasis || defaultOperatingCostBasis(pricingMode);
+  const costs = resolveTemplateItemCosts({ ...item, pricingMode, operatingCostBasis });
   return {
     productId: item.productId || '',
     position: item.position,
@@ -394,7 +411,13 @@ function itemFromTemplate(item: TemplateItemRow): ConfigItemForm {
     purchaseVatRate: rateToPercentFormValue(costs.purchaseVatRate),
     operatingCostNet: formValue(costs.operatingCostNet),
     marginRate: rateToPercentFormValue(costs.marginRate),
-    saleVatRate: rateToPercentFormValue(item.saleVatRate),
+    saleVatRate: pricingMode === 'CATALOG' && inheritItemSaleVat
+      ? rateToPercentFormValue(resolveTemplateItemSaleVat({ ...item, pricingMode, operatingCostBasis }))
+      : rateToPercentFormValue(item.saleVatRate),
+    pricingMode,
+    operatingCostBasis,
+    catalogPriceId: pricingMode === 'CATALOG' ? item.product?.prices?.[0]?.id : item.catalogPriceId,
+    requireCurrentCatalogPrice: pricingMode === 'CATALOG',
     isOptional: Boolean(item.isOptional),
     requiresReview: Boolean(item.requiresReview),
     sourceSheet: item.sourceSheet,
@@ -404,7 +427,9 @@ function itemFromTemplate(item: TemplateItemRow): ConfigItemForm {
 }
 
 function itemFromConfiguration(item: ConfigurationRow['items'][number]): ConfigItemForm {
+  const pricingMode = item.pricingMode || 'LEGACY';
   return {
+    id: item.id,
     productId: item.productId || '',
     position: item.position,
     description: item.description || item.product?.name || '',
@@ -416,6 +441,9 @@ function itemFromConfiguration(item: ConfigurationRow['items'][number]): ConfigI
     operatingCostNet: formValue(item.operatingCostNet),
     marginRate: rateToPercentFormValue(item.marginRate),
     saleVatRate: rateToPercentFormValue(item.saleVatRate),
+    pricingMode,
+    operatingCostBasis: item.operatingCostBasis || defaultOperatingCostBasis(pricingMode),
+    catalogPriceId: item.catalogPriceId,
     isOptional: Boolean(item.isOptional),
     requiresReview: Boolean(item.requiresReview),
     sourceSheet: item.sourceSheet,
@@ -424,9 +452,41 @@ function itemFromConfiguration(item: ConfigurationRow['items'][number]): ConfigI
   };
 }
 
-function itemFromProduct(product?: ProductRow, position = 1): ConfigItemForm {
+export function configurationItemsFromConfiguration(configuration: Pick<ConfigurationRow, 'items'>): ConfigItemForm[] {
+  return configuration.items.map(itemFromConfiguration);
+}
+
+export function itemFromProduct(product?: ProductRow, position = 1, inheritItemSaleVat = true): ConfigItemForm {
   const price = product?.prices?.[0];
   const role = roleFromProduct(product);
+  let costs: ReturnType<typeof resolveTemplateItemCosts> | undefined;
+  let priceError = '';
+  let catalogSaleVatRate = '';
+  if (product && price) {
+    try {
+      costs = resolveTemplateItemCosts({
+        productId: product.id,
+        product,
+        description: product.name,
+        pricingMode: 'CATALOG',
+        operatingCostBasis: 'PER_UNIT',
+      });
+    } catch (error) {
+      priceError = error instanceof Error ? error.message : String(error);
+    }
+    if (price.saleVatRate != null || inheritItemSaleVat) {
+      try {
+        catalogSaleVatRate = rateToPercentFormValue(resolveTemplateItemSaleVat({
+          productId: product.id,
+          product,
+          pricingMode: 'CATALOG',
+          description: product.name,
+        }));
+      } catch (error) {
+        if (!priceError) priceError = error instanceof Error ? error.message : String(error);
+      }
+    }
+  }
   return {
     productId: product?.id || '',
     position,
@@ -434,14 +494,19 @@ function itemFromProduct(product?: ProductRow, position = 1): ConfigItemForm {
     quantity: '1',
     role,
     supplyMode: supplyModeFromRole(role),
-    unitPurchaseNet: formValue(price?.currentPurchaseNet ?? price?.purchaseNet ?? ''),
-    purchaseVatRate: rateToPercentFormValue(price?.purchaseVatRate ?? '0.23'),
-    operatingCostNet: formValue(price?.operatingCostNet ?? '0'),
-    marginRate: rateToPercentFormValue(price?.marginRate ?? '0.3'),
-    saleVatRate: '',
+    unitPurchaseNet: formValue(costs?.unitPurchaseNet),
+    purchaseVatRate: costs ? rateToPercentFormValue(costs.purchaseVatRate) : '',
+    operatingCostNet: formValue(costs?.operatingCostNet),
+    marginRate: costs ? rateToPercentFormValue(costs.marginRate) : '',
+    saleVatRate: catalogSaleVatRate,
+    pricingMode: defaultPricingModeForProduct(product?.id),
+    operatingCostBasis: defaultOperatingCostBasis(defaultPricingModeForProduct(product?.id)),
+    catalogPriceId: price?.id || null,
+    requireCurrentCatalogPrice: Boolean(product),
+    previewCatalogSaleVat: false,
     isOptional: false,
-    requiresReview: false,
-    notes: '',
+    requiresReview: Boolean(priceError),
+    notes: priceError,
   };
 }
 
@@ -454,6 +519,7 @@ function pricedInput(item: ConfigItemForm, saleVatMode: ConfigurationVatMode) {
       operatingCostNet: 0,
       marginRate: 0,
       saleVatRate: 0,
+      operatingCostBasis: item.operatingCostBasis,
       includeVatSurplus: false,
     };
   }
@@ -465,7 +531,8 @@ function pricedInput(item: ConfigItemForm, saleVatMode: ConfigurationVatMode) {
     operatingCostNet: asNumber(item.operatingCostNet),
     marginRate: percentFormValueToRate(item.marginRate),
     saleVatRate: resolveSaleVatRate(saleVatMode, percentFormValueToRate(item.saleVatRate)),
-  };
+    operatingCostBasis: item.operatingCostBasis,
+  } as Parameters<typeof calculateConfigurationLine>[0] & { operatingCostBasis?: string };
 }
 
 function itemToPayload(item: ConfigItemForm, saleVatMode: ConfigurationVatMode) {
@@ -474,10 +541,64 @@ function itemToPayload(item: ConfigItemForm, saleVatMode: ConfigurationVatMode) 
     purchaseVatRate: percentFormValueToRate(item.purchaseVatRate),
     marginRate: percentFormValueToRate(item.marginRate),
     saleVatRate: resolveSaleVatRate(saleVatMode, percentFormValueToRate(item.saleVatRate)),
+    _requireCurrentCatalogPrice: item.requireCurrentCatalogPrice,
+    _recalculateCatalogPrice: item.recalculateCatalogPrice,
+    _previewCatalogSaleVat: item.previewCatalogSaleVat,
   };
 }
 
-function calculateItems(items: ConfigItemForm[], saleVatMode: ConfigurationVatMode) {
+export function isStaleCatalogPrice(item: Pick<ConfigItemForm, 'productId' | 'pricingMode' | 'catalogPriceId'>, products: ProductRow[]) {
+  if (item.pricingMode !== 'CATALOG' || !item.productId || !item.catalogPriceId) return false;
+  const latestPriceId = products.find((product) => product.id === item.productId)?.prices?.[0]?.id;
+  return Boolean(latestPriceId && latestPriceId !== item.catalogPriceId);
+}
+
+export function needsLegacyCostReview(item: Pick<ConfigItemForm, 'pricingMode' | 'operatingCostBasis' | 'quantity'>) {
+  return ['LEGACY', 'INDIVIDUAL'].includes(item.pricingMode)
+    && item.operatingCostBasis === 'PER_LINE'
+    && asNumber(item.quantity) > 1;
+}
+
+export function defaultPricingModeForProduct(productId?: string | null): ConfigItemForm['pricingMode'] {
+  return productId ? 'CATALOG' : 'INDIVIDUAL';
+}
+
+export function defaultOperatingCostBasis(pricingMode: ConfigItemForm['pricingMode']): ConfigItemForm['operatingCostBasis'] {
+  return pricingMode === 'LEGACY' ? 'PER_LINE' : 'PER_UNIT';
+}
+
+function isKnownNumericValue(value: string | number | null | undefined) {
+  if (value === null || value === undefined || String(value).trim() === '') return false;
+  return Number.isFinite(Number(String(value).trim().replace(',', '.')));
+}
+
+function hasIncompletePricing(item: ConfigItemForm, saleVatMode: ConfigurationVatMode) {
+  if (nonPricedSupplyModes.has(item.supplyMode)) return false;
+  if (saleVatMode === 'REVIEW') return true;
+  return ![
+    item.quantity,
+    item.unitPurchaseNet,
+    item.purchaseVatRate,
+    item.operatingCostNet,
+    item.marginRate,
+  ].every(isKnownNumericValue)
+    || (saleVatMode === 'MIXED' && !isKnownNumericValue(item.saleVatRate));
+}
+
+export function calculateItems(items: ConfigItemForm[], saleVatMode: ConfigurationVatMode) {
+  if (items.some((item) => hasIncompletePricing(item, saleVatMode))) {
+    return {
+      pricingComplete: false,
+      purchaseNet: null,
+      saleNet: null,
+      saleVatValue: null,
+      saleGross: null,
+      profitNet: null,
+      vatSurplus: null,
+      vatBreakdown: [],
+    };
+  }
+
   const lines = items.map((item) => calculateConfigurationLine(pricedInput(item, saleVatMode)));
   const totals = lines.reduce(
     (acc, line) => ({
@@ -491,6 +612,7 @@ function calculateItems(items: ConfigItemForm[], saleVatMode: ConfigurationVatMo
     { purchaseNet: 0, saleNet: 0, saleVatValue: 0, saleGross: 0, profitNet: 0, vatSurplus: 0 },
   );
   return {
+    pricingComplete: true,
     ...totals,
     vatBreakdown: vatBreakdown(lines.map((line, index) => ({
       saleNet: line.saleNet,
@@ -665,6 +787,8 @@ export default function ConfiguratorWorkspace({
 
   const totals = useMemo(() => calculateItems(items, saleVatMode), [items, saleVatMode]);
   const reviewCount = useMemo(() => items.filter((item) => item.requiresReview).length, [items]);
+  const staleCatalogCount = useMemo(() => items.filter((item) => isStaleCatalogPrice(item, products)).length, [items, products]);
+  const legacyCostReviewCount = useMemo(() => items.filter(needsLegacyCostReview).length, [items]);
 
   const applyClientTypeVat = useCallback((nextClientType: string) => {
     const nextMode = defaultVatModeForClientType(nextClientType);
@@ -684,7 +808,7 @@ export default function ConfiguratorWorkspace({
     setKind(configuration.kind);
     setTargetPowerKw(formValue(configuration.targetPowerKw));
     setTargetCapacityKwh(formValue(configuration.targetCapacityKwh));
-    setItems(configuration.items.map(itemFromConfiguration));
+    setItems(configurationItemsFromConfiguration(configuration));
     setAssets(Array.isArray(configuration.existingAssetsSnapshot)
       ? configuration.existingAssetsSnapshot.map((asset) => cleanAsset(asset as ExistingAssetRow))
       : (project.existingAssets || []).map(cleanAsset));
@@ -804,12 +928,27 @@ export default function ConfiguratorWorkspace({
   }
 
   function changeSaleVatMode(nextMode: ConfigurationVatMode) {
-    const previousRate = defaultSaleVatRateForMode(saleVatMode);
-    if (nextMode === 'MIXED' && previousRate != null) {
-      setItems((current) => current.map((item) => ({
-        ...item,
-        saleVatRate: rateToPercentFormValue(previousRate),
-      })));
+    if (nextMode === 'MIXED') {
+      setItems((current) => current.map((item) => {
+        if (item.pricingMode !== 'CATALOG' || !item.productId) return item;
+        if (isStaleCatalogPrice(item, products)) return { ...item, previewCatalogSaleVat: false };
+        const product = products.find((entry) => entry.id === item.productId);
+        if (!product?.prices?.[0]) return { ...item, previewCatalogSaleVat: false };
+        try {
+          return {
+            ...item,
+            saleVatRate: rateToPercentFormValue(resolveTemplateItemSaleVat({
+              productId: product.id,
+              product,
+              pricingMode: 'CATALOG',
+              description: item.description,
+            })),
+            previewCatalogSaleVat: true,
+          };
+        } catch {
+          return { ...item, previewCatalogSaleVat: false };
+        }
+      }));
     }
 
     setSaleVatMode(nextMode);
@@ -918,7 +1057,7 @@ export default function ConfiguratorWorkspace({
       setRoofType(template.roofType || 'UNKNOWN');
       setTargetPowerKw(formValue(template.powerKw));
       setTargetCapacityKwh(formValue(template.capacityKwh));
-      setItems(template.items.map(itemFromTemplate));
+      setItems(template.items.map((item) => itemFromTemplate(item, saleVatMode === 'MIXED')));
       setConfigurationName(`${selectedProject?.title || 'Konfiguracja'} - ${template.name}`);
       setShowTemplatePicker(false);
       setError('');
@@ -933,7 +1072,8 @@ export default function ConfiguratorWorkspace({
     try {
       const mode = defaultVatModeForClientType(clientType);
       if (mode === 'REVIEW') return null;
-      return calculateItems(template.items.map(itemFromTemplate), mode).saleGross;
+      const totals = calculateItems(template.items.map((item) => itemFromTemplate(item, mode === 'MIXED')), mode);
+      return totals.pricingComplete ? totals.saleGross : null;
     } catch {
       return null;
     }
@@ -981,19 +1121,69 @@ export default function ConfiguratorWorkspace({
 
       if (field === 'productId') {
         const product = products.find((entry) => entry.id === value);
-        const next = itemFromProduct(product, item.position);
+        const next = itemFromProduct(product, item.position, saleVatMode === 'MIXED');
         return {
           ...item,
           ...next,
           productId: typeof value === 'string' ? value : '',
           position: item.position,
-          requiresReview: item.requiresReview,
-          notes: item.notes,
+          requiresReview: item.requiresReview || next.requiresReview,
+          notes: next.notes || item.notes,
         };
       }
 
-      return { ...item, [field]: value };
+      if (field === 'operatingCostBasis') {
+        const operatingCostBasis = value as ConfigItemForm['operatingCostBasis'];
+        if (item.pricingMode === 'CATALOG' && operatingCostBasis !== 'PER_UNIT') {
+          return {
+            ...item,
+            operatingCostBasis,
+            pricingMode: 'INDIVIDUAL',
+            catalogPriceId: null,
+            requireCurrentCatalogPrice: false,
+            recalculateCatalogPrice: false,
+            previewCatalogSaleVat: false,
+          };
+        }
+        return { ...item, operatingCostBasis };
+      }
+
+      const updated = { ...item, [field]: value };
+      if (['unitPurchaseNet', 'purchaseVatRate', 'operatingCostNet', 'marginRate', 'saleVatRate'].includes(field)) {
+        return {
+          ...updated,
+          pricingMode: 'INDIVIDUAL',
+          catalogPriceId: null,
+          requireCurrentCatalogPrice: false,
+          recalculateCatalogPrice: false,
+          previewCatalogSaleVat: false,
+        };
+      }
+      return updated;
     }));
+  }
+
+  function resetItemToCatalog(index: number) {
+    const item = items[index];
+    const product = products.find((entry) => entry.id === item?.productId);
+    if (!item || !product) return;
+    const catalogItem = itemFromProduct(product, item.position, saleVatMode === 'MIXED');
+    setItems((current) => current.map((entry, itemIndex) => itemIndex === index ? {
+      ...entry,
+      unitPurchaseNet: catalogItem.unitPurchaseNet,
+      purchaseVatRate: catalogItem.purchaseVatRate,
+      operatingCostNet: catalogItem.operatingCostNet,
+      marginRate: catalogItem.marginRate,
+      saleVatRate: catalogItem.saleVatRate,
+      pricingMode: 'CATALOG',
+      operatingCostBasis: 'PER_UNIT',
+      catalogPriceId: catalogItem.catalogPriceId,
+      requireCurrentCatalogPrice: true,
+      recalculateCatalogPrice: true,
+      previewCatalogSaleVat: false,
+      requiresReview: entry.requiresReview || catalogItem.requiresReview,
+      notes: catalogItem.notes || entry.notes,
+    } : entry));
   }
 
   function addProductLine() {
@@ -1143,6 +1333,11 @@ export default function ConfiguratorWorkspace({
       });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.message || result.error || 'Nie udało się zapisać konfiguracji');
+
+      if (editingConfiguration) {
+        setConfigurations((current) => current.map((entry) => entry.id === result.data.id ? result.data : entry));
+        setItems(configurationItemsFromConfiguration(result.data));
+      }
 
       setNotice(`Zapisano konfigurację: ${result.data.name}`);
       await onSaved?.(result.data);
@@ -1724,10 +1919,10 @@ export default function ConfiguratorWorkspace({
                         <Th color={mutedColor} minW="170px">Rola</Th>
                         <Th color={mutedColor} minW="190px">Tryb</Th>
                         <Th color={mutedColor} minW="118px">Ilość</Th>
-                        <Th color={mutedColor} minW="138px">Zakup netto</Th>
+                        <Th color={mutedColor} minW="138px">Zakup netto / szt.</Th>
                         <Th color={mutedColor} minW="128px">VAT zakup (%)</Th>
-                        <Th color={mutedColor} minW="138px">Koszt firmy</Th>
-                        <Th color={mutedColor} minW="128px">Marża (%)</Th>
+                        <Th color={mutedColor} minW="150px">Koszt realizacji netto</Th>
+                        <Th color={mutedColor} minW="128px">Narzut (%)</Th>
                         <Th color={mutedColor} minW="128px">VAT sprz. (%)</Th>
                         <Th color={mutedColor} minW="140px">Brutto</Th>
                         <Th color={mutedColor} w="92px">Akcje</Th>
@@ -1735,12 +1930,27 @@ export default function ConfiguratorWorkspace({
                     </Thead>
                     <Tbody>
                       {items.map((item, index) => {
-                        const calculated = calculateConfigurationLine(pricedInput(item, saleVatMode));
+                        const calculated = hasIncompletePricing(item, saleVatMode)
+                          ? null
+                          : calculateConfigurationLine(pricedInput(item, saleVatMode));
+                        const catalogStale = isStaleCatalogPrice(item, products);
+                        const legacyCostReview = needsLegacyCostReview(item);
                         return (
                           <Tr key={`${item.position}-${index}`} opacity={item.supplyMode === 'NOT_INCLUDED' ? 0.62 : 1}>
                             <Td color={textColor} fontWeight="800">{index + 1}</Td>
                             <Td>
                               <Input value={item.description} onChange={(event) => updateItem(index, 'description', event.target.value)} sx={fieldStyles} />
+                              <HStack mt="6px" spacing="6px" wrap="wrap">
+                                <Badge colorScheme={item.pricingMode === 'CATALOG' ? 'green' : item.pricingMode === 'INDIVIDUAL' ? 'blue' : 'gray'}>
+                                  {item.pricingMode === 'CATALOG' ? 'Cena katalogowa' : item.pricingMode === 'INDIVIDUAL' ? 'Cena indywidualna' : 'Cena dotychczasowa'}
+                                </Badge>
+                                {catalogStale ? <Badge colorScheme="orange">Cena katalogowa nieaktualna</Badge> : null}
+                              </HStack>
+                              {item.productId && (catalogStale || item.pricingMode !== 'CATALOG') ? (
+                                <Button size="xs" mt="5px" variant="link" leftIcon={<Icon as={MdRefresh} />} onClick={() => resetItemToCatalog(index)}>
+                                  {catalogStale ? 'Przelicz wg katalogu' : 'Przywróć ceny katalogowe'}
+                                </Button>
+                              ) : null}
                               <HStack mt="6px" spacing="8px">
                                 <Checkbox isChecked={item.requiresReview} onChange={(event) => updateItem(index, 'requiresReview', event.target.checked)}>
                                   <Text color={mutedColor} fontSize="xs" fontWeight="700">Do sprawdzenia</Text>
@@ -1773,7 +1983,27 @@ export default function ConfiguratorWorkspace({
                                 <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
                               </InputGroup>
                             </Td>
-                            <Td minW="138px"><Input value={item.operatingCostNet} onChange={(event) => updateItem(index, 'operatingCostNet', event.target.value)} sx={numberFieldStyles} /></Td>
+                            <Td minW="150px">
+                              <Input value={item.operatingCostNet} onChange={(event) => updateItem(index, 'operatingCostNet', event.target.value)} sx={numberFieldStyles} />
+                              <Select
+                                size="sm"
+                                mt="5px"
+                                value={item.operatingCostBasis}
+                                onChange={(event) => updateItem(index, 'operatingCostBasis', event.target.value)}
+                                sx={fieldStyles}
+                                aria-label={`Podstawa kosztu realizacji: ${item.description || `pozycja ${index + 1}`}`}
+                              >
+                                <option value="PER_UNIT">Za sztukę</option>
+                                <option value="PER_LINE">Za pozycję</option>
+                              </Select>
+                              {item.operatingCostBasis === 'PER_LINE' ? (
+                                <Text color={legacyCostReview ? 'orange.500' : mutedColor} fontSize="xs" fontWeight="700" mt="4px">
+                                  {legacyCostReview
+                                    ? `Dotychczasowa podstawa: koszt naliczany raz przy ilości ${formatNumber(item.quantity)}. Zmień, aby liczyć za sztukę.`
+                                    : 'Dotychczasowa podstawa: koszt naliczany raz za pozycję.'}
+                                </Text>
+                              ) : null}
+                            </Td>
                             <Td minW="128px">
                               <InputGroup>
                                 <Input value={item.marginRate} inputMode="decimal" pe="34px" onChange={(event) => updateItem(index, 'marginRate', event.target.value)} sx={numberFieldStyles} />
@@ -1794,7 +2024,7 @@ export default function ConfiguratorWorkspace({
                                 </Badge>
                               )}
                             </Td>
-                            <Td color={textColor} fontWeight="800">{formatMoney(calculated.saleGross)}</Td>
+                            <Td color={textColor} fontWeight="800">{calculated ? formatMoney(calculated.saleGross) : 'Nieznane'}</Td>
                             <Td>
                               <Tooltip label="Usuń pozycję">
                                 <IconButton aria-label="Usuń pozycję" icon={<Icon as={MdDelete} />} variant="ghost" colorScheme="red" onClick={() => removeItem(index)} />
@@ -1816,14 +2046,26 @@ export default function ConfiguratorWorkspace({
                 <Text color={textColor} fontSize="lg" fontWeight="800" mb="14px">Podsumowanie</Text>
                 <VStack spacing="10px" align="stretch">
                   <Flex justify="space-between" bg={subtleBg} borderRadius="10px" p="12px">
-                    <Text color={mutedColor} fontWeight="700">Koszt netto</Text>
-                    <Text color={textColor} fontWeight="900">{formatMoney(totals.purchaseNet)}</Text>
+                    <Text color={mutedColor} fontWeight="700">Zakup netto</Text>
+                    <Text color={textColor} fontWeight="900">{totals.pricingComplete ? formatMoney(totals.purchaseNet) : 'Nieznane'}</Text>
                   </Flex>
+                  {editingConfiguration ? (
+                    <Flex justify="space-between" bg={subtleBg} borderRadius="10px" p="12px">
+                      <Text color={mutedColor} fontWeight="700">Suma brutto zapisana</Text>
+                      <Text color={textColor} fontWeight="900">{formatMoney(asNumber(editingConfiguration.totalSaleGross))}</Text>
+                    </Flex>
+                  ) : null}
                   <Flex justify="space-between" bg={subtleBg} borderRadius="10px" p="12px">
                     <Text color={mutedColor} fontWeight="700">Cena sprzedaży netto</Text>
-                    <Text color={textColor} fontWeight="900">{formatMoney(totals.saleNet)}</Text>
+                    <Text color={textColor} fontWeight="900">{totals.pricingComplete ? formatMoney(totals.saleNet) : 'Nieznane'}</Text>
                   </Flex>
-                  {saleVatMode !== 'REVIEW' ? totals.vatBreakdown.map((row) => (
+                  {saleVatMode !== 'REVIEW' && !totals.pricingComplete ? (
+                    <Flex justify="space-between" bg={subtleBg} borderRadius="10px" p="12px">
+                      <Text color={mutedColor} fontWeight="700">VAT</Text>
+                      <Text color={textColor} fontWeight="900">Nieznane</Text>
+                    </Flex>
+                  ) : null}
+                  {saleVatMode !== 'REVIEW' && totals.pricingComplete ? totals.vatBreakdown.map((row) => (
                     <Flex key={row.rate} justify="space-between" bg={subtleBg} borderRadius="10px" p="12px">
                       <Text color={mutedColor} fontWeight="700">
                         VAT {rateToPercentFormValue(row.rate)}%
@@ -1832,16 +2074,16 @@ export default function ConfiguratorWorkspace({
                     </Flex>
                   )) : null}
                   <Flex justify="space-between" bg={subtleBg} borderRadius="10px" p="12px">
-                    <Text color={mutedColor} fontWeight="700">Cena brutto</Text>
-                    <Text color={textColor} fontWeight="900">{formatMoney(totals.saleGross)}</Text>
+                    <Text color={mutedColor} fontWeight="700">Podgląd brutto</Text>
+                    <Text color={textColor} fontWeight="900">{totals.pricingComplete ? formatMoney(totals.saleGross) : 'Nieznane'}</Text>
                   </Flex>
                   <Flex justify="space-between" bg={subtleBg} borderRadius="10px" p="12px">
                     <Text color={mutedColor} fontWeight="700">Zysk netto</Text>
-                    <Text color={textColor} fontWeight="900">{formatMoney(totals.profitNet)}</Text>
+                    <Text color={textColor} fontWeight="900">{totals.pricingComplete ? formatMoney(totals.profitNet) : 'Nieznane'}</Text>
                   </Flex>
                   <Flex justify="space-between" bg={subtleBg} borderRadius="10px" p="12px">
                     <Text color={mutedColor} fontWeight="700">Nadwyżka VAT</Text>
-                    <Text color={textColor} fontWeight="900">{formatMoney(totals.vatSurplus)}</Text>
+                    <Text color={textColor} fontWeight="900">{totals.pricingComplete ? formatMoney(totals.vatSurplus) : 'Nieznane'}</Text>
                   </Flex>
                 </VStack>
               </Card>
@@ -1861,6 +2103,18 @@ export default function ConfiguratorWorkspace({
                     <Text color={mutedColor} fontWeight="700">Do weryfikacji</Text>
                     <Badge colorScheme={reviewCount > 0 ? 'orange' : 'green'}>{reviewCount}</Badge>
                   </Flex>
+                  {legacyCostReviewCount > 0 ? (
+                    <Flex justify="space-between">
+                      <Text color={mutedColor} fontWeight="700">Koszt za pozycję do sprawdzenia</Text>
+                      <Badge colorScheme="orange">{legacyCostReviewCount}</Badge>
+                    </Flex>
+                  ) : null}
+                  {staleCatalogCount > 0 ? (
+                    <Flex justify="space-between">
+                      <Text color={mutedColor} fontWeight="700">Nieaktualne ceny katalogowe</Text>
+                      <Badge colorScheme="orange">{staleCatalogCount}</Badge>
+                    </Flex>
+                  ) : null}
                   <Flex justify="space-between">
                     <Text color={mutedColor} fontWeight="700">Wariant</Text>
                     <Badge colorScheme={selectedTemplate ? 'green' : 'gray'}>{selectedTemplate ? 'ODS' : 'własny'}</Badge>

@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { OfferMarketDataError, offerHourlyMarketPrices, offerMarketIntervalStarts } from './offer-workspace-market';
 import * as dependencies from './offer-workspace-calculation-dependencies';
+import { completeHistoryForSummary } from './client-energy-cost-summary-server';
 
 const filename = path.resolve(__dirname, 'offer-workspace-calculation-server.ts');
 const code = ts.transpileModule(readFileSync(filename, 'utf8'), {
@@ -15,6 +16,9 @@ const code = ts.transpileModule(readFileSync(filename, 'utf8'), {
 
 const firstHour = '2026-10-01T00:00:00.000Z';
 const nextHour = '2026-10-01T01:00:00.000Z';
+const localTime = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Europe/Warsaw', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23',
+});
 
 function marketRows(nullQuarter = -1) {
   return Array.from({ length: 4 }, (_, quarter) => ({
@@ -38,21 +42,50 @@ function calculation(status: 'ready' | 'blocked', reasons: string[] = []) {
   };
 }
 
+function baselineCatalogTariff(id: number, energyNet: number) {
+  const gross = energyNet * 1.23;
+  return {
+    osd_id: 4, tariff_id: id, code: 'G11', name: 'Baseline', segment: 'G', zone_model: 'all', use_monthly: false,
+    sell_method: 'fixed',
+    fixed: [{ component_key: 'subscription', label: 'Abonament', amount: 1.23 }],
+    variable: [{ component_key: 'energy', label: 'Energia czynna', window_code: 'all', price: gross }],
+    pricing: { tariffStorage: { priceBasis: 'net', vatRate: 0.23, validFrom: '2026-01-01',
+      fixed: [{ component_key: 'subscription', label: 'Abonament', net: 1, gross: 1.23, vatRate: 0.23 }],
+      variable: [{ component_key: 'energy', label: 'Energia czynna', net: energyNet, gross, vatRate: 0.23, window_code: 'all' }],
+    } },
+  };
+}
+
+function baselinePriceGapPeriod(validFrom: string, validUntil: string) {
+  return { id: `period-${validFrom}`, validFrom, validUntil, osdId: 4, tariffId: 11,
+    source: 'ENEA', overrides: {}, schedule: null, note: '' };
+}
+
 function fixture(options: {
   baselineSellMethod?: string;
   targetSellMethod?: string;
   rdnRows?: Array<{ stamp: string; periodUtc: string; price: unknown }>;
   baselineIssues?: Array<{ date: string; message: string }>;
   baselineMissing?: boolean;
+  baselineByDate?: Record<string, unknown>;
+  baselineTariff?: any;
+  currentBaselineTariff?: any;
+  profilePeriods?: any[];
+  energyDates?: string[];
   templates?: Array<{ id: string; name: string; kind: string }>;
   candidates?: Array<{ id?: string; templateIds: string[]; totals: unknown; missingPrices: string[]; requiresReview?: boolean; reviewReasons?: string[] }>;
   billingCycleMonths?: number | null;
   scenario?: (input: any) => ReturnType<typeof calculation>;
 } = {}) {
-  const state = { marketQueries: [] as string[], scenarioInputs: [] as any[], targetCatalogCalls: 0 };
+  const state = { marketQueries: [] as string[], scenarioInputs: [] as any[], targetCatalogCalls: 0,
+    clientTariffRequests: [] as any[], completedHistories: [] as any[] };
+  const energyDates = options.energyDates || ['2026-10-01'];
+  const historyDates = [...new Set(energyDates.map(value => value.slice(0, 10)))];
   const baselineHistory = {
-    strict: true, revision: 1, byDate: {},
-    tariffs: { baseline: { sell_method: options.baselineSellMethod || 'fixed' } }, issues: options.baselineIssues || [],
+    strict: true, revision: 1,
+    byDate: options.baselineByDate || Object.fromEntries(historyDates.map(date => [date, 'baseline'])),
+    tariffs: { baseline: options.baselineTariff || { sell_method: options.baselineSellMethod || 'fixed' } },
+    issues: options.baselineIssues || [],
   };
   const targetTariff = { id: 2, sell_method: options.targetSellMethod || 'fixed', catalogRevision: 3 };
   const workspace: any = {
@@ -75,7 +108,11 @@ function fixture(options: {
   };
   const energy = {
     issues: [], modelBelowExportKwh: 0,
-    intervals: [{ startUtc: firstHour, endUtc: nextHour, loadKwh: 1, pvKwh: 0, importKwh: 1, exportKwh: 0 }],
+    intervals: energyDates.map(value => {
+      const startUtc = value.includes('T') ? value : `${value}T00:00:00.000Z`;
+      return { startUtc, endUtc: new Date(Date.parse(startUtc) + 3600000).toISOString(),
+        loadKwh: 1, pvKwh: 0, importKwh: 1, exportKwh: 0 };
+    }),
   };
   const blocked = (reasons: string[]) => calculation('blocked', reasons);
   const modules: Record<string, unknown> = {
@@ -83,16 +120,26 @@ function fixture(options: {
       clientTariffScope: async () => ({}),
       loadClientTariffHistory: async () => options.baselineMissing ? null : baselineHistory,
       readProjectGeneralTariffs: async () => ({ generalTariff: null }),
-      callClientTariffs: async (request: { action: string }) => {
+      callClientTariffs: async (request: any) => {
+        state.clientTariffRequests.push(request);
+        if (request.action === 'get') return { profile: { periods: options.profilePeriods || [] } };
+        if (request.action === 'catalog' && request.osdId === 4) return options.currentBaselineTariff || targetTariff;
         if (request.action === 'catalog') state.targetCatalogCalls += 1;
         return targetTariff;
+      },
+    },
+    './client-energy-cost-summary-server': {
+      completeHistoryForSummary: async (input: any, helperDependencies: any) => {
+        const result = await completeHistoryForSummary(input, helperDependencies);
+        state.completedHistories.push(result.history);
+        return result;
       },
     },
     './client-tariffs': { tariffToday: () => '2026-10-01' },
     './offer-workspace-energy-server': { calculateOfferWorkspaceEnergy: async () => energy },
     './offer-workspace-calculation': {
       blockedOfferCalculation: blocked,
-      offerLocalTime: (value: string) => value,
+      offerLocalTime: (value: string) => localTime.format(new Date(value)),
       calculateOfferWorkspaceScenario: async (input: any) => {
         state.scenarioInputs.push(input);
         return options.scenario ? options.scenario(input) : calculation('ready');
@@ -184,6 +231,84 @@ test('missing project baseline general tariff does not substitute a tariff or bl
   assert.match(await f.loadDependencyStamp(), /^[a-f0-9]{64}$/);
 });
 
+test('same-tariff estimate fills only a confirmed historical price gap and enters the dependency identity', async () => {
+  const gapDate = '2026-10-02';
+  const baseline = baselineCatalogTariff(11, 0.5);
+  const months = Array.from({ length: 12 }, (_, index) => ({ period: `2026-${String(index + 1).padStart(2, '0')}` }));
+  const fullYearHours = dependencies.offerCalculationPeriodHours(months)!;
+  const allDates = [...new Set(fullYearHours.map(hour => localTime.format(new Date(hour)).slice(0, 10)))];
+  assert.ok(allDates.includes(gapDate), `The Warsaw calculation period must include ${gapDate}.`);
+  const createFixture = (currentPrice: number) => fixture({
+    energyDates: fullYearHours,
+    baselineByDate: Object.fromEntries(allDates.filter(date => date !== gapDate).map(date => [date, 'baseline'])),
+    baselineTariff: baseline,
+    baselineIssues: [{ date: gapDate, message: `Wymaga uzupełnienia: brak jednoznacznych cen dla ${gapDate}` }],
+    profilePeriods: [baselinePriceGapPeriod(gapDate, '2026-10-03')],
+    currentBaselineTariff: baselineCatalogTariff(11, currentPrice),
+    scenario: () => calculation('ready'),
+  });
+  const first = createFixture(0.8);
+  const result = await first.calculate();
+  const resolvedHistory = first.state.completedHistories[0];
+  const resolvedTariff = resolvedHistory.byDate[gapDate];
+
+  assert.ok(resolvedTariff, JSON.stringify({ gapDate, issues: resolvedHistory.issues,
+    octoberDates: Object.keys(resolvedHistory.byDate).filter(date => date.startsWith('2026-10')) }));
+  assert.equal(resolvedTariff.tariff_id, 11);
+  assert.equal(resolvedTariff.pricing.tariffStorage.variable[0].net, 0.8);
+  assert.deepEqual(resolvedHistory.issues.map((issue: { date: string }) => issue.date), [gapDate],
+    'the shared helper leaves original history issues intact');
+  assert.equal(first.state.scenarioInputs[0].baselineHistory.byDate[gapDate]?.tariff_id, 11,
+    JSON.stringify({ warnings: result.warnings, history: first.state.scenarioInputs[0].baselineHistory }));
+  assert.deepEqual(first.state.scenarioInputs[0].baselineHistory.issues, [],
+    'only the recovered issue is cleared from the effective history');
+  assert.ok(result.warnings.some(warning => warning.includes('użyto bieżącego cennika dokładnie tej samej taryfy')));
+  assert.deepEqual(first.state.clientTariffRequests.filter(request => request.action === 'catalog' && request.osdId === 4)
+    .map(request => [request.osdId, request.tariffId]), [[4, 11]]);
+  assert.equal(result.pricesAsOf, '2026-10-01');
+  assert.match(result.sourceDependencyStamp, /^[a-f0-9]{64}$/);
+  assert.equal(await first.loadDependencyStamp(), result.sourceDependencyStamp,
+    'the completed calculation and freshness loader must hash the same effective history');
+
+  const changedCatalog = createFixture(0.81);
+  const changedResult = await changedCatalog.calculate();
+  assert.notEqual(changedResult.sourceDependencyStamp, result.sourceDependencyStamp,
+    'the dependency hash must include the effective recovered tariff history');
+});
+
+test('partial completion preserves tariff conflicts while clearing only recovered missing-price issues', async () => {
+  const gapDate = '2026-10-02', conflictDate = '2026-10-03', unknownDate = '2026-10-04';
+  const f = fixture({
+    energyDates: ['2026-10-01', gapDate, conflictDate, unknownDate],
+    baselineByDate: { '2026-10-01': 'baseline' },
+    baselineTariff: baselineCatalogTariff(11, 0.5),
+    baselineIssues: [
+      { date: gapDate, message: `Wymaga uzupełnienia: brak jednoznacznych cen dla ${gapDate}` },
+      { date: conflictDate, message: `Konflikt ENEA dla ${conflictDate}` },
+      { date: unknownDate, message: `Wymaga uzupełnienia: brak jednoznacznych cen dla ${unknownDate}` },
+    ],
+    profilePeriods: [baselinePriceGapPeriod(gapDate, conflictDate)],
+    currentBaselineTariff: baselineCatalogTariff(11, 0.8),
+    scenario: () => calculation('ready'),
+  });
+
+  const result = await f.calculate();
+  const resolvedHistory = f.state.completedHistories[0];
+  assert.equal(resolvedHistory.byDate[gapDate].tariff_id, 11);
+  assert.equal(resolvedHistory.byDate[conflictDate], undefined);
+  assert.equal(resolvedHistory.byDate[unknownDate], undefined);
+  assert.deepEqual(resolvedHistory.issues.map((issue: { date: string }) => issue.date), [gapDate, conflictDate, unknownDate],
+    'the shared helper preserves all original issues');
+  assert.ok(!result.warnings.some(warning => warning.startsWith(`${gapDate}: Wymaga uzupełnienia`)));
+  assert.ok(result.warnings.some(warning => warning.includes('Konflikt ENEA')));
+  assert.ok(result.warnings.some(warning => warning.includes('nie zastosowano ceny szacunkowej')));
+  assert.ok(result.warnings.some(warning => warning.includes('brak jednoznacznej datowanej tożsamości')));
+  assert.deepEqual(f.state.clientTariffRequests.filter(request => request.action === 'catalog' && request.osdId === 4)
+    .map(request => [request.osdId, request.tariffId]), [[4, 11]], 'conflicting dates must not trigger a tariff lookup');
+  assert.equal(result.pricesAsOf, '2026-10-01');
+  assert.match(result.sourceDependencyStamp, /^[a-f0-9]{64}$/);
+});
+
 test('a failed candidate does not erase a recommendation from successfully computed candidates', async () => {
   const f = fixture({
     templates: [
@@ -206,6 +331,27 @@ test('a failed candidate does not erase a recommendation from successfully compu
   assert.equal(result.rankings[0].recommendationEligible, true);
   assert.ok(result.warnings.some(warning => warning.includes('Porównanie niepełne')));
   assert.ok(result.warnings.includes('Brak kompletnego profilu dla Magazynu B.'));
+});
+
+test('blocked recommendation aggregate retains source identity and the candidate profile reason', async () => {
+  const candidates = Array.from({ length: 18 }, (_, index) => ({
+    id: `candidate-${index}`,
+    templateIds: [`battery-${index}`],
+    totals: {},
+    missingPrices: [],
+  }));
+  const f = fixture({
+    templates: candidates.map(({ id }, index) => ({ id: id!, name: `Magazyn ${index}`, kind: 'MAGAZYN' })),
+    candidates,
+    scenario: () => calculation('blocked', ['Brak pełnego godzinowego profilu energii do symulacji.']),
+  });
+
+  const result = await f.calculate('recommend');
+  assert.equal(result.status, 'blocked');
+  assert.equal(f.state.scenarioInputs.length, 18);
+  assert.ok(result.reasons.includes('Brak pełnego godzinowego profilu energii do symulacji.'));
+  assert.equal(result.pricesAsOf, '2026-10-01');
+  assert.match(result.sourceDependencyStamp, /^[a-f0-9]{64}$/);
 });
 
 test('missing billing cycle is delegated to partial scenario calculation instead of short-circuiting the server', async () => {

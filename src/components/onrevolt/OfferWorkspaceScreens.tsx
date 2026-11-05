@@ -6,8 +6,9 @@ import {
   Input, Select, Stack, Table, TableContainer, Tbody, Td, Text, Textarea,
   Tfoot, Th, Thead, Tooltip, Tr, useColorModeValue,
 } from '@chakra-ui/react';
-import { useState, type ReactNode } from 'react';
-import { MdAdd, MdAutoAwesome } from 'react-icons/md';
+import { useMemo, useState, type ReactNode } from 'react';
+import { MdAdd, MdAutoAwesome, MdRefresh } from 'react-icons/md';
+import { OfferSavingsBar, OfferSavingsProjectionChart } from './OfferSavingsCharts';
 import OfferEnergyChart from './OfferEnergyChart';
 import type { OfferEnergyForecast } from './OfferEnergyChart';
 import OfferWorkspaceDocumentPreview from './OfferWorkspaceDocumentPreview';
@@ -15,6 +16,7 @@ import { setOfferWorkspacePvStrategy, type OfferWorkspaceDraft } from 'lib/onrev
 import type { OfferWorkspaceCalculation } from 'lib/onrevolt/offer-workspace-calculation-types';
 import type { OfferBillingMonthResult } from 'lib/onrevolt/offer-workspace-billing';
 import type { OfferTariffRateState } from 'lib/onrevolt/offer-workspace-tariffs';
+import { adaptOfferWorkspaceProposedBillValuation, buildOfferWorkspaceSavingsPresentation, offerSavingsBatteryTotals, summarizeOfferSavingsBill } from 'lib/onrevolt/offer-workspace-savings';
 import type { TariffData, WorkspaceData } from './OfferWorkspacePanel';
 
 type SharedProps = {
@@ -235,6 +237,10 @@ function savingsAnnualValue(
     'Dystrybucja energii': bill?.totals.distributionCostPln,
     'Opłaty stałe': bill?.totals.fixedCostPln,
     'Całkowity rachunek': bill?.totals.cashDuePln,
+    'Pokrycie energii opustem / depozytem': bill?.totals.coveredEnergyPln,
+    'Wartość energii oddanej': bill?.totals.exportValuePln,
+    'Depozyt wykorzystany': bill?.totals.depositUsedPln,
+    'Depozyt oczekujący': bill?.totals.pendingDepositPln,
   };
   if (label in moneyLabels) {
     const value = moneyLabels[label];
@@ -259,45 +265,96 @@ function savingsAnnualValue(
   return value == null ? '—' : `${format(value)} kWh`;
 }
 
-export function OfferSavingsScreen({ workspace, calculation = null }: Pick<SharedProps, 'workspace'> & { calculation?: OfferWorkspaceCalculation | null }) {
+export function OfferSavingsScreen({ workspace, draft, currentTariffLabel, targetTariffLabel, currentTariffRates, targetTariffRates, calculation = null, calculationLoading = false, calculationError = '', calculationDisabled = false, onCalculate }: Pick<SharedProps, 'workspace' | 'draft' | 'currentTariffLabel' | 'currentTariffRates' | 'targetTariffRates'> & {
+  targetTariffLabel: string;
+  calculation?: OfferWorkspaceCalculation | null;
+  calculationLoading?: boolean;
+  calculationError?: string;
+  calculationDisabled?: boolean;
+  onCalculate: () => void;
+}) {
   const c = useOfferColors();
   const [expanded, setExpanded] = useState<number[]>([0, 1, 2, 3]);
   const isB2B = workspace.clientType === 'B2B';
-  const readyCalculation = calculation?.status === 'ready' ? calculation : null;
-  const calculationPresentation = offerWorkspaceCalculationPresentation(calculation);
-  const forecast: OfferEnergyForecast | undefined = readyCalculation?.forecastEnergy && readyCalculation.forecastMeasurements
-    ? { energy: readyCalculation.forecastEnergy, measurements: readyCalculation.forecastMeasurements }
-    : undefined;
+  const matchesSelection = calculation?.evaluatedTemplateIds?.length === draft.selectedTemplateIds.length
+    && draft.selectedTemplateIds.every(id => calculation?.evaluatedTemplateIds?.includes(id));
+  const readyCalculation = matchesSelection && calculation?.status === 'ready' ? calculation : null;
+  const calculationPresentation = offerWorkspaceCalculationPresentation(readyCalculation);
+  const results = useMemo(() => {
+    if (!readyCalculation) return { forecast: undefined, before: null, after: null, projection: null, error: '' };
+    try {
+      const before = readyCalculation.baselineBill ? summarizeOfferSavingsBill(readyCalculation.baselineBill, draft.currentSettlement) : null;
+      const after = readyCalculation.proposedBill ? summarizeOfferSavingsBill(readyCalculation.proposedBill, draft.targetSettlement) : null;
+      const forecast: OfferEnergyForecast | undefined = readyCalculation.forecastEnergy && readyCalculation.forecastMeasurements
+        ? { energy: readyCalculation.forecastEnergy, measurements: readyCalculation.forecastMeasurements,
+          valuation: readyCalculation.proposedBill ? adaptOfferWorkspaceProposedBillValuation(readyCalculation.proposedBill, draft.targetSettlement, readyCalculation.forecastMeasurements.dayProfiles || []) : null,
+          battery: readyCalculation.forecastFlows ? offerSavingsBatteryTotals(readyCalculation.forecastFlows) : null }
+        : undefined;
+      const projection = readyCalculation.estimatedAnnualTargetCostPln && readyCalculation.estimatedAnnualTariffOnlyCostPln
+        ? buildOfferWorkspaceSavingsPresentation(readyCalculation, draft.targetSettlement).projection : null;
+      return { forecast, before, after, projection, error: '' };
+    } catch (error) {
+      return { forecast: undefined, before: null, after: null, projection: null, error: error instanceof Error ? error.message : 'Nie udało się odczytać wyniku kalkulacji.' };
+    }
+  }, [readyCalculation, draft.currentSettlement, draft.targetSettlement]);
+  const { forecast, before, after, projection } = results;
+  const estimatedPayback = readyCalculation?.estimatedPaybackYears;
+  const displayedPayback = estimatedPayback != null ? Math.floor(estimatedPayback) : calculationPresentation.paybackYears;
+  const rateTotal = (bill: typeof before) => bill?.totals.averageEnergyPurchasePlnPerKwh == null || bill.totals.averageDistributionPurchasePlnPerKwh == null
+    ? null : bill.totals.averageEnergyPurchasePlnPerKwh + bill.totals.averageDistributionPurchasePlnPerKwh;
+  const rateMaximum = Math.max(.2, Math.ceil(Math.max(rateTotal(before) ?? 0, rateTotal(after) ?? 0) * 5) / 5);
+  const billMaximum = Math.max(1000, Math.ceil(Math.max(before?.totals.cashDuePln ?? 0, after?.totals.cashDuePln ?? 0) / 1000) * 1000);
   const financialRows = offerSavingsFinancialRows(readyCalculation);
   const financialBasis = isB2B ? 'netto' : 'brutto';
   return <OfferScreen>
+    <Flex justify="space-between" align="center" gap="12px" wrap="wrap">
+      <Text color={c.muted}>{calculationLoading ? 'Przeliczam wybraną konfigurację…' : readyCalculation ? 'Wynik wybranej konfiguracji · szacunek RE' : 'Oblicz wybraną konfigurację, aby uzupełnić oszczędności.'}</Text>
+      <Button size="sm" variant="outline" leftIcon={<MdRefresh />} isLoading={calculationLoading} isDisabled={calculationDisabled} onClick={onCalculate}>Oblicz wybrany wariant</Button>
+    </Flex>
+    {calculationError ? <Alert status="error"><AlertIcon />{calculationError}</Alert> : null}
+    {results.error ? <Alert status="error"><AlertIcon />{results.error} Przelicz wariant ponownie.</Alert> : null}
     <Section title="Stan z systemem" hideHeading>
-      <OfferEnergyChart workspace={workspace} targetTariffLabel="" netMetering={false} future futureForecast={forecast} />
+      <OfferEnergyChart workspace={workspace} targetTariffLabel={targetTariffLabel} netMetering={draft.targetSettlement === 'NET_METERING'} future futureForecast={forecast} />
     </Section>
     <Section title="Zużycie energii" subtitle="Porównanie stawek i rachunków." action={<Flex gap="8px"><Button size="xs" variant="outline" onClick={() => setExpanded([0, 1, 2, 3])}>Rozwiń wszystkie</Button><Button size="xs" variant="outline" onClick={() => setExpanded([])}>Zwiń wszystkie</Button></Flex>}>
       {calculation?.status === 'blocked' && calculation.reasons.length ? <Alert status="warning" mb="14px" alignItems="flex-start" borderRadius="6px"><AlertIcon mt="2px" /><Box>{calculation.reasons.map((reason, index) => <Text key={`${index}-${reason}`}>{reason}</Text>)}</Box></Alert> : null}
-      {calculation?.status === 'ready' && calculationPresentation.recommendationEligible === false ? <Alert status="warning" mb="14px" alignItems="flex-start" borderRadius="6px"><AlertIcon mt="2px" /><Box>
-        <Text fontWeight="700">Wariant nie kwalifikuje się do rekomendacji sprzętu.</Text>
-        {(calculationPresentation.recommendationReasons.length ? calculationPresentation.recommendationReasons : ['Brak potwierdzonej kwalifikacji do rekomendacji.']).map((reason, index) => <Text key={`${index}-${reason}`} mt="3px">{reason}</Text>)}
-      </Box></Alert> : null}
-      <Grid templateColumns="1fr 1fr" gap="16px" mb="12px" display={{ base: 'none', md: 'grid' }} fontWeight="700"><Text>Stan aktualny</Text><Text color="#14986c">Z systemem</Text></Grid>
+      {readyCalculation?.warnings.length ? <Alert status="warning" mb="14px" alignItems="flex-start" borderRadius="6px"><AlertIcon mt="2px" /><Box as="details" minW="0"><Box as="summary" cursor="pointer" fontWeight="700">Uwagi i założenia do wyniku ({readyCalculation.warnings.length})</Box>{readyCalculation.warnings.map((reason, index) => <Text key={`${index}-${reason}`} mt="6px">{reason}</Text>)}</Box></Alert> : null}
+      <Grid templateColumns="1fr 1fr" gap="16px" mb="12px" display={{ base: 'none', md: 'grid' }} fontWeight="700"><Box><Text>Stan aktualny</Text><Text fontSize="11px" fontWeight="400" color={c.muted}>{currentTariffLabel} · {settlement(draft.currentSettlement)}</Text></Box><Box><Text color="#14986c">Z systemem</Text><Text fontSize="11px" fontWeight="400" color={c.muted}>{targetTariffLabel} · {settlement(draft.targetSettlement)}</Text></Box></Grid>
       <Accordion allowMultiple index={expanded} onChange={(value) => setExpanded(value as number[])} display="grid" gridTemplateColumns={{ base: '1fr', md: 'repeat(2,minmax(0,1fr))' }} gap="12px" alignItems="start">
         {[false, true, false, true].map((future, index) => {
           const annual = index > 1;
-          const title = annual ? `${future ? 'Prognozowany' : 'Aktualny'} rachunek roczny` : 'Koszt zakupu 1 kWh';
-          const rows = annual ? ['Zużycie energii', 'Autokonsumpcja z PV', 'Zakup z sieci', ...(future ? ['Pobór z magazynu'] : []), 'Zakup energii', 'Dystrybucja energii', 'Opłaty stałe', 'Całkowity rachunek', ...(future ? ['Oszczędność', 'Wartość skumulowanego depozytu'] : [])] : ['Zakup energii', 'Dystrybucja energii', 'Opłata zmienna sieciowa', 'Opłata jakościowa', 'Opłata OZE', 'Opłata kogeneracyjna', 'Całkowity koszt zakupu 1 kWh', 'Opłaty stałe / miesiąc'];
+          const title = annual ? `${future ? 'Prognozowany' : 'Aktualny'} rachunek roczny` : 'Średni koszt zakupu 1 kWh';
+          const rows = annual ? ['Zużycie energii', 'Autokonsumpcja z PV', 'Zakup z sieci', ...(future ? ['Pobór z magazynu'] : []), 'Zakup energii', 'Dystrybucja energii', 'Opłaty stałe', 'Całkowity rachunek', ...(future ? ['Oszczędność', 'Wartość skumulowanego depozytu'] : [])] : ['Zakup energii', 'Dystrybucja energii', 'Całkowity koszt zakupu 1 kWh', 'Opłaty stałe / miesiąc'];
+          const bill = future ? after : before;
+          const unitValues: Record<string, number | null | undefined> = {
+            'Zakup energii': bill?.totals.averageEnergyPurchasePlnPerKwh,
+            'Dystrybucja energii': bill?.totals.averageDistributionPurchasePlnPerKwh,
+            'Całkowity koszt zakupu 1 kWh': rateTotal(bill),
+            'Opłaty stałe / miesiąc': bill?.averageMonthlyFixedCostPln,
+          };
+          const parts = bill ? annual ? [
+            { label: 'Opłaty stałe', value: bill.totals.paidFixedCostPln, color: '#ffcd95' },
+            { label: 'Dystrybucja energii', value: bill.totals.paidDistributionCostPln, color: '#ffb362' },
+            { label: 'Zakup energii', value: bill.totals.paidEnergyCostPln, color: '#ff8505' },
+            ...(future && readyCalculation?.annualSavingsPln != null && readyCalculation.annualSavingsPln > 0 ? [{ label: 'Oszczędność', value: readyCalculation.annualSavingsPln, color: '#7ce4bb' }] : []),
+          ] : [
+            { label: 'Dystrybucja energii', value: bill.totals.averageDistributionPurchasePlnPerKwh, color: '#ffb362' },
+            { label: 'Zakup energii', value: bill.totals.averageEnergyPurchasePlnPerKwh, color: '#ff8505' },
+          ].flatMap(part => part.value == null ? [] : [{ ...part, value: part.value }]) : [];
           return <AccordionItem key={index} border="1px solid" borderColor={future ? '#60e5ae' : '#ffabb6'} borderRadius="16px" overflow="hidden" minW="0" gridRow={{ base: index === 1 ? 3 : index === 2 ? 2 : 'auto', md: 'auto' }}>
             <AccordionButton p="16px"><Text flex="1" textAlign="left" fontSize="14px" fontWeight="700">{title} <Text as="span" fontSize="10px" fontWeight="400">(PLN {isB2B ? 'netto' : 'brutto'})</Text></Text><AccordionIcon /></AccordionButton>
-            <AccordionPanel px="16px" pb="20px"><Grid templateColumns="minmax(35px, 15%) minmax(0,1fr)" gap="14px" minH={annual ? '390px' : '275px'}>
-              <Flex borderLeft="1px solid" borderBottom="1px solid" borderColor={c.line} align="center" justify="center" color={c.muted} bgImage={`repeating-linear-gradient(to top, transparent, transparent 42px, ${c.line} 43px, transparent 44px)`}>—</Flex>
-              <Box>{rows.map((label) => <Flex key={label} justify="space-between" align="start" gap="10px" py="10px" borderBottom="1px solid" borderColor={c.line} fontSize="11px"><Text flex="1" minW="0">{label}</Text><Text flexShrink={0} textAlign="right">{annual ? savingsAnnualValue(label, future, workspace, readyCalculation) : '—'}</Text></Flex>)}</Box>
+            <AccordionPanel px="16px" pb="20px"><Text display={{ base: 'block', md: 'none' }} color={c.muted} fontSize="11px" mb="12px">{future ? 'Z systemem' : 'Stan aktualny'} · {future ? targetTariffLabel : currentTariffLabel}</Text><Grid templateColumns="minmax(65px, 19%) minmax(0,1fr)" gap="10px" minH={annual ? '390px' : '260px'}>
+              <OfferSavingsBar parts={parts} maximum={annual ? billMaximum : rateMaximum} unit={annual ? 'PLN' : 'PLN/kWh'} />
+              <Box>{rows.map((label) => <Flex key={label} justify="space-between" align="start" gap="10px" py="10px" borderBottom="1px solid" borderColor={c.line} fontSize="11px" fontWeight={label.startsWith('Całkowity') ? 700 : 400}><Text flex="1" minW="0">{label}</Text><Text flexShrink={0} textAlign="right">{annual ? savingsAnnualValue(label, future, workspace, readyCalculation) : unitValues[label] == null ? '—' : `${format(unitValues[label], label === 'Opłaty stałe / miesiąc' ? 2 : 4)} zł`}</Text></Flex>)}</Box>
             </Grid></AccordionPanel>
           </AccordionItem>;
         })}
       </Accordion>
+      <Text fontSize="10px" color={c.muted} mt="8px">Stawki średnie ważone poborem, przed rozliczeniem PV, bez opłat stałych. Rachunki uwzględniają opust lub depozyt. Pobór z sieci obejmuje także ładowanie magazynu; rozładowanie magazynu nie jest dodatkowym zakupem.</Text>
+      <Box as="details" mt="16px"><Box as="summary" cursor="pointer" fontWeight="700">Szczegółowe składniki cenników</Box><Grid templateColumns={{ base: '1fr', xl: '1fr 1fr' }} gap="24px" mt="16px"><RateRows title={currentTariffLabel} rates={currentTariffRates} /><RateRows title={targetTariffLabel} rates={targetTariffRates} /></Grid></Box>
       <Metrics items={[
         { label: 'Łączna zmiana rachunku rocznego', value: readyCalculation?.annualSavingsPln == null ? '— zł / rok' : `${format(readyCalculation.annualSavingsPln, 2)} zł / rok`, green: true },
-        { label: 'Zwrot z dodatkowego sprzętu', value: calculationPresentation.paybackYears == null ? '— lat' : `${format(calculationPresentation.paybackYears)} lat` },
+        { label: 'Szacunkowy zwrot z dodatkowego sprzętu', value: displayedPayback == null ? '— lat' : `${format(displayedPayback)} lat` },
       ]} />
       {calculationPresentation.breakdown.length ? <Grid aria-label="Rozbicie rocznej zmiany rachunku" templateColumns={{ base: '1fr', md: 'repeat(3, minmax(0, 1fr))' }} columnGap="18px" rowGap="5px" mt="10px" color={c.muted} fontSize="10px">
         {calculationPresentation.breakdown.map((item) => <Flex key={item.label} justify="space-between" gap="8px"><Text>{item.label}</Text><Text flexShrink={0} color={c.text}>{format(item.value, 2)} zł/rok</Text></Flex>)}
@@ -332,9 +389,23 @@ export function OfferSavingsScreen({ workspace, calculation = null }: Pick<Share
         </TableContainer>
       </Box> : null}
     </Section>
-    <Section title="Oszczędność w czasie" subtitle="Rachunek w kolejnych latach · prognoza na 20 lat" action={<FormControl maxW="200px" isDisabled><FormLabel>Roczny wzrost cen energii</FormLabel><Input placeholder="— % / rok" readOnly /></FormControl>}>
-      <EmptyChart label={readyCalculation ? 'Wynik kalkulacji obejmuje jeden rok, bez prognozy wieloletniej' : 'Prognoza wymaga pełnej kalkulacji wariantu'} />
-      <Metrics items={[{ label: 'Rachunki bez systemu · 20 lat', value: '— zł' }, { label: 'Rachunki z systemem · 20 lat', value: '— zł' }, { label: 'Oszczędność w ciągu 20 lat', value: '— zł', green: true }]} />
+    <Section title="Finansowanie" subtitle={`Kwoty ${financialBasis} · szacunek warunkowy`}>
+      <Metrics items={[
+        { label: 'Koszt systemu', value: `${format(readyCalculation?.systemCostPln, 2)} zł` },
+        { label: 'Dotacja', value: `${format(readyCalculation?.grantPln, 2)} zł` },
+        { label: 'Ulga termomodernizacyjna', value: `${format(readyCalculation?.taxReliefPln, 2)} zł` },
+      ]} />
+      <Flex justify="space-between" gap="16px" wrap="wrap" mt="18px" p="18px" bg={c.soft} color="#14986c" fontWeight="700" borderRadius="8px"><Text>Koszt systemu po dofinansowaniach</Text><Text fontSize="22px">{format(readyCalculation?.costAfterFinancingPln, 2)} zł</Text></Flex>
+    </Section>
+    <Section title="Oszczędność w czasie" subtitle={`Ta sama taryfa docelowa · szacunkowa korzyść ze sprzętu · ${projection?.horizonYears ?? 20} lat`} action={<FormControl maxW="200px"><FormLabel>Roczny wzrost cen energii</FormLabel><Input value="0% · ceny stałe" readOnly /></FormControl>}>
+      {projection ? <OfferSavingsProjectionChart before={projection.annualTariffOnlyCostPln} after={projection.annualTargetCostPln} paybackYears={estimatedPayback ?? null} /> : <EmptyChart label={readyCalculation ? 'Prognoza wieloletnia niedostępna. Przelicz wariant lub sprawdź uwagi do wyniku.' : 'Prognoza wymaga kalkulacji wybranego wariantu'} />}
+      <Metrics items={[
+        { label: `Rachunki bez inwestycji · ${projection?.horizonYears ?? 20} lat`, value: `${format(projection?.totalTariffOnlyCostPln, 2)} zł` },
+        { label: `Rachunki z systemem · ${projection?.horizonYears ?? 20} lat`, value: `${format(projection?.totalTargetCostPln, 2)} zł` },
+        { label: `Oszczędność ze sprzętu · ${projection?.horizonYears ?? 20} lat`, value: `${format(projection?.totalSavingsPln, 2)} zł`, green: true },
+      ]} />
+      <Flex justify="space-between" gap="16px" wrap="wrap" mt="18px" p="18px" bg={c.soft} color="#14986c" fontWeight="700" borderRadius="8px"><Text>Korzyść po odjęciu kosztu inwestycji</Text><Text fontSize="22px">{format(projection?.netSavingsAfterCostPln, 2)} zł</Text></Flex>
+      <Text fontSize="10px" color={c.muted} mt="10px">Powtórzenie profilu rocznego, z przenoszeniem i wygasaniem depozytu. Stałe ceny i zużycie, bez degradacji, dyskontowania oraz kosztów serwisu. Porównanie nie obejmuje korzyści z przejścia ze starej taryfy na nową.</Text>
     </Section>
   </OfferScreen>;
 }

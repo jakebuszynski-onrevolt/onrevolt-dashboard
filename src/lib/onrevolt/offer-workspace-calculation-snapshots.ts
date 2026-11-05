@@ -1,10 +1,17 @@
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import type { OfferWorkspaceDraft } from './offer-workspace';
 import type { OfferWorkspaceCalculation } from './offer-workspace-calculation-types';
 import { prisma } from './prisma';
 
-export const OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION = 'offer-workspace-calculation-v2-estimates';
+export const OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION = 'offer-workspace-calculation-v5-savings-presentation';
 export const MAX_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES = 32 * 1024 * 1024;
+const COMPRESS_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES = 1024 * 1024;
+const MAX_COMPRESSED_RESULT_OVERHEAD_BYTES = 64 * 1024;
+const RESULT_ENVELOPE_KEY = '__offerWorkspaceCalculationResult';
+const RESULT_ENCODING = 'gzip-base64';
+const RESULT_ENCODING_VERSION = 1;
 
 export type OfferWorkspaceCalculationSnapshotMode = 'selected' | 'recommend';
 
@@ -116,6 +123,70 @@ function isCalculation(value: unknown): value is OfferWorkspaceCalculation {
     && Array.isArray(row.warnings);
 }
 
+function sha256(value: Buffer): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function encodeSnapshotResult(serialized: string, bytes: Buffer): unknown {
+  if (bytes.byteLength <= COMPRESS_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES) return JSON.parse(serialized);
+  return {
+    [RESULT_ENVELOPE_KEY]: {
+      encoding: RESULT_ENCODING,
+      version: RESULT_ENCODING_VERSION,
+      byteLength: bytes.byteLength,
+      sha256: sha256(bytes),
+      data: gzipSync(bytes).toString('base64'),
+    },
+  };
+}
+
+function decodeSnapshotResult(value: unknown): unknown | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (!Object.hasOwn(row, RESULT_ENVELOPE_KEY)) {
+    try {
+      const serialized = JSON.stringify(value);
+      return typeof serialized === 'string'
+        && Buffer.byteLength(serialized, 'utf8') <= MAX_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES
+        ? value : null;
+    } catch {
+      return null;
+    }
+  }
+  if (Object.keys(row).length !== 1) return null;
+  const envelope = row[RESULT_ENVELOPE_KEY];
+  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) return null;
+  const encoded = envelope as Record<string, unknown>;
+  const expectedKeys = ['encoding', 'version', 'byteLength', 'sha256', 'data'];
+  if (Object.keys(encoded).length !== expectedKeys.length
+    || expectedKeys.some(key => !Object.hasOwn(encoded, key))
+    || encoded.encoding !== RESULT_ENCODING || encoded.version !== RESULT_ENCODING_VERSION
+    || !Number.isSafeInteger(encoded.byteLength) || Number(encoded.byteLength) < 1
+    || Number(encoded.byteLength) > MAX_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES
+    || typeof encoded.sha256 !== 'string' || encoded.sha256.length !== 64 || !/^[a-f0-9]{64}$/.test(encoded.sha256)
+    || typeof encoded.data !== 'string') {
+    return null;
+  }
+  const maxBase64Length = 4 * Math.ceil((Number(encoded.byteLength) + MAX_COMPRESSED_RESULT_OVERHEAD_BYTES) / 3);
+  if (!encoded.data.length || encoded.data.length % 4 !== 0 || encoded.data.length > maxBase64Length) return null;
+  const compressed = Buffer.from(encoded.data, 'base64');
+  if (compressed.toString('base64') !== encoded.data) return null;
+  let bytes: Buffer;
+  try {
+    bytes = gunzipSync(compressed, { maxOutputLength: MAX_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES });
+  } catch {
+    return null;
+  }
+  if (bytes.byteLength !== encoded.byteLength || sha256(bytes) !== encoded.sha256) return null;
+  const serialized = bytes.toString('utf8');
+  if (!Buffer.from(serialized, 'utf8').equals(bytes)) return null;
+  try {
+    return JSON.parse(serialized) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 function timestamp(value: unknown): number {
   const dateLike = value && typeof value === 'object' ? value as { getTime?: unknown } : null;
   const parsed = dateLike && typeof dateLike.getTime === 'function'
@@ -145,8 +216,10 @@ function parseSnapshot(value: unknown): StoredOfferWorkspaceCalculationSnapshot 
     || (row.pricesAsOf !== null && (typeof row.pricesAsOf !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(row.pricesAsOf)))
     || (row.sourceDependencyStamp !== null && (typeof row.sourceDependencyStamp !== 'string' || !/^[a-f0-9]{64}$/.test(row.sourceDependencyStamp)))
     || (row.mode !== 'selected' && row.mode !== 'recommend')
-    || !Number.isSafeInteger(row.completed) || !Number.isSafeInteger(row.total) || !isCalculation(row.result)) return null;
-  const result = row.result as OfferWorkspaceCalculation & { sourceDependencyStamp?: unknown };
+    || !Number.isSafeInteger(row.completed) || !Number.isSafeInteger(row.total)) return null;
+  const decodedResult = decodeSnapshotResult(row.result);
+  if (!isCalculation(decodedResult)) return null;
+  const result = decodedResult as OfferWorkspaceCalculation & { sourceDependencyStamp?: unknown };
   const resultPricesAsOf = typeof result.pricesAsOf === 'string' ? result.pricesAsOf : null;
   const resultDependencyStamp = typeof result.sourceDependencyStamp === 'string' ? result.sourceDependencyStamp : null;
   if (resultPricesAsOf !== row.pricesAsOf || resultDependencyStamp !== row.sourceDependencyStamp) return null;
@@ -171,7 +244,7 @@ function parseSnapshot(value: unknown): StoredOfferWorkspaceCalculationSnapshot 
     mode: row.mode as OfferWorkspaceCalculationSnapshotMode,
     completed: row.completed as number,
     total: row.total as number,
-    result: row.result as OfferWorkspaceCalculation,
+    result: decodedResult as OfferWorkspaceCalculation,
   };
 }
 
@@ -192,15 +265,18 @@ export class PrismaOfferWorkspaceCalculationSnapshotRepository implements OfferW
       throw new OfferWorkspaceCalculationSnapshotIdentityError();
     }
     const serialized = JSON.stringify(input.result);
-    if (typeof serialized !== 'string' || Buffer.byteLength(serialized, 'utf8') > MAX_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES) {
+    if (typeof serialized !== 'string') {
       throw new OfferWorkspaceCalculationSnapshotSizeError();
     }
+    const bytes = Buffer.from(serialized, 'utf8');
+    if (bytes.byteLength > MAX_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES) throw new OfferWorkspaceCalculationSnapshotSizeError();
+    const storedResult = encodeSnapshotResult(serialized, bytes);
     const { dependencyContext, ...snapshot } = input;
     await this.database.offerWorkspaceCalculationSnapshot.create({
       data: {
         ...snapshot,
         ...dependencyContext,
-        result: JSON.parse(serialized) as OfferWorkspaceCalculation,
+        result: storedResult as OfferWorkspaceCalculation,
       },
     });
   }

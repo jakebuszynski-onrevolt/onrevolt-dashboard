@@ -40,7 +40,9 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import Card from 'components/card/Card';
+import { calculateConfigurationLine } from 'lib/onrevolt/calculator';
 import { percentFormValueToRate, rateToPercentFormValue } from 'lib/onrevolt/percentage';
+import { productPurchasePriceNeedsReview, resolveProductPurchaseNet } from 'lib/onrevolt/product-pricing';
 import { useEffect, useMemo, useState } from 'react';
 import {
   MdAdd,
@@ -144,10 +146,10 @@ type ProductEditForm = {
   sourceSheet: string;
   sourceRow: string;
   purchaseNet: string;
-  currentPurchaseNet: string;
   purchaseVatRate: string;
   operatingCostNet: string;
   marginRate: string;
+  saleVatRate: string;
   currency: string;
 };
 
@@ -178,10 +180,10 @@ const availabilityOptions = ['Dostępny', 'Mało', 'W dostawie', 'Niedostępny',
 const visibleAvailabilityValues = new Set(['dostępny', 'dostepny', 'mało', 'malo', 'w dostawie', 'instock', 'limited stock']);
 const editablePriceFields: Array<keyof ProductEditForm> = [
   'purchaseNet',
-  'currentPurchaseNet',
   'purchaseVatRate',
   'operatingCostNet',
   'marginRate',
+  'saleVatRate',
 ];
 const emptyProductForm: ProductEditForm = {
   sku: '',
@@ -200,16 +202,16 @@ const emptyProductForm: ProductEditForm = {
   sourceSheet: '',
   sourceRow: '',
   purchaseNet: '',
-  currentPurchaseNet: '',
   purchaseVatRate: '',
   operatingCostNet: '',
   marginRate: '',
+  saleVatRate: '',
   currency: 'PLN',
 };
 
 function asNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === '') return 0;
-  return Number(value);
+  return Number(String(value).replace(',', '.'));
 }
 
 function formValue(value: string | number | null | undefined) {
@@ -218,23 +220,68 @@ function formValue(value: string | number | null | undefined) {
 }
 
 function formatMoney(value: number, currency = 'PLN') {
-  return new Intl.NumberFormat('pl-PL', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 2,
-  }).format(value);
+  try {
+    return new Intl.NumberFormat('pl-PL', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    const amount = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 2 }).format(value);
+    return `${amount} ${currency}`;
+  }
 }
 
-function productTotals(product: ProductRow) {
-  const price = product.prices?.[0];
-  if (!price) return null;
+function isValidCurrency(currency: string) {
+  try {
+    new Intl.NumberFormat('pl-PL', { style: 'currency', currency }).format(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  const totalCostNet = asNumber(price.purchaseNet) + asNumber(price.operatingCostNet);
-  const profitNet = totalCostNet * asNumber(price.marginRate);
-  return {
-    saleNet: totalCostNet + profitNet,
-    profitNet,
-  };
+function productTotals(price?: ProductPrice) {
+  if (!price || productPurchasePriceNeedsReview(price)) return null;
+
+  return calculateConfigurationLine({
+    quantity: 1,
+    unitPurchaseNet: resolveProductPurchaseNet(price),
+    purchaseVatRate: asNumber(price.purchaseVatRate),
+    operatingCostNet: asNumber(price.operatingCostNet),
+    operatingCostBasis: 'PER_UNIT',
+    marginRate: asNumber(price.marginRate),
+    saleVatRate: asNumber(price.saleVatRate),
+  });
+}
+
+function formPricePreview(form: ProductEditForm) {
+  const currency = String(form.currency ?? '').trim() || 'PLN';
+  if (!String(form.purchaseNet ?? '').trim() || !isValidCurrency(currency)) return null;
+
+  const unitPurchaseNet = asNumber(form.purchaseNet);
+  const purchaseVatRate = percentFormValueToRate(form.purchaseVatRate);
+  const operatingCostNet = asNumber(form.operatingCostNet);
+  const marginRate = percentFormValueToRate(form.marginRate);
+  const saleVatKnown = Boolean(String(form.saleVatRate ?? '').trim());
+  const saleVatRate = percentFormValueToRate(form.saleVatRate);
+  if (
+    ![unitPurchaseNet, purchaseVatRate, operatingCostNet, marginRate, saleVatRate].every(Number.isFinite) ||
+    unitPurchaseNet < 0 || operatingCostNet < 0
+  ) {
+    return null;
+  }
+
+  const result = calculateConfigurationLine({
+    quantity: 1,
+    unitPurchaseNet,
+    purchaseVatRate,
+    operatingCostNet,
+    operatingCostBasis: 'PER_UNIT',
+    marginRate,
+    saleVatRate,
+  });
+  return saleVatKnown ? result : { ...result, saleGross: null };
 }
 
 function mediaLabel(media: ProductMedia) {
@@ -281,11 +328,13 @@ function editFormFromProduct(product: ProductRow): ProductEditForm {
     notes: product.notes || '',
     sourceSheet: product.sourceSheet || '',
     sourceRow: product.sourceRow == null ? '' : String(product.sourceRow),
-    purchaseNet: formValue(price?.purchaseNet),
-    currentPurchaseNet: formValue(price?.currentPurchaseNet),
+    purchaseNet: price
+      ? formValue(productPurchasePriceNeedsReview(price) ? price.purchaseNet : resolveProductPurchaseNet(price))
+      : '',
     purchaseVatRate: rateToPercentFormValue(price?.purchaseVatRate),
     operatingCostNet: formValue(price?.operatingCostNet),
     marginRate: rateToPercentFormValue(price?.marginRate),
+    saleVatRate: rateToPercentFormValue(price?.saleVatRate),
     currency: price?.currency || 'PLN',
   };
 }
@@ -299,20 +348,41 @@ function buildPricePayload(form: ProductEditForm) {
   const hasPriceInput = editablePriceFields.some((field) => form[field].trim() !== '');
   if (!hasPriceInput) return undefined;
 
-  const requiredFields = editablePriceFields.filter((field) => field !== 'currentPurchaseNet');
-  const missing = requiredFields.filter((field) => form[field].trim() === '');
+  const missing = editablePriceFields.filter((field) => form[field].trim() === '');
   if (missing.length) {
-    throw new Error('Cena wymaga pól: koszt netto, VAT zakupu, koszty operacyjne i marża');
+    throw new Error('Cena wymaga pól: cena zakupu netto, VAT zakupu, koszt własny realizacji, narzut i VAT sprzedaży');
   }
 
   return {
     purchaseNet: form.purchaseNet,
-    currentPurchaseNet: form.currentPurchaseNet.trim() ? form.currentPurchaseNet : null,
     purchaseVatRate: percentFormValueToRate(form.purchaseVatRate),
     operatingCostNet: form.operatingCostNet,
     marginRate: percentFormValueToRate(form.marginRate),
+    saleVatRate: percentFormValueToRate(form.saleVatRate),
     currency: form.currency.trim() || 'PLN',
   };
+}
+
+function productPriceFormChanged(form: ProductEditForm, product: ProductRow) {
+  const initial = editFormFromProduct(product);
+  return editablePriceFields.some((field) => form[field] !== initial[field]) || form.currency !== initial.currency;
+}
+
+function shouldSubmitProductPrice(form: ProductEditForm, mode: 'create' | 'edit', product?: ProductRow | null) {
+  if (mode === 'create' || !product) return true;
+  if (productPriceFormChanged(form, product)) return true;
+  const price = product.prices?.[0];
+  return Boolean(price && productPurchasePriceNeedsReview(price));
+}
+
+function legacyPurchasePriceWarning(price?: ProductPrice) {
+  if (!price || !productPurchasePriceNeedsReview(price)) return '';
+  try {
+    resolveProductPurchaseNet(price);
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  return '';
 }
 
 async function readApiPayload(response: Response) {
@@ -438,11 +508,11 @@ export default function CatalogWorkspace() {
         notes: editForm.notes,
         price: {
           purchaseNet: editForm.purchaseNet,
-          currentPurchaseNet: editForm.currentPurchaseNet,
           currency: editForm.currency,
           purchaseVatPercent: editForm.purchaseVatRate,
           operatingCostNet: editForm.operatingCostNet,
           marginPercent: editForm.marginRate,
+          saleVatPercent: editForm.saleVatRate,
         },
         media: sortMediaItems(editingProduct.media || []).map((media) => ({
           id: media.id,
@@ -504,7 +574,9 @@ export default function CatalogWorkspace() {
         notes: normalizeEmpty(editForm.notes),
         sourceSheet: normalizeEmpty(editForm.sourceSheet),
         sourceRow: productModalMode === 'edit' ? sourceRow : sourceRow ?? undefined,
-        price: buildPricePayload(editForm),
+        price: shouldSubmitProductPrice(editForm, productModalMode, editingProduct)
+          ? buildPricePayload(editForm)
+          : undefined,
       };
 
       if (productModalMode === 'edit') body.id = editingProduct!.id;
@@ -735,7 +807,7 @@ export default function CatalogWorkspace() {
               Katalog urządzeń
             </Text>
             <Text color={mutedColor} mt="6px">
-              Produkty, usługi, ceny zakupu i domyślne marże wykorzystywane w konfiguracjach.
+              Produkty, usługi, ceny zakupu i domyślne narzuty wykorzystywane w konfiguracjach.
             </Text>
           </Box>
           <Flex gap="10px" wrap="wrap">
@@ -806,8 +878,8 @@ export default function CatalogWorkspace() {
                 <Th minW="460px">Nazwa</Th>
                 <Th>Kategoria</Th>
                 <Th>Parametry</Th>
-                <Th isNumeric>Koszt netto</Th>
-                <Th isNumeric>Sugerowana cena netto</Th>
+                <Th isNumeric>Cena zakupu netto / szt.</Th>
+                <Th isNumeric>Sugerowana cena netto / szt.</Th>
                 <Th>Media</Th>
                 <Th>Działania</Th>
               </Tr>
@@ -815,7 +887,12 @@ export default function CatalogWorkspace() {
             <Tbody>
               {filtered.map((product) => {
                 const price = product.prices?.[0];
-                const totals = productTotals(product);
+                const totals = productTotals(price);
+                const purchaseNet = price
+                  ? productPurchasePriceNeedsReview(price)
+                    ? asNumber(price.purchaseNet)
+                    : resolveProductPurchaseNet(price)
+                  : 0;
                 const thumbnail = product.media?.find((media) => media.kind === 'image' && (media.url || media.storagePath));
                 return (
                   <Tr key={product.id}>
@@ -871,7 +948,7 @@ export default function CatalogWorkspace() {
                       <Text>{product.powerCapacity || '-'}</Text>
                       <Text color={mutedColor} fontSize="sm">{product.availability || product.voltageKind || '-'}</Text>
                     </Td>
-                    <Td isNumeric>{price ? formatMoney(asNumber(price.purchaseNet), price.currency) : '-'}</Td>
+                    <Td isNumeric>{price ? formatMoney(purchaseNet, price.currency) : '-'}</Td>
                     <Td isNumeric>{totals && price ? formatMoney(totals.saleNet, price.currency) : '-'}</Td>
                     <Td minW="260px">
                       <Flex gap="8px" wrap="wrap" align="center" mb="10px">
@@ -1004,6 +1081,17 @@ export default function CatalogWorkspace() {
             ) : null}
             {editForm ? (
               <Box>
+                {(() => {
+                  const warning = legacyPurchasePriceWarning(editingProduct?.prices?.[0]);
+                  return warning ? (
+                    <Alert status="warning" borderRadius="8px" mb="16px">
+                      <AlertIcon />
+                      <AlertDescription>
+                        {warning} Sprawdź cenę zakupu i zapisz, aby potwierdzić ją jako obowiązującą. Zapis utworzy nowy wpis w historii cen.
+                      </AlertDescription>
+                    </Alert>
+                  ) : null;
+                })()}
                 <SimpleGrid columns={{ base: 1, md: 2 }} gap="14px">
                   <FormControl isRequired>
                     <FormLabel>Nazwa</FormLabel>
@@ -1086,15 +1174,11 @@ export default function CatalogWorkspace() {
 
                 <Divider my="22px" />
 
-                <Text color={textColor} fontWeight="800" mb="12px">Cena</Text>
+                <Text color={textColor} fontWeight="800" mb="12px">Cennik jednostkowy</Text>
                 <SimpleGrid columns={{ base: 1, md: 3 }} gap="14px">
                   <FormControl>
-                    <FormLabel>Koszt netto</FormLabel>
+                    <FormLabel>Cena zakupu netto / szt.</FormLabel>
                     <Input value={editForm.purchaseNet} inputMode="decimal" onChange={(event) => updateEditField('purchaseNet', event.target.value)} />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Aktualny koszt netto</FormLabel>
-                    <Input value={editForm.currentPurchaseNet} inputMode="decimal" onChange={(event) => updateEditField('currentPurchaseNet', event.target.value)} />
                   </FormControl>
                   <FormControl>
                     <FormLabel>Waluta</FormLabel>
@@ -1108,17 +1192,46 @@ export default function CatalogWorkspace() {
                     </InputGroup>
                   </FormControl>
                   <FormControl>
-                    <FormLabel>Koszty operacyjne</FormLabel>
+                    <FormLabel>Koszt własny realizacji netto / szt.</FormLabel>
                     <Input value={editForm.operatingCostNet} inputMode="decimal" onChange={(event) => updateEditField('operatingCostNet', event.target.value)} />
                   </FormControl>
                   <FormControl>
-                    <FormLabel>Marża (%)</FormLabel>
+                    <FormLabel>Narzut (%)</FormLabel>
                     <InputGroup>
                       <Input value={editForm.marginRate} inputMode="decimal" pe="38px" onChange={(event) => updateEditField('marginRate', event.target.value)} />
                       <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
                     </InputGroup>
                   </FormControl>
+                  <FormControl>
+                    <FormLabel>VAT sprzedaży (%)</FormLabel>
+                    <InputGroup>
+                      <Input value={editForm.saleVatRate} inputMode="decimal" pe="38px" onChange={(event) => updateEditField('saleVatRate', event.target.value)} />
+                      <InputRightElement pointerEvents="none" color={mutedColor}>%</InputRightElement>
+                    </InputGroup>
+                  </FormControl>
                 </SimpleGrid>
+
+                {(() => {
+                  const preview = formPricePreview(editForm);
+                  return preview ? (
+                    <SimpleGrid columns={{ base: 1, sm: preview.saleGross === null ? 2 : 3 }} gap="14px" mt="14px" p="12px" border="1px solid" borderColor={subtleBorder} borderRadius="6px">
+                      <Box>
+                        <Text color={mutedColor} fontSize="sm">Koszt całkowity netto / szt.</Text>
+                        <Text color={textColor} fontWeight="700">{formatMoney(preview.totalCostNet, editForm.currency || 'PLN')}</Text>
+                      </Box>
+                      <Box>
+                        <Text color={mutedColor} fontSize="sm">Cena sprzedaży netto / szt.</Text>
+                        <Text color={textColor} fontWeight="700">{formatMoney(preview.saleNet, editForm.currency || 'PLN')}</Text>
+                      </Box>
+                      {preview.saleGross !== null ? (
+                        <Box>
+                          <Text color={mutedColor} fontSize="sm">Cena sprzedaży brutto / szt.</Text>
+                          <Text color={textColor} fontWeight="700">{formatMoney(preview.saleGross, editForm.currency || 'PLN')}</Text>
+                        </Box>
+                      ) : null}
+                    </SimpleGrid>
+                  ) : <Text color={mutedColor} fontSize="sm" mt="14px">Podgląd niedostępny dla nieprawidłowej ceny lub kosztu.</Text>;
+                })()}
 
                 <Divider my="22px" />
 
@@ -1202,7 +1315,7 @@ export default function CatalogWorkspace() {
               </Box>
             ) : null}
           </ModalBody>
-          <ModalFooter justifyContent="space-between" gap="10px">
+          <ModalFooter justifyContent="space-between" gap="10px" flexDirection={{ base: 'column', md: 'row' }} alignItems={{ base: 'stretch', md: 'center' }}>
             <Flex gap="10px" wrap="wrap">
               {isAdmin && productModalMode === 'edit' && editingProduct ? (
                 <Button variant="outline" leftIcon={<Icon as={MdDownload} />} onClick={exportProductJson}>
@@ -1221,7 +1334,7 @@ export default function CatalogWorkspace() {
                 </Button>
               ) : null}
             </Flex>
-            <Flex gap="10px">
+            <Flex gap="10px" justify="flex-end">
               <Button
                 variant="ghost"
                 onClick={closeProductModal}
@@ -1238,3 +1351,14 @@ export default function CatalogWorkspace() {
     </Flex>
   );
 }
+
+export const __catalogWorkspaceTestUtils = {
+  buildPricePayload,
+  editFormFromProduct,
+  formatMoney,
+  formPricePreview,
+  legacyPurchasePriceWarning,
+  productPriceFormChanged,
+  productTotals,
+  shouldSubmitProductPrice,
+};

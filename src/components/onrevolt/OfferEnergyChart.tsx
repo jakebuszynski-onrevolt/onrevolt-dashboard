@@ -10,6 +10,8 @@ import type { OfferWorkspaceValuationScenario, OfferWorkspaceValuationValues } f
 export type OfferEnergyForecast = {
   energy: OfferWorkspaceEnergy;
   measurements: OfferWorkspaceMeasurements;
+  valuation?: OfferWorkspaceValuationScenario | null;
+  battery?: { months: Record<string, number>; hours: Record<string, number> } | null;
 };
 
 export type EnergyChartRow = {
@@ -34,6 +36,11 @@ export function niceEnergyCeil(value: number) {
   return (k <= 1 ? 1 : k <= 2 ? 2 : k <= 4 ? 4 : k <= 5 ? 5 : 10) * base;
 }
 
+export function offerEnergyAxisCeil(value: number, annual: boolean) {
+  if (!annual || value <= 1000) return niceEnergyCeil(value);
+  return Math.ceil(value / 1000) * 1000;
+}
+
 export function energyStepPath(rows: EnergyChartRow[], key: 'loadKwh' | 'pvKwh', y: (value: number) => number) {
   const band = 922 / Math.max(rows.length, 1);
   let path = '', connected = false;
@@ -53,7 +60,7 @@ export function OfferEnergyPlot({ rows, annual, future = false }: { rows: Energy
   const id = useId();
   const surface = useColorModeValue('white', '#111c44');
   const H = 210, L = 58, T = 25, B = 38, w = 922, h = H - T - B;
-  const max = niceEnergyCeil(Math.max(1, ...rows.flatMap(r => [r.importKwh ?? 0, r.loadKwh ?? 0, r.pvKwh ?? 0])));
+  const max = offerEnergyAxisCeil(Math.max(1, ...rows.flatMap(r => [r.importKwh ?? 0, r.loadKwh ?? 0, r.pvKwh ?? 0])), annual);
   const hasExport = rows.some(r => r.exportKwh != null && r.exportKwh > .01);
   const bottom = hasExport ? niceEnergyCeil(Math.max(...rows.map(r => r.exportKwh ?? 0))) : 0;
   const range = max + bottom, y = (v: number) => T + (max - v) / range * h;
@@ -104,8 +111,8 @@ export function OfferEnergySummary({ rows, netMetering, b2b, future = false, sou
     <Text as="h3" fontSize="12px" fontWeight="700" mt="12px" mb="5px">Rozliczenie energii <Text as="span" color={muted} fontSize="10px" fontWeight="400">(PLN {b2b ? 'netto' : 'brutto'})</Text></Text>
     <Box border="1px solid" borderColor={line} borderRadius="10px" overflow="hidden">{(['exportKwh', 'importKwh'] as const).map((key, rowIndex) => <Grid key={key} templateColumns={{ base: '1fr', sm: 'repeat(3,minmax(0,1fr))' }} borderBottom={rowIndex === 0 ? '1px solid' : '0'} borderColor={line}>
       <Box p="8px 12px" borderRightWidth={{ sm: '1px' }} borderColor={line}><Text fontSize="10px">{marker(rowIndex ? '#ff8505' : '#087744')}Energia {rowIndex ? 'pobrana z sieci' : 'oddana do sieci'}</Text><Text fontWeight="500" mt="3px">{number(total(rows, key))} kWh</Text></Box>
-      <Box p="8px 12px" borderRightWidth={{ sm: '1px' }} borderColor={line}><Text fontSize="10px">Wartość energii {rowIndex ? 'pobranej' : 'oddanej'}</Text><Text mt="3px" data-energy-value={rowIndex ? 'import' : 'export'}>{valuationLoading ? 'Obliczanie…' : !rowIndex && netMetering ? 'Rozliczenie ilościowe · opust' : (rowIndex ? valuation?.importValuePln : valuation?.exportValuePln) == null ? '—' : `${number(rowIndex ? valuation!.importValuePln : valuation!.exportValuePln, 2)} zł`}</Text></Box>
-      <Box p="8px 12px"><Text fontSize="10px">Średnia cena {rowIndex ? 'zakupu' : 'sprzedaży'} 1 kWh</Text><Text mt="3px" data-energy-price={rowIndex ? 'buy' : 'sell'} color={!rowIndex && netMetering ? muted : undefined} fontSize={!rowIndex && netMetering ? '10px' : '12px'}>{valuationLoading ? 'Obliczanie…' : !rowIndex && netMetering ? 'Rozliczenie ilościowe · opust' : (rowIndex ? valuation?.averageBuyPlnPerKwh : valuation?.averageSellPlnPerKwh) == null ? '—' : `${number(rowIndex ? valuation!.averageBuyPlnPerKwh : valuation!.averageSellPlnPerKwh, 4)} zł/kWh`}</Text></Box>
+      <Box p="8px 12px" borderRightWidth={{ sm: '1px' }} borderColor={line}><Text fontSize="10px">{future && !rowIndex && !netMetering ? 'Wartość oddania do depozytu' : `Wartość energii ${rowIndex ? 'pobranej' : 'oddanej'}`}</Text><Text mt="3px" data-energy-value={rowIndex ? 'import' : 'export'}>{valuationLoading ? 'Obliczanie…' : !rowIndex && netMetering ? 'Rozliczenie ilościowe · opust' : (rowIndex ? valuation?.importValuePln : valuation?.exportValuePln) == null ? '—' : `${number(rowIndex ? valuation!.importValuePln : valuation!.exportValuePln, 2)} zł`}</Text></Box>
+      <Box p="8px 12px"><Text fontSize="10px">{future && !rowIndex && !netMetering ? 'Średnia wartość 1 kWh do depozytu' : `Średnia cena ${rowIndex ? 'zakupu' : 'sprzedaży'} 1 kWh`}</Text><Text mt="3px" data-energy-price={rowIndex ? 'buy' : 'sell'} color={!rowIndex && netMetering ? muted : undefined} fontSize={!rowIndex && netMetering ? '10px' : '12px'}>{valuationLoading ? 'Obliczanie…' : !rowIndex && netMetering ? 'Rozliczenie ilościowe · opust' : (rowIndex ? valuation?.averageBuyPlnPerKwh : valuation?.averageSellPlnPerKwh) == null ? '—' : `${number(rowIndex ? valuation!.averageBuyPlnPerKwh : valuation!.averageSellPlnPerKwh, 4)} zł/kWh`}</Text></Box>
     </Grid>)}</Box>
     <Text fontSize="9px" color={muted} mt="7px">{sourceNote || (future ? 'Wartości zostaną uzupełnione po obliczeniu wariantu w RE.' : 'Pobór i oddanie: pomiary operatora. Produkcja PV i autokonsumpcja oczekują na obliczenia.')}</Text>
   </Box>;
@@ -135,6 +142,10 @@ export function offerEnergyChartRows(workspace: WorkspaceData, period: string, d
       : energy.dayProfiles.find(profile => profile.date === day?.date)?.hours.find(hour => hour.hour === index);
     if (energyRow) { row.loadKwh = energyRow.loadKwh; row.pvKwh = energyRow.pvKwh; row.directKwh = energyRow.directKwh; }
   });
+  if (future && forecast?.battery) rows.forEach((row, index) => {
+    const key = period === 'all' ? months[index].period : `${day?.date}T${String(index).padStart(2, '0')}`;
+    row.batteryKwh = (period === 'all' ? forecast.battery!.months[key] : forecast.battery!.hours[key]) ?? null;
+  });
   return rows;
 }
 
@@ -147,7 +158,7 @@ export default function OfferEnergyChart({ workspace, targetTariffLabel, netMete
   const months = useMemo(() => [...chartMeasurements.months].sort((a, b) => a.period.localeCompare(b.period)), [chartMeasurements.months]);
   const day = chartMeasurements.dayProfiles?.find(item => item.period === period && item.dayType === dayType);
   const rows = offerEnergyChartRows(workspace, period, dayType, future, futureForecast);
-  const valuationScenario = future ? null : useTargetTariff ? workspace.valuation?.target : workspace.valuation?.current;
+  const valuationScenario = future ? futureForecast?.valuation : useTargetTariff ? workspace.valuation?.target : workspace.valuation?.current;
   const valuation = offerChartValuation(valuationScenario, period, day?.date);
   const valuationIssues = !future ? [...(workspace.valuationError ? [workspace.valuationError] : []), ...(valuationScenario?.issues || [])] : [];
   const sourceNote = !future ? workspace.energyLoading ? 'Obliczanie produkcji PV i zużycia budynku…'
@@ -160,7 +171,7 @@ export default function OfferEnergyChart({ workspace, targetTariffLabel, netMete
     <Flex justify="space-between" align="start" gap="14px" wrap="wrap"><Flex gap="8px" wrap={{ base: 'wrap', md: 'nowrap' }} minW="0"><Select aria-label={future ? 'Widok wykresu z systemem' : 'Miesiąc pomiarów'} value={period} onChange={e => setPeriod(e.target.value)} w={{ base: '100%', sm: '222px' }} h="44px"><option value="all">{months.length ? `Okres ${months[0].period.slice(0, 4)}/${months.at(-1)!.period.slice(0, 4)} · rocznie` : 'Brak pomiarów'}</option>{months.map(month => <option key={month.period} value={month.period}>{longMonth(month.period)}</option>)}</Select>{period !== 'all' ? <Select aria-label={future ? 'Typ dnia z systemem' : 'Typ dnia aktualnie'} w={{ base: '100%', sm: '142px' }} h="44px" value={dayType} onChange={e => setDayType(e.target.value as typeof dayType)}><option value="workday">Dzień roboczy</option><option value="free">Dzień wolny</option></Select> : null}</Flex><Box textAlign="right"><Tooltip label={future ? 'SOC wymaga obliczonej symulacji magazynu.' : 'Wycena tych samych pomiarów według godzin i stref taryfy scenariusza.'}><Box><Checkbox isDisabled={future || !workspace.valuation} isChecked={!future && useTargetTariff} onChange={event => setUseTargetTariff(event.target.checked)}>{future ? 'Pokaż SOC magazynu' : 'Nanieś nową taryfę'}</Checkbox></Box></Tooltip><Text color={muted} fontSize="10px" mt="9px">{useTargetTariff || future ? targetTariffLabel : 'Historia taryf · stan aktualny'}</Text></Box></Flex>
     <OfferEnergyPlot rows={rows} annual={period === 'all'} future={future} />
     <OfferEnergySummary rows={rows} netMetering={valuationScenario ? valuationScenario.settlement === 'NET_METERING' : netMetering} b2b={workspace.clientType === 'B2B'} future={future} sourceNote={sourceNote} valuation={valuation} valuationLoading={!future && workspace.valuationLoading} />
-    {!future && workspace.valuation ? <Text fontSize="10px" color={muted} mt="8px">{useTargetTariff ? 'Wycena scenariusza według bieżącego cennika.' : 'Wycena według historii taryf.'} Pobór: energia i dystrybucja zmienna, przed opustem lub depozytem, bez opłat stałych. {valuationScenario?.settlement === 'NET_BILLING' ? 'Oddanie: wycena RCE, przed rozliczeniem depozytu. ' : ''}Średnie ceny ważone ilością energii.</Text> : null}
+    {valuationScenario ? <Text fontSize="10px" color={muted} mt="8px">{useTargetTariff || future ? 'Wycena scenariusza według cennika kalkulacji.' : 'Wycena według historii taryf.'} Pobór: energia i dystrybucja zmienna, przed opustem lub depozytem, bez opłat stałych. {valuationScenario.settlement === 'NET_BILLING' ? future ? 'Oddanie: wartość naliczona do depozytu, z mnożnikiem przyjętym w kalkulacji; nie sama cena RCE. Kwoty i średnie według energii rozliczeniowej po bilansowaniu godzinowym. ' : 'Oddanie: wycena RCE, przed rozliczeniem depozytu. ' : ''}Średnie ceny ważone ilością energii.</Text> : null}
     {valuationIssues.length ? <Box as="details" mt="8px" fontSize="11px" color={muted}><Box as="summary" cursor="pointer">Wycena wymaga uzupełnienia ({valuationIssues.length})</Box>{valuationIssues.slice(0, 12).map((issue, index) => <Text key={index} mt="4px">{issue}</Text>)}{valuationIssues.length > 12 ? <Text mt="4px">Dalsze okresy: {valuationIssues.length - 12}.</Text> : null}</Box> : null}
   </>;
 }

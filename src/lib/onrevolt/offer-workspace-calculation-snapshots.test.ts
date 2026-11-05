@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { gunzipSync, gzipSync } from 'node:zlib';
 
 const filename = path.resolve(__dirname, 'offer-workspace-calculation-snapshots.ts');
 const code = ts.transpileModule(readFileSync(filename, 'utf8'), {
@@ -62,7 +64,7 @@ function fixture(options: { rows?: unknown[]; findFirst?: unknown; failCreate?: 
       },
     },
   };
-  const modules = { 'node:buffer': { Buffer }, './prisma': { prisma: database } };
+  const modules = { 'node:buffer': { Buffer }, 'node:crypto': { createHash }, 'node:zlib': { gzipSync, gunzipSync }, './prisma': { prisma: database } };
   const exports: any = {};
   vm.runInNewContext(code, {
     exports,
@@ -72,6 +74,29 @@ function fixture(options: { rows?: unknown[]; findFirst?: unknown; failCreate?: 
     },
   });
   return { exports, calls };
+}
+
+function compressedResult(value: unknown, overrides: Record<string, unknown> = {}) {
+  const bytes = Buffer.from(JSON.stringify(value), 'utf8');
+  return {
+    __offerWorkspaceCalculationResult: {
+      encoding: 'gzip-base64', version: 1, byteLength: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      data: gzipSync(bytes).toString('base64'), ...overrides,
+    },
+  };
+}
+
+function readerForResult(storedResult: unknown) {
+  const f = fixture();
+  return new f.exports.PrismaOfferWorkspaceCalculationSnapshotRepository({
+    offerWorkspaceCalculationSnapshot: {
+      create: async () => undefined,
+      findFirst: async () => ({ ...row, result: storedResult }),
+      findMany: async () => [],
+    },
+    offerWorkspaceCalculationSnapshotAdmission: { create: async () => undefined },
+  });
 }
 
 test('pending snapshots write only the immutable result and freshness identity', async () => {
@@ -149,6 +174,87 @@ test('job lookup always scopes actor, project, and algorithm version', async () 
     },
     include: { admission: true },
   });
+});
+
+test('compressed large results round trip losslessly and legacy plain JSON remains readable', async () => {
+  const forecastPayload = Array.from({ length: 22_000 }, (_, index) => ({
+    hour: index,
+    startUtc: new Date(Date.UTC(2026, 0, 1) + index * 3_600_000).toISOString(),
+    loadKwh: ((index * 37) % 10001) / 1000,
+    pvKwh: ((index * 101) % 5003) / 1000,
+    importKwh: ((index * 53) % 8009) / 1000,
+    exportKwh: ((index * 67) % 3001) / 1000,
+    note: `interval-${index.toString(36)}-${((index * 104729) % 99991).toString(36)}`,
+  }));
+  const largeResult = { ...result, forecastPayload };
+  let storedResult: unknown;
+  const writerFixture = fixture();
+  const writer = new writerFixture.exports.PrismaOfferWorkspaceCalculationSnapshotRepository({
+    offerWorkspaceCalculationSnapshot: {
+      create: async (args: any) => { storedResult = args.data.result; },
+      findFirst: async () => null,
+      findMany: async () => [],
+    },
+    offerWorkspaceCalculationSnapshotAdmission: { create: async () => undefined },
+  });
+  await writer.savePending({ ...snapshotInput, result: largeResult });
+
+  const envelope = (storedResult as any).__offerWorkspaceCalculationResult;
+  assert.equal(envelope.encoding, 'gzip-base64');
+  assert.equal(envelope.version, 1);
+  assert.ok(envelope.data.length < Buffer.byteLength(JSON.stringify(largeResult), 'utf8') / 2);
+  const decoded = await readerForResult(storedResult).findCompletedByJob({
+    jobId: row.jobId, actorId: row.actorId, projectId: row.projectId, algorithmVersion: row.algorithmVersion,
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(decoded?.result)), largeResult);
+
+  const legacy = await readerForResult(result).findCompletedByJob({
+    jobId: row.jobId, actorId: row.actorId, projectId: row.projectId, algorithmVersion: row.algorithmVersion,
+  });
+  assert.equal(legacy?.result.annualSavingsPln, 120);
+});
+
+test('invalid and truncated compressed snapshot envelopes are rejected', async () => {
+  const bytes = Buffer.from(JSON.stringify(result), 'utf8');
+  const valid = compressedResult(result) as any;
+  const compressed = Buffer.from(valid.__offerWorkspaceCalculationResult.data, 'base64');
+  const invalidEnvelopes = [
+    compressedResult(result, { data: Buffer.from('not gzip data').toString('base64') }),
+    compressedResult(result, { data: compressed.subarray(0, compressed.length - 4).toString('base64') }),
+    compressedResult(result, { version: 2 }),
+    compressedResult(result, { sha256: '0'.repeat(64) }),
+    compressedResult(result, { data: 'A'.repeat(4 * Math.ceil((bytes.byteLength + 64 * 1024) / 3) + 4) }),
+  ];
+  assert.ok(bytes.length > 0);
+  for (const envelope of invalidEnvelopes) {
+    assert.equal(await readerForResult(envelope).findCompletedByJob({
+      jobId: row.jobId, actorId: row.actorId, projectId: row.projectId, algorithmVersion: row.algorithmVersion,
+    }), null);
+  }
+});
+
+test('oversized compressed payloads are rejected before parsing', async () => {
+  const tooLargeEnvelope = compressedResult(result, { byteLength: maxResultBytes + 1 });
+  assert.equal(await readerForResult(tooLargeEnvelope).findCompletedByJob({
+    jobId: row.jobId, actorId: row.actorId, projectId: row.projectId, algorithmVersion: row.algorithmVersion,
+  }), null);
+
+  const bombBytes = Buffer.from(JSON.stringify({ ...result, payload: 'x'.repeat(maxResultBytes) }), 'utf8');
+  const bomb = compressedResult(result, {
+    byteLength: maxResultBytes,
+    sha256: createHash('sha256').update(bombBytes).digest('hex'),
+    data: gzipSync(bombBytes).toString('base64'),
+  });
+  assert.equal(await readerForResult(bomb).findCompletedByJob({
+    jobId: row.jobId, actorId: row.actorId, projectId: row.projectId, algorithmVersion: row.algorithmVersion,
+  }), null);
+});
+
+test('compressed results still undergo persisted identity validation', async () => {
+  const mismatched = compressedResult({ ...result, pricesAsOf: '2026-10-28' });
+  assert.equal(await readerForResult(mismatched).findCompletedByJob({
+    jobId: row.jobId, actorId: row.actorId, projectId: row.projectId, algorithmVersion: row.algorithmVersion,
+  }), null);
 });
 
 test('PDF lookup query requires current source, draft, algorithm, and prices-as-of identities', async () => {

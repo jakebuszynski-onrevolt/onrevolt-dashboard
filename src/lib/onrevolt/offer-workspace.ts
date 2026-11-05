@@ -1,4 +1,5 @@
 import { configurationInvestmentScope } from './configuration-templates';
+import type { OfferWorkspacePricingResult, OfferWorkspacePricingTemplate } from './offer-workspace-pricing';
 
 export const OFFER_WORKSPACE_SCHEMA_VERSION = 1;
 export const OFFER_WORKSPACE_STEPS = ['SYSTEM', 'CONFIGURATION', 'SAVINGS', 'DESCRIPTION', 'SUMMARY'] as const;
@@ -96,7 +97,142 @@ export type SavedOfferWorkspaceDraft = {
   sourceRevision: string;
   updatedAt: string;
   input: OfferWorkspaceDraft;
+  pricingSnapshot?: OfferWorkspacePricingSnapshot;
 };
+
+export type OfferWorkspacePricingSnapshot = {
+  schemaVersion: 1;
+  revision: string;
+  selectedTemplateIds: string[];
+  saleVatMode: OfferWorkspaceDraft['saleVatMode'];
+  clientType: string;
+  totals: { net: number | null; gross: number | null };
+};
+
+export type OfferWorkspacePricingFreshness = 'NO_BASELINE' | 'CURRENT' | 'STALE' | 'UNAVAILABLE';
+
+function compareStableIds(left: string, right: string) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function pricingRevisionHash(serialized: string) {
+  let left = 0x811c9dc5;
+  let right = 0x9e3779b9;
+  for (let index = 0; index < serialized.length; index += 1) {
+    const code = serialized.charCodeAt(index);
+    left = Math.imul(left ^ code, 0x01000193);
+    right = Math.imul(right ^ code, 0x85ebca6b);
+  }
+  left ^= left >>> 16;
+  left = Math.imul(left, 0x85ebca6b);
+  left ^= left >>> 13;
+  right ^= right >>> 16;
+  right = Math.imul(right, 0xc2b2ae35);
+  right ^= right >>> 13;
+  return `pricing-v1-${(left >>> 0).toString(16).padStart(8, '0')}${(right >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+export function createOfferWorkspacePricingSnapshot(
+  draft: Pick<OfferWorkspaceDraft, 'selectedTemplateIds' | 'saleVatMode'>,
+  clientType: string,
+  pricing: OfferWorkspacePricingResult,
+  templates: OfferWorkspacePricingTemplate[] = [],
+): OfferWorkspacePricingSnapshot {
+  const selectedTemplateIds = [...draft.selectedTemplateIds].sort();
+  const selectedIds = new Set(selectedTemplateIds);
+  const revisionTemplates = templates.filter((template) => selectedIds.has(template.id))
+    .map((template) => ({
+      id: template.id,
+      items: template.items.map((item) => {
+        const price = item.product?.prices?.[0];
+        const number = (value: unknown) => {
+          if (value == null) return null;
+          const parsed = Number(value);
+          return Number.isFinite(parsed) ? parsed : null;
+        };
+        return {
+          id: item.id,
+          quantity: number(item.quantity),
+          supplyMode: item.supplyMode,
+          pricingMode: item.pricingMode ?? 'LEGACY',
+          operatingCostBasis: item.operatingCostBasis ?? 'PER_LINE',
+          catalogPriceId: item.catalogPriceId ?? null,
+          productId: item.product?.id ?? item.productId ?? null,
+          unitPurchaseNet: number(item.unitPurchaseNet),
+          purchaseVatRate: number(item.purchaseVatRate),
+          operatingCostNet: number(item.operatingCostNet),
+          marginRate: number(item.marginRate),
+          saleVatRate: number(item.saleVatRate),
+          isOptional: item.isOptional,
+          requiresReview: item.requiresReview,
+          currentPrice: price ? {
+            id: price.id ?? null,
+            purchaseNet: number(price.purchaseNet),
+            currentPurchaseNet: number(price.currentPurchaseNet),
+            purchaseVatRate: number(price.purchaseVatRate),
+            operatingCostNet: number(price.operatingCostNet),
+            marginRate: number(price.marginRate),
+            saleVatRate: number(price.saleVatRate),
+          } : null,
+        };
+      }).sort((left, right) => compareStableIds(left.id, right.id)),
+    })).sort((left, right) => compareStableIds(left.id, right.id));
+  const totalFields = pricing.totals ? {
+    purchaseNet: pricing.totals.purchaseNet,
+    purchaseVatValue: pricing.totals.purchaseVatValue,
+    purchaseGross: pricing.totals.purchaseGross,
+    operatingCostNet: pricing.totals.operatingCostNet,
+    totalCostNet: pricing.totals.totalCostNet,
+    marginNet: pricing.totals.marginNet,
+    saleNet: pricing.totals.saleNet,
+    saleVatValue: pricing.totals.saleVatValue,
+    saleGross: pricing.totals.saleGross,
+    vatSurplus: pricing.totals.vatSurplus,
+    profitNet: pricing.totals.profitNet,
+    profitWithVatSurplus: pricing.totals.profitWithVatSurplus,
+  } : null;
+  const revisionData = {
+    selectedTemplateIds,
+    saleVatMode: draft.saleVatMode,
+    clientType,
+    templates: revisionTemplates,
+    saleAmountBasis: pricing.saleAmountBasis,
+    lines: [...pricing.lines].sort((left, right) => compareStableIds(
+      `${left.templateId}\u0000${left.itemId}`,
+      `${right.templateId}\u0000${right.itemId}`,
+    )).map((line) => ({
+      templateId: line.templateId,
+      itemId: line.itemId,
+      quantity: line.quantity,
+      includedInSale: line.includedInSale,
+      resolvedCosts: line.resolvedCosts,
+      saleVatRate: line.saleVatRate,
+      calculation: line.calculation,
+    })),
+    totals: totalFields,
+    systemCostBeforeFinancing: pricing.systemCostBeforeFinancing,
+  };
+  return {
+    schemaVersion: 1,
+    revision: pricingRevisionHash(JSON.stringify(revisionData)),
+    selectedTemplateIds,
+    saleVatMode: draft.saleVatMode,
+    clientType,
+    totals: {
+      net: pricing.totals?.saleNet ?? null,
+      gross: pricing.totals?.saleGross ?? null,
+    },
+  };
+}
+
+export function offerWorkspacePricingFreshness(
+  saved: OfferWorkspacePricingSnapshot | null | undefined,
+  current: OfferWorkspacePricingSnapshot | null | undefined,
+): OfferWorkspacePricingFreshness {
+  if (!saved) return 'NO_BASELINE';
+  if (!current) return 'UNAVAILABLE';
+  return saved.revision === current.revision ? 'CURRENT' : 'STALE';
+}
 
 export function emptyOfferWorkspaceDraft(): OfferWorkspaceDraft {
   return {

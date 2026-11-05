@@ -52,7 +52,6 @@ const routes: IRoute[] = [
     collapse: true,
     icon: <Icon as={MdTune} {...iconProps} />,
     items: [
-      child('Audyty i energia', '/audits', 'energy.manage'),
       child('Konfigurator', '/configurator', 'configurations.manage'),
       child('Katalog urządzeń', '/catalog'),
     ],

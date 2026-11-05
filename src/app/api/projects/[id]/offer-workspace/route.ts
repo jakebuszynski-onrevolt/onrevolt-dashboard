@@ -47,6 +47,13 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
     if (typeof body.sourceRevision !== 'string' || !/^[a-f0-9]{64}$/.test(body.sourceRevision)) {
       return badRequest('Brak prawidłowej rewizji źródeł workspace.');
     }
+    let acceptedPricingRevision: string | undefined;
+    if (body.acceptedPricingRevision !== undefined) {
+      if (typeof body.acceptedPricingRevision !== 'string' || !/^pricing-v1-[a-f0-9]{16}$/.test(body.acceptedPricingRevision)) {
+        return badRequest('acceptedPricingRevision ma nieprawidłowy format.');
+      }
+      acceptedPricingRevision = body.acceptedPricingRevision;
+    }
     let input;
     try {
       input = parseOfferWorkspaceDraft(body.input);
@@ -59,6 +66,7 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
       expectedRevision: body.expectedRevision,
       sourceRevision: body.sourceRevision,
       input,
+      acceptedPricingRevision,
       now: new Date(),
     });
     return jsonResponse({ ok: true, data: draft });

@@ -6,6 +6,7 @@ import {
   monthlyMeasurementValueLabel,
   offerWorkspaceCalculationInputKey,
   offerWorkspaceCalculationPreflightError,
+  offerWorkspaceCalculationStaleMessage,
   offerWorkspaceDraftWithRanking,
   offerWorkspaceStorageKey,
   parseCalculationJob,
@@ -126,6 +127,19 @@ test('POST kalkulacji przyjmuje odpowiedź joba 202 z postępem', () => {
   assert.equal(job.status, 'running');
   assert.equal(job.completed, 7);
   assert.equal(job.total, 35);
+});
+
+test('nieaktualny job pokazuje przyczynę zablokowanej kalkulacji zamiast komunikatu o braku wyniku', () => {
+  const reason = 'Brak pełnego godzinowego profilu energii do symulacji.';
+  const job = parseCalculationJob({
+    ok: true,
+    job: { id: 'job-stale', status: 'completed', completed: 18, total: 18, stale: true, blockedReasons: [reason] },
+  }, new Response(null, { status: 200 }));
+
+  assert.equal(job.stale, true);
+  assert.deepEqual(job.blockedReasons, [reason]);
+  assert.equal(offerWorkspaceCalculationStaleMessage(job.blockedReasons),
+    `Wynik kalkulacji jest nieaktualny i został pominięty. Ostatnia próba była zablokowana: ${reason}`);
 });
 
 test('założenia nie podstawiają początkowych sald ani limitu ulgi', () => {

@@ -427,7 +427,12 @@ export default function OfferWorkspaceCalculationControls({
 
     {calculationError ? <Alert status="error" mt="12px" borderRadius="6px"><AlertIcon /><AlertDescription>{calculationError}</AlertDescription></Alert> : null}
     {calculation?.status === 'blocked' && calculation.reasons.length ? <Alert status="warning" mt="12px" alignItems="flex-start" borderRadius="6px"><AlertIcon mt="2px" /><AlertDescription><Text fontWeight="700">Nie można przygotować pełnego wyniku.</Text>{calculation.reasons.map((reason, index) => <Text key={`${index}-${reason}`} mt="4px">{reason}</Text>)}</AlertDescription></Alert> : null}
-    {calculation?.warnings.length ? <Alert status="warning" mt="12px" alignItems="flex-start" borderRadius="6px"><AlertIcon mt="2px" /><AlertDescription>
+    {calculation?.warnings.length ? <Alert status="warning" mt="12px" alignItems="flex-start" borderRadius="6px"><AlertIcon mt="2px" /><AlertDescription width="100%" minW={0}>
+      <Box as="details" key={calculation.warnings.join('\n')} data-testid="calculation-warnings">
+      <Box as="summary" cursor="pointer" fontWeight="700" py="2px" _focusVisible={{ outline: '2px solid', outlineColor: 'orange.500', outlineOffset: '4px' }}>
+        Uwagi i założenia do wyniku ({calculation.warnings.length})
+      </Box>
+      <Box mt="10px">
       {warningGroups.standalone.map((warning, index) => <Text key={`${index}-${warning}`} mt={index ? '4px' : 0}>{warning}</Text>)}
       {warningGroups.grouped.map((group, index) => group.pattern ? <Box key={`${index}-${group.pattern}`} mt={index || warningGroups.standalone.length ? '7px' : 0}>
         <Text>Luki cenowe wymagają weryfikacji. Liczba dat: {group.dates.length}.</Text>
@@ -435,6 +440,8 @@ export default function OfferWorkspaceCalculationControls({
           {group.warnings.map((warning, warningIndex) => <Text key={`${warningIndex}-${warning}`} mt="3px">{warning}</Text>)}
         </Box>
       </Box> : group.warnings.map((warning, warningIndex) => <Text key={`${index}-${warningIndex}-${warning}`} mt="4px">{warning}</Text>))}
+      </Box>
+      </Box>
     </AlertDescription></Alert> : null}
 
     {calculation?.rankings.length ? <Box mt="14px" aria-label="Ranking konfiguracji">
@@ -467,7 +474,7 @@ export default function OfferWorkspaceCalculationControls({
 
     <Box as="details" mt="14px" borderTop="1px solid" borderColor={line} pt="12px">
       <Box as="summary" cursor="pointer" fontWeight="700">Założenia obliczeń</Box>
-      <Text mt="6px" color={muted} fontSize="10px">Saldo oznacza stan na początek pierwszego miesiąca danych pomiarowych, nie saldo na dziś. Wpisz 0 tylko wtedy, gdy historyczne saldo faktycznie wynosiło zero; brak danych pozostaw nieuzupełniony. Stawka podatku jest parametrem scenariusza, nie oceną prawną.</Text>
+      <Text mt="6px" color={muted} fontSize="10px">Saldo oznacza stan na początek pierwszego miesiąca danych pomiarowych, nie saldo na dziś. Brak salda i transz oznacza szacunek od 0, bez zmiany zapisanego szkicu. Znane saldo dodatnie wymaga datowanych transz. Stawka podatku jest parametrem scenariusza, nie oceną prawną.</Text>
       <Grid templateColumns={{ base: '1fr', md: 'repeat(2, minmax(0, 1fr))' }} gap="10px" mt="12px">
         <Checkbox aria-label="Prognoza PV oparta na pomiarach ENEA i modelowanej autokonsumpcji" isChecked={assumptions.pvReconstructionAccepted === true} isDisabled={disabled} onChange={(event) => updateCalculation((current) => ({ ...current, pvReconstructionAccepted: event.target.checked }))}>
           Prognoza PV oparta na pomiarach ENEA i modelowanej autokonsumpcji

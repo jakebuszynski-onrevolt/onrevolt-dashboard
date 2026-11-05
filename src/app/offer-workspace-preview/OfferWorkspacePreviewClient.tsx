@@ -5,6 +5,7 @@ import OfferWorkspacePanel from 'components/onrevolt/OfferWorkspacePanel';
 import { emptyOfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
 import { useLayoutEffect, useState } from 'react';
 import dayProfiles from './day-profiles.json';
+import SavingsPreview from './SavingsPreview';
 
 const revision = 'a'.repeat(64);
 const previewPeriodsByMonth = ['2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09'];
@@ -152,10 +153,12 @@ const templates = [
 export default function OfferWorkspacePreviewClient() {
   const [nullCase, setNullCase] = useState(false);
   const [valuesQa, setValuesQa] = useState(false);
+  const [savingsQa, setSavingsQa] = useState(false);
   useLayoutEffect(() => {
     const originalFetch = window.fetch.bind(window);
     let draftRevision = initialSavedDraft.revision;
     const query = new URLSearchParams(window.location.search);
+    if (query.get('savingsQa') === '1') { setSavingsQa(true); return; }
     const isValuesQa = query.get('valuesQa') === '1';
     const qaWindow = window as Window & { __offerWorkspaceValuesQaCalls?: string[] };
     if (isValuesQa) qaWindow.__offerWorkspaceValuesQaCalls = [];
@@ -264,7 +267,9 @@ export default function OfferWorkspacePreviewClient() {
   }, []);
 
   return <Box p={{ base: '12px', md: '28px' }} maxW="1600px" mx="auto">
+    {savingsQa ? <SavingsPreview /> : <>
     <Flex justify="end" mb="12px"><Tooltip label={valuesQa ? 'QA · wyłącznie syntetyczne odpowiedzi valuation, rates i energy. Edycja oraz zapis wyłączone.' : `Dane testowe, bez zapisu do produkcji. 24 pliki, 8760 godzin. Import 13530,737 kWh, eksport ${nullCase ? '5761,273 kWh (brak odczytu)' : '5835,751 kWh'}. PV 9,9 kWp, 40°, 170°.`}><Badge colorScheme="orange" fontSize="10px">{valuesQa ? 'QA · wartości syntetyczne · zapis wyłączony' : 'Podgląd testowy · bez zapisu na produkcji'}</Badge></Tooltip></Flex>
     <OfferWorkspacePanel projectId="workspace-preview" actorId={valuesQa ? 'values-qa-fixture' : 'fixture-user'} canEdit={!valuesQa} templatePreview={!valuesQa} />
+    </>}
   </Box>;
 }

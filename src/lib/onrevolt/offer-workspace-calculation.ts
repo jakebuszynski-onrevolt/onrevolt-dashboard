@@ -60,7 +60,36 @@ export async function calculateOfferWorkspaceScenario(input: OfferCalculationInp
   const { workspace, draft, energy } = input;
   const result = blockedOfferCalculation([]);
   result.warnings = [...energy.issues];
-  const settings = draft.calculation || defaultOfferCalculationAssumptions();
+  const settings = { ...(draft.calculation || defaultOfferCalculationAssumptions()) };
+  if (settings.billingCycleMonths == null) {
+    settings.billingCycleMonths = 2;
+    const assumption = 'Szacunek rachunku: nie podano cyklu rozliczeniowego; przyjęto 2 miesiące.';
+    result.warnings.push(assumption);
+    result.recommendationReasons!.push(assumption);
+  }
+  const billingCycleMonths = settings.billingCycleMonths;
+  const firstEnergyMonth = energy.intervals?.length
+    ? offerLocalTime(energy.intervals[0].startUtc).slice(0, 7) : null;
+  if (billingCycleMonths > 1 && settings.billingCycleStartMonth == null && firstEnergyMonth) {
+    settings.billingCycleStartMonth = firstEnergyMonth;
+    const assumption = `Szacunek rachunku: nie podano początku cyklu (${billingCycleMonths} mies.); przyjęto pierwszy miesiąc danych (${firstEnergyMonth}) jako kotwicę.`;
+    result.warnings.push(assumption);
+    result.recommendationReasons!.push(assumption);
+  }
+  for (const mode of ['NET_METERING', 'NET_BILLING'] as const) {
+    if (draft.currentSettlement !== mode && draft.targetSettlement !== mode) continue;
+    const credit = mode === 'NET_METERING';
+    const balanceKey = credit ? 'initialCreditKwh' : 'initialDepositPln';
+    const lots = credit ? settings.initialCreditLots : settings.initialDepositLots;
+    if (settings[balanceKey] === null && !lots?.length) {
+      settings[balanceKey] = 0;
+      const assumption = credit
+        ? 'Szacunek rachunku: brak salda początkowego opustu; przyjęto 0 kWh.'
+        : 'Szacunek rachunku: brak salda początkowego depozytu; przyjęto 0 zł.';
+      result.warnings.push(assumption);
+      if (draft.targetSettlement === mode) result.recommendationReasons!.push(assumption);
+    }
+  }
   const selected = workspace.templates.filter(template => draft.selectedTemplateIds.includes(template.id));
   if (selected.length !== draft.selectedTemplateIds.length) throw new Error('Wybrany zestaw nie istnieje już w katalogu.');
   result.evaluatedTemplateIds = selected.map(template => template.id);
@@ -79,7 +108,7 @@ export async function calculateOfferWorkspaceScenario(input: OfferCalculationInp
   if (!rows?.length || rows.some(row => row.loadKwh === null || row.pvKwh === null || row.importKwh === null || row.exportKwh === null)) reasons.push('Brak pełnego godzinowego profilu energii do symulacji.');
   if (workspace.measurements.months.length !== 12 || workspace.measurements.months.some(month => month.importKwh === null || (draft.existingPv.powerKw !== 0 && month.exportKwh === null))) reasons.push('Porównanie roczne wymaga 12 pełnych miesięcy pomiarów.');
   if (draft.currentSettlement === null || draft.targetSettlement === null) reasons.push('Wybierz obecny i proponowany system rozliczeń.');
-  if (!settings.billingCycleMonths) incomplete.push('Uzupełnij cykl rozliczeniowy w założeniach obliczeń.');
+  if (!billingCycleMonths) incomplete.push('Uzupełnij cykl rozliczeniowy w założeniach obliczeń.');
   const connectionPower = workspace.input.reportDetails?.connectionPowerKw;
   if (!connectionPower) reasons.push('Uzupełnij moc przyłączeniową w danych energetycznych.');
   if (selected.length && pricing.systemCostBeforeFinancing === null) {
@@ -124,11 +153,11 @@ export async function calculateOfferWorkspaceScenario(input: OfferCalculationInp
   }
   if (reasons.length) return { ...result, reasons, warnings: [...new Set([...result.warnings, ...incomplete])] };
   const intervals = rows!;
-  if (!settings.billingCycleMonths) {
+  if (!billingCycleMonths) {
     return { ...result, reasons: ['Nie można rozliczyć roku bez jawnego cyklu rozliczeniowego.'],
       warnings: [...new Set([...result.warnings, ...incomplete])] };
   }
-  const context = { annualUsageKwh: workspace.measurements.totalsImportKwh!, billingCycleMonths: settings.billingCycleMonths, connectionPowerKw: connectionPower! };
+  const context = { annualUsageKwh: workspace.measurements.totalsImportKwh!, billingCycleMonths, connectionPowerKw: connectionPower! };
   const vatBasis = workspace.clientType === 'B2B' ? 'NET' as const : 'GROSS' as const;
   const totalPv = draft.existingPv.powerKw! + (addedPv?.powerKw || 0);
   const hasOpeningBalance = (mode: NonNullable<OfferWorkspaceDraft['targetSettlement']>) => mode === 'NET_METERING'
@@ -278,6 +307,8 @@ export async function calculateOfferWorkspaceScenario(input: OfferCalculationInp
       policy: targetPolicy, costAfterFinancingPln: result.costAfterFinancingPln });
     result.estimatedPaybackYears = estimate.estimatedPaybackYears;
     result.estimatedAnnualSavingsPln = estimate.annualSavingsPln;
+    result.estimatedAnnualTargetCostPln = estimate.annualTargetCostPln;
+    result.estimatedAnnualTariffOnlyCostPln = estimate.annualTariffOnlyCostPln;
     result.estimateHorizonYears = estimate.horizonYears;
     result.warnings.push(estimate.annualSavingsPln.length
       ? `Szacunkowy zwrot: powtórzenie profilu 12 miesięcy przez ${estimate.horizonYears} lat, z przenoszeniem i wygasaniem transz depozytu. Stałe ceny, zużycie i praca magazynu; bez dyskontowania, degradacji i kosztów serwisu.`

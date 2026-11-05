@@ -7,8 +7,10 @@ import { ChakraProvider } from '@chakra-ui/react';
 import {
   energyStepPath,
   niceEnergyCeil,
+  offerEnergyAxisCeil,
   offerChartValuation,
   offerEnergyChartRows,
+  OfferEnergyPlot,
   OfferEnergySummary,
   type EnergyChartRow,
   type OfferEnergyForecast,
@@ -21,8 +23,31 @@ const row = (loadKwh: number | null): EnergyChartRow => ({
   importKwh: null, exportKwh: null,
 });
 
+function renderPlot(rows: EnergyChartRow[], annual: boolean) {
+  const globalWithReact = globalThis as typeof globalThis & { React?: typeof React };
+  const previousReact = globalWithReact.React;
+  globalWithReact.React = React;
+  try {
+    return renderToStaticMarkup(createElement(ChakraProvider, null, createElement(OfferEnergyPlot, { rows, annual })));
+  } finally {
+    if (previousReact === undefined) delete globalWithReact.React;
+    else globalWithReact.React = previousReact;
+  }
+}
+
 test('wykres zachowuje schodki i szerokość pola z mockupa', () => {
   assert.equal(energyStepPath([row(2), row(5)], 'loadKwh', value => 100 - value), 'M58 98L519 98L519 95L980 95');
+});
+
+test('wykres prognozy uzupełnia magazyn po miesiącu i dokładnej godzinie wybranego dnia', () => {
+  const measurements = { months: [{ period: '2026-01', importKwh: 20, exportKwh: 4 }], dayProfiles: [{ period: '2026-01', date: '2026-01-05', dayType: 'workday', hours: [{ hour: 0, importKwh: 2, exportKwh: 0 }] }] };
+  const forecast = { measurements, energy: { months: [], dayProfiles: [] }, battery: { months: { '2026-01': 12 }, hours: { '2026-01-05T00': 0, '2026-01-05T01': 3, '2026-01-06T01': 7 } } } as unknown as OfferEnergyForecast;
+  const workspace = { measurements } as unknown as WorkspaceData;
+  assert.equal(offerEnergyChartRows(workspace, 'all', 'workday', true, forecast)[0].batteryKwh, 12);
+  const rows = offerEnergyChartRows(workspace, '2026-01', 'workday', true, forecast);
+  assert.equal(rows[0].batteryKwh, 0);
+  assert.equal(rows[1].batteryKwh, 3);
+  assert.equal(rows[2].batteryKwh, null);
 });
 
 test('brakujące dane przerywają linię zamiast udawać zero lub ciągłość', () => {
@@ -36,6 +61,18 @@ test('skala mockupa obejmuje także małe wartości godzinowe', () => {
   assert.equal(niceEnergyCeil(0), 1);
   assert.equal(niceEnergyCeil(0.34), 0.4);
   assert.equal(niceEnergyCeil(1876), 2000);
+});
+
+test('skala miesięczna zaokrągla dodatni zakres do tysięcy, zachowując zakres godzinowy i oddanie', () => {
+  assert.equal(offerEnergyAxisCeil(2670, true), 3000);
+  assert.equal(offerEnergyAxisCeil(2670, false), 4000);
+
+  const chartRow = { ...row(2670), title: 'styczeń', label: 'sty', importKwh: 2670, exportKwh: 2670 };
+  const markup = renderPlot([chartRow], true);
+  assert.match(markup, /data-energy-plot="annual"/);
+  assert.match(markup, />3[\s\u00a0\u202f]?000<\/text>/);
+  assert.match(markup, /data-series="export"/);
+  assert.match(markup, /<text x="48" y="175"[^>]*>oddanie<\/text>/);
 });
 
 test('wykres łączy model i pomiary po okresie oraz dokładnej dacie, a miesiąc pokazuje 24 godziny', () => {

@@ -50,8 +50,9 @@ function hourlyIntervals(intervals: OfferMeasurementInterval[]): OfferMeasuremen
       Date.parse(row.startUtc) !== hour + index * step || Date.parse(row.endUtc) !== hour + (index + 1) * step)) {
       throw new Error('Niepełna lub zduplikowana godzina pomiarowa.');
     }
-    const direction = (key: 'import' | 'export') => sorted.some(row => row[key]?.source !== 'measured') ? null : {
-      valueKwh: sorted.reduce((total, row) => total + row[key]!.valueKwh, 0), source: 'measured' as const,
+    const direction = (key: 'import' | 'export') => sorted.some(row => row[key] == null) ? null : {
+      valueKwh: sorted.reduce((total, row) => total + row[key]!.valueKwh, 0),
+      source: sorted.some(row => row[key]!.source === 'estimated') ? 'estimated' as const : 'measured' as const,
       fileIds: [...new Set(sorted.flatMap(row => row[key]!.fileIds))],
     };
     return { ...sorted[0], startUtc: new Date(hour).toISOString(), endUtc: new Date(hour + 3_600_000).toISOString(), import: direction('import'), export: direction('export') };
@@ -96,8 +97,8 @@ export function buildOfferWorkspaceEnergy(input: {
       const modelled = input.noPv ? 0 : pv.get(hourStart);
       if (modelled == null) throw new Error(`Brak modelu PV dla ${interval.startUtc}.`);
       production[index] = modelled * duration;
-      const imported = interval.import?.source === 'measured' ? interval.import.valueKwh : null;
-      const exported = interval.export?.source === 'measured' ? interval.export.valueKwh : null;
+      const imported = interval.import?.valueKwh ?? null;
+      const exported = interval.export?.valueKwh ?? null;
       if (imported != null && Number.isFinite(imported) && imported >= 0
         && (input.noPv || exported != null && Number.isFinite(exported) && exported >= 0)) {
         imports[index] = imported;
@@ -112,8 +113,8 @@ export function buildOfferWorkspaceEnergy(input: {
       const loadKwh = valid.has(index) && reconstructed ? reconstructed[index] : null;
       rows.push({
         startUtc: interval.startUtc, endUtc: interval.endUtc,
-        importKwh: interval.import?.source === 'measured' ? interval.import.valueKwh : null,
-        exportKwh: input.noPv ? 0 : interval.export?.source === 'measured' ? interval.export.valueKwh : null,
+        importKwh: interval.import?.valueKwh ?? null,
+        exportKwh: input.noPv ? 0 : interval.export?.valueKwh ?? null,
         date: interval.localStart.slice(0, 10), period: interval.localStart.slice(0, 7),
         hour: Number(interval.localStart.slice(11, 13)),
         loadKwh, pvKwh: input.acceptMeasuredExportReconstruction && valid.has(index) && reconstructed
@@ -138,6 +139,8 @@ export function buildOfferWorkspaceEnergy(input: {
       pvKwh: month.importKwh != null || month.exportKwh != null ? values.pvKwh : null };
   });
   const issues: string[] = [];
+  const estimatedHours = intervals.filter(row => row.import?.source === 'estimated' || row.export?.source === 'estimated');
+  if (estimatedHours.length) issues.push(`Symulacja uwzględnia wartości szacowane przez operatora: ${estimatedHours.length} godz. (pierwsza: ${estimatedHours[0].localStart.slice(0, 16).replace('T', ' ')}). Nie są to brakujące pomiary ani wartości dopisane przez CRM.`);
   if (!canReconstruct) issues.push(input.existingBatteryPresent == null
     ? 'Potwierdź, czy w okresie pomiarów działał magazyn energii. Bez tego nie odtwarzamy zużycia budynku.'
     : 'Instalacja miała magazyn: odtworzenie zużycia wymaga pomiarów produkcji i przepływów magazynu.');
