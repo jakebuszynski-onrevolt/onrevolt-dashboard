@@ -22,6 +22,29 @@ const baseInput = {
   depositPayoutRate: 0.2,
 };
 
+test('selected daily profile keeps weekend tariff timing instead of averaging every month', () => {
+  const daily: Record<string, number[]> = {}, byDate: Record<string, any> = {};
+  const monthly = new Array(12).fill(0);
+  const tariff = { zone_model: 'highmidlow', use_monthly: true, cheap_saturday: true, cheap_sunday: true,
+    monthly: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [i + 1, new Array(24).fill(1)])),
+    variable: [{ label: 'Energia czynna', window_code: 'high', price: 1.2 }, { label: 'Energia czynna', window_code: 'low', price: 0.2 }], fixed: [] };
+  for (let day = new Date('2026-01-01T12:00:00Z'); day.getUTCFullYear() === 2026; day.setUTCDate(day.getUTCDate() + 1)) {
+    const date = day.toISOString().slice(0, 10), weekend = [0, 6].includes(day.getUTCDay());
+    daily[date] = new Array(24).fill(weekend ? 1 : 0);
+    monthly[day.getUTCMonth()] += weekend ? 24 : 0;
+    byDate[date] = tariff;
+  }
+  const input = { ...baseInput, pvPowerKw: 0, scenarioYear: 2026, monthlyConsumptionKwh: monthly,
+    dailyConsumptionKwh: daily, currentTariffHistory: { strict: true as const, revision: 1, byDate, issues: [] } };
+  const result = calculateEnergyScenario(input);
+  const expected = monthly.reduce((a, b) => a + b, 0) * 0.2;
+  assert.ok(Math.abs(result.baselineAnnualCostGross - expected) < 0.01);
+  assert.ok(calculateEnergyScenario({ ...input, dailyConsumptionKwh: undefined }).baselineAnnualCostGross > expected * 2);
+  const missing = { ...daily }; delete missing['2026-01-01'];
+  assert.throws(() => calculateEnergyScenario({ ...input, dailyConsumptionKwh: missing }), /dailyConsumptionKwh/);
+  assert.throws(() => calculateEnergyScenario({ ...input, monthlyConsumptionKwh: new Array(12).fill(1) }), /Suma profilu/);
+});
+
 test('CRM and RE price the same dated load identically while proposed tariff stays unchanged', () => {
   const engine = createRequire(import.meta.url)('../../../public/shared/re-tariff-engine.js');
   const g11 = { zone_model: 'all', variable: [{ label: 'Energia czynna', window_code: 'all', price: 0.6 },

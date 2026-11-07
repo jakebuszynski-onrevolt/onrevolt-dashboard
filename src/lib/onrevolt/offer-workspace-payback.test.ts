@@ -62,6 +62,7 @@ function estimate(
   options: {
     settlement?: Partial<NetBillingPolicy>;
     horizonYears?: number;
+    annualPriceGrowthRate?: number;
     intervalEnergyCosts?: { tariffOnly?: number[]; proposed?: number[] };
   } = {},
 ) {
@@ -71,19 +72,84 @@ function estimate(
     policy: policy(options.settlement),
     costAfterFinancingPln,
     ...(options.horizonYears === undefined ? {} : { horizonYears: options.horizonYears }),
+    ...(options.annualPriceGrowthRate === undefined ? {} : { annualPriceGrowthRate: options.annualPriceGrowthRate }),
   });
 }
 
 test('reconciles year one and fractionally interpolates monthly payback', () => {
   const tariffOnly = months.map((month) => profileMonth(month, 100));
   const proposed = months.map((month) => profileMonth(month, 90));
-  const result = estimate(tariffOnly, proposed, 25, { horizonYears: 2 });
+  const result = estimate(tariffOnly, proposed, 25, { horizonYears: 2, annualPriceGrowthRate: 0 });
 
   assert.deepEqual(result.annualTariffOnlyCostPln, [1200, 1200]);
   assert.deepEqual(result.annualTargetCostPln, [1080, 1080]);
   assert.deepEqual(result.annualSavingsPln, [120, 120]);
+  assert.equal(result.annualPriceGrowthRate, 0);
+  assert.equal(result.annualExportPriceGrowthRate, 0);
+  assert.equal(result.monthlyTariffOnlyCostPln.length, 24);
+  assert.equal(result.monthlyTargetCostPln.length, 24);
+  assert.deepEqual(result.monthlyTariffOnlyCostPln.slice(0, 12), tariffOnly.map(row => row.cashDuePln));
+  assert.deepEqual(result.monthlyTargetCostPln.slice(0, 12), proposed.map(row => row.cashDuePln));
   assert.equal(result.estimatedPaybackYears, 25 / 10 / 12);
   assert.equal(result.horizonYears, 2);
+});
+
+test('defaults to 5% annual purchase-cost growth and interpolates payback from monthly costs', () => {
+  const tariffOnly = months.map((month) => profileMonth(month, 100));
+  const proposed = months.map((month) => profileMonth(month, 90));
+  const result = estimate(tariffOnly, proposed, 130, { horizonYears: 2 });
+
+  assert.deepEqual(result.annualTariffOnlyCostPln, [1200, 1260]);
+  assert.deepEqual(result.annualTargetCostPln, [1080, 1134]);
+  assert.deepEqual(result.annualSavingsPln, [120, 126]);
+  assert.equal(result.annualPriceGrowthRate, 0.05);
+  assert.equal(result.annualExportPriceGrowthRate, 0);
+  assert.equal(result.monthlyTariffOnlyCostPln[0], 100);
+  assert.equal(result.monthlyTariffOnlyCostPln[12], 105);
+  assert.equal(result.monthlyTargetCostPln[0], 90);
+  assert.equal(result.monthlyTargetCostPln[12], 94.5);
+  assert.ok(Math.abs(result.estimatedPaybackYears! - (12 + 10 / 10.5) / 12) < 1e-12);
+});
+
+test('reapplies nominal export deposits against growing purchases without growing export value', () => {
+  const tariffOnly = months.map((month) => profileMonth(month, 100));
+  const proposed = months.map((month, index) => profileMonth(month, 100, {
+    depositEarnedPln: index === 0 ? 50 : 0,
+    depositUsedPln: index === 1 ? 50 : 0,
+  }));
+  const result = estimate(tariffOnly, proposed, 100, { horizonYears: 2 });
+
+  assert.equal(result.monthlyTargetCostPln[1], 50);
+  assert.equal(result.monthlyTargetCostPln[13], 55);
+  assert.equal(result.annualTargetCostPln[1], 1210);
+  assert.equal(result.annualExportPriceGrowthRate, 0);
+});
+
+test('annual growth applies to distribution and fixed charges', () => {
+  const tariffOnly = months.map((month) => profileMonth(month, 0, { distributionCostPln: 80, fixedCostPln: 20 }));
+  const proposed = months.map((month) => profileMonth(month, 0, { distributionCostPln: 80, fixedCostPln: 20 }));
+  const result = estimate(tariffOnly, proposed, 100, { horizonYears: 2 });
+
+  assert.deepEqual(result.annualTargetCostPln, [1200, 1260]);
+  assert.equal(result.monthlyTargetCostPln[0], 100);
+  assert.equal(result.monthlyTargetCostPln[12], 105);
+});
+
+test('opening deposit tranches keep their nominal FIFO amount as purchase costs rise', () => {
+  const tariffOnly = months.map((month) => profileMonth(month, 100, { depositUsedPln: 100 }));
+  const proposed = months.map((month) => profileMonth(month, 100, { depositUsedPln: 100 }));
+  const result = estimate(tariffOnly, proposed, 100, {
+    settlement: {
+      initialDeposit: [{ amountPln: 1500, creditedMonth: '2026-01', expiresMonth: '2028-01', refundCapPln: 0 }],
+      depositExpiryMonths: 24,
+    },
+    horizonYears: 2,
+  });
+
+  assert.deepEqual(result.annualTargetCostPln, [0, 960]);
+  assert.equal(result.monthlyTargetCostPln[12], 0);
+  assert.equal(result.monthlyTargetCostPln[13], 0);
+  assert.equal(result.monthlyTargetCostPln[14], 15);
 });
 
 test('carries pending credit into the next year and expires dated opening credit', () => {
@@ -102,6 +168,7 @@ test('carries pending credit into the next year and expires dated opening credit
       initialDeposit: [{ amountPln: 150, creditedMonth: '2026-01', expiresMonth: '2027-01', refundCapPln: 0 }],
     },
     horizonYears: 2,
+    annualPriceGrowthRate: 0,
   });
 
   assert.deepEqual(result.annualTargetCostPln, [0, 60]);
@@ -138,6 +205,10 @@ test('returns unavailable when monthly RDN energy is negative', () => {
   assert.deepEqual(result.annualSavingsPln, []);
   assert.deepEqual(result.annualTargetCostPln, []);
   assert.deepEqual(result.annualTariffOnlyCostPln, []);
+  assert.deepEqual(result.monthlyTargetCostPln, []);
+  assert.deepEqual(result.monthlyTariffOnlyCostPln, []);
+  assert.equal(result.annualPriceGrowthRate, 0.05);
+  assert.equal(result.annualExportPriceGrowthRate, 0);
 });
 
 test('returns unavailable when negative interval energy is hidden by a positive monthly total', () => {

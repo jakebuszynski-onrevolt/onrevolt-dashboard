@@ -3,6 +3,7 @@
 import { useRef } from 'react';
 import { FiArrowLeft, FiDownload, FiMaximize2, FiPrinter } from 'react-icons/fi';
 import { buildOfferReport, monthNames } from 'lib/onrevolt/offer-report';
+import { monthlyCellFill } from 'lib/onrevolt/monthly-cell-shading';
 
 type OfferDocumentProps = {
   offer: any;
@@ -377,13 +378,15 @@ function MonthSummary({ months }: { months: ReturnType<typeof buildOfferReport>[
     <Panel title="Podsumowanie roczne" className="re-month-summary">
       <div className="re-month-head"><span />{monthNames.map((name) => <strong key={name}>{name.slice(0, 3)}</strong>)}</div>
       {rows.map(([label, key, tone]) => {
-        const maximum = Math.max(1, ...months.map((month) => numberValue(month[key])));
+        const rowValues = months.map((month) => numberValue(month[key]) > 0 ? month[key] : null);
         return (
           <div className="re-month-row" key={key}>
             <span>{label} (kWh)</span>
             {months.map((month) => {
               const value = numberValue(month[key]);
-              return <div key={month.month}><i className={tone} style={{ opacity: value > 0 ? 0.22 + value / maximum * 0.78 : 0.08 }} /><small>{value > 0 ? money(value) : '-'}</small></div>;
+              const shadingValue = value > 0 ? month[key] : null;
+              const shadingTone = tone === 'battery' ? 'storage' : tone;
+              return <div key={month.month}><i className={tone} style={{ backgroundColor: monthlyCellFill(shadingTone, shadingValue, rowValues) }} /><small>{value > 0 ? money(value) : '-'}</small></div>;
             })}
           </div>
         );

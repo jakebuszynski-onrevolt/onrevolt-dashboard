@@ -116,7 +116,7 @@ test('wybrany koszt katalogowy jest widoczny bez kalkulacji i pozostaje netto dl
   assert.match(markup, /Koszt systemu przed finansowaniem: [^\"]+ zł/);
   assert.ok(markup.includes(`aria-label="Koszt systemu przed finansowaniem: ${renderedMoney(expected)} zł"`));
   assert.ok(markup.includes(renderedMoney(expected)));
-  assert.match(markup, /Cena netto \[zł\]/);
+  assert.match(markup, /Cena jednostkowa netto \[zł\]/);
   assert.match(markup, /Przed finansowaniem · cena katalogowa/);
   assert.match(markup, /aria-label="Koszt systemu przed finansowaniem"/);
   assert.match(markup, /aria-label="Koszt systemu po dofinansowaniach"/);
@@ -224,12 +224,33 @@ test('szacunkowy zwrot jest oznaczony osobno i pokazuje zielony koszt końcowy w
   assert.match(markup, /aria-label="Ulga termomodernizacyjna · szacunek warunkowy"/);
   assert.match(markup, /Wybrany najkrótszy szacunkowy zwrot/);
   assert.match(markup, /Magazyn 10 kWh/);
-  assert.match(markup, /Wybierz zwycięski wariant/);
+  assert.match(markup, /Wybrany wariant/);
   assert.match(markup, /aria-label="Koszt systemu po dofinansowaniach"/);
   assert.ok(markup.includes(renderedMoney(2050)));
   assert.ok(markup.includes(renderedMoney(250)));
   assert.ok(markup.includes(renderedMoney(100)));
   assert.doesNotMatch(markup, /Rekomendacja systemu|Wariant wskazany przez obliczenie zwrotu/);
+});
+
+test('zmieniona cena w ofercie aktualizuje tabelę i oznacza pozycję bez zmiany modelu', () => {
+  const draft = { ...emptyOfferWorkspaceDraft(), selectedTemplateIds: [battery.id], saleVatMode: 'REDUCED_8' as const,
+    configurationEdits: [{ templateId: battery.id, items: [{ itemId: battery.items[0].id,
+      description: 'Opis indywidualny', pricing: { unitPurchaseNet: 1500 } }] }] };
+  const markup = renderConfiguration({ templates: [battery], draft });
+  assert.match(markup, /Opis indywidualny/);
+  assert.match(markup, /Magazyn 10 kWh Model/);
+  assert.match(markup, /Zmieniona w tej ofercie/);
+  assert.match(markup, /Cena indywidualna przed finansowaniem/);
+  assert.ok(markup.includes(renderedMoney((1500 + 100) * 1.2 * 1.08)));
+  assert.equal(battery.items[0].description, 'Magazyn 10 kWh · urządzenie');
+});
+
+test('usunięta pozycja katalogowa w lokalnym szkicu pokazuje konflikt bez wywrócenia widoku', () => {
+  const draft = { ...emptyOfferWorkspaceDraft(), selectedTemplateIds: [battery.id],
+    configurationEdits: [{ templateId: battery.id, items: [{ itemId: 'no-longer-in-catalog', description: 'Zachowaj wpis' }] }] };
+  const markup = renderConfiguration({ templates: [battery], draft });
+  assert.match(markup, /Własne zmiany pozostają w szkicu/);
+  assert.match(markup, /Wczytaj pozycje konfiguracji ponownie/);
 });
 
 test('nieaktualna kalkulacja nie jest pokazywana jako bieżący szacunek finansowania', () => {

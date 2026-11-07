@@ -51,6 +51,10 @@ test('savings presentation restores gross purchase once and keeps paid bill comp
     estimatedAnnualTargetCostPln: [100, 90],
     estimatedAnnualTariffOnlyCostPln: [130, 120],
     estimatedAnnualSavingsPln: [30, 30],
+    estimatedMonthlyTargetCostPln: [...Array(12).fill(100 / 12), ...Array(12).fill(90 / 12)],
+    estimatedMonthlyTariffOnlyCostPln: [...Array(12).fill(130 / 12), ...Array(12).fill(120 / 12)],
+    estimatedAnnualPriceGrowthRate: 0.05,
+    estimatedAnnualExportPriceGrowthRate: 0,
     estimateHorizonYears: 2,
     estimatedPaybackYears: 1.75,
     costAfterFinancingPln: 50,
@@ -72,7 +76,13 @@ test('savings presentation restores gross purchase once and keeps paid bill comp
     'NET_BILLING').averageMonthlyFixedCostPln, 18);
   assert.equal(result.projection?.totalSavingsPln, 60);
   assert.equal(result.projection?.netSavingsAfterCostPln, 10);
-  assert.equal(result.projection?.estimatedPaybackYears, 1);
+  assert.equal(result.projection?.estimatedPaybackYears, 1.75);
+  assert.equal(result.projection?.annualPriceGrowthRate, 0.05);
+  assert.equal(result.projection?.annualExportPriceGrowthRate, 0);
+  assert.equal(result.projection?.cumulativeTariffOnlyCostPln[0], 0);
+  assert.equal(result.projection?.cumulativeTargetCostPln[0], 50);
+  assert.ok(Math.abs(result.projection!.cumulativeTargetCostPln.at(-1)! - 240) < 1e-6);
+  assert.equal(result.projection?.cumulativeTargetCostPln.length, 25);
 });
 
 test('net-metering rate uses billed plus covered kWh and zero import has no fabricated rate', () => {

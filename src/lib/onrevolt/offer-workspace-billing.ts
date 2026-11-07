@@ -106,6 +106,8 @@ export type OfferBillingResolvedRate = {
     status: 'ready';
     date: string;
     hour: number;
+    energyZone: string;
+    distributionZone: string;
     energyBuyPlnPerKwh: number;
     distributionBuyPlnPerKwh: number;
     depositCreditPricePlnPerKwh: number | null;
@@ -159,6 +161,26 @@ export type OfferWorkspaceScenarioResult = {
   result: OfferBillingScenarioResult;
 };
 
+export type OfferBillingComponentCategory =
+  | 'network' | 'quality' | 'oze' | 'cogeneration' | 'capacity'
+  | 'commercial' | 'fixed_network' | 'subscription' | 'other_variable' | 'other_fixed';
+
+export type OfferBillingCostComponent = {
+  componentKey: string;
+  label: string;
+  category: OfferBillingComponentCategory;
+  amountPln: number;
+};
+
+export type OfferBillingIntervalTariff = {
+  startUtc: string;
+  endUtc: string;
+  energyZone: string;
+  distributionZone: string;
+  energyRatePlnPerKwh: number;
+  distributionRatePlnPerKwh: number;
+};
+
 export type OfferBillingIntervalResult = {
   startUtc: string;
   endUtc: string;
@@ -186,6 +208,10 @@ export type OfferBillingIntervalResult = {
   creditExpiredKwh: number;
   creditBalanceKwh: number | null;
   cashDuePln: number;
+  /** Exact variable distribution breakdown on the kWh billed for distribution. */
+  distributionComponents?: OfferBillingCostComponent[];
+  /** Exact fixed-fee breakdown, allocated over the same local day as fixedCostPln. */
+  fixedComponents?: OfferBillingCostComponent[];
 };
 
 export type OfferBillingMonthResult = Omit<OfferBillingIntervalResult, 'startUtc' | 'endUtc'> & {
@@ -196,6 +222,8 @@ export type OfferBillingScenarioResult = {
   intervals: OfferBillingIntervalResult[];
   months: OfferBillingMonthResult[];
   totals: Omit<OfferBillingMonthResult, 'month'>;
+  /** Adjacent intervals with identical zones and prices are merged into one range. */
+  intervalTariffs?: OfferBillingIntervalTariff[];
   netBillingContinuation?: OfferNetBillingContinuation;
 };
 
@@ -210,7 +238,22 @@ export type OfferWorkspaceBillingResult =
 
 type LocalParts = { date: string; month: string; hour: number; minute: number; offsetMinutes: number };
 type PreparedInterval = OfferBillingIntervalInput & { start: number; end: number; local: LocalParts };
-type RateEntry = { tariff: ClientTariffPayload; energy: number; distribution: number; vatRate: number; fixedDaily: number };
+type ComponentRate = Omit<OfferBillingCostComponent, 'amountPln'> & { ratePlnPerKwh?: number; dailyPln?: number };
+type OfferTariffRateDetails = {
+  energy: number; distribution: number; capacityChargeRate: number;
+  energyZone: string; distributionZone: string; capacityChargePending: boolean;
+};
+type RateEntry = {
+  tariff: ClientTariffPayload;
+  energy: number;
+  distribution: number;
+  vatRate: number;
+  fixedDaily: number;
+  energyZone: string;
+  distributionZone: string;
+  distributionComponents: Array<ComponentRate & { ratePlnPerKwh: number }>;
+  fixedComponents: Array<ComponentRate & { dailyPln: number }>;
+};
 type LedgerLot = { amount: number; creditedMonth: string; expiresMonth: string; refundCap: number | null; order: number };
 type ValidatedExportPricePeriod = { start: number; end: number; depositCredit: number; refundCap: number | null };
 
@@ -404,7 +447,9 @@ export function canonicalNetRows(
     const runtimePrice = finite(row[field], `${label}[${index}].${field}`);
     const close = (left: number, right: number) => Math.abs(left - right) <= 1e-8 * Math.max(1, Math.abs(right));
     const roundedFixedGross = field === 'amount' && close(runtimePrice, Math.round((gross + Number.EPSILON) * 100) / 100);
-    if (!close(runtimePrice, net) && !close(runtimePrice, gross) && !roundedFixedGross) {
+    const roundedVariableGross = field === 'price'
+      && runtimePrice === Number(gross.toFixed(4));
+    if (!close(runtimePrice, net) && !close(runtimePrice, gross) && !roundedFixedGross && !roundedVariableGross) {
       throw new Error(`Cena pozycji ${label} ${storedKey} nie odpowiada jej zweryfikowanym wartościom netto/brutto.`);
     }
     return { ...row, component_key: storedKey, [field]: net };
@@ -469,12 +514,125 @@ function basisAmount(netAmount: number, vatRate: number, basis: 'NET' | 'GROSS')
   return basis === 'GROSS' ? netAmount * (1 + vatRate) : netAmount;
 }
 
+function daysInMonth(date: string): number {
+  return new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).getUTCDate();
+}
+
+function componentCategory(label: string, fixed: boolean): OfferBillingComponentCategory {
+  const value = normaliseLabel(label);
+  if (value.includes('oplata mocowa')) return 'capacity';
+  if (value.includes('jako')) return 'quality';
+  if (value.includes('oze')) return 'oze';
+  if (value.includes('kogener')) return 'cogeneration';
+  if (value.includes('handl') || value.includes('komercj')) return 'commercial';
+  if (fixed && (value.includes('abonament') || value.includes('subscription'))) return 'subscription';
+  if (value.includes('sieci')) return fixed ? 'fixed_network' : 'network';
+  return fixed ? 'other_fixed' : 'other_variable';
+}
+
+function sumComponentRates(rows: Array<{ ratePlnPerKwh: number }>): number {
+  return rows.reduce((sum, row) => sum + row.ratePlnPerKwh, 0);
+}
+
+function assertReconciled(actual: number, expected: number, label: string): void {
+  const tolerance = 1e-8 * Math.max(1, Math.abs(actual), Math.abs(expected));
+  if (Math.abs(actual - expected) > tolerance) {
+    throw new Error(`${label}: rozbicie składników nie uzgadnia się z kwotą taryfy.`);
+  }
+}
+
+function reconcileComponents<T extends { amountPln: number }>(
+  components: T[],
+  expected: number,
+  label: string,
+): T[] {
+  const sum = components.reduce((total, component) => total + component.amountPln, 0);
+  assertReconciled(sum, expected, label);
+  if (components.length > 0) components[components.length - 1].amountPln += expected - sum;
+  else if (Math.abs(expected) > 1e-10) throw new Error(`${label}: brak składników dla niezerowej kwoty taryfy.`);
+  return components;
+}
+
+function prepareFixedComponents(
+  tariff: ClientTariffPayload,
+  date: string,
+  context: OfferBillingContext,
+  vatRate: number,
+  vatBasis: 'NET' | 'GROSS',
+  fixedDailyNet: number,
+): Array<ComponentRate & { dailyPln: number }> {
+  const days = daysInMonth(date);
+  const rows = tariff.fixed.flatMap((row, index) => {
+    const oneRowTariff = {
+      ...tariff,
+      fixed: [row],
+      variable: tariff.variable.filter((candidate) => !normaliseLabel(candidate.label).includes('oplata mocowa')),
+      capacity_charge: undefined,
+    } as ClientTariffPayload;
+    const dailyNet = ReTariffEngine.fixedDaily(oneRowTariff, date, context);
+    if (!Number.isFinite(dailyNet)) throw new Error(`Brak prawidłowej kwoty opłaty stałej ${index} dla ${date}.`);
+    if (dailyNet === 0) return [];
+    const label = String(row.label || row.component_key || `Opłata stała ${index + 1}`);
+    return [{
+      componentKey: String(row.component_key || `fixed-${index}`), label,
+      category: componentCategory(label, true),
+      dailyPln: basisAmount(dailyNet, vatRate, vatBasis),
+    }];
+  });
+  const flatCapacityNet = ReTariffEngine.capacityFlatMonthly(tariff, date, context, true) / days;
+  if (!Number.isFinite(flatCapacityNet)) throw new Error(`Brak prawidłowej opłaty mocowej stałej dla ${date}.`);
+  if (flatCapacityNet !== 0) {
+    rows.push({
+      componentKey: 'capacity-charge-flat', label: 'Opłata mocowa', category: 'capacity',
+      dailyPln: basisAmount(flatCapacityNet, vatRate, vatBasis),
+    });
+  }
+  const expectedDaily = basisAmount(fixedDailyNet, vatRate, vatBasis);
+  assertReconciled(rows.reduce((sum, row) => sum + row.dailyPln, 0), expectedDaily,
+    `Opłaty stałe ${date}`);
+  return rows;
+}
+
+function prepareDistributionComponents(
+  tariff: ClientTariffPayload,
+  date: string,
+  distributionZone: string,
+  rate: OfferTariffRateDetails,
+  vatRate: number,
+  vatBasis: 'NET' | 'GROSS',
+): Array<ComponentRate & { ratePlnPerKwh: number }> {
+  const rows = tariff.variable.flatMap((row, index) => {
+    if (isEnergyRow(row)) return [];
+    if (row.window_code !== 'all' && row.window_code !== distributionZone) return [];
+    const label = String(row.label || row.component_key || `Składnik dystrybucji ${index + 1}`);
+    if (componentCategory(label, false) === 'capacity') return [];
+    const amount = finite(row.price, `variable[${index}].price`);
+    return [{
+      componentKey: String(row.component_key || `variable-${index}`), label,
+      category: componentCategory(label, false),
+      ratePlnPerKwh: basisAmount(amount, vatRate, vatBasis),
+    }];
+  });
+  if (rate.capacityChargeRate !== 0) {
+    rows.push({
+      componentKey: 'capacity-charge-variable', label: 'Opłata mocowa', category: 'capacity',
+      ratePlnPerKwh: basisAmount(rate.capacityChargeRate, vatRate, vatBasis),
+    });
+  }
+  assertReconciled(sumComponentRates(rows), basisAmount(rate.distribution, vatRate, vatBasis),
+    `Stawki dystrybucyjne ${date} ${distributionZone}`);
+  return rows;
+}
+
 function prepareRates(
   intervals: PreparedInterval[],
   history: ClientTariffHistory,
   context: OfferBillingContext,
   vatBasis: 'NET' | 'GROSS',
-  sharedDailyCache = new Map<string, { tariff: ClientTariffPayload; fixedDaily: number; vatRate: number }>(),
+  sharedDailyCache = new Map<string, {
+    tariff: ClientTariffPayload; fixedDaily: number; vatRate: number;
+    fixedComponents: Array<ComponentRate & { dailyPln: number }>;
+  }>(),
 ): RateEntry[] {
   return intervals.map((interval) => {
     let daily = sharedDailyCache.get(interval.local.date);
@@ -485,7 +643,10 @@ function prepareRates(
       if (!Number.isFinite(fixedDailyNet) || fixedDailyNet < 0) {
         throw new Error(`Brak prawidłowych danych opłat stałych taryfy dla ${interval.local.date}.`);
       }
-      daily = { tariff, vatRate, fixedDaily: basisAmount(fixedDailyNet, vatRate, vatBasis) };
+      daily = {
+        tariff, vatRate, fixedDaily: basisAmount(fixedDailyNet, vatRate, vatBasis),
+        fixedComponents: prepareFixedComponents(tariff, interval.local.date, context, vatRate, vatBasis, fixedDailyNet),
+      };
       sharedDailyCache.set(interval.local.date, daily);
     }
     const rates = ReTariffEngine.rates(daily.tariff, interval.local.date, interval.local.hour,
@@ -496,12 +657,19 @@ function prepareRates(
     if (!Number.isFinite(rates.energy) || !Number.isFinite(rates.distribution) || rates.distribution < 0) {
       throw new Error(`Brak prawidłowych stawek energii lub dystrybucji dla ${interval.local.date} godz. ${interval.local.hour}.`);
     }
+    const rateDetails = rates as typeof rates & OfferTariffRateDetails;
     return {
       tariff: daily.tariff,
       energy: basisAmount(rates.energy, daily.vatRate, vatBasis),
       distribution: basisAmount(rates.distribution, daily.vatRate, vatBasis),
       vatRate: daily.vatRate,
       fixedDaily: daily.fixedDaily,
+      energyZone: rateDetails.energyZone,
+      distributionZone: rateDetails.distributionZone,
+      distributionComponents: prepareDistributionComponents(
+        daily.tariff, interval.local.date, rateDetails.distributionZone, rateDetails, daily.vatRate, vatBasis,
+      ),
+      fixedComponents: daily.fixedComponents,
     };
   });
 }
@@ -537,7 +705,10 @@ export function priceOfferWorkspaceGrid(input: OfferWorkspaceGridPricingInput): 
     const expectedHours = input.totalHours ?? prepared.reduce((sum, row) => sum + (row.end - row.start) / hourMs, 0);
     result.totalHours = finite(expectedHours, 'totalHours', 0);
     const expectedDates = Array.from(new Set([...(input.expectedLocalDates || []), ...prepared.map(row => row.local.date)])).sort();
-    const dailyCache = new Map<string, { tariff: ClientTariffPayload; fixedDaily: number; vatRate: number }>();
+    const dailyCache = new Map<string, {
+      tariff: ClientTariffPayload; fixedDaily: number; vatRate: number;
+      fixedComponents: Array<ComponentRate & { dailyPln: number }>;
+    }>();
     let energy = 0;
     let distribution = 0;
     let fixed = 0;
@@ -556,7 +727,10 @@ export function priceOfferWorkspaceGrid(input: OfferWorkspaceGridPricingInput): 
         if (!Number.isFinite(dailyNet) || dailyNet < 0) throw new Error(`Brak prawidłowych danych opłat stałych taryfy dla ${date}.`);
         fixed += basisAmount(dailyNet, vatRate, input.vatBasis);
         hasFixed = true;
-        dailyCache.set(date, { tariff, vatRate, fixedDaily: basisAmount(dailyNet, vatRate, input.vatBasis) });
+        dailyCache.set(date, {
+          tariff, vatRate, fixedDaily: basisAmount(dailyNet, vatRate, input.vatBasis),
+          fixedComponents: prepareFixedComponents(tariff, date, input.context, vatRate, input.vatBasis, dailyNet),
+        });
         tariffLabels.add(`${tariff.osd_name || tariff.osd_id} ${tariff.code}`);
       } catch (error) {
         issues.add(`${date}: ${error instanceof Error ? error.message : 'Brak taryfy dla dnia.'}`);
@@ -746,6 +920,7 @@ export function resolveOfferBillingRates(request: OfferBillingRateRequest): Offe
     const exportPrice = exportPeriods ? exportPriceAt(exportPeriods, interval) : null;
     return {
       status: 'ready', date: interval.local.date, hour: interval.local.hour,
+      energyZone: rate.energyZone, distributionZone: rate.distributionZone,
       energyBuyPlnPerKwh: rate.energy, distributionBuyPlnPerKwh: rate.distribution,
       depositCreditPricePlnPerKwh: exportPrice?.depositCredit ?? null,
       exportPlnPerKwh: exportPrice?.depositCredit ?? null,
@@ -772,6 +947,7 @@ export function resolveOfferBillingRateSeries(request: OfferBillingRateSeriesReq
       const exportPrice = exportPeriods ? exportPriceAt(exportPeriods, interval) : null;
       return {
         status: 'ready', date: interval.local.date, hour: interval.local.hour,
+        energyZone: entry.energyZone, distributionZone: entry.distributionZone,
         energyBuyPlnPerKwh: entry.energy, distributionBuyPlnPerKwh: entry.distribution,
         depositCreditPricePlnPerKwh: exportPrice?.depositCredit ?? null,
         exportPlnPerKwh: exportPrice?.depositCredit ?? null,
@@ -796,6 +972,7 @@ function emptyInterval(interval: PreparedInterval): OfferBillingIntervalResult {
     depositExpiredPln: 0, depositRefundedPln: 0, depositBalancePln: 0,
     pendingDepositPln: 0, creditAddedKwh: 0, creditUsedKwh: 0,
     creditExpiredKwh: 0, creditBalanceKwh: null, cashDuePln: 0,
+    distributionComponents: [], fixedComponents: [],
   };
 }
 
@@ -815,10 +992,27 @@ function addMonthValues(
   (Object.keys(target) as Array<keyof OfferBillingMonthResult>).forEach((key) => {
     if (key === 'depositBalancePln' || key === 'pendingDepositPln' || key === 'creditBalanceKwh') {
       target[key] = value[key] as never;
+    } else if (key === 'distributionComponents' || key === 'fixedComponents') {
+      target[key] = addCostComponents(target[key] as OfferBillingCostComponent[] | undefined,
+        value[key] as OfferBillingCostComponent[] | undefined) as never;
     } else if (key !== 'month') {
       target[key] = ((target[key] as number) + (value[key] as number)) as never;
     }
   });
+}
+
+function addCostComponents(
+  target: OfferBillingCostComponent[] | undefined,
+  values: OfferBillingCostComponent[] | undefined,
+): OfferBillingCostComponent[] {
+  const result = target || [];
+  for (const component of values || []) {
+    const existing = result.find((entry) => entry.componentKey === component.componentKey
+      && entry.category === component.category && entry.label === component.label);
+    if (existing) existing.amountPln += component.amountPln;
+    else result.push({ ...component });
+  }
+  return result;
 }
 
 function sumMonths(months: OfferBillingMonthResult[]): Omit<OfferBillingMonthResult, 'month'> {
@@ -842,7 +1036,12 @@ function allocateFixed(intervals: PreparedInterval[], rates: RateEntry[], result
     }
     const daily = rates[indices[0]].fixedDaily;
     for (const index of indices) {
-      results[index].fixedCostPln = daily * (intervals[index].end - intervals[index].start) / duration;
+      const share = (intervals[index].end - intervals[index].start) / duration;
+      results[index].fixedCostPln = daily * share;
+      results[index].fixedComponents = reconcileComponents(rates[indices[0]].fixedComponents.map((component) => ({
+        componentKey: component.componentKey, label: component.label, category: component.category,
+        amountPln: component.dailyPln * share,
+      })), results[index].fixedCostPln, `Opłaty stałe ${date}`);
       results[index].totalCostPln += results[index].fixedCostPln;
       results[index].cashDuePln += results[index].fixedCostPln;
     }
@@ -850,6 +1049,16 @@ function allocateFixed(intervals: PreparedInterval[], rates: RateEntry[], result
 }
 
 function finishScenario(results: OfferBillingIntervalResult[]): OfferBillingScenarioResult {
+  const assertComponentSums = (value: {
+    distributionCostPln: number; fixedCostPln: number;
+    distributionComponents?: OfferBillingCostComponent[]; fixedComponents?: OfferBillingCostComponent[];
+  }, label: string) => {
+    assertReconciled((value.distributionComponents || []).reduce((sum, component) => sum + component.amountPln, 0),
+      value.distributionCostPln, `${label} dystrybucja`);
+    assertReconciled((value.fixedComponents || []).reduce((sum, component) => sum + component.amountPln, 0),
+      value.fixedCostPln, `${label} opłaty stałe`);
+  };
+  results.forEach((result, index) => assertComponentSums(result, `Interwał ${index}`));
   const months = new Map<string, OfferBillingMonthResult>();
   for (const result of results) {
     const month = months.get(result.month) || emptyMonth(result.month);
@@ -857,7 +1066,55 @@ function finishScenario(results: OfferBillingIntervalResult[]): OfferBillingScen
     months.set(result.month, month);
   }
   const orderedMonths = Array.from(months.values());
-  return { intervals: results, months: orderedMonths, totals: sumMonths(orderedMonths) };
+  orderedMonths.forEach((month) => assertComponentSums(month, `Miesiąc ${month.month}`));
+  const totals = sumMonths(orderedMonths);
+  assertComponentSums(totals, 'Suma okresu');
+  return { intervals: results, months: orderedMonths, totals };
+}
+
+function attachDistributionComponents(
+  intervals: PreparedInterval[],
+  rates: RateEntry[],
+  results: OfferBillingIntervalResult[],
+  settlement: NetMeteringPolicy | NetBillingPolicy,
+): void {
+  intervals.forEach((interval, index) => {
+    const result = results[index];
+    const billedDistributionKwh = settlement.mode === 'NET_BILLING'
+      ? result.billedImportKwh
+      : settlement.coverage === 'ENERGY_AND_VARIABLE_DISTRIBUTION'
+        ? Math.max(0, interval.importKwh - result.coveredKwh)
+        : interval.importKwh;
+    result.distributionComponents = reconcileComponents(rates[index].distributionComponents.map((component) => ({
+      componentKey: component.componentKey,
+      label: component.label,
+      category: component.category,
+      amountPln: component.ratePlnPerKwh * billedDistributionKwh,
+    })), result.distributionCostPln, `Dystrybucja ${interval.startUtc}`);
+  });
+}
+
+function buildIntervalTariffs(intervals: PreparedInterval[], rates: RateEntry[]): OfferBillingIntervalTariff[] {
+  const periods: OfferBillingIntervalTariff[] = [];
+  intervals.forEach((interval, index) => {
+    const rate = rates[index];
+    const current: OfferBillingIntervalTariff = {
+      startUtc: interval.startUtc, endUtc: interval.endUtc,
+      energyZone: rate.energyZone, distributionZone: rate.distributionZone,
+      energyRatePlnPerKwh: rate.energy, distributionRatePlnPerKwh: rate.distribution,
+    };
+    const previous = periods[periods.length - 1];
+    if (previous && previous.endUtc === current.startUtc
+      && previous.energyZone === current.energyZone
+      && previous.distributionZone === current.distributionZone
+      && previous.energyRatePlnPerKwh === current.energyRatePlnPerKwh
+      && previous.distributionRatePlnPerKwh === current.distributionRatePlnPerKwh) {
+      previous.endUtc = current.endUtc;
+    } else {
+      periods.push(current);
+    }
+  });
+  return periods;
 }
 
 function runNetBilling(
@@ -982,6 +1239,7 @@ function runNetBilling(
       results[lastIndex].pendingDepositPln = pendingBalance;
     }
   }
+  attachDistributionComponents(intervals, rates, results, policy);
   const result = finishScenario(results);
   const lots: OfferNetBillingContinuationLot[] = [
     ...active.map((lot) => ({ lot, status: 'active' as const })),
@@ -1129,6 +1387,7 @@ function runNetMetering(
     const lastIndex = indices[indices.length - 1];
     results[lastIndex].creditBalanceKwh = cycleBalance;
   }
+  attachDistributionComponents(intervals, rates, results, policy);
   return finishScenario(results);
 }
 
@@ -1157,6 +1416,7 @@ function billScenario(
   const result = input.settlement.mode === 'NET_METERING'
     ? runNetMetering(input.settlement, intervals, rates, input.context.billingCycleMonths)
     : runNetBilling(input.settlement, intervals, rates, exportPeriods || [], input.vatBasis);
+  result.intervalTariffs = buildIntervalTariffs(intervals, rates);
   const warnings = input.settlement.mode === 'NET_METERING'
     ? ['Wynik net-meteringu jest modelem rozliczenia cyklu, nie dokładnym odtworzeniem faktury: eksporty z całego jawnego cyklu są przeliczane współczynnikiem i mogą pokryć wcześniejszy import w tym samym cyklu; eksport z kolejnego, już odrębnego cyklu nie koryguje wstecz poprzedniego rachunku.',
       ...(input.context.billingCycleMonths > 1

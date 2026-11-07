@@ -16,7 +16,7 @@ function fixture() {
   const workspace = {
     projectId: 'fixture-project', clientId: 'fixture-client', projectName: 'Fixture', clientName: 'Klient testowy',
     clientType: 'B2C', ppeNumber: null, revision: 'a'.repeat(64),
-    input: { existingPv: null, location: null, settlementMode: null, annualConsumptionKwh: null, issues: [], reportDetails: null },
+    input: { existingPv: null, existingBatteryKwh: 0, existingBatteryPresent: false, location: null, settlementMode: null, annualConsumptionKwh: null, issues: [], reportDetails: null },
     measurements: { periods: [], months: [{ period: '2025-01', importKwh: 123, exportKwh: 12 }], dayProfiles: [],
       totalsImportKwh: 123, totalsExportKwh: 12, intervalCount: null, missingDirections: [], issues: [] },
     templates: [],
@@ -35,6 +35,7 @@ function fixture() {
         if (!draft || typeof draft !== 'object') throw new Error('Nieprawidłowy szkic');
         return draft;
       },
+      offerWorkspaceDraftWithBatteryPresence: (draft: any, presence: boolean | null) => ({ ...draft, existingBatteryPresent: presence }),
     },
     'lib/onrevolt/offer-workspace-document': {
       renderOfferWorkspaceDocument: (actualWorkspace: unknown, draft: unknown) => {
@@ -63,13 +64,14 @@ function fixture() {
 
 test('development POST accepts { workspace, draft } and returns { ok, document }', async () => {
   const state = fixture();
-  const draft = { schemaVersion: 1, step: 'SUMMARY' };
+  const draft = { schemaVersion: 1, step: 'SUMMARY', existingBatteryPresent: true };
   const response = await state.exports.POST(state.request({ workspace: state.workspace, draft }));
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.ok, true);
   assert.equal(body.document.pageCount, 10);
-  assert.equal(JSON.stringify(state.calls.at(-1)), JSON.stringify({ operation: 'render', value: { workspace: state.workspace, draft } }));
+  assert.equal((state.calls.at(-1)?.value as any).draft.existingBatteryPresent, false,
+    'the development PDF preview uses the workspace battery status');
 });
 
 test('development POST is unavailable outside development and validates bounded fixture requests', async () => {

@@ -44,9 +44,13 @@ export type OfferWorkspaceSavingsBillSummary = {
 
 export type OfferWorkspaceSavingsProjection = {
   horizonYears: number;
+  annualPriceGrowthRate: number;
+  annualExportPriceGrowthRate: number;
   annualTargetCostPln: number[];
   annualTariffOnlyCostPln: number[];
   annualSavingsPln: number[];
+  cumulativeTargetCostPln: number[];
+  cumulativeTariffOnlyCostPln: number[];
   totalTargetCostPln: number;
   totalTariffOnlyCostPln: number;
   totalSavingsPln: number;
@@ -297,14 +301,44 @@ function projectionFor(calculation: OfferWorkspaceCalculation): { projection: Of
     : typeof rawCost === 'number' && Number.isFinite(rawCost) && rawCost >= 0 ? rawCost : null;
   const rawPayback = calculation.estimatedPaybackYears;
   const estimatedPaybackYears = rawPayback == null ? null
-    : typeof rawPayback === 'number' && Number.isFinite(rawPayback) && rawPayback >= 0 ? Math.floor(rawPayback) : null;
+    : typeof rawPayback === 'number' && Number.isFinite(rawPayback) && rawPayback >= 0 ? rawPayback : null;
+  const monthlyTarget = calculation.estimatedMonthlyTargetCostPln;
+  const monthlyTariffOnly = calculation.estimatedMonthlyTariffOnlyCostPln;
+  const annualPriceGrowthRate = calculation.estimatedAnnualPriceGrowthRate;
+  const annualExportPriceGrowthRate = calculation.estimatedAnnualExportPriceGrowthRate;
+  if (!Array.isArray(monthlyTarget) || !Array.isArray(monthlyTariffOnly)
+    || monthlyTarget.length !== target.length * 12 || monthlyTariffOnly.length !== monthlyTarget.length
+    || costAfterFinancingPln === null
+    || typeof annualPriceGrowthRate !== 'number' || !Number.isFinite(annualPriceGrowthRate) || annualPriceGrowthRate < 0
+    || annualExportPriceGrowthRate !== 0) {
+    return { projection: null, reason: 'Brak miesięcznej projekcji, kosztu inwestycji lub założeń wzrostu cen. Przelicz wariant ponownie.' };
+  }
+  if ([...monthlyTarget, ...monthlyTariffOnly].some(value => typeof value !== 'number' || !Number.isFinite(value))) {
+    return { projection: null, reason: 'Miesięczna projekcja zawiera nieprawidłową wartość.' };
+  }
+  for (let index = 0; index < target.length; index += 1) {
+    const start = index * 12;
+    if (Math.abs(checkedSum(monthlyTarget.slice(start, start + 12), 'monthlyTarget') - target[index]) > 0.01
+      || Math.abs(checkedSum(monthlyTariffOnly.slice(start, start + 12), 'monthlyTariffOnly') - tariffOnly[index]) > 0.01) {
+      return { projection: null, reason: `Rok ${index + 1}: projekcja miesięczna nie zgadza się z roczną.` };
+    }
+  }
+  const cumulative = (values: number[], openingCost: number) => {
+    const result = [openingCost];
+    for (const value of values) result.push(checkedSum([result[result.length - 1], value], 'cumulativeCost'));
+    return result;
+  };
 
   return {
     projection: {
       horizonYears: target.length,
+      annualPriceGrowthRate,
+      annualExportPriceGrowthRate,
       annualTargetCostPln: [...target] as number[],
       annualTariffOnlyCostPln: [...tariffOnly] as number[],
       annualSavingsPln: [...savings] as number[],
+      cumulativeTargetCostPln: cumulative(monthlyTarget, costAfterFinancingPln),
+      cumulativeTariffOnlyCostPln: cumulative(monthlyTariffOnly, 0),
       totalTargetCostPln: round(totalTargetCostPln),
       totalTariffOnlyCostPln: round(totalTariffOnlyCostPln),
       totalSavingsPln: round(totalSavingsPln),

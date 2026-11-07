@@ -96,7 +96,7 @@ test('partial analysis sums only complete export months without extrapolating', 
   assert.ok(result.issues.some((issue) => issue.includes('744/1416')));
 });
 
-test('unknown and present battery keep self-consumption unknown with an explicit reason', () => {
+test('invalid battery capacity and present battery keep self-consumption unknown with an explicit reason', () => {
   const data = fixture({ pv: () => 1 });
   const unknown = summarize(data, null);
   const present = summarize(data, true);
@@ -105,18 +105,31 @@ test('unknown and present battery keep self-consumption unknown with an explicit
   assert.equal(unknown.selfConsumptionKwh, null);
   assert.equal(unknown.coveredMonths, 1);
   assert.equal(unknown.coveredHours, 744);
-  assert.ok(unknown.issues.some((issue) => issue.includes('Nie wiadomo')));
+  assert.ok(unknown.issues.some((issue) => issue.includes('Pojemność istniejącego magazynu energii jest nieprawidłowa')));
   assert.equal(present.selfConsumptionKwh, null);
   assert.equal(present.coveredMonths, 1);
   assert.ok(present.issues.some((issue) => issue.includes('przepływach magazynu')));
 });
 
-test('battery status uses explicit draft choice, then canonical audit capacity', () => {
-  assert.equal(resolveClientEnergyBatteryPresence({ existingBatteryPresent: false }, 8), false);
-  assert.equal(resolveClientEnergyBatteryPresence({ existingBatteryPresent: true }, 0), true);
-  assert.equal(resolveClientEnergyBatteryPresence({ existingBatteryPresent: null }, 0), false);
-  assert.equal(resolveClientEnergyBatteryPresence({}, 5), true);
-  assert.equal(resolveClientEnergyBatteryPresence({}, null), null);
+test('empty saved battery capacity means no existing battery in energy data', () => {
+  for (const capacity of [null, undefined, '', '  ', 0, '0']) {
+    assert.equal(resolveClientEnergyBatteryPresence(capacity), false);
+  }
+  assert.equal(resolveClientEnergyBatteryPresence(5), true);
+  assert.equal(resolveClientEnergyBatteryPresence('8.5'), true);
+  assert.equal(resolveClientEnergyBatteryPresence({ toNumber: () => 16 }), true);
+  for (const capacity of [-1, 'invalid', Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(resolveClientEnergyBatteryPresence(capacity), null);
+  }
+});
+
+test('no entered battery enables self-consumption from measured exports and model PV', () => {
+  const data = fixture({ pv: () => 1, exports: () => 0.25 });
+  const result = summarize(data, resolveClientEnergyBatteryPresence(null));
+  assert.equal(result.selfConsumptionKwh, 558);
+  assert.equal(result.coveredHours, 744);
+  assert.ok(!result.issues.some((issue) => /magazyn|nieznana/.test(issue)));
+  assert.doesNotMatch(result.note, /potwierdzenia braku magazynu/);
 });
 
 test('model-only project still returns production without accounts or import/export data', () => {

@@ -77,6 +77,7 @@ export type PriceableTemplateItem = {
   purchaseVatRate?: NumericValue | null;
   operatingCostNet?: NumericValue | null;
   marginRate?: NumericValue | null;
+  unitSaleNet?: NumericValue | null;
 };
 
 function requiredNumber(value: NumericValue | null | undefined, label: string) {
@@ -84,6 +85,20 @@ function requiredNumber(value: NumericValue | null | undefined, label: string) {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new Error(`Nieprawidłowa wartość: ${label}`);
   return number;
+}
+
+function optionalUnitSaleNet(item: PriceableTemplateItem, label: string) {
+  if (item.unitSaleNet === null || item.unitSaleNet === undefined) return undefined;
+  const unitSaleNet = requiredNumber(item.unitSaleNet, `cena sprzedaży ręczna (${label})`);
+  if (unitSaleNet < 0) throw new Error(`Cena sprzedaży ręczna nie może być ujemna (${label})`);
+  return unitSaleNet;
+}
+
+function resolveMarginRate(value: NumericValue | null | undefined, hasManualSale: boolean, label: string) {
+  if (hasManualSale && (value === null || value === undefined || value === '' || (typeof value === 'string' && value.trim() === ''))) {
+    return 0;
+  }
+  return requiredNumber(value, `narzut (${label})`);
 }
 
 export function resolveTemplateItemSaleVat(item: PriceableTemplateItem): number {
@@ -94,6 +109,9 @@ export function resolveTemplateItemSaleVat(item: PriceableTemplateItem): number 
 export function resolveTemplateItemCosts(item: PriceableTemplateItem) {
   const label = item.description || item.product?.name || 'pozycja bez nazwy';
   const currentPrice = item.product?.prices?.[0];
+  const unitSaleNet = optionalUnitSaleNet(item, label);
+  const hasManualSale = unitSaleNet !== undefined;
+  const manualSaleField = hasManualSale ? { unitSaleNet } : {};
 
   const mode = item.pricingMode ?? 'LEGACY';
   const basis = item.operatingCostBasis ?? 'PER_LINE';
@@ -105,9 +123,10 @@ export function resolveTemplateItemCosts(item: PriceableTemplateItem) {
       unitPurchaseNet: resolveProductPurchaseNet(currentPrice),
       purchaseVatRate: requiredNumber(currentPrice.purchaseVatRate, `VAT zakupu (${label})`),
       operatingCostNet: requiredNumber(currentPrice.operatingCostNet, `koszt realizacji (${label})`),
-      marginRate: requiredNumber(currentPrice.marginRate, `narzut (${label})`),
+      marginRate: resolveMarginRate(currentPrice.marginRate, hasManualSale, label),
       operatingCostBasis: 'PER_UNIT' as const,
       catalogPriceId: currentPrice.id ?? null,
+      ...manualSaleField,
     };
   }
 
@@ -117,9 +136,10 @@ export function resolveTemplateItemCosts(item: PriceableTemplateItem) {
       unitPurchaseNet: resolveProductPurchaseNet(currentPrice),
       purchaseVatRate: requiredNumber(currentPrice.purchaseVatRate, `VAT zakupu (${label})`),
       operatingCostNet: requiredNumber(item.operatingCostNet, `koszt firmy (${label})`),
-      marginRate: requiredNumber(item.marginRate, `narzut (${label})`),
+      marginRate: resolveMarginRate(item.marginRate, hasManualSale, label),
       operatingCostBasis: basis as 'PER_UNIT' | 'PER_LINE',
       catalogPriceId: currentPrice.id ?? null,
+      ...manualSaleField,
     };
   }
 
@@ -127,8 +147,9 @@ export function resolveTemplateItemCosts(item: PriceableTemplateItem) {
     unitPurchaseNet: requiredNumber(item.unitPurchaseNet, `cena pozycji ręcznej (${label})`),
     purchaseVatRate: requiredNumber(item.purchaseVatRate, `VAT pozycji ręcznej (${label})`),
     operatingCostNet: requiredNumber(item.operatingCostNet, `koszt firmy (${label})`),
-    marginRate: requiredNumber(item.marginRate, `narzut (${label})`),
+    marginRate: resolveMarginRate(item.marginRate, hasManualSale, label),
     operatingCostBasis: basis as 'PER_UNIT' | 'PER_LINE',
     catalogPriceId: null,
+    ...manualSaleField,
   };
 }

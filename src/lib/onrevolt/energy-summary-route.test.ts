@@ -7,9 +7,15 @@ import ts from 'typescript';
 import { resolveProjectAnalysisPeriod } from './project-analysis-period';
 import * as projectPvSettings from './project-pv-settings';
 import * as clientEnergyPvSummary from './client-energy-pv-summary';
+import * as annualProfile from './offer-workspace-annual-profile';
+import * as offerWorkspaceEnergy from './offer-workspace-energy';
 import * as clientEnergyCostSummary from './client-energy-cost-summary';
 import * as offerWorkspaceBilling from './offer-workspace-billing';
 import { calculateClientEnergyCostSummaryOnServer, completeHistoryForSummary } from './client-energy-cost-summary-server';
+import type { CatalogProfile } from './reference-profile-comparison';
+
+const catalog = JSON.parse(readFileSync(path.join(process.cwd(), 'output', 'profile-catalog-20261106', 'catalog.json'), 'utf8')) as { profiles: CatalogProfile[] };
+const bdewH25 = catalog.profiles.find(profile => profile.key === 'bdew-2025-h25')!;
 
 const routePath = path.resolve(__dirname, '../../app/api/projects/[id]/energy-summary/route.ts');
 const routeCode = ts.transpileModule(readFileSync(routePath, 'utf8'), {
@@ -34,7 +40,12 @@ test('energy-summary uses the selected period in queries, validation and respons
     catalogTariff: null as any,
     catalogRequests: [] as any[],
     failModel: false,
-    accounts: [{ id: 'account-1', ppeNumber: '590310600030743962' }],
+    accounts: [{ id: 'account-1', ppeNumber: '590310600030743962', operator: 'ENEA' }],
+    downloadedFiles: null as any[] | null,
+    nonDownloadedFiles: [] as any[],
+    referenceSelection: { key: null, revision: 0, contentHash: null, profileName: null } as any,
+    referenceProfileBundle: null as any,
+    referenceSelectionReads: 0,
     project: {
       id: 'project-1', clientId: 'client-1', clientType: 'B2C',
       investmentSite: { latitude: 52.2, longitude: 21 },
@@ -104,6 +115,8 @@ test('energy-summary uses the selected period in queries, validation and respons
         billOfferWorkspaceScenario: offerWorkspaceBilling.billOfferWorkspaceScenario,
       } as any),
     },
+    'lib/onrevolt/offer-workspace-annual-profile': annualProfile,
+    'lib/onrevolt/offer-workspace-energy': offerWorkspaceEnergy,
     'lib/onrevolt/offer-workspace-billing': offerWorkspaceBilling,
     'lib/onrevolt/offer-workspace-valuation-server': {
       currentScenario: async (_workspace: unknown, _settlement: unknown, bounds: unknown) => {
@@ -131,9 +144,10 @@ test('energy-summary uses the selected period in queries, validation and respons
       prisma: {
         project: { findFirst: async () => state.project },
         energyPortalAccount: { findMany: async () => state.accounts },
-        energyMeasurementFile: { findMany: async (query: unknown) => {
+        energyMeasurementFile: { findMany: async (query: any) => {
           state.measurementQuery = query;
-          return [{
+          if (query.where.status?.not) return state.nonDownloadedFiles;
+          return state.downloadedFiles ?? [{
             id: 'file-1', clientId: 'client-1', projectId: 'project-1', accountId: 'account-1', kind: 'ACTIVE_IMPORT',
             periodYear: 2025, periodMonth: 10, aggregation: '60 min', storagePath: null, fileName: null,
             updatedAt: now, document: null,
@@ -145,6 +159,13 @@ test('energy-summary uses the selected period in queries, validation and respons
     'lib/onrevolt/client-energy-summary': { buildClientEnergyActualDays: () => [] },
     'lib/onrevolt/project-analysis-period-server': {
       readProjectAnalysisPeriod: async () => ({ projectId: 'project-1', storedStartMonth: '2025-10', period }),
+    },
+    'lib/onrevolt/project-reference-profile': {
+      readProjectReferenceProfileSelection: async () => {
+        state.referenceSelectionReads += 1;
+        return state.referenceSelection;
+      },
+      resolveSelectedReferenceProfile: async (selection: any) => selection?.key ? state.referenceProfileBundle : null,
     },
   };
   const exports: any = {};
@@ -178,7 +199,8 @@ test('energy-summary uses the selected period in queries, validation and respons
     latitude: 52.2, longitude: 21, powerKw: 5, tiltDegrees: 30, azimuthDegrees: 180,
     lossPercent: 12, ...period,
   });
-  assert.equal(state.pvSummaryInput.existingBatteryPresent, false);
+  assert.equal(state.pvSummaryInput.existingBatteryPresent, true,
+    'the energy-data battery capacity overrides a contradictory offer-draft flag');
   assert.equal(state.pvSummaryInput.measurementSeries.intervals.length, 0);
   assert.equal(state.pvSummaryInput.fromUtc, period.fromUtc);
   assert.equal(state.pvSummaryInput.untilUtc, period.untilUtc);
@@ -191,8 +213,58 @@ test('energy-summary uses the selected period in queries, validation and respons
   assert.equal(noAccountBody.data.pv.productionKwh, 1);
   assert.equal(state.pvSummaryInput.measurementSeries, null);
   assert.equal(state.modelCalls, 2);
+  assert.deepEqual(noAccountBody.data.issues, ['Nie znaleziono konta operatora energii przypisanego do projektu.']);
 
-  state.accounts = [{ id: 'account-1', ppeNumber: '590310600030743962' }];
+  const savedOfferWorkspace = state.project.offerWorkspace;
+  state.project.offerWorkspace = null;
+  Object.assign(state.project.energyAudits[0], {
+    profileSource: 'ANNUAL_DECLARATION', annualConsumptionKwh: 6000, existingPvKw: 0,
+    existingBatteryKwh: 0, connectionPowerKw: 12, settlementSystem: 'NET_BILLING',
+  });
+  state.currentScenario = { tariffHistory: null, issues: ['Brak zapisanej historii taryfy.'] };
+  const annualOnlyResponse = await exports.GET({}, { params: Promise.resolve({ id: 'project-1' }) });
+  const annualOnlyBody = await annualOnlyResponse.json();
+  assert.equal(annualOnlyResponse.status, 200);
+  assert.equal(annualOnlyBody.data.annualModel.source, 'MODELLED');
+  assert.equal(annualOnlyBody.data.annualModel.flowAvailable, true);
+  assert.equal(annualOnlyBody.data.annualModel.provenance.annualConsumptionKwh, 6000);
+  assert.ok(Math.abs(annualOnlyBody.data.annualModel.months.reduce((sum: number, month: any) => sum + month.loadKwh, 0) - 6000) < 1e-6);
+  assert.ok(Math.abs(annualOnlyBody.data.annualModel.months.reduce((sum: number, month: any) => sum + month.importKwh, 0) - 6000) < 1e-6);
+  assert.equal(annualOnlyBody.data.annualModel.months.reduce((sum: number, month: any) => sum + month.exportKwh, 0), 0);
+  assert.ok(annualOnlyBody.data.annualModel.days.length > 0);
+  assert.equal(annualOnlyBody.data.cost.source, 'MODELLED');
+  assert.equal(annualOnlyBody.data.days.length, 0, 'modeled profiles do not enter the meter-reading collection');
+
+  state.referenceSelection = { key: bdewH25.key, revision: 1, contentHash: 'a'.repeat(64), profileName: bdewH25.name };
+  state.referenceProfileBundle = { profile: bdewH25, contentHash: 'a'.repeat(64) };
+  const selectedAnnualResponse = await exports.GET({}, { params: Promise.resolve({ id: 'project-1' }) });
+  const selectedAnnualBody = await selectedAnnualResponse.json();
+  assert.equal(selectedAnnualBody.data.annualModel.provenance.referenceProfile.key, bdewH25.key);
+  assert.equal(selectedAnnualBody.data.annualModel.provenance.referenceProfile.contentHash, 'a'.repeat(64));
+  assert.match(selectedAnnualBody.data.annualModel.provenance.source, /profil referencyjny/u);
+  assert.doesNotMatch(selectedAnnualBody.data.annualModel.provenance.source, /profil godzinowy RE/u);
+  assert.equal(state.referenceSelectionReads, 2, 'the summary reads the project selection only when annual modelling is requested');
+
+  Object.assign(state.project.energyAudits[0], { profileSource: 'MONTHLY_MANUAL' });
+  const monthlyManualResponse = await exports.GET({}, { params: Promise.resolve({ id: 'project-1' }) });
+  const monthlyManualBody = await monthlyManualResponse.json();
+  assert.equal(Object.hasOwn(monthlyManualBody.data, 'annualModel'), false,
+    'an unrelated monthly manual profile is not reinterpreted as an annual declaration');
+
+  state.accounts = [{ id: 'account-1', ppeNumber: '590310600030743962', operator: 'ENEA' }];
+  state.downloadedFiles = [];
+  state.nonDownloadedFiles = [{ id: 'failed-file', status: 'FAILED' }];
+  Object.assign(state.project.energyAudits[0], { profileSource: 'ANNUAL_DECLARATION' });
+  const failedFileResponse = await exports.GET({}, { params: Promise.resolve({ id: 'project-1' }) });
+  const failedFileBody = await failedFileResponse.json();
+  assert.equal(Object.hasOwn(failedFileBody.data, 'annualModel'), false,
+    'a failed file record is not treated as an empty measurement history');
+  assert.ok(failedFileBody.data.issues.some((issue: string) => issue.includes('poza statusem DOWNLOADED')));
+  state.downloadedFiles = null;
+  state.nonDownloadedFiles = [];
+  state.project.offerWorkspace = savedOfferWorkspace;
+
+  state.accounts = [{ id: 'account-1', ppeNumber: '590310600030743962', operator: 'ENEA' }];
   state.failModel = true;
   const modelErrorResponse = await exports.GET({}, { params: Promise.resolve({ id: 'project-1' }) });
   const modelErrorBody = await modelErrorResponse.json();
@@ -295,6 +367,15 @@ test('energy-summary uses the selected period in queries, validation and respons
   assert.equal(fullCostBody.data.cost.totalHours, 8760);
   assert.equal(fullCostBody.data.cost.pricedHours, 8760);
 
+  (state.project.offerWorkspace.input as Record<string, any>).calculation.billingCycleMonths = null;
+  const defaultCycleResponse = await exports.GET({}, { params: Promise.resolve({ id: 'project-1' }) });
+  const defaultCycleBody = await defaultCycleResponse.json();
+  assert.equal(defaultCycleResponse.status, 200);
+  assert.equal(defaultCycleBody.data.cost.settled, true);
+  assert.equal(defaultCycleBody.data.cost.totalPln, fullCostBody.data.cost.totalPln,
+    'an absent billing cycle uses the approved two-month cycle');
+  assert.ok(defaultCycleBody.data.cost.assumptions.some((value: string) => value.includes('w szacunku przyjęto cykl 2-miesięczny')));
+
   state.project.energyAudits[0].settlementSystem = 'NET_BILLING';
   state.project.offerWorkspace.input = {
     currentSettlement: 'NET_BILLING',
@@ -307,4 +388,25 @@ test('energy-summary uses the selected period in queries, validation and respons
     + fullCostBody.data.cost.distributionPln + fullCostBody.data.cost.fixedPln;
   assert.ok(Math.abs(explicitDepositBody.data.cost.totalPln - explicitDepositBaseTotal) < 1e-8);
   assert.ok(explicitDepositBody.data.cost.issues.some((issue: string) => issue.includes('Jawne saldo depozytu')));
+
+  state.project.energyAudits[0].existingBatteryKwh = null;
+  state.project.offerWorkspace.input.existingBatteryPresent = true;
+  state.project.offerWorkspace.input.existingPv = { powerKw: 5, tiltDegrees: 30, azimuthDegrees: 180, lossPercent: 12 };
+  await exports.GET({}, { params: Promise.resolve({ id: 'project-1' }) });
+  assert.equal(state.pvSummaryInput.existingBatteryPresent, false,
+    'empty energy-data battery capacity means absent even when an old offer draft says present');
+  state.project.offerWorkspace = null;
+  await exports.GET({}, { params: Promise.resolve({ id: 'project-1' }) });
+  assert.equal(state.pvSummaryInput.existingBatteryPresent, false,
+    'removing a test offer draft cannot make the energy-data battery status unknown');
+
+  state.accounts = [{ id: 'pge-account', ppeNumber: '590310600030743962', operator: 'PGE' }];
+  state.measurementQuery = null;
+  const pgeResponse = await exports.GET({}, { params: Promise.resolve({ id: 'project-1' }) });
+  const pgeBody = await pgeResponse.json();
+  assert.equal(pgeResponse.status, 200);
+  assert.deepEqual(pgeBody.data.issues, ['Import pomiarów godzinowych dla operatora PGE nie jest jeszcze obsługiwany.']);
+  assert.equal(state.measurementQuery, null, 'PGE files must not be passed to the ENEA-only parser');
+  assert.ok(pgeBody.data.cost, 'lack of a supported measurement import must not skip tariff pricing');
+  assert.ok(pgeBody.data.months.every((month: any) => month.importKwh === null && month.exportKwh === null));
 });

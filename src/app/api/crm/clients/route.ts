@@ -8,6 +8,7 @@ import { locationMapProviderValues } from 'lib/onrevolt/location-maps';
 import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser, hasStaffPermission } from 'lib/onrevolt/staff-server';
 import { prepareClientTariffBinding } from 'lib/onrevolt/client-tariffs-server';
 import { readAnalysisAccountMeasurements } from 'lib/onrevolt/project-analysis-measurements';
+import { assertProjectStationSnapshot, replayProjectReferenceProfileForLinkedStation } from 'lib/onrevolt/re-consumption-sync';
 
 const clientTypes = new Set(['UNKNOWN', 'B2C', 'B2B', 'B2C_B2B']);
 const locationMapProviderSet = new Set<string>(locationMapProviderValues);
@@ -501,6 +502,11 @@ export async function PUT(req: NextRequest) {
     const currentUser = await getCurrentStaffUser(req);
     const isAdmin = isAdminUser(currentUser);
     let bindTariffs: (() => Promise<void>) | undefined;
+    let changedStationLink: {
+      projectId: string;
+      expected: { dashboardStation: string | null; dashboardStationNumber: string | null };
+      assignment: { token: string | null; number: string | null };
+    } | undefined;
 
     if (projectBody && projectId) {
       const projected = projectData(displayName, clientType, projectBody, contactBody);
@@ -514,6 +520,14 @@ export async function PUT(req: NextRequest) {
       if (assignment.token !== (existingProject.dashboardStation || null) || assignment.number !== (existingProject.dashboardStationNumber || null)) {
         if (!hasStaffPermission(access.user, 'energy.manage')) return forbidden('Brak uprawnienia do przypisania stacji i taryf');
         bindTariffs = await prepareClientTariffBinding(id, projectId, assignment, access.user.id);
+        changedStationLink = {
+          projectId,
+          expected: {
+            dashboardStation: existingProject.dashboardStation ?? null,
+            dashboardStationNumber: existingProject.dashboardStationNumber ?? null,
+          },
+          assignment,
+        };
       }
     }
 
@@ -573,6 +587,17 @@ export async function PUT(req: NextRequest) {
           data.closedAt = stage.isTerminal ? new Date() : null;
         }
         if (projectId) {
+          if (changedStationLink) {
+            await assertProjectStationSnapshot(tx, {
+              clientId: id,
+              projectId,
+              expected: changedStationLink.expected,
+            });
+          } else {
+            // A stale form may still contain the initially read link; never write it back over a concurrent change.
+            delete data.dashboardStation;
+            delete data.dashboardStationNumber;
+          }
           await tx.project.update({ where: { id: projectId }, data });
         } else {
           await tx.project.create({ data: { ...data, clientId: id } });
@@ -601,6 +626,23 @@ export async function PUT(req: NextRequest) {
     });
 
     let tariffWarning: string | undefined;
+    let referenceProfileSync: Awaited<ReturnType<typeof replayProjectReferenceProfileForLinkedStation>> = null;
+    if (changedStationLink) {
+      try {
+        referenceProfileSync = await replayProjectReferenceProfileForLinkedStation({
+          clientId: id,
+          projectId: changedStationLink.projectId,
+          stationHash: changedStationLink.assignment.token,
+          stationNumber: changedStationLink.assignment.number,
+          actorId: access.user.id,
+        });
+      } catch (error) {
+        referenceProfileSync = {
+          status: 'failed', station: null, retryAllowed: true,
+          message: `Powiązanie zapisano w CRM, ale nie udało się odtworzyć wybranego profilu RE: ${error instanceof Error ? error.message : String(error)}.`,
+        };
+      }
+    }
     if (bindTariffs) {
       try { await bindTariffs(); }
       catch (error) { tariffWarning = `Dane klienta zapisane. Powiązanie taryf wymaga ponowienia w zakładce Taryfy: ${error instanceof Error ? error.message : String(error)}`; }
@@ -623,7 +665,7 @@ export async function PUT(req: NextRequest) {
       before: existing,
       after: full,
     });
-    return jsonResponse({ ok: true, data: full, tariffWarning });
+    return jsonResponse({ ok: true, data: full, tariffWarning, referenceProfileSync });
   } catch (error) {
     return serverError('Nie udało się zaktualizować klienta', error);
   }

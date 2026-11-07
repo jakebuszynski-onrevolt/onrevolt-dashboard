@@ -26,9 +26,12 @@ const calc = {
   status: 'ready', evaluatedTemplateIds: ['storage'], reasons: [], warnings: ['Założenie modelu PV'],
   baselineAnnualCostPln: 75, proposedAnnualCostPln: 75, annualSavingsPln: 0,
   baselineBill: bill, proposedBill: bill, systemCostPln: 100, grantPln: 20, taxReliefPln: 10,
-  costAfterFinancingPln: 70, recommendationEligible: false, recommendationReasons: ['Szacunek'],
-  paybackYears: null, estimatedPaybackYears: 4.7, estimatedAnnualSavingsPln: [20, 25],
+  costAfterFinancingPln: 30, recommendationEligible: false, recommendationReasons: ['Szacunek'],
+  paybackYears: null, estimatedPaybackYears: 1.4, estimatedAnnualSavingsPln: [20, 25],
   estimatedAnnualTargetCostPln: [75, 70], estimatedAnnualTariffOnlyCostPln: [95, 95],
+  estimatedMonthlyTargetCostPln: [...Array(12).fill(75 / 12), ...Array(12).fill(70 / 12)],
+  estimatedMonthlyTariffOnlyCostPln: Array(24).fill(95 / 12),
+  estimatedAnnualPriceGrowthRate: 0.05, estimatedAnnualExportPriceGrowthRate: 0,
   estimateHorizonYears: 2, rankings: [], recommendedTemplateIds: null,
 } as OfferWorkspaceCalculation;
 function render(calculation: OfferWorkspaceCalculation | null = calc, type = 'B2C') {
@@ -52,14 +55,19 @@ test('oszczędność wyświetla średnie przed depozytem, finansowanie i jawny s
   assert.match(html, /0,25 zł/);
   assert.match(html, /0,75 zł/);
   assert.match(html, /Szacunkowy zwrot z dodatkowego sprzętu/);
-  assert.match(html, /4 lat/);
+  assert.match(html, /1,4 lat/);
   assert.match(html, /Koszt systemu po dofinansowaniach/);
-  assert.match(html, /70 zł/);
+  assert.match(html, /30 zł/);
   assert.match(html, /190 zł/);
   assert.match(html, /145 zł/);
   assert.match(html, /45 zł/);
-  assert.match(html, /-25 zł/);
+  assert.match(html, /15 zł/);
   assert.match(html, /Taryfa docelowa bez inwestycji/);
+  assert.match(html, /5% rocznie/);
+  assert.match(html, /Skumulowane koszty/);
+  assert.match(html, /Pobór z sieci \(kWh\)/);
+  assert.match(html, /Zero zł nie oznacza zerowego poboru/);
+  assert.doesNotMatch(html, />Bez systemu</);
   const warning = html.match(/<details[^>]*>[\s\S]*?Uwagi i założenia do wyniku/);
   assert.ok(warning);
   assert.doesNotMatch(warning[0], / open(?:=|\s|>)/);
@@ -69,7 +77,7 @@ test('wynik innego zestawu i brak kalkulacji nie podszywają się pod wybrany wa
   for (const calculation of [null, { ...calc, evaluatedTemplateIds: ['other'] }, { ...calc, status: 'blocked' as const }]) {
     const html = render(calculation);
     assert.match(html, /Oblicz wybraną konfigurację/);
-    assert.doesNotMatch(html, /190 zł|145 zł|4 lat/);
+    assert.doesNotMatch(html, /190 zł|145 zł|1,4 lat/);
   }
 });
 

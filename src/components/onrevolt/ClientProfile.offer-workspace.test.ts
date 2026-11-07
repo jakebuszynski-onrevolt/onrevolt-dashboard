@@ -26,6 +26,18 @@ function loadFunction<T extends (...args: any[]) => any>(name: string): T {
   return new Function(`${compiled}; return ${name};`)() as T;
 }
 
+function loadClientSavePayloadSerializer() {
+  const declarations = ['buildClientSavePayload', 'serializeClientSavePayload']
+    .map((name) => findFunction(name).getText(profileAst))
+    .join('\n');
+  const compiled = ts.transpileModule(declarations, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+  return new Function(`${compiled}; return serializeClientSavePayload;`)() as (
+    clientId: string, client: any, project: any, form: any,
+  ) => string;
+}
+
 function findAutoOpenEffect() {
   let found: ts.ArrowFunction | undefined;
   const visit = (node: ts.Node) => {
@@ -88,6 +100,46 @@ test('saved-draft checks are isolated by both user and project', () => {
   assert.notEqual(keyFor('staff-a', 'project-a'), keyFor('staff-b', 'project-a'));
   assert.notEqual(keyFor('staff-a', 'project-a'), keyFor('staff-a', 'project-b'));
   assert.equal(keyFor('staff-a', 'project-a'), keyFor('staff-a', 'project-a'));
+});
+
+test('link z oferty otwiera wybrane Dane energetyczne projektu', () => {
+  assert.match(profileSource, /searchParams\.get\('tab'\) === 'billing'/u);
+  assert.match(profileSource, /id="energy-data"/u);
+});
+
+test('global client save compares only its serialized payload and keeps EMS fields in scope', () => {
+  const serialize = loadClientSavePayloadSerializer();
+  const form = {
+    displayName: 'Klient', clientType: 'B2C', taxId: '123', clientProblem: '', expectedResult: '', notes: 'not sent',
+    email: 'a@example.com', phone: '123', addressLine: 'Ulica 1', postalCode: '00-001', city: 'Warszawa',
+    investmentAddress: 'Ulica 2', projectTitle: 'Solis 15 kW + 48 kWh', projectClientType: 'B2C', status: 'LEAD',
+    stageId: 'stage-a', ownerId: 'staff-a', nextActionTitle: '', nextActionAt: '', dashboardStation: 'station-hash',
+    dashboardStationNumber: 'station-15', weatherStationNumber: 'weather-15', latitude: '52.2', longitude: '21.0',
+    mapProvider: 'GOOGLE',
+  };
+  const client = { contacts: [{ id: 'contact-a', updatedAt: 'old' }], updatedAt: 'old', offers: [{ id: 'offer-a' }] };
+  const project = { id: 'project-a', source: 'manual', updatedAt: 'old', configurations: [{ id: 'configuration-a' }] };
+  const savedPayload = serialize('client-a', client, project, form);
+
+  assert.equal(serialize(
+    'client-a',
+    { ...client, updatedAt: 'new', contacts: [{ ...client.contacts[0], updatedAt: 'new' }] },
+    { ...project, updatedAt: 'new', offers: [{ id: 'offer-b' }] },
+    { ...form, notes: 'changed but not sent' },
+  ), savedPayload);
+  assert.notEqual(serialize('client-a', client, project, { ...form, dashboardStationNumber: 'station-new' }), savedPayload);
+  assert.notEqual(serialize('client-a', client, project, { ...form, projectTitle: 'Solis 20 kW' }), savedPayload);
+  assert.notEqual(serialize('client-a', client, { ...project, id: 'project-b' }, form), savedPayload);
+  assert.equal(serialize('client-a', client, project, form), savedPayload, 'reverting the form restores the saved payload');
+
+  const saveClient = findFunction('saveClient').getText(profileAst);
+  const selectProject = findFunction('selectProject').getText(profileAst);
+  assert.match(saveClient, /currentClientPayload === savedClientPayload\) return/u);
+  assert.match(saveClient, /body:\s*currentClientPayload/u);
+  assert.match(saveClient, /await load\(\)/u);
+  assert.match(selectProject, /setSavedClientPayload\(serializeClientSavePayload/u);
+  assert.match(profileSource, /Zapisz dane klienta/u);
+  assert.match(profileSource, /isDisabled=\{[^}]*currentClientPayload === savedClientPayload\}/u);
 });
 
 test('saved-draft detection performs one read-only GET lookup', () => {

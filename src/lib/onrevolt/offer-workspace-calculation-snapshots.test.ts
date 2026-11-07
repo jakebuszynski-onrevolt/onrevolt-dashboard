@@ -13,17 +13,37 @@ const code = ts.transpileModule(readFileSync(filename, 'utf8'), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   fileName: filename,
 }).outputText;
-const maxResultBytes = 32 * 1024 * 1024;
+const maxResultBytes = 64 * 1024 * 1024;
 
 const result = {
   status: 'ready', reasons: [], warnings: [], annualSavingsPln: 120,
   pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64),
+  recommendationBatteryBounds: {
+    basis: 'daily_consumption',
+    averageDailyConsumptionKwh: 51.5953774858,
+    totalConsumptionKwh: 18_832.309782317,
+    dayCount: 365,
+    minimumDailyConsumptionMultiplier: 0.5,
+    maximumDailyConsumptionMultiplier: 2,
+    minimumBatteryCapacityKwh: 25.7976887429,
+    maximumBatteryCapacityKwh: 103.190754972,
+    totalCandidatesBeforeFilter: 19,
+    excludedCandidates: 3,
+  },
+  recommendationPvBounds: {
+    maximumBatteryKwhPerPvKwp: 2.5,
+    pvBasis: 'existing_plus_added',
+    totalCandidatesBeforeFilter: 16,
+    excludedCandidates: 0,
+  },
 };
 const dependencyContext = {
   targetOperatorId: 11,
   targetTariffId: 22,
   currentSettlement: 'NET_BILLING',
   targetSettlement: 'NET_BILLING',
+  existingPvPowerKw: 5.25,
+  requiresPvSource: true,
 };
 const deadlineAt = new Date(Date.now() + 60 * 60_000);
 const snapshotInput = {
@@ -73,7 +93,7 @@ function fixture(options: { rows?: unknown[]; findFirst?: unknown; failCreate?: 
       return modules[name as keyof typeof modules];
     },
   });
-  return { exports, calls };
+  return { exports, calls, database };
 }
 
 function compressedResult(value: unknown, overrides: Record<string, unknown> = {}) {
@@ -167,6 +187,8 @@ test('job lookup always scopes actor, project, and algorithm version', async () 
     jobId: 'job-1', actorId: 'staff-1', projectId: 'project-1', algorithmVersion: 'offer-workspace-calculation-v1',
   });
   assert.equal(found?.result.annualSavingsPln, 120);
+  assert.deepEqual(JSON.parse(JSON.stringify(found?.result.recommendationBatteryBounds)), result.recommendationBatteryBounds);
+  assert.deepEqual(JSON.parse(JSON.stringify(found?.result.recommendationPvBounds)), result.recommendationPvBounds);
   assert.deepEqual(JSON.parse(JSON.stringify(f.calls[0].value)), {
     where: {
       jobId: 'job-1', actorId: 'staff-1', projectId: 'project-1', algorithmVersion: 'offer-workspace-calculation-v1',
@@ -174,6 +196,48 @@ test('job lookup always scopes actor, project, and algorithm version', async () 
     },
     include: { admission: true },
   });
+});
+
+test('completed snapshots retain KEEP existing-PV range basis without an additive PV ceiling', async () => {
+  const keepBounds = {
+    basis: 'existing_pv',
+    existingPvPowerKw: 9.9,
+    minimumBatteryKwhPerPvKwp: 0.5,
+    maximumBatteryKwhPerPvKwp: 5,
+    minimumBatteryCapacityKwh: 4.95,
+    maximumBatteryCapacityKwh: 49.5,
+    totalCandidatesBeforeFilter: 19,
+    excludedCandidates: 16,
+  };
+  const repository = readerForResult(compressedResult({
+    ...result,
+    recommendationBatteryBounds: keepBounds,
+    recommendationPvBounds: undefined,
+  }));
+  const found = await repository.findCompletedByJob({
+    jobId: 'job-1', actorId: 'staff-1', projectId: 'project-1', algorithmVersion: 'offer-workspace-calculation-v1',
+  });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(found?.result.recommendationBatteryBounds)), keepBounds);
+  assert.equal(found?.result.recommendationPvBounds, undefined);
+});
+
+test('nowe ograniczenia konfiguracji unieważniają starsze wyniki i mieszczą się w kolumnie algorithmVersion VarChar(64)', () => {
+  const f = fixture();
+  const version = f.exports.OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION as string;
+  assert.equal(version, 'offer-workspace-calculation-v13-commercial-annual');
+  assert.ok(version.length <= 64, `algorithmVersion has ${version.length} characters; the schema column allows 64`);
+});
+
+test('old v12 snapshots cannot satisfy the v13 commercial and annual-profile algorithm lookup', async () => {
+  const f = fixture({ findFirst: { ...row, algorithmVersion: 'offer-workspace-calculation-v12-growth5' } });
+  const repository = new f.exports.PrismaOfferWorkspaceCalculationSnapshotRepository(f.database);
+  const version = f.exports.OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION as string;
+
+  const found = await repository.findCompletedByJob({ jobId: row.jobId, actorId: row.actorId, projectId: row.projectId, algorithmVersion: version });
+
+  assert.equal(found, null);
+  assert.equal(f.calls[0].value.where.algorithmVersion, 'offer-workspace-calculation-v13-commercial-annual');
 });
 
 test('compressed large results round trip losslessly and legacy plain JSON remains readable', async () => {
@@ -186,7 +250,9 @@ test('compressed large results round trip losslessly and legacy plain JSON remai
     exportKwh: ((index * 67) % 3001) / 1000,
     note: `interval-${index.toString(36)}-${((index * 104729) % 99991).toString(36)}`,
   }));
-  const largeResult = { ...result, forecastPayload };
+  // The complete tariff breakdown for three scenarios exceeds the former 32 MiB ceiling.
+  const largeResult = { ...result, forecastPayload, billingPayload: 'opłata;'.repeat(5_000_000) };
+  assert.ok(Buffer.byteLength(JSON.stringify(largeResult), 'utf8') > 32 * 1024 * 1024);
   let storedResult: unknown;
   const writerFixture = fixture();
   const writer = new writerFixture.exports.PrismaOfferWorkspaceCalculationSnapshotRepository({
@@ -257,6 +323,29 @@ test('compressed results still undergo persisted identity validation', async () 
   }), null);
 });
 
+test('completed snapshots restore the exact existing-PV power from dependency context', async () => {
+  const repository = readerForResult(result);
+  const restored = await repository.findCompletedByJob({
+    jobId: row.jobId, actorId: row.actorId, projectId: row.projectId, algorithmVersion: row.algorithmVersion,
+  });
+  assert.equal(restored?.dependencyContext.existingPvPowerKw, 5.25);
+  assert.equal(restored?.dependencyContext.requiresPvSource, true);
+
+  const missingPower = { ...row, existingPvPowerKw: undefined };
+  const f = fixture();
+  const malformed = new f.exports.PrismaOfferWorkspaceCalculationSnapshotRepository({
+    offerWorkspaceCalculationSnapshot: {
+      create: async () => undefined,
+      findFirst: async () => missingPower,
+      findMany: async () => [],
+    },
+    offerWorkspaceCalculationSnapshotAdmission: { create: async () => undefined },
+  });
+  assert.equal(await malformed.findCompletedByJob({
+    jobId: row.jobId, actorId: row.actorId, projectId: row.projectId, algorithmVersion: row.algorithmVersion,
+  }), null, 'legacy snapshots without the new source context are not fresh candidates');
+});
+
 test('PDF lookup query requires current source, draft, algorithm, and prices-as-of identities', async () => {
   const f = fixture();
   const repository = new f.exports.PrismaOfferWorkspaceCalculationSnapshotRepository({
@@ -324,7 +413,7 @@ test('oversized calculation result fails before any database write', async () =>
   });
   const oversized = { ...snapshotInput, result: { ...result, payload: 'x'.repeat(maxResultBytes) } };
 
-  await assert.rejects(repository.savePending(oversized), /limit trwałego zapisu 32 MiB/);
+  await assert.rejects(repository.savePending(oversized), /limit trwałego zapisu 64 MiB/);
   assert.equal(createCalls, 0);
 });
 

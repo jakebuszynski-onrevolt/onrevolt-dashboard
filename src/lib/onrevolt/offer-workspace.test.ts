@@ -1,10 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { defaultOfferCalculationAssumptions, emptyOfferWorkspaceDraft, parseOfferWorkspaceDraft, selectOfferWorkspaceTemplate, setOfferWorkspacePvStrategy } from './offer-workspace';
+import { DEFAULT_OFFER_BILLING_CYCLE_MONTHS } from './offer-workspace';
 
 test('szkic oferty dopuszcza brak danych bez zastępowania ich zerem', () => {
   const input = emptyOfferWorkspaceDraft();
   assert.deepEqual(parseOfferWorkspaceDraft(input), input);
+});
+
+test('a different selected configuration clears its old commercial row assignments', () => {
+  const draft = emptyOfferWorkspaceDraft();
+  draft.selectedTemplateIds = ['bank-1'];
+  draft.commercialPricing = { schemaVersion: 1, batteryInstallationScopeConfirmed: true,
+    allocations: [{ templateId: 'bank-1', itemId: 'item', group: 'STORAGE_INSTALLATION' }] };
+  const templates = [{ id: 'bank-1', kind: 'MAGAZYN' }, { id: 'bank-2', kind: 'MAGAZYN' }];
+  assert.equal(selectOfferWorkspaceTemplate(draft, templates, 'bank-1', true).commercialPricing, draft.commercialPricing);
+  assert.equal(selectOfferWorkspaceTemplate(draft, templates, 'bank-2', true).commercialPricing, undefined);
+  assert.ok(draft.commercialPricing);
 });
 
 test('potwierdzone PV 9,9 kWp / 40 stopni / 170 stopni pozostaje w szkicu', () => {
@@ -25,6 +37,26 @@ test('jawne zgody na szacunki są zachowane, a stare szkice ich nie włączają'
   assert.equal(parseOfferWorkspaceDraft(input).calculation?.taxEstimateAccepted, true);
   assert.equal(parseOfferWorkspaceDraft(input).calculation?.pvReconstructionAccepted, true);
   assert.throws(() => parseOfferWorkspaceDraft({ ...input, calculation: { ...calculation, taxEstimateAccepted: 'true' } }));
+});
+
+test('domyślny cykl oferty to dwa miesiące, a jawne cykle pozostają bez zmian', () => {
+  assert.equal(DEFAULT_OFFER_BILLING_CYCLE_MONTHS, 2);
+  assert.equal(defaultOfferCalculationAssumptions().billingCycleMonths, null,
+    'the default is displayed and applied during calculation without being saved as an explicit cycle');
+  for (const billingCycleMonths of [1, 6]) {
+    const draft = { ...emptyOfferWorkspaceDraft(), calculation: {
+      ...defaultOfferCalculationAssumptions(), billingCycleMonths,
+    } };
+    assert.equal(parseOfferWorkspaceDraft(draft).calculation?.billingCycleMonths, billingCycleMonths);
+  }
+});
+
+test('brak cyklu w zapisanym szkicu pozostaje jawny podczas edycji innych założeń', () => {
+  const defaults = defaultOfferCalculationAssumptions();
+  const { billingCycleMonths: _default, ...calculation } = defaults;
+  const draft = { ...emptyOfferWorkspaceDraft(), calculation } as unknown as ReturnType<typeof emptyOfferWorkspaceDraft>;
+  assert.equal(parseOfferWorkspaceDraft(draft).calculation?.billingCycleMonths, null);
+  assert.equal(parseOfferWorkspaceDraft({ ...draft, calculation: { ...calculation, billingCycleMonths: null } }).calculation?.billingCycleMonths, null);
 });
 
 test('wartości obliczeń, kwoty i station z klienta nie trafiają do zapisu', () => {

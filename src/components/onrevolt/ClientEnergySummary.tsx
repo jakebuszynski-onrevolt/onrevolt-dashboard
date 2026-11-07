@@ -41,7 +41,18 @@ export type ClientEnergySummaryMonth = {
 export type ClientEnergySummaryDay = {
   date: string;
   period: string;
-  hours: Array<{ hour: number; importKwh: number | null; exportKwh: number | null }>;
+  hours: Array<{ hour: number; importKwh: number | null; exportKwh: number | null; loadKwh?: number | null }>;
+};
+
+export type ClientEnergyAnnualModel = {
+  source: 'MODELLED';
+  provenance?: { kind: 'annual-consumption'; source: string; annualConsumptionKwh: number };
+  profileSource?: string;
+  annualConsumptionKwh: number;
+  flowAvailable: boolean;
+  months: Array<{ period: string; loadKwh: number | null; importKwh: number | null; exportKwh: number | null }>;
+  days: ClientEnergySummaryDay[];
+  issues: string[];
 };
 
 export type ClientEnergyMeasurements = {
@@ -49,6 +60,7 @@ export type ClientEnergyMeasurements = {
   days: ClientEnergySummaryDay[];
   issues: string[];
   cost?: {
+    source?: 'MODELLED';
     status: 'ready' | 'partial' | 'blocked';
     vatBasis: 'NET' | 'GROSS';
     totalPln: number | null;
@@ -75,6 +87,7 @@ export type ClientEnergyMeasurements = {
     note: string;
     issues: string[];
   };
+  annualModel?: ClientEnergyAnnualModel;
 };
 
 export type ClientEnergySummaryLoadState = {
@@ -342,22 +355,36 @@ export default function ClientEnergySummary({
   const [monthSelection, setMonthSelection] = useState('');
   const invoiceSummary = useMemo(() => summarizeClientEnergyInvoices(invoices), [invoices]);
   const measurementMonths = data?.months || [];
-  const spansCalendarYears = new Set(measurementMonths.map((month) => month.period.slice(0, 4))).size > 1;
-  const periodMonths = measurementMonths.map((measured) => {
-    const [year, month] = measured.period.split('-').map(Number);
+  const annualModel = data?.annualModel;
+  const displayedAnnualConsumptionKwh = annualModel
+    ? annualModel.provenance?.annualConsumptionKwh ?? annualModel.annualConsumptionKwh
+    : annualConsumptionKwh;
+  const displayedConsumptionSource = annualModel
+    ? `MODELLED · ${annualModel.provenance?.source || annualModel.profileSource || 'profil roczny RE'}`
+    : consumptionSource || 'Brak potwierdzonego źródła';
+  const displayMonths = annualModel ? annualModel.months.map(month => ({
+    ...month,
+    loadKwh: month.loadKwh,
+    importAvailable: annualModel.flowAvailable && month.importKwh != null,
+    exportAvailable: annualModel.flowAvailable && month.exportKwh != null,
+  })) : measurementMonths.map(month => ({ ...month, loadKwh: null as number | null }));
+  const spansCalendarYears = new Set(displayMonths.map((month) => month.period.slice(0, 4))).size > 1;
+  const periodMonths = displayMonths.map((monthData) => {
+    const measured = annualModel ? null : monthData;
+    const [year, month] = monthData.period.split('-').map(Number);
     const profileMonth = profile?.months.find((item) => item.year === year && item.month === month) || null;
     return {
-      period: measured.period,
+      period: monthData.period,
       label: `${monthShort(month)}${spansCalendarYears ? ` ${String(year).slice(-2)}` : ''}`,
-      title: monthLong(measured.period),
-      importKwh: measured.importKwh,
-      exportKwh: measured.exportKwh,
-      loadKwh: profileLoadForPeriod(profile, measured.period),
+      title: monthLong(monthData.period),
+      importKwh: monthData.importKwh,
+      exportKwh: monthData.exportKwh,
+      loadKwh: annualModel ? monthData.loadKwh : profileLoadForPeriod(profile, monthData.period),
       measured,
       profile: profileMonth,
     };
   });
-  const availableDays = data?.days || [];
+  const availableDays = annualModel?.days || data?.days || [];
   const dayMonths = [...new Set(availableDays.map(day => day.period))].sort();
   const selectedMonth = dayMonths.includes(monthSelection) ? monthSelection : dayMonths.at(-1) || '';
   const monthDays = availableDays.filter(day => day.period === selectedMonth);
@@ -374,34 +401,36 @@ export default function ClientEnergySummary({
     title: `${String(hour.hour).padStart(2, '0')}:00–${String(hour.hour + 1).padStart(2, '0')}:00`,
     importKwh: hour.importKwh,
     exportKwh: hour.exportKwh,
-    loadKwh: null,
+    loadKwh: hour.loadKwh ?? null,
   }));
-  const kpiImport = measurementMonths.some((month) => month.importKwh != null)
-    ? measurementMonths.reduce((sum, month) => sum + (month.importKwh ?? 0), 0)
+  const kpiImport = displayMonths.some((month) => month.importKwh != null)
+    ? displayMonths.reduce((sum, month) => sum + (month.importKwh ?? 0), 0)
     : null;
-  const kpiExport = measurementMonths.some((month) => month.exportKwh != null)
-    ? measurementMonths.reduce((sum, month) => sum + (month.exportKwh ?? 0), 0)
+  const kpiExport = displayMonths.some((month) => month.exportKwh != null)
+    ? displayMonths.reduce((sum, month) => sum + (month.exportKwh ?? 0), 0)
     : null;
   const measuredImportMonths = measurementMonths.filter((month) => month.importAvailable).length;
   const measuredExportMonths = measurementMonths.filter((month) => month.exportAvailable).length;
   const hasMeasurements = measurementMonths.some((month) => month.importKwh != null || month.exportKwh != null);
+  const hasModelledFlows = annualModel?.flowAvailable === true
+    && displayMonths.some((month) => month.importKwh != null || month.exportKwh != null);
   const hasProfileLoad = periodMonths.some((month) => month.loadKwh != null);
-  const showAnnualChart = hasMeasurements || hasProfileLoad;
-  const periodLabel = measurementMonths.length
-    ? `${monthLong(measurementMonths[0].period)} – ${monthLong(measurementMonths[measurementMonths.length - 1].period)}`
+  const showAnnualChart = hasMeasurements || hasModelledFlows || hasProfileLoad;
+  const periodLabel = displayMonths.length
+    ? `${monthLong(displayMonths[0].period)} – ${monthLong(displayMonths[displayMonths.length - 1].period)}`
     : '';
   const averageProfile = profile?.source === 'RE' ? profile : null;
-  const issues = useMemo(() => [...new Set([...(data?.issues || []), ...(data?.pv?.issues || []), ...(data?.cost?.issues || []), ...(profile?.warnings || [])])], [data?.issues, data?.pv?.issues, data?.cost?.issues, profile?.warnings]);
+  const issues = useMemo(() => [...new Set([...(data?.issues || []), ...(data?.annualModel?.issues || []), ...(data?.pv?.issues || []), ...(data?.cost?.issues || []), ...(profile?.warnings || [])])], [data?.issues, data?.annualModel?.issues, data?.pv?.issues, data?.cost?.issues, profile?.warnings]);
   const missingMeasurementMonths = measurementMonths.filter((month) => !month.importAvailable || !month.exportAvailable).length;
   const loadWarnings = useMemo(() => {
     if (status !== 'ready') return [];
     const warnings = [...new Set(issues)];
-    if (missingMeasurementMonths > 0) warnings.push(`Pomiary poboru lub oddania są niepełne w ${missingMeasurementMonths} z 12 miesięcy.`);
+    if (!data?.annualModel && missingMeasurementMonths > 0) warnings.push(`Pomiary poboru lub oddania są niepełne w ${missingMeasurementMonths} z 12 miesięcy.`);
     if (invoiceSummary.overlappingIds.length) warnings.push(`Pominięto ${invoiceSummary.overlappingIds.length} faktur z nakładającymi się okresami.`);
     if (invoiceSummary.invalidPeriodIds.length) warnings.push(`Pominięto ${invoiceSummary.invalidPeriodIds.length} faktur bez prawidłowego okresu.`);
     if (invoiceSummary.missingAmountIds.length) warnings.push(`Pominięto ${invoiceSummary.missingAmountIds.length} faktur bez kwoty brutto.`);
     return warnings;
-  }, [status, issues, missingMeasurementMonths, invoiceSummary]);
+  }, [status, issues, data?.annualModel, missingMeasurementMonths, invoiceSummary]);
   const loadState = useMemo<ClientEnergySummaryLoadState>(() => ({
     requestKey,
     status,
@@ -416,30 +445,34 @@ export default function ClientEnergySummary({
 
   return <section className={styles.summary} aria-busy={valuesMasked}>
     {data && !valuesMasked ? <div className={styles.periodHeader}>
-      <span>Okres pomiarów</span>
-      <strong>{periodLabel || 'Brak danych pomiarowych'}</strong>
+      <span>{annualModel ? 'Okres profilu MODELLED' : 'Okres pomiarów'}</span>
+      <strong>{periodLabel || (annualModel ? 'Brak profilu rocznego' : 'Brak danych pomiarowych')}</strong>
     </div> : null}
     <div className={styles.kpis}>
       <article className={styles.kpi}>
         <span>Zużycie energii w obiekcie</span>
-        <strong>{valuesMasked ? '—' : Number.isFinite(annualConsumptionKwh) && annualConsumptionKwh > 0 ? kwh(annualConsumptionKwh) : '—'}</strong>
-        <small>{valuesMasked ? 'Przeliczanie danych…' : consumptionSource || 'Brak potwierdzonego źródła'}</small>
+        <strong>{valuesMasked ? '—' : Number.isFinite(displayedAnnualConsumptionKwh) && displayedAnnualConsumptionKwh > 0 ? kwh(displayedAnnualConsumptionKwh) : '—'}</strong>
+        <small>{valuesMasked ? 'Przeliczanie danych…' : displayedConsumptionSource}</small>
       </article>
       <article className={`${styles.kpi} ${styles.importKpi}`}>
-        <span>Pobrano z sieci ↓</span>
+        <span>{annualModel ? 'Modelowany pobór z sieci ↓' : 'Pobrano z sieci ↓'}</span>
         <strong>{valuesMasked ? '—' : kwh(kpiImport)}</strong>
-        <small>{valuesMasked ? 'Przeliczanie danych…' : measurementMonths.length ? `${measuredImportMonths}/12 mies. z plikami · bez ekstrapolacji` : 'Brak danych pomiarowych'}</small>
+        <small>{valuesMasked ? 'Przeliczanie danych…' : annualModel
+          ? annualModel.flowAvailable ? `MODELLED · ${annualModel.provenance?.source || annualModel.profileSource || 'profil roczny RE'}` : annualModel.issues[0] || 'Nie obliczono przepływu sieciowego.'
+          : measurementMonths.length ? `${measuredImportMonths}/12 mies. z plikami · bez ekstrapolacji` : 'Brak danych pomiarowych'}</small>
       </article>
       <article className={`${styles.kpi} ${styles.exportKpi}`}>
-        <span>Oddano do sieci ↑</span>
+        <span>{annualModel ? 'Modelowane oddanie do sieci ↑' : 'Oddano do sieci ↑'}</span>
         <strong>{valuesMasked ? '—' : kwh(kpiExport)}</strong>
-        <small>{valuesMasked ? 'Przeliczanie danych…' : measurementMonths.length ? `${measuredExportMonths}/12 mies. z plikami · bez ekstrapolacji` : 'Brak danych pomiarowych'}</small>
+        <small>{valuesMasked ? 'Przeliczanie danych…' : annualModel
+          ? annualModel.flowAvailable ? `MODELLED · ${annualModel.provenance?.source || annualModel.profileSource || 'profil roczny RE'}` : annualModel.issues[0] || 'Nie obliczono przepływu sieciowego.'
+          : measurementMonths.length ? `${measuredExportMonths}/12 mies. z plikami · bez ekstrapolacji` : 'Brak danych pomiarowych'}</small>
       </article>
       <article className={`${styles.kpi} ${styles.costKpi}`}>
         <span>Szacowany koszt wg taryfy</span>
         <strong>{valuesMasked ? '—' : money(data?.cost?.totalPln ?? null)}</strong>
         <small>{valuesMasked ? 'Przeliczanie danych…' : data?.cost?.totalPln != null
-          ? `${data.cost.vatBasis === 'NET' ? 'Netto' : 'Brutto'} · ${data.cost.settled ? 'po rozliczeniu oddania' : hasPv ? 'przed rozliczeniem oddania' : 'energia, dystrybucja i opłaty'}${data.cost.pricedHours < data.cost.totalHours ? ' · niepełny okres' : ''}`
+          ? `${data.cost.source === 'MODELLED' ? 'MODELLED · ' : ''}${data.cost.vatBasis === 'NET' ? 'Netto' : 'Brutto'} · ${data.cost.settled ? 'po rozliczeniu oddania' : hasPv ? 'przed rozliczeniem oddania' : 'energia, dystrybucja i opłaty'}${data.cost.pricedHours < data.cost.totalHours ? ' · niepełny okres' : ''}`
           : data?.cost?.issues[0] || 'Brak danych do wyceny taryfowej'}</small>
       </article>
     </div>
@@ -459,7 +492,7 @@ export default function ClientEnergySummary({
           </tbody>
         </table>
       </div>
-      <p className={styles.emptyInline}>Wyceniono {data.cost.pricedHours}/{data.cost.totalHours} godzin. Szacunek, nie odtworzenie faktury.</p>
+      <p className={styles.emptyInline}>{data.cost.source === 'MODELLED' ? 'MODELLED · profil godzinowy RE. ' : ''}Wyceniono {data.cost.pricedHours}/{data.cost.totalHours} godzin. Szacunek, nie odtworzenie faktury.</p>
       {data.cost.assumptions.length > 0 ? <ul className={styles.issues} aria-label="Założenia wyliczenia kosztu">
         {data.cost.assumptions.map((assumption, index) => <li key={`${index}-${assumption}`}>{assumption}</li>)}
       </ul> : null}
@@ -473,7 +506,11 @@ export default function ClientEnergySummary({
           : data?.pv?.note || 'Uzupełnij parametry PV do obliczenia produkcji.'}</small></div>
       <div><span>Autokonsumpcja PV</span><strong>{valuesMasked ? '—' : kwh(data?.pv?.selfConsumptionKwh ?? null)}</strong>
         <small>{valuesMasked ? 'Przeliczanie danych…' : data?.pv?.selfConsumptionKwh != null
-          ? `Szacunek godzinowy · model PV i pomiary OSD${data.pv.coveredHours != null && data.pv.totalHours != null
+          ? annualModel?.flowAvailable
+            ? `MODELLED · profil rocznego zużycia RE i model PV${data.pv.coveredHours != null && data.pv.totalHours != null
+              ? data.pv.coveredHours < data.pv.totalHours ? ` · ${data.pv.coveredHours}/${data.pv.totalHours} godz.` : ''
+              : data.pv.coveredMonths < data.pv.totalMonths ? ` · ${data.pv.coveredMonths}/${data.pv.totalMonths} mies.` : ''}`
+            : `Szacunek godzinowy · model PV i pomiary OSD${data.pv.coveredHours != null && data.pv.totalHours != null
             ? data.pv.coveredHours < data.pv.totalHours ? ` · ${data.pv.coveredHours}/${data.pv.totalHours} godz., bez ekstrapolacji` : ''
             : data.pv.coveredMonths < data.pv.totalMonths ? ` · ${data.pv.coveredMonths}/${data.pv.totalMonths} mies., bez ekstrapolacji` : ''}`
           : data?.pv?.note || 'Brak danych do oszacowania autokonsumpcji.'}</small></div>
@@ -482,26 +519,28 @@ export default function ClientEnergySummary({
     <div className={styles.chartHeading}>
       <div>
         <h3>Profil energii</h3>
-        <p>{mode === 'year' ? 'Miesięczne sumy w dostępnym okresie 12 miesięcy.' : 'Rzeczywiste interwały pomiarowe dla wybranego dnia.'}</p>
+        <p>{mode === 'year'
+          ? annualModel ? 'Profil MODELLED · miesięczne wartości wynikające z jawnego zużycia rocznego.' : 'Miesięczne sumy w dostępnym okresie 12 miesięcy.'
+          : annualModel ? 'Doba MODELLED · reprezentatywny rozkład godzinowy RE.' : 'Rzeczywiste interwały pomiarowe dla wybranego dnia.'}</p>
       </div>
       <div className={styles.chartControls}>
         <div className={styles.segment} role="group" aria-label="Zakres profilu energii">
           <button type="button" aria-pressed={mode === 'year'} className={mode === 'year' ? styles.active : ''} onClick={() => setMode('year')}>Rok</button>
-          <button type="button" aria-pressed={mode === 'day'} className={mode === 'day' ? styles.active : ''} disabled={!availableDays.length} onClick={() => setMode('day')}>Dzień</button>
+          <button type="button" aria-pressed={mode === 'day'} className={mode === 'day' ? styles.active : ''} disabled={!availableDays.length} onClick={() => setMode('day')}>{annualModel ? 'Doba modelowa' : 'Dzień'}</button>
         </div>
       </div>
     </div>
 
     {mode === 'day' && availableDays.length > 0 ? <div className={styles.dayControls}>
       <label className={styles.selectLabel}>
-        <span className={styles.visuallyHidden}>Miesiąc pomiaru</span>
-        <select aria-label="Miesiąc pomiaru" value={selectedMonth} onChange={event => { setMonthSelection(event.target.value); setDaySelection(''); }}>
+        <span className={styles.visuallyHidden}>{annualModel ? 'Miesiąc profilu modelowego' : 'Miesiąc pomiaru'}</span>
+        <select aria-label={annualModel ? 'Miesiąc profilu modelowego' : 'Miesiąc pomiaru'} value={selectedMonth} onChange={event => { setMonthSelection(event.target.value); setDaySelection(''); }}>
           {dayMonths.map(period => <option key={period} value={period}>{monthLong(period)}</option>)}
         </select>
       </label>
       <label className={styles.selectLabel}>
-        <span className={styles.visuallyHidden}>Dzień pomiaru</span>
-        <select aria-label="Dzień pomiaru" value={selectedDay?.date || ''} onChange={(event) => setDaySelection(event.target.value)}>
+        <span className={styles.visuallyHidden}>{annualModel ? 'Dzień profilu modelowego' : 'Dzień pomiaru'}</span>
+        <select aria-label={annualModel ? 'Dzień profilu modelowego' : 'Dzień pomiaru'} value={selectedDay?.date || ''} onChange={(event) => setDaySelection(event.target.value)}>
           {monthDays.map((day) => <option key={day.date} value={day.date}>{day.date}</option>)}
         </select>
       </label>
@@ -509,21 +548,21 @@ export default function ClientEnergySummary({
 
     {error ? <p className={styles.error} role="alert">Nie udało się odczytać pomiarów: {error}</p> : null}
     {valuesMasked ? <p className={styles.empty}>Proszę czekać – przeliczam dane.</p> : mode === 'day'
-      ? selectedDay ? <EnergyChart rows={dayRows} annual={false} label={`Rzeczywiste pomiary energii, ${selectedDay.date}`} />
-        : <p className={styles.empty}>Brak pełnego dnia pomiarowego w tym okresie.</p>
+      ? selectedDay ? <EnergyChart rows={dayRows} annual={false} label={`${annualModel ? 'MODELLED · profil godzinowy RE' : 'Rzeczywiste pomiary energii'}, ${selectedDay.date}`} />
+        : <p className={styles.empty}>{annualModel ? 'Brak reprezentatywnej doby modelowej w tym okresie.' : 'Brak pełnego dnia pomiarowego w tym okresie.'}</p>
       : showAnnualChart ? <EnergyChart
         rows={annualRows}
         annual
-        label={hasMeasurements ? `Pobór i oddanie energii: ${periodLabel}` : `Zużycie z profilu: ${periodLabel}`}
+        label={annualModel ? `MODELLED · profil roczny RE: ${periodLabel}` : hasMeasurements ? `Pobór i oddanie energii: ${periodLabel}` : `Zużycie z profilu: ${periodLabel}`}
       />
-        : <p className={styles.empty}>Brak pomiarów poboru i oddania w tym okresie. Profil zużycia nie zastępuje pomiarów sieciowych.</p>}
+        : <p className={styles.empty}>{annualModel ? 'Brak rocznego profilu MODELLED do wyświetlenia.' : 'Brak pomiarów poboru i oddania w tym okresie. Profil zużycia nie zastępuje pomiarów sieciowych.'}</p>}
 
     {!valuesMasked ? <div className={styles.legend}>
-      {hasMeasurements ? <>
-        <span><i className={styles.importDot} />Pobór z sieci ↓</span>
-        <span><i className={styles.exportDot} />Oddanie do sieci ↑</span>
+      {hasMeasurements || hasModelledFlows ? <>
+        <span><i className={styles.importDot} />{annualModel ? 'MODELLED · pobór z sieci ↓' : 'Pobór z sieci ↓'}</span>
+        <span><i className={styles.exportDot} />{annualModel ? 'MODELLED · oddanie do sieci ↑' : 'Oddanie do sieci ↑'}</span>
       </> : null}
-      {mode === 'year' && annualRows.some((row) => row.loadKwh != null) ? <span><i className={styles.loadMark} />{profile?.source === 'RE' ? 'Szacowane zużycie budynku · profil RE' : 'Zużycie z profilu'}</span> : null}
+      {annualRows.some((row) => row.loadKwh != null) ? <span><i className={styles.loadMark} />{annualModel ? 'MODELLED · zużycie roczne · profil RE' : profile?.source === 'RE' ? 'Szacowane zużycie budynku · profil RE' : 'Zużycie z profilu'}</span> : null}
     </div> : null}
 
     {!valuesMasked && averageProfile ? <AverageDay profile={averageProfile} /> : null}
@@ -533,13 +572,15 @@ export default function ClientEnergySummary({
     </ul> : null}
 
     {!valuesMasked ? <details className={styles.disclosure}>
-      <summary><span>Szczegóły miesięczne</span><small>Źródło, pomiary i faktury</small></summary>
+      <summary><span>Szczegóły miesięczne</span><small>{annualModel ? 'MODELLED · profil godzinowy RE' : 'Źródło, pomiary i faktury'}</small></summary>
       <div className={styles.tableScroll}>
         <table className={styles.monthTable}>
-          <thead><tr><th>Miesiąc</th><th>Pobrano ↓</th><th>Oddano ↑</th><th>Zużycie z profilu</th><th>Źródło</th></tr></thead>
+          <thead><tr><th>Miesiąc</th><th>{annualModel ? 'Modelowany pobór ↓' : 'Pobrano ↓'}</th><th>{annualModel ? 'Modelowane oddanie ↑' : 'Oddano ↑'}</th><th>{annualModel ? 'Zużycie MODELLED' : 'Zużycie z profilu'}</th><th>Źródło</th></tr></thead>
           <tbody>{periodMonths.map((month) => {
             const profileSource = month.profile ? `${clientEnergyProfileSourceLabel(month.profile.importSource, 'import')} · ${clientEnergyProfileSourceLabel(month.profile.exportSource, 'export')}` : '—';
-            const measurementSource = month.measured && (month.measured.importAvailable || month.measured.exportAvailable)
+            const measurementSource = annualModel
+              ? `MODELLED · ${annualModel.provenance?.source || annualModel.profileSource || 'profil godzinowy RE'}`
+              : month.measured && (month.measured.importAvailable || month.measured.exportAvailable)
               ? `ENEA${month.measured.importAvailable ? ' · ↓' : ''}${month.measured.exportAvailable ? ' · ↑' : ''}`
               : '—';
             return <tr key={month.period}>

@@ -26,14 +26,216 @@ function result(overrides: Partial<OfferWorkspaceCalculation> = {}): OfferWorksp
   }, { pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64) }) as OfferWorkspaceCalculation;
 }
 
+function partialRecommendation(overrides: Partial<OfferWorkspaceCalculation> = {}, options: {
+  jobNumber?: number;
+  hasMore?: boolean;
+  status?: 'ready' | 'blocked';
+} = {}): OfferWorkspaceCalculation {
+  const jobNumber = options.jobNumber ?? 1;
+  return result({
+    status: options.status ?? 'ready',
+    recommendationSearch: {
+      version: 1, candidateSignature: 'f'.repeat(64),
+      evaluatedCandidateIds: Array.from({ length: jobNumber }, (_, index) => `candidate-${index + 1}`),
+      totalCandidates: 4, evaluatedCandidates: jobNumber, batchNumber: jobNumber,
+      batchEvaluated: 1, hasMore: options.hasMore ?? true,
+      phase: 'coarse',
+    },
+    ...overrides,
+  } as Partial<OfferWorkspaceCalculation>);
+}
+
 function request(overrides: Partial<OfferWorkspaceCalculationJobRequest> = {}): OfferWorkspaceCalculationJobRequest {
+  const draft = overrides.draft ?? emptyOfferWorkspaceDraft();
   return {
     actorId: 'staff-1', projectId: 'project-1', sourceRevision: 'a'.repeat(64),
     workspace: { revision: 'a'.repeat(64) } as OfferWorkspace,
-    draft: emptyOfferWorkspaceDraft(), series: null, mode: 'selected',
+    draft, series: null, mode: 'selected', requiresPvSource: (draft.existingPv.powerKw ?? 0) > 0,
     ...overrides,
   };
 }
+
+test('commercial row grouping invalidates selected results but not configuration search', () => {
+  const plain = emptyOfferWorkspaceDraft();
+  plain.selectedTemplateIds = ['bank'];
+  const grouped = { ...plain, commercialPricing: { schemaVersion: 1 as const, batteryInstallationScopeConfirmed: true as const,
+    allocations: [{ templateId: 'bank', itemId: 'battery', group: 'STORAGE_INSTALLATION' as const }] } };
+  assert.notEqual(offerWorkspaceCalculationDraftHash(plain, 'selected'), offerWorkspaceCalculationDraftHash(grouped, 'selected'));
+  assert.equal(offerWorkspaceCalculationDraftHash(plain, 'recommend'), offerWorkspaceCalculationDraftHash(grouped, 'recommend'));
+});
+
+test('persisted draft lookup survives restart and rejects changed sources, actor, date, mode and input', async () => {
+  const repository = snapshotRepository();
+  const original = request();
+  const running = createStore({ snapshotRepository: repository, createId: () => 'stored-draft' });
+  running.enqueue(original, async () => result());
+  await settle();
+  const restarted = createStore({ snapshotRepository: repository });
+  const lookup = { ...original, pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64) };
+  const cached = await restarted.findCompletedJobForDraft(lookup);
+  assert.equal(cached?.id, 'stored-draft');
+  assert.equal(cached?.status, 'completed');
+  assert.deepEqual(cached?.data, result());
+  for (const change of [
+    { actorId: 'someone-else' }, { projectId: 'other-project' }, { sourceRevision: 'b'.repeat(64) },
+    { pricesAsOf: '2026-10-30' }, { sourceDependencyStamp: 'd'.repeat(64) }, { sourceDependencyStamp: null },
+    { mode: 'recommend' as const }, { draft: { ...original.draft, existingPv: { ...original.draft.existingPv, powerKw: 12 } } },
+  ]) assert.equal(await restarted.findCompletedJobForDraft({ ...lookup, ...change }), null);
+  assert.ok(await restarted.findCompletedJobForDraft({ ...lookup, draft: { ...original.draft, step: 'SUMMARY', description: { before: 'Tekst', after: 'Inny tekst' } } }));
+});
+
+test('blocked partial recommendations persist, restore after restart, and reject stale or superseded parents', async () => {
+  const repository = snapshotRepository();
+  const draft = emptyOfferWorkspaceDraft();
+  const requestBase = request({ mode: 'recommend', draft, requiresPvSource: false });
+  const firstStore = createStore({ snapshotRepository: repository, createId: () => 'recommend-parent-1' });
+  firstStore.enqueue(requestBase, async () => partialRecommendation({}, { status: 'blocked' }));
+  await settle();
+
+  const lookup = {
+    actorId: 'staff-1', projectId: 'project-1', sourceRevision: 'a'.repeat(64), draft,
+    pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64), requiresPvSource: false,
+  };
+  const restarted = createStore({ snapshotRepository: repository });
+  const restored = await restarted.findCompletedJobForDraft({ ...lookup, mode: 'recommend' });
+  assert.equal(restored?.id, 'recommend-parent-1');
+  assert.equal(restored?.data?.status, 'blocked');
+  assert.equal(restored?.data?.recommendationSearch?.hasMore, true);
+  assert.deepEqual(await restarted.findRecommendationContinuationForDraft({ ...lookup, jobId: 'recommend-parent-1' }), {
+    jobId: 'recommend-parent-1', result: partialRecommendation({}, { status: 'blocked' }),
+  });
+
+  for (const change of [
+    { actorId: 'other-staff' },
+    { draft: { ...draft, calculation: { ...draft.calculation, chargeEfficiencyPercent: 91 } } },
+    { sourceRevision: 'b'.repeat(64) },
+    { pricesAsOf: '2026-10-30' },
+    { sourceDependencyStamp: 'd'.repeat(64) },
+    { requiresPvSource: true },
+  ]) {
+    assert.equal(await restarted.findRecommendationContinuationForDraft({ ...lookup, ...change, jobId: 'recommend-parent-1' }), null);
+  }
+
+  const childRequest = request({ ...requestBase, continuation: { jobId: 'recommend-parent-1', result: restored!.data! } });
+  restarted.enqueue(childRequest, async () => partialRecommendation({}, { jobNumber: 2, hasMore: false }));
+  await settle();
+  assert.equal(await restarted.findRecommendationContinuationForDraft({ ...lookup, jobId: 'recommend-parent-1' }), null,
+    'a completed later stage supersedes its older parent');
+});
+
+test('selected cache restoration prefers the saved selection over a newer different recommendation winner', async () => {
+  const repository = snapshotRepository();
+  const draft = { ...emptyOfferWorkspaceDraft(), selectedTemplateIds: ['battery-b'] };
+  const store = createStore({ snapshotRepository: repository });
+  const selected = result({ proposedAnnualCostPln: 61, recommendedTemplateIds: null });
+  store.enqueue(request({ draft, mode: 'selected' }), async () => selected);
+  await settle();
+  store.enqueue(request({ draft, mode: 'recommend' }), async () => partialRecommendation({
+    recommendedTemplateIds: ['battery-a'],
+  }, { hasMore: true }));
+  await settle();
+
+  const cached = await store.findCompletedJobForDraft({
+    actorId: 'staff-1', projectId: 'project-1', sourceRevision: 'a'.repeat(64), draft,
+    mode: 'selected', pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64),
+  });
+  assert.equal(cached?.data?.proposedAnnualCostPln, 61);
+  assert.equal(cached?.data?.recommendedTemplateIds, null);
+});
+
+test('selected cache identity includes configuration edits while recommendation identity ignores them', () => {
+  const original = { ...emptyOfferWorkspaceDraft(), selectedTemplateIds: ['battery'], configurationEdits: [
+    { templateId: 'battery', items: [{ itemId: 'storage', quantity: 1 }] },
+  ] };
+  const changed = { ...original, configurationEdits: [
+    { templateId: 'battery', items: [{ itemId: 'storage', quantity: 2 }] },
+  ] };
+  assert.notEqual(offerWorkspaceCalculationDraftHash(original, 'selected'), offerWorkspaceCalculationDraftHash(changed, 'selected'));
+  assert.equal(offerWorkspaceCalculationDraftHash(original, 'recommend'), offerWorkspaceCalculationDraftHash(changed, 'recommend'));
+});
+
+test('a recommendation result cannot be reused as selected calculation after a configuration edit', async () => {
+  const repository = snapshotRepository();
+  const recommendationDraft = { ...emptyOfferWorkspaceDraft(), selectedTemplateIds: ['battery'] };
+  const recommendation = result({ recommendedTemplateIds: ['battery'] });
+  const store = createStore({ snapshotRepository: repository, createId: () => 'recommendation-for-default-configuration' });
+  store.enqueue(request({ mode: 'recommend', draft: recommendationDraft }), async () => recommendation);
+  await settle();
+
+  const editedDraft = { ...recommendationDraft, configurationEdits: [
+    { templateId: 'battery', items: [{ itemId: 'storage', quantity: 2 }] },
+  ] };
+  const lookup = { actorId: 'staff-1', projectId: 'project-1', sourceRevision: 'a'.repeat(64), draft: editedDraft,
+    pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64), requiresPvSource: false };
+  assert.equal(store.findCompletedOfferCalculation(lookup, lookup.pricesAsOf, lookup.sourceDependencyStamp), null);
+  assert.equal(await store.findCompletedOfferCalculationPersistent(lookup), null);
+  assert.equal(await store.findCompletedJobForDraft({ ...lookup, mode: 'selected' }), null);
+});
+
+test('selected restore pages old recommendation stages to find the selected B after latest winner changed to A', async () => {
+  const repository = snapshotRepository();
+  const draft = { ...emptyOfferWorkspaceDraft(), selectedTemplateIds: ['battery-b'] };
+  const store = createStore({ snapshotRepository: repository, createId: (() => { let id = 0; return () => `phase-${++id}`; })() });
+  store.enqueue(request({ draft, mode: 'recommend' }), async () => partialRecommendation({ recommendedTemplateIds: ['battery-b'] }));
+  await settle();
+  store.enqueue(request({ draft, mode: 'recommend' }), async () => partialRecommendation({ recommendedTemplateIds: ['battery-a'] }, { jobNumber: 2 }));
+  await settle();
+
+  const cached = await store.findCompletedJobForDraft({
+    actorId: 'staff-1', projectId: 'project-1', sourceRevision: 'a'.repeat(64), draft,
+    mode: 'selected', pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64),
+  });
+  assert.equal(cached?.id, 'phase-1');
+  assert.deepEqual(repository.queries.slice(-3).map(query => query.offset), [0, 0, 1]);
+});
+
+test('continuation passes only the trusted previous result, deduplicates by parent, and permits retry after failure', async () => {
+  const repository = snapshotRepository();
+  const draft = emptyOfferWorkspaceDraft();
+  const parent = partialRecommendation();
+  const store = createStore({ snapshotRepository: repository, createId: (() => { let id = 0; return () => `continue-${++id}`; })() });
+  store.enqueue(request({ mode: 'recommend', draft }), async () => parent);
+  await settle();
+  const continuation = { jobId: 'continue-1', result: parent };
+  const continuationRequest = request({ mode: 'recommend', draft, continuation });
+  const gate = deferred<OfferWorkspaceCalculation>();
+  let previousSeen: OfferWorkspaceCalculation | undefined;
+  const child = store.enqueue(continuationRequest, async (_workspace, _draft, _series, _mode, _progress, previous) => {
+    previousSeen = previous;
+    return gate.promise;
+  });
+  const repeated = store.enqueue(continuationRequest, async () => result());
+  assert.equal(repeated.job.id, child.job.id);
+  assert.equal(repeated.reused, true);
+  assert.equal(previousSeen, parent);
+  gate.resolve(partialRecommendation({}, { jobNumber: 2 }));
+  await settle();
+  const afterCompletion = store.enqueue(continuationRequest, async () => result());
+  assert.equal(afterCompletion.job.id, child.job.id);
+  assert.equal(afterCompletion.reused, true);
+  assert.equal(afterCompletion.job.status, 'completed');
+  assert.equal(store.getForActorProject('continue-1', 'staff-1', 'project-1'), null,
+    'the consumed parent result is released from the in-memory job cache after its child is saved');
+  assert.ok(await store.findRecommendationContinuationForDraft({
+    actorId: 'staff-1', projectId: 'project-1', sourceRevision: 'a'.repeat(64), draft,
+    jobId: 'continue-2', pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64), requiresPvSource: false,
+  }));
+
+  const retryStore = createStore({ snapshotRepository: repository, createId: () => 'continue-failed' });
+  retryStore.enqueue(request({ mode: 'recommend', draft }), async () => partialRecommendation({}, { jobNumber: 3 }));
+  await settle();
+  const retryParent = await retryStore.findRecommendationContinuationForDraft({
+    actorId: 'staff-1', projectId: 'project-1', sourceRevision: 'a'.repeat(64), draft,
+    jobId: 'continue-failed', pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64), requiresPvSource: false,
+  });
+  assert.ok(retryParent);
+  retryStore.enqueue(request({ mode: 'recommend', draft, continuation: retryParent! }), async () => { throw new Error('failure'); });
+  await settle();
+  assert.equal((await retryStore.findRecommendationContinuationForDraft({
+    actorId: 'staff-1', projectId: 'project-1', sourceRevision: 'a'.repeat(64), draft,
+    jobId: 'continue-failed', pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64), requiresPvSource: false,
+  }))?.jobId, 'continue-failed', 'a failed child leaves its persisted parent available for retry');
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -80,7 +282,7 @@ function snapshotRepository(options: {
         && row.sourceRevision === query.sourceRevision && row.algorithmVersion === query.algorithmVersion
         && row.pricesAsOf === query.pricesAsOf && row.sourceDependencyStamp === query.sourceDependencyStamp
         && query.draftHashes.includes(row.draftHash))
-        .slice(0, 10);
+        .slice(query.offset ?? 0, (query.offset ?? 0) + (query.limit ?? 10));
     },
   };
 }
@@ -115,9 +317,9 @@ function prismaSnapshotRepository(options: {
         const row = rows.get(where.jobId);
         return row && matches(row, where) ? { ...row, admission: admissions.get(row.jobId) ?? null } : null;
       },
-      findMany: async ({ where, take }: any) => [...rows.values()]
+      findMany: async ({ where, take, skip }: any) => [...rows.values()]
         .filter((row) => matches(row, where))
-        .slice(0, take)
+        .slice(skip ?? 0, (skip ?? 0) + take)
         .map((row) => ({ ...row, admission: admissions.get(row.jobId) ?? null })),
     },
     offerWorkspaceCalculationSnapshotAdmission: {
@@ -483,18 +685,32 @@ test('durable completed lookup after cache loss requires actor, project, revisio
     sourceRevision: 'a'.repeat(64), dependencyContext: {
       targetOperatorId: draft.targetOperatorId, targetTariffId: draft.targetTariffId,
       currentSettlement: draft.currentSettlement, targetSettlement: draft.targetSettlement,
+      existingPvPowerKw: draft.existingPv.powerKw,
+      requiresPvSource: false,
     }, pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64),
   });
   assert.equal(freshStatus?.freshnessUnverified, undefined);
   const changedDependency = {
     targetOperatorId: draft.targetOperatorId, targetTariffId: 45,
     currentSettlement: draft.currentSettlement, targetSettlement: draft.targetSettlement,
+    existingPvPowerKw: draft.existingPv.powerKw,
+    requiresPvSource: false,
   };
   const staleStatus = await afterRestart.getForActorProjectPersistent('durable-job', 'staff-1', 'project-1', {
     sourceRevision: 'a'.repeat(64), dependencyContext: changedDependency,
     pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64),
   });
   assert.equal(staleStatus?.freshnessUnverified, true);
+  const changedPvContext = await afterRestart.getForActorProjectPersistent('durable-job', 'staff-1', 'project-1', {
+    sourceRevision: 'a'.repeat(64), dependencyContext: {
+      ...changedDependency,
+      targetTariffId: draft.targetTariffId,
+      existingPvPowerKw: 5,
+      requiresPvSource: true,
+    }, pricesAsOf: '2026-10-29', sourceDependencyStamp: 'c'.repeat(64),
+  });
+  assert.equal(changedPvContext?.freshnessUnverified, true,
+    'freshness also compares the persisted PV power and source participation');
 
   const lookup = { actorId: 'staff-1', projectId: 'project-1', sourceRevision: 'a'.repeat(64), draft };
   assert.deepEqual(await afterRestart.findCompletedOfferCalculationPersistent({

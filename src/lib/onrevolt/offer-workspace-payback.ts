@@ -5,6 +5,7 @@ import type {
 
 const MONTH_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
 const YEAR_ONE_RECONCILIATION_TOLERANCE_PLN = 0.01;
+const DEFAULT_ANNUAL_PRICE_GROWTH_RATE = 0.05;
 
 type BillingMonth = OfferBillingScenarioResult['months'][number];
 type PaybackInput = {
@@ -13,12 +14,17 @@ type PaybackInput = {
   policy: NetBillingPolicy;
   costAfterFinancingPln: number;
   horizonYears?: number;
+  annualPriceGrowthRate?: number;
 };
 
 export type OfferWorkspacePaybackEstimate = {
   annualSavingsPln: number[];
   annualTargetCostPln: number[];
   annualTariffOnlyCostPln: number[];
+  monthlyTargetCostPln: number[];
+  monthlyTariffOnlyCostPln: number[];
+  annualPriceGrowthRate: number;
+  annualExportPriceGrowthRate: 0;
   estimatedPaybackYears: number | null;
   horizonYears: number;
 };
@@ -151,6 +157,7 @@ function replayProfile(
   delayMonths: number,
   expiryMonths: number,
   horizonYears: number,
+  annualPriceGrowthRate: number,
 ): { monthlyCashDue: number[]; annualCashDue: number[] } {
   const lots = openingLots.map((lot) => ({ ...lot }));
   let nextOrder = lots.reduce((next, lot) => Math.max(next, lot.order + 1), 0);
@@ -162,11 +169,15 @@ function replayProfile(
     const currentOrdinal = firstMonthOrdinal + monthIndex;
     const currentMonth = monthAt(currentOrdinal);
     const month = profile[monthIndex % 12];
+    const purchaseCostGrowthFactor = (1 + annualPriceGrowthRate) ** Math.floor(monthIndex / 12);
+    if (!Number.isFinite(purchaseCostGrowthFactor)) {
+      throw new Error(`${currentMonth}: współczynnik wzrostu kosztów zakupu jest poza zakresem.`);
+    }
     for (let lotIndex = lots.length - 1; lotIndex >= 0; lotIndex -= 1) {
       if (lots[lotIndex].expiresOrdinal <= currentOrdinal) lots.splice(lotIndex, 1);
     }
 
-    const preDepositEnergy = month.energyCostPln + month.depositUsedPln;
+    const preDepositEnergy = (month.energyCostPln + month.depositUsedPln) * purchaseCostGrowthFactor;
     if (!Number.isFinite(preDepositEnergy)) throw new Error(`${currentMonth}: koszt energii przed depozytem jest poza zakresem.`);
     const activeLots = lots
       .filter((lot) => lot.creditedOrdinal <= currentOrdinal)
@@ -182,7 +193,9 @@ function replayProfile(
       if (lots[lotIndex].amountPln <= 0) lots.splice(lotIndex, 1);
     }
 
-    const cashDue = remainingEnergy + month.distributionCostPln + month.fixedCostPln;
+    const cashDue = remainingEnergy
+      + month.distributionCostPln * purchaseCostGrowthFactor
+      + month.fixedCostPln * purchaseCostGrowthFactor;
     if (!Number.isFinite(cashDue)) throw new Error(`${currentMonth}: odtworzony rachunek jest poza zakresem.`);
     monthlyCashDue.push(cashDue);
     annualCashDue[Math.floor(monthIndex / 12)] += cashDue;
@@ -214,11 +227,15 @@ function assertYearOneParity(profile: ProfileMonth[], replayed: number[], label:
   }
 }
 
-function unavailableEstimate(horizonYears: number): OfferWorkspacePaybackEstimate {
+function unavailableEstimate(horizonYears: number, annualPriceGrowthRate: number): OfferWorkspacePaybackEstimate {
   return {
     annualSavingsPln: [],
     annualTargetCostPln: [],
     annualTariffOnlyCostPln: [],
+    monthlyTargetCostPln: [],
+    monthlyTariffOnlyCostPln: [],
+    annualPriceGrowthRate,
+    annualExportPriceGrowthRate: 0,
     estimatedPaybackYears: null,
     horizonYears,
   };
@@ -231,8 +248,9 @@ function hasNegativeEnergy(scenario: OfferBillingScenarioResult, profile: Profil
 
 /**
  * Estimates payback by repeating the supplied full 12-consecutive-month billed profile.
- * It does not rerun the billing engine or claim future calendar prices, weather, degradation,
- * inflation, or actual consumption; only dated deposit lots advance on a synthetic timeline.
+ * It does not rerun the billing engine or forecast future calendar prices, weather, degradation,
+ * or actual consumption. Purchase, distribution, and fixed costs grow at the requested rate;
+ * export prices and deposit lots remain nominal while dated lots advance on a synthetic timeline.
  * Negative monthly or interval energy costs make the multi-year monthly replay unavailable.
  */
 export function estimateOfferWorkspacePayback(input: PaybackInput): OfferWorkspacePaybackEstimate {
@@ -240,6 +258,9 @@ export function estimateOfferWorkspacePayback(input: PaybackInput): OfferWorkspa
   const horizonYears = input.horizonYears === undefined ? 20 : finite(input.horizonYears, 'horizonYears', 1);
   if (!Number.isInteger(horizonYears)) throw new Error('horizonYears musi być dodatnią liczbą całkowitą.');
   const costAfterFinancingPln = finite(input.costAfterFinancingPln, 'costAfterFinancingPln');
+  const annualPriceGrowthRate = input.annualPriceGrowthRate === undefined
+    ? DEFAULT_ANNUAL_PRICE_GROWTH_RATE
+    : finite(input.annualPriceGrowthRate, 'annualPriceGrowthRate');
   const tariffOnlyProfile = validateProfile(input.tariffOnly, 'tariffOnly');
   const proposedProfile = validateProfile(input.proposed, 'proposed');
   if (tariffOnlyProfile.some((month, index) => month.month !== proposedProfile[index].month)) {
@@ -247,11 +268,11 @@ export function estimateOfferWorkspacePayback(input: PaybackInput): OfferWorkspa
   }
   const policy = validatePolicy(input.policy);
   if (hasNegativeEnergy(input.tariffOnly, tariffOnlyProfile) || hasNegativeEnergy(input.proposed, proposedProfile)) {
-    return unavailableEstimate(horizonYears);
+    return unavailableEstimate(horizonYears, annualPriceGrowthRate);
   }
 
-  const tariffReplay = replayProfile(tariffOnlyProfile, policy.lots, policy.delayMonths, policy.expiryMonths, horizonYears);
-  const proposedReplay = replayProfile(proposedProfile, policy.lots, policy.delayMonths, policy.expiryMonths, horizonYears);
+  const tariffReplay = replayProfile(tariffOnlyProfile, policy.lots, policy.delayMonths, policy.expiryMonths, horizonYears, annualPriceGrowthRate);
+  const proposedReplay = replayProfile(proposedProfile, policy.lots, policy.delayMonths, policy.expiryMonths, horizonYears, annualPriceGrowthRate);
   assertYearOneParity(tariffOnlyProfile, tariffReplay.annualCashDue, 'tariffOnly');
   assertYearOneParity(proposedProfile, proposedReplay.annualCashDue, 'proposed');
 
@@ -279,6 +300,10 @@ export function estimateOfferWorkspacePayback(input: PaybackInput): OfferWorkspa
     annualSavingsPln,
     annualTargetCostPln: proposedReplay.annualCashDue,
     annualTariffOnlyCostPln: tariffReplay.annualCashDue,
+    monthlyTargetCostPln: proposedReplay.monthlyCashDue,
+    monthlyTariffOnlyCostPln: tariffReplay.monthlyCashDue,
+    annualPriceGrowthRate,
+    annualExportPriceGrowthRate: 0,
     estimatedPaybackYears,
     horizonYears,
   };

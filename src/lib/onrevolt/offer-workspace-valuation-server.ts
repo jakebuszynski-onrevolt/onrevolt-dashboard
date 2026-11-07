@@ -15,6 +15,12 @@ import type { OfferMeasurementInterval, OfferMeasurementSeries } from './offer-m
 import type { OfferWorkspace } from './offer-workspace-server';
 import { offerHourlyMarketPrices, offerMarketIntervalStarts, type OfferStoredMarketRow } from './offer-workspace-market';
 import { rePrisma } from './re-stations';
+import { getOfferWorkspaceArtifact, putOfferWorkspaceArtifact } from './offer-workspace-artifacts';
+import { offerCalculationDependencyHash } from './offer-workspace-calculation-dependencies';
+import { buildAnnualOfferConsumptionProfile } from './offer-workspace-annual-profile';
+import { annualOfferMeasurementSeries, overlayOfferWorkspaceMeasurements } from './offer-workspace-energy';
+import { calculateOfferWorkspaceEnergy } from './offer-workspace-energy-server';
+import { resolveSelectedReferenceProfile } from './project-reference-profile';
 import {
   calculateOfferWorkspaceValuation,
   type CalculateOfferWorkspaceValuationInput,
@@ -207,6 +213,22 @@ export async function calculateOfferWorkspaceValuationOnServer(
   draft: OfferWorkspaceDraft,
   series: OfferMeasurementSeries | null,
 ): Promise<OfferWorkspaceValuation> {
+  let sourceNote: string | null = null;
+  if (!series?.intervals.length && workspace.measurements.availability === 'NO_FILES'
+    && workspace.input.energyProfileSource === 'ANNUAL_DECLARATION'
+    && (workspace.input.annualConsumptionKwh ?? 0) > 0) {
+    const energy = await calculateOfferWorkspaceEnergy(workspace, draft, series);
+    const profile = buildAnnualOfferConsumptionProfile({
+      annualConsumptionKwh: workspace.input.annualConsumptionKwh,
+      period: workspace.period,
+      referenceProfile: await resolveSelectedReferenceProfile(workspace.input.referenceProfile) || undefined,
+    });
+    series = annualOfferMeasurementSeries(profile, energy);
+    workspace = { ...workspace, measurements: overlayOfferWorkspaceMeasurements(workspace.measurements, energy) };
+    sourceNote = profile.referenceProfile
+      ? `Wycena szacunkowa: roczne zużycie rozłożone godzinowo profilem referencyjnym ${profile.referenceProfile.name}; pobór i oddanie są modelowane.`
+      : 'Wycena szacunkowa: roczne zużycie rozłożone godzinowo profilem RE; pobór i oddanie są modelowane.';
+  }
   const intervals = series?.intervals || [];
   const bounds = measurementBounds(intervals, workspace.measurements.months);
   const [current, target] = await Promise.all([
@@ -254,5 +276,18 @@ export async function calculateOfferWorkspaceValuationOnServer(
     rdnPricesNetPlnPerKwh,
     rcePricesNetPlnPerKwh,
   };
-  return calculateOfferWorkspaceValuation(input);
+  const artifact = { projectId: workspace.projectId, kind: 'valuation', key: {
+    algorithmVersion: 'offer-valuation-v2-annual', sourceRevision: workspace.revision,
+    inputs: offerCalculationDependencyHash(input),
+  } };
+  const cached = await getOfferWorkspaceArtifact<OfferWorkspaceValuation>(artifact);
+  if (cached) return cached;
+  const result = calculateOfferWorkspaceValuation(input);
+  if (sourceNote) {
+    result.current.issues.push(sourceNote);
+    result.target.issues.push(sourceNote);
+  }
+  // Failures of external sources are deliberately not made durable.
+  if (!current.issues?.length && !target.issues?.length) await putOfferWorkspaceArtifact(artifact, result);
+  return result;
 }

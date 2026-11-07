@@ -10,6 +10,7 @@ import {
   offerEnergyAxisCeil,
   offerChartValuation,
   offerEnergyChartRows,
+  offerEnergyChartProvenance,
   OfferEnergyPlot,
   OfferEnergySummary,
   type EnergyChartRow,
@@ -132,6 +133,35 @@ test('przyszły wykres używa prognozowanych pomiarów i energii bez zmiany seri
   ]);
   const hourly = offerEnergyChartRows(workspace, '2026-01', 'workday', true, forecast);
   assert.deepEqual([hourly[0].importKwh, hourly[0].exportKwh, hourly[0].loadKwh, hourly[0].pvKwh], [4, 1, 6, 2]);
+});
+
+test('roczny profil RE zachowuje etykietę MODELLED i nie opisuje przepływów jako pomiarów operatora', () => {
+  const labels = offerEnergyChartProvenance({
+    quality: 'MODELLED', source: 'Roczne zużycie · profil godzinowy RE', model: 'RE · model PV',
+    months: [], dayProfiles: [], totals: { loadKwh: 6000, pvKwh: 0, directKwh: 0 }, issues: [], modelBelowExportKwh: 0,
+    modelledMeasurements: { provenance: { kind: 'annual-consumption', source: 'Roczne zużycie · profil godzinowy RE', annualConsumptionKwh: 6000 },
+      months: [], dayProfiles: [], totalsImportKwh: 6000, totalsExportKwh: 0, intervalCount: 8760 },
+  });
+
+  assert.ok(labels);
+  assert.match(labels.sourceNote, /MODELLED/u);
+  assert.match(labels.sourceNote, /rocznej deklaracji RE/u);
+  assert.doesNotMatch(labels.sourceNote, /pomiary operatora/u);
+  assert.match(labels.sourceNote, /PV z modelu pogodowego/u);
+  assert.equal(labels.periodAriaLabel, 'Miesiąc profilu modelowanego');
+});
+
+test('roczny profil z potwierdzonym brakiem PV nie opisuje produkcji z modelu pogodowego', () => {
+  const labels = offerEnergyChartProvenance({
+    quality: 'MODELLED', source: 'Roczne zużycie · profil godzinowy RE', model: 'RE · bez instalacji PV',
+    months: [], dayProfiles: [], totals: { loadKwh: 6000, pvKwh: 0, directKwh: 0 }, issues: [], modelBelowExportKwh: 0,
+    modelledMeasurements: { provenance: { kind: 'annual-consumption', source: 'Roczne zużycie · profil godzinowy RE', annualConsumptionKwh: 6000 },
+      months: [], dayProfiles: [], totalsImportKwh: 6000, totalsExportKwh: 0, intervalCount: 8760 },
+  });
+
+  assert.ok(labels);
+  assert.match(labels.sourceNote, /potwierdzono brak instalacji PV/u);
+  assert.doesNotMatch(labels.sourceNote, /PV z modelu pogodowego/u);
 });
 
 const valuationValues = (overrides: Partial<OfferWorkspaceValuationValues> = {}): OfferWorkspaceValuationValues => ({

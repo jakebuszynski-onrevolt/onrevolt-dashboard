@@ -10,22 +10,21 @@ import {
   FormControl,
   FormHelperText,
   FormLabel,
-  Image,
   Input,
   Select,
   Spinner,
   Text,
   useColorModeValue,
 } from '@chakra-ui/react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MdExpandLess, MdExpandMore, MdLocationOn, MdOpenInNew, MdSearch } from 'react-icons/md';
 import {
-  LOCATION_MAP_IMAGE_VERSION,
   buildLocationMapViewerUrl,
   locationMapImageSource,
   locationMapProviders,
   normalizeLocationMapProvider,
 } from 'lib/onrevolt/location-maps';
+import DraggableLocationMap from './DraggableLocationMap';
 
 type AddressResult = {
   placeId: string;
@@ -40,6 +39,7 @@ type InvestmentLocationPickerProps = {
   latitude: string;
   longitude: string;
   mapProvider: string;
+  disabled?: boolean;
   onAddressChange: (value: string) => void;
   onMapProviderChange: (value: string) => void;
   onSelect: (result: AddressResult) => void;
@@ -57,6 +57,7 @@ export default function InvestmentLocationPicker({
   latitude,
   longitude,
   mapProvider,
+  disabled = false,
   onAddressChange,
   onMapProviderChange,
   onSelect,
@@ -64,8 +65,19 @@ export default function InvestmentLocationPicker({
   const [results, setResults] = useState<AddressResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [imageError, setImageError] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
+  const hasCoordinates = latitude.trim() !== '' && longitude.trim() !== ''
+    && Number.isFinite(Number(latitude)) && Math.abs(Number(latitude)) <= 85.05112878
+    && Number.isFinite(Number(longitude)) && Math.abs(Number(longitude)) <= 180;
+  const [expanded, setExpanded] = useState<boolean | null>(null);
+  const isOpen = expanded ?? hasCoordinates;
+  const searchController = useRef<AbortController | null>(null);
+  useEffect(() => {
+    searchController.current?.abort();
+    setLoading(false);
+    setResults([]);
+    setError('');
+    return () => searchController.current?.abort();
+  }, [address]);
   const borderColor = useColorModeValue('gray.200', 'whiteAlpha.200');
   const resultHover = useColorModeValue('gray.50', 'whiteAlpha.100');
   const mutedColor = useColorModeValue('gray.600', 'whiteAlpha.700');
@@ -75,8 +87,6 @@ export default function InvestmentLocationPicker({
   const sectionIconBg = useColorModeValue('purple.50', 'whiteAlpha.100');
   const sectionIconColor = useColorModeValue('purple.600', 'purple.200');
   const sectionArrowBg = useColorModeValue('white', 'whiteAlpha.100');
-  const hasCoordinates = Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude))
-    && latitude !== '' && longitude !== '';
   const normalizedProvider = normalizeLocationMapProvider(mapProvider);
   const viewerUrl = useMemo(() => (
     hasCoordinates
@@ -85,19 +95,25 @@ export default function InvestmentLocationPicker({
   ), [hasCoordinates, latitude, longitude, normalizedProvider]);
 
   async function search() {
+    if (disabled || address.trim().length < 3) return;
+    searchController.current?.abort();
+    const controller = new AbortController();
+    searchController.current = controller;
     setLoading(true);
     setError('');
     setResults([]);
     try {
-      const response = await fetch(`/api/geolocation/search?q=${encodeURIComponent(address)}`, { cache: 'no-store' });
+      const response = await fetch(`/api/geolocation/search?q=${encodeURIComponent(address)}`, { cache: 'no-store', signal: controller.signal });
       const payload = await response.json();
+      if (controller.signal.aborted) return;
       if (!response.ok || !payload.ok) throw new Error(payload.error || `HTTP ${response.status}`);
       setResults(payload.data || []);
       if (!payload.data?.length) setError('Nie znaleziono adresu. Dopisz miejscowość i numer budynku.');
     } catch (reason) {
+      if (controller.signal.aborted) return;
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }
 
@@ -117,7 +133,7 @@ export default function InvestmentLocationPicker({
         bg={sectionHeaderBg}
         whiteSpace="normal"
         aria-expanded={isOpen}
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={() => setExpanded(!isOpen)}
         transition="background-color 0.15s ease, border-color 0.15s ease"
         _hover={{ bg: sectionHeaderHover }}
         _active={{ bg: sectionHeaderHover }}
@@ -167,10 +183,10 @@ export default function InvestmentLocationPicker({
           <Flex gap="10px" direction={{ base: 'column', md: 'row' }}>
             <Input
               value={address}
+              isDisabled={disabled}
               onChange={(event) => {
                 onAddressChange(event.target.value);
                 setResults([]);
-                setImageError(false);
               }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
@@ -180,7 +196,7 @@ export default function InvestmentLocationPicker({
               }}
               placeholder="Ulica, numer, miejscowość"
             />
-            <Button leftIcon={loading ? <Spinner size="xs" /> : <MdSearch />} onClick={() => void search()} isDisabled={loading} flexShrink={0}>
+            <Button leftIcon={loading ? <Spinner size="xs" /> : <MdSearch />} onClick={() => void search()} isDisabled={disabled || loading || address.trim().length < 3} flexShrink={0}>
               Znajdź na mapie
             </Button>
           </Flex>
@@ -205,10 +221,11 @@ export default function InvestmentLocationPicker({
                   whiteSpace="normal"
                   leftIcon={<MdLocationOn />}
                   _hover={{ bg: resultHover }}
+                  isDisabled={disabled}
                   onClick={() => {
                     onSelect(result);
                     setResults([]);
-                    setImageError(false);
+                    setExpanded(true);
                   }}
                 >
                   <Box>
@@ -227,9 +244,9 @@ export default function InvestmentLocationPicker({
                   <FormLabel fontSize="sm" mb="5px">Źródło obrazu</FormLabel>
                   <Select
                     value={normalizedProvider}
+                    isDisabled={disabled}
                     onChange={(event) => {
                       onMapProviderChange(event.target.value);
-                      setImageError(false);
                     }}
                   >
                     {locationMapProviders.map((provider) => (
@@ -250,24 +267,10 @@ export default function InvestmentLocationPicker({
                   Otwórz mapę
                 </Button>
               </Flex>
-              {!imageError ? (
-                <Box w="702px" maxW="100%">
-                  <Image
-                    key={`${LOCATION_MAP_IMAGE_VERSION}-${normalizedProvider}-${latitude}-${longitude}`}
-                    src={`/api/geolocation/satellite?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}&provider=${encodeURIComponent(normalizedProvider)}&v=${LOCATION_MAP_IMAGE_VERSION}`}
-                    alt={`Zdjęcie lokalizacji ${address} ze źródła ${normalizedProvider}`}
-                    w="100%"
-                    aspectRatio="351 / 249"
-                    objectFit="cover"
-                    borderRadius="6px"
-                    border="1px solid"
-                    borderColor={borderColor}
-                    onError={() => setImageError(true)}
-                  />
-                </Box>
-              ) : (
-                <Alert status="warning" borderRadius="6px"><AlertIcon />Nie udało się pobrać obrazu z wybranego źródła.</Alert>
-              )}
+              <DraggableLocationMap latitude={Number(latitude)} longitude={Number(longitude)}
+                provider={normalizedProvider} address={address} disabled={disabled || !isOpen}
+                onCenterChange={point => onSelect({ ...point, address, placeId: '', precision: 'MANUAL' })} />
+              <FormHelperText>Przesuń mapę tak, aby pinezka wskazywała właściwy punkt. Następnie kliknij „Zapisz zmiany”.</FormHelperText>
               <Text mt="5px" color={mutedColor} fontSize="xs">
                 Obraz do oferty: {locationMapImageSource(normalizedProvider)}.
               </Text>

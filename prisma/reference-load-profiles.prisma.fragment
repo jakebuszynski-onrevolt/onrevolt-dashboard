@@ -1,0 +1,38 @@
+model ReferenceLoadProfileSource {
+  key         String                @id @db.VarChar(191)
+  title       String                @db.VarChar(500)
+  publisher   String                @db.VarChar(255)
+  url         String                @db.Text
+  downloadUrl String?               @db.Text
+  retrievedAt String                @db.VarChar(191)
+  license     String                @db.VarChar(255)
+  rawSha256   String                @db.Char(64)
+  notes       String?               @db.Text
+  profiles    ReferenceLoadProfile[]
+
+  @@map("ReferenceLoadProfileSource")
+}
+
+model ReferenceLoadProfile {
+  key               String                   @id @db.VarChar(191)
+  sourceKey         String                   @db.VarChar(191)
+  name              String                   @db.VarChar(500)
+  category          String                   @db.VarChar(191)
+  kind              String                   @db.VarChar(64)
+  quantity          String                   @db.VarChar(100)
+  unit              String                   @db.VarChar(64)
+  timeBasis         String                   @db.VarChar(64)
+  resolutionMinutes Int
+  start             String?                  @db.VarChar(191)
+  end               String?                  @db.VarChar(191)
+  pointCount        Int                      @db.UnsignedInt
+  contentHash       String                   @db.Char(64)
+  series            Json
+  metadata          Json
+  quality           Json
+  source            ReferenceLoadProfileSource @relation(fields: [sourceKey], references: [key], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([sourceKey], map: "ReferenceLoadProfile_sourceKey_idx")
+  @@index([category, kind], map: "ReferenceLoadProfile_category_kind_idx")
+  @@map("ReferenceLoadProfile")
+}

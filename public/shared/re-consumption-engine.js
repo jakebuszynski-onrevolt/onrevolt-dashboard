@@ -106,6 +106,10 @@
       addReActualQuarterValue(day, quarter, ['gridExportKwh'], 'sell', 'hasSell');
       addReActualQuarterValue(day, quarter, ['storageToGridKwh'], 'soldBank', null);
     });
+    if (isCompleteWarsawSpringForwardRecord(day.date, record)) {
+      day.hours[2].use = 0;
+      day.hours[2].hasUse = true;
+    }
     day.hasUsage = true;
   }
 
@@ -147,6 +151,37 @@
     const quarters = Array.isArray(record && record.quarters) ? record.quarters : [];
     const expectedSlots = Number(record && record.slotCount) || 96;
     return quarters.length >= expectedSlots;
+  }
+
+  function isWarsawSpringForwardDate(dateKey){
+    const match = /^(\d{4})-03-(\d{2})$/.exec(String(dateKey || ''));
+    if (!match) return false;
+    const year = Number(match[1]);
+    const lastSunday = 31 - new Date(Date.UTC(year, 2, 31)).getUTCDay();
+    return Number(match[2]) === lastSunday;
+  }
+
+  function isCompleteWarsawSpringForwardRecord(dateKey, record){
+    if (!isWarsawSpringForwardDate(dateKey) || Number(record && record.slotCount) !== 92) return false;
+    const quarters = Array.isArray(record && record.quarters) ? record.quarters : [];
+    if (quarters.length !== 92) return false;
+    const minuteSets = Array.from({ length: 24 }, () => new Set());
+    for (const quarter of quarters) {
+      const hour = reActualHourFromQuarter(quarter);
+      const start = String(quarter && quarter.slotStart || '');
+      const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})/.exec(start);
+      const value = reActualFirstNumber(quarter, ['totalLoadKwh', 'load', 'usageKwh', 'usage']);
+      if (hour == null || !match || match[1] !== dateKey || Number(match[2]) !== hour
+        || ![0, 15, 30, 45].includes(Number(match[3])) || value == null || value < 0) return false;
+      minuteSets[hour].add(Number(match[3]));
+    }
+    if (minuteSets[2].size !== 0) return false;
+    for (let hour = 0; hour < 24; hour += 1) {
+      if (hour !== 2 && (minuteSets[hour].size !== 4 || [0, 15, 30, 45].some(minute => !minuteSets[hour].has(minute)))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   function getReActualCutoff(payload){
@@ -345,6 +380,10 @@
    * @param {number[]|null} [inputs.defaultHourlyPercent] Original USE24 by default.
    * @param {number[]|null} [inputs.hourlyProfile] Selected 24-hour XLSX/import profile.
    * @param {number[]|null} [inputs.learnedHours] Selected monthlyHours[monthIndex].
+   * @param {boolean} [inputs.referenceProfileSelected] True when CRM selected a reference shape.
+   * @param {number[]} [inputs.referenceHours24] Raw hourly weights for this local date.
+   * @param {number} [inputs.referenceMonthWeight] Sum of raw hourly weights for this month.
+   * @param {number} [inputs.referenceAnnualWeight] Sum of raw hourly weights for the full target year.
    * @param {{isComplete: boolean, hours: Array<{hasUse: boolean, use: number}>}|null} [inputs.actualDay]
    * @param {number[]|null} [inputs.pvHourlyKwh] Required for XLSX export reconstruction.
    * @param {number[]|null} [inputs.exportHourlyKwh] Matching selected XLSX export day.
@@ -356,6 +395,7 @@
     const {
       dayKey, annualKwh, monthlyKwh, sources, hourlyProfile, learnedHours,
       actualDay, pvHourlyKwh, exportHourlyKwh, hasExport = false,
+      referenceProfileSelected = false, referenceHours24, referenceMonthWeight, referenceAnnualWeight,
       defaultHourlyPercent = DEFAULT_HOURLY_PERCENT,
     } = inputs;
     const monthIndex = Number(dayKey.slice(5, 7)) - 1;
@@ -381,6 +421,32 @@
       }
     } else if (learned) {
       modeledHours = learned.slice();
+    } else if (referenceProfileSelected) {
+      if (!Array.isArray(referenceHours24) || referenceHours24.length !== 24 ||
+          referenceHours24.some(value => reActualNumber(value) == null || Number(value) < 0)) {
+        throw new Error(`Brak poprawnych 24 wag wybranego profilu referencyjnego dla ${dayKey}.`);
+      }
+      const referenceDayWeight = referenceHours24.reduce((sum, value) => sum + Number(value), 0);
+      if (!Number.isFinite(referenceDayWeight) || !Number.isFinite(referenceAnnualWeight) ||
+          referenceAnnualWeight <= 0 || referenceDayWeight > referenceAnnualWeight ||
+          !Number.isFinite(referenceMonthWeight) || referenceMonthWeight < referenceDayWeight ||
+          referenceMonthWeight > referenceAnnualWeight) {
+        throw new Error(`Nieprawidłowa suma wag wybranego profilu referencyjnego dla ${dayKey}.`);
+      }
+      if (detailed && monthly) {
+        const monthUsageKWh = monthly[monthIndex];
+        if (monthUsageKWh > 0 && referenceMonthWeight <= 0) {
+          throw new Error(`Wybrany profil referencyjny ma zerowe wagi w dniu ${dayKey}, mimo dodatniego zużycia.`);
+        }
+        modeledHours = referenceMonthWeight > 0
+          ? referenceHours24.map(value => monthUsageKWh * Number(value) / referenceMonthWeight)
+          : new Array(24).fill(0);
+      } else {
+        if (!Number.isFinite(annualKwh) || annualKwh < 0) {
+          throw new Error(`Nieprawidłowe zużycie roczne dla wybranego profilu referencyjnego ${dayKey}.`);
+        }
+        modeledHours = referenceHours24.map(value => Number(value) * annualKwh / referenceAnnualWeight);
+      }
     } else {
       // Calendar arithmetic does not parse YYYY-MM-DD as a UTC instant.
       const year = inputs.year ?? Number(dayKey.slice(0, 4));
@@ -404,7 +470,8 @@
   /**
    * Full calendar projection using resolveDay, without rounding or another model.
    * inputs: year, annualKwh, monthlyKwh?, sources?, exportSources?,
-   * defaultHourlyPercent?, getDayInputs?(dayKey) -> daily resolveDay inputs.
+   * defaultHourlyPercent?, getDayInputs?(dayKey) -> daily resolveDay inputs,
+   * onDayResolved?(dayKey, hours) -> optional notification after a validated day.
    * The callback selects XLSX/PV patterns, learnedHours and actualDay; it must be
    * deterministic. It may set hasExport:false when hourlyProfile is corrected.
    * month is 1-based. hourly contains monthly sums; weekdayHourly/weekendHourly
@@ -413,7 +480,7 @@
    * the arithmetic source precedence in resolveDay.
    */
   function buildProfile(inputs) {
-    const { year, annualKwh, monthlyKwh, sources, exportSources, defaultHourlyPercent, getDayInputs } = inputs;
+    const { year, annualKwh, monthlyKwh, sources, exportSources, defaultHourlyPercent, getDayInputs, onDayResolved } = inputs;
     if (!Number.isInteger(year) || year < 100 || year > 9999) {
       throw new Error('Nieprawidłowy rok profilu zużycia');
     }
@@ -441,6 +508,7 @@
           hasExport: baseExportSource === 'xlsx', ...daily, dayKey, year,
         });
         requireHourlyEnergy(resolved, `Brak kompletnego profilu zużycia dla ${dayKey}`);
+        if (typeof onDayResolved === 'function') onDayResolved(dayKey, resolved.slice());
         if (Array.isArray(daily?.actualDay?.hours) && daily.actualDay.hours.length === 24) actualDays += 1;
         if (daily?.learnedHours) hasLearned = true;
         const dayOfWeek = new Date(Date.UTC(year, monthIndex, day)).getUTCDay();

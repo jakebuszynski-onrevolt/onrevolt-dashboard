@@ -22,6 +22,9 @@ export type OfferWorkspacePricingItem = PriceableTemplateItem & {
   saleVatRate: NumericValue | null;
   isOptional: boolean;
   requiresReview: boolean;
+  workspaceRemoved?: boolean;
+  workspaceAdded?: boolean;
+  workspaceChanged?: boolean;
   product?: (NonNullable<PriceableTemplateItem['product']> & {
     id?: string | null;
     sku?: string | null;
@@ -54,6 +57,9 @@ export type OfferWorkspacePricingLine = {
   calculation: CalculationResult | null;
   saleAmount: number | null;
   missingPriceReason: string | null;
+  workspaceRemoved?: boolean;
+  workspaceAdded?: boolean;
+  workspaceChanged?: boolean;
 };
 
 export type OfferWorkspacePricingResult = {
@@ -159,6 +165,7 @@ export function priceOfferWorkspaceConfiguration(
   const saleAmountBasis = clientType === 'B2B' ? 'NET' : 'GROSS';
   const lines: OfferWorkspacePricingLine[] = [];
   const calculationInputs: Parameters<typeof sumConfiguration>[0] = [];
+  const calculationIndexByLine = new Map<string, number>();
   const missingRequiredData: string[] = [];
   const missingOptionalData: string[] = [];
 
@@ -180,6 +187,31 @@ export function priceOfferWorkspaceConfiguration(
 
     for (const { item } of orderedItems) {
       const label = itemLabel(item);
+      if (item.workspaceRemoved) {
+        lines.push({
+          templateId: template.id,
+          templateName: template.name,
+          itemId: item.id,
+          position: item.position,
+          description: item.description ?? null,
+          productName: item.product?.name ?? null,
+          role: item.role,
+          supplyMode: item.supplyMode,
+          quantity: Number.isFinite(Number(item.quantity)) ? Number(item.quantity) : null,
+          isOptional: item.isOptional,
+          requiresReview: item.requiresReview,
+          includedInSale: false,
+          resolvedCosts: null,
+          saleVatRate: null,
+          calculation: null,
+          saleAmount: null,
+          missingPriceReason: null,
+          workspaceRemoved: true,
+          ...(item.workspaceAdded ? { workspaceAdded: true } : {}),
+          ...(item.workspaceChanged ? { workspaceChanged: true } : {}),
+        });
+        continue;
+      }
       let quantity: number | null = null;
       let costs: ReturnType<typeof resolveTemplateItemCosts> | null = null;
       let resolvedSaleVatRate: number | null = null;
@@ -197,6 +229,7 @@ export function priceOfferWorkspaceConfiguration(
         resolvedSaleVatRate = calculated.saleVatRate;
         includedInSale = calculated.includedInSale;
         lineInput = calculated.input;
+        calculationIndexByLine.set(`${template.id}\u0000${item.id}`, calculationInputs.length);
         calculationInputs.push(lineInput);
       } catch (error) {
         missingPriceReason = error instanceof Error ? error.message : `Nie udało się wycenić pozycji „${label}”.`;
@@ -221,6 +254,9 @@ export function priceOfferWorkspaceConfiguration(
         calculation: null,
         saleAmount: null,
         missingPriceReason,
+        ...(item.workspaceRemoved ? { workspaceRemoved: true } : {}),
+        ...(item.workspaceAdded ? { workspaceAdded: true } : {}),
+        ...(item.workspaceChanged ? { workspaceChanged: true } : {}),
       });
     }
   }
@@ -231,8 +267,9 @@ export function priceOfferWorkspaceConfiguration(
   if (!hasMissingData && calculationInputs.length > 0) {
     try {
       totals = sumConfiguration(calculationInputs);
-      lines.forEach((line, index) => {
-        const calculation = totals?.lines[index] ?? null;
+      lines.forEach((line) => {
+        const calculationIndex = calculationIndexByLine.get(`${line.templateId}\u0000${line.itemId}`);
+        const calculation = calculationIndex === undefined ? null : totals?.lines[calculationIndex] ?? null;
         line.calculation = calculation;
         line.saleAmount = calculation
           ? (saleAmountBasis === 'NET' ? calculation.saleNet : calculation.saleGross)

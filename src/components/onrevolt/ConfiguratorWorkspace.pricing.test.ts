@@ -3,6 +3,7 @@ import test from 'node:test';
 import { resolveSaleVatRate } from 'lib/onrevolt/configuration-vat';
 import { resolveTemplateItemSaleVat } from 'lib/onrevolt/configuration-templates';
 import {
+  applyConfigItemFieldEdit,
   calculateItems,
   configurationItemsFromConfiguration,
   defaultOperatingCostBasis,
@@ -10,6 +11,7 @@ import {
   isStaleCatalogPrice,
   itemFromProduct,
   itemFromTemplate,
+  itemToPayload,
   needsLegacyCostReview,
 } from './ConfiguratorWorkspace';
 
@@ -106,6 +108,7 @@ test('po zapisie edytor odtwarza pozycje z ID zwróconymi przez PUT i czyści fl
     purchaseVatRate: 0.23,
     operatingCostNet: 8,
     marginRate: 0.2,
+    unitSaleNet: 125.12345678,
     saleVatRate: 0.08,
     pricingMode: 'CATALOG',
     operatingCostBasis: 'PER_UNIT',
@@ -123,6 +126,17 @@ test('po zapisie edytor odtwarza pozycje z ID zwróconymi przez PUT i czyści fl
   assert.equal(hydrated.requireCurrentCatalogPrice, undefined);
   assert.equal(hydrated.recalculateCatalogPrice, undefined);
   assert.equal(hydrated.previewCatalogSaleVat, undefined);
+  assert.equal(hydrated.unitSaleNet, '125.12345678');
+  assert.equal(calculateItems([hydrated], 'MIXED').saleNet, 250.25);
+  assert.equal(calculateItems([hydrated], 'MIXED').saleGross, 270.27);
+  assert.equal(itemToPayload(hydrated, 'MIXED').unitSaleNet, 125.12345678);
+
+  const afterMarginEdit = applyConfigItemFieldEdit(hydrated, 'marginRate', '35');
+  assert.equal(afterMarginEdit.unitSaleNet, null);
+  assert.equal(itemToPayload(afterMarginEdit, 'MIXED').unitSaleNet, null);
+  const afterCostEdit = applyConfigItemFieldEdit(hydrated, 'operatingCostNet', '9');
+  assert.equal(afterCostEdit.unitSaleNet, '125.12345678');
+  assert.equal(itemToPayload(afterCostEdit, 'MIXED').unitSaleNet, 125.12345678);
 });
 
 test('VAT mieszany korzysta z ceny katalogowej, a jawny tryb globalny nadal ma pierwszeństwo', () => {

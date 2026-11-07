@@ -124,7 +124,7 @@ export default function ClientDetailsForm(props: Props) {
       </div>
       <fieldset disabled={disabled} className={styles.location}>
         <InvestmentLocationPicker address={values.investmentAddress} latitude={values.latitude} longitude={values.longitude}
-          mapProvider={values.mapProvider} onAddressChange={props.onAddressChange}
+          mapProvider={values.mapProvider} disabled={disabled} onAddressChange={props.onAddressChange}
           onMapProviderChange={value => onChange('mapProvider', value)} onSelect={props.onLocationSelect} />
       </fieldset>
     </section>

@@ -196,6 +196,19 @@ test('actual map preserves winter/summer consumption, PV replacement and grid/st
   assert.equal(current.totalUse, 21);
 });
 
+test('complete Warsaw spring-transition actual keeps the missing 02 hour at zero before reference overlay', () => {
+  const spring = record('2026-03-29');
+  assert.equal(spring.slotCount, 92);
+  const actualDay = engine.buildActualMap(payload([spring], '2026-03-30 00:00:00')).get('2026-03-29');
+  assert.equal(actualDay.isComplete, true);
+  assert.equal(actualDay.hours[2].hasUse, true);
+  assert.equal(actualDay.hours[2].use, 0);
+  const resolved = engine.resolveDay({ dayKey: '2026-03-29', annualKwh: 8760,
+    referenceProfileSelected: true, actualDay });
+  assert.equal(sum(resolved), 23);
+  assert.equal(resolved[2], 0);
+});
+
 test('actual zero differs from missing; aliases do not coerce null, empty or boolean to measurements', () => {
   const row = record('2026-09-09');
   row.quarters = [0, 1, 2, 3].map(hour => ({ ...row.quarters[hour * 4], totalLoadKwh: null }));
@@ -271,6 +284,75 @@ test('explicit monthly sources precede learned forecast; standard ignores suppli
   assert.deepEqual(engine.resolveDay({ ...inputs, sources: sources('standard'), hourlyProfile: fill(3) }), fill(8));
   assert.deepEqual(engine.resolveDay({ ...inputs, monthlyKwh: null }), fill(8));
   assert.deepEqual(engine.resolveDay({ ...inputs, monthlyKwh: null, learnedHours: null }), fill(1));
+});
+
+test('selected reference weights scale the standard source across the whole target year', () => {
+  const referenceHours24 = fill(0);
+  referenceHours24[7] = 1;
+  referenceHours24[19] = 3;
+  const hours = engine.resolveDay({ dayKey: '2026-01-01', annualKwh: 3650,
+    referenceProfileSelected: true, referenceHours24, referenceMonthWeight: 31 * 4, referenceAnnualWeight: 365 * 4 });
+  assert.equal(hours[7], 2.5);
+  assert.equal(hours[19], 7.5);
+  assert.equal(sum(hours), 10);
+
+  const modeled = engine.buildProfile({ year: 2026, annualKwh: 8760,
+    getDayInputs: dayKey => {
+      const month = Number(dayKey.slice(5, 7));
+      const referenceHours24 = fill(month === 1 ? 1 : 2);
+      const referenceMonthWeight = (month === 1 ? 31 : new Date(2026, month, 0).getDate()) * (month === 1 ? 24 : 48);
+      const referenceAnnualWeight = 31 * 24 + 334 * 48;
+      return { referenceProfileSelected: true, referenceHours24, referenceMonthWeight, referenceAnnualWeight };
+    },
+  });
+  approx(modeled.annualKwh, 8760);
+  assert.ok(modeled.months[0].totalKwh < modeled.months[1].totalKwh);
+});
+
+test('selected reference shapes monthly manual totals but preserves actual, hourly and learned priority', () => {
+  const referenceHours24 = fill(0);
+  referenceHours24[6] = 1;
+  referenceHours24[18] = 3;
+  const base = { dayKey: '2026-01-01', annualKwh: 3650, referenceProfileSelected: true,
+    referenceHours24, referenceMonthWeight: 31 * 4, referenceAnnualWeight: 1460 };
+  const manual = engine.resolveDay({ ...base, monthlyKwh: [62, ...new Array(11).fill(0)], sources: sources('manual') });
+  assert.equal(sum(manual), 2);
+  assert.equal(manual[6], 0.5);
+  assert.equal(manual[18], 1.5);
+  assert.deepEqual(engine.resolveDay({ ...base, sources: sources('standard'), learnedHours: fill(7) }), fill(7));
+  assert.deepEqual(engine.resolveDay({ ...base, sources: sources('xlsx'), hourlyProfile: fill(3) }), fill(3));
+  assert.deepEqual(engine.resolveDay({ ...base, actualDay: { isComplete: true,
+    hours: fill(2).map(use => ({ hasUse: true, use })) } }), fill(2));
+  assert.throws(() => engine.resolveDay({ ...base, referenceHours24: null }), /Brak poprawnych 24 wag/);
+  assert.throws(() => engine.resolveDay({ ...base, referenceAnnualWeight: 0 }), /Nieprawidłowa suma wag/);
+});
+
+test('selected reference preserves weekday/weekend energy allocation in explicit monthly totals', () => {
+  const year = 2026;
+  const weekdaysByMonth = Array.from({ length: 12 }, (_, monthIndex) => {
+    const count = new Date(year, monthIndex + 1, 0).getDate();
+    let weekdays = 0;
+    for (let day = 1; day <= count; day += 1) {
+      const weekday = new Date(Date.UTC(year, monthIndex, day)).getUTCDay();
+      if (weekday !== 0 && weekday !== 6) weekdays += 1;
+    }
+    return weekdays;
+  });
+  const annualWeight = weekdaysByMonth.reduce((sum, weekdays) => sum + weekdays * 24, 0);
+  const result = engine.buildProfile({ year, annualKwh: 310, monthlyKwh: [310, ...new Array(11).fill(0)],
+    sources: sources('manual'), getDayInputs: dayKey => {
+      const date = new Date(`${dayKey}T12:00:00.000Z`);
+      const monthIndex = date.getUTCMonth();
+      const weekday = date.getUTCDay();
+      return { referenceProfileSelected: true,
+        referenceHours24: weekday === 0 || weekday === 6 ? fill(0) : fill(1),
+        referenceMonthWeight: weekdaysByMonth[monthIndex] * 24, referenceAnnualWeight: annualWeight };
+    },
+  });
+  const january = result.months[0];
+  approx(january.totalKwh, 310);
+  assert.equal(january.weekendHourly.every(value => value === 0), true);
+  assert.ok(january.weekdayHourly.every(value => value > 0));
 });
 
 test('monthly selection, decimal comma, zero and original default percentages match RE', () => {
@@ -442,6 +524,21 @@ test('buildProfile aggregates calendar months, hourly sums and weekday/weekend a
   assert.equal(zero.months.every((month: any) => month.hasData), true);
 });
 
+test('buildProfile reports each validated daily vector without exposing mutable aggregation arrays', () => {
+  const received: Array<[string, number[]]> = [];
+  const result = engine.buildProfile({ year: 2026, annualKwh: 365, defaultHourlyPercent: fill(100 / 24),
+    onDayResolved: (dayKey: string, hours: number[]) => {
+      received.push([dayKey, hours]);
+      if (received.length === 1) hours[0] = 999;
+    },
+  });
+  assert.equal(received.length, 365);
+  assert.equal(received[0][0], '2026-01-01');
+  assert.equal(received[364][0], '2026-12-31');
+  approx(result.annualKwh, 365);
+  for (const month of result.months) approx(sum(month.hourly), month.totalKwh);
+});
+
 function labeledProfileFixture() {
   const importSources = ['xlsx', 'xlsx', 'standard', 'standard', 'manual', 'xlsx',
     'xlsx', 'real', 'part', 'forecast', 'standard', 'manual'];
@@ -497,7 +594,13 @@ test('parity: actual maps match named canonical RE functions for seasons, curren
   const reference = legacy();
   for (const data of [actualFixture(), payload([record('2026-03-29'), record('2025-10-26')]), {},
     payload([record('2026-09-09')], '2026-09-09 00:00:00')]) {
-    assert.deepEqual(plain([...engine.buildActualMap(data)]), plain([...reference.buildReActualHourlyMapFromPayload(data)]));
+    const expected = reference.buildReActualHourlyMapFromPayload(data);
+    const spring = expected.get('2026-03-29');
+    if (spring) {
+      spring.hours[2].use = 0;
+      spring.hours[2].hasUse = true;
+    }
+    assert.deepEqual(plain([...engine.buildActualMap(data)]), plain([...expected]));
   }
 });
 

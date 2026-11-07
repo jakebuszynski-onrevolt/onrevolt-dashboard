@@ -1,23 +1,32 @@
 import { createHash } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { Prisma, type ClientType, type ConfigurationGoal, type ConfigurationKind, type ConfigurationRoofType } from '@prisma/client';
+import { Prisma, type ClientType, type ConfigurationGoal, type ConfigurationKind, type ConfigurationRoofType, type EnergyProfileSource } from '@prisma/client';
 import { buildOfferMeasurementSeries, type OfferMeasurementKind, type OfferMeasurementSeries } from './offer-measurements';
 import { buildOfferWorkspaceDayProfiles, type OfferWorkspaceDayProfile } from './offer-workspace-chart-data';
 import {
   OFFER_WORKSPACE_SCHEMA_VERSION,
   parseOfferWorkspaceDraft,
+  offerWorkspaceDraftWithBatteryPresence,
   createOfferWorkspacePricingSnapshot as createPricingSnapshotFromResult,
   type OfferWorkspaceDraft,
   type OfferWorkspacePricingSnapshot,
   type SavedOfferWorkspaceDraft,
 } from './offer-workspace';
 import { configurationInvestmentScope } from './configuration-templates';
+import {
+  applyOfferWorkspaceConfigurationEdits,
+  configurationEditsContainPricing,
+  validateOfferWorkspaceConfigurationEdits,
+} from './offer-workspace-configuration-edits';
 import { prisma } from './prisma';
+import { getOfferWorkspaceArtifact, putOfferWorkspaceArtifact } from './offer-workspace-artifacts';
 import { rePrisma } from './re-stations';
 import { hasStaffPermission } from './staff-server';
 import { readProjectAnalysisPeriod } from './project-analysis-period-server';
 import { buildingTypeLabel, terrainTypeLabel, roofShapeLabel, connectionTypeLabel, heatSourceLabel, heatSourceDetailLabel, energySupplierLabel } from './energy-intake';
+import { resolveClientEnergyBatteryPresence } from './client-energy-pv-summary';
+import { readProjectReferenceProfileSelection, type ProjectReferenceProfileSelection } from './project-reference-profile';
 
 const maxOfferWorkspaceMeasurementFiles = 24;
 
@@ -29,14 +38,22 @@ export type OfferWorkspaceInput = {
     terrain: string | null; buildingType: string | null; roofType: string | null;
     connectionType: string | null; connectionPowerKw: number | null;
     heatingSource: string | null; heatingDetails: string | null; supplier: string | null;
+    pvInstallationPlace?: string | null;
+    highLoadDevices?: string | null;
+    plannedHighLoadDevices?: string | null;
   };
   existingPv: { powerKw: number | null; tiltDegrees: number | null; azimuthDegrees: number | null } | null;
+  existingBatteryKwh?: number | null;
+  existingBatteryPresent?: boolean | null;
   location: OfferWorkspaceLocation | null;
   settlementMode: string | null;
   annualConsumptionKwh: number | null;
+  energyProfileSource?: EnergyProfileSource | null;
+  referenceProfile?: ProjectReferenceProfileSelection;
   issues: string[];
 };
 export type OfferWorkspaceMeasurements = {
+  availability?: 'NO_FILES' | 'FILES_PRESENT' | 'UNKNOWN';
   periods: OfferMeasurementSeries['periods'];
   months: Array<{ period: string; importKwh: number | null; exportKwh: number | null }>;
   dayProfiles?: OfferWorkspaceDayProfile[];
@@ -83,6 +100,7 @@ export type OfferWorkspaceTemplate = {
     operatingCostBasis?: 'PER_LINE' | 'PER_UNIT';
     catalogPriceId?: string | null;
     unitPurchaseNet: number | null;
+    unitSaleNet?: number | null;
     purchaseVatRate: number | null;
     operatingCostNet: number | null;
     marginRate: number | null;
@@ -115,6 +133,7 @@ export type OfferWorkspace = {
   measurements: OfferWorkspaceMeasurements;
   templates: OfferWorkspaceTemplate[];
   draft: SavedOfferWorkspaceDraft | null;
+  canEditConfigurationItems?: boolean;
 };
 
 export class OfferWorkspaceNotFoundError extends Error {
@@ -126,7 +145,7 @@ export class OfferWorkspaceConflictError extends Error {
 }
 
 export class OfferWorkspacePermissionError extends Error {
-  constructor() { super('Do workspace oferty wymagane są uprawnienia offers.manage i energy.manage.'); this.name = 'OfferWorkspacePermissionError'; }
+  constructor() { super('Do workspace oferty wymagane są uprawnienia offers.manage i energy.manage; do wyświetlania i zapisu indywidualnych cen wymagane jest także pricing.read.'); this.name = 'OfferWorkspacePermissionError'; }
 }
 
 export function offerWorkspaceProjectWhere(projectId: string, user: OfferWorkspaceStaffUser) {
@@ -145,6 +164,38 @@ function finiteOrNull(value: unknown) {
 function textOrNull(value: unknown) {
   if (typeof value !== 'string') return null;
   return value.trim() || null;
+}
+
+function siteAuditValue(value: unknown) {
+  if (typeof value === 'string') return value.trim() || null;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+function siteAuditHighLoadDevices(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const formData = value as Record<string, unknown>;
+  const entries: string[] = [];
+  const heating = [siteAuditValue(formData.heating_source), siteAuditValue(formData.heating_params)].filter((part): part is string => Boolean(part));
+  if (heating.length) entries.push(heating.join(' '));
+  const loads = Array.isArray(formData.loads) ? formData.loads : [];
+  for (const value of loads) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const load = value as Record<string, unknown>;
+    const parts = [siteAuditValue(load.device), siteAuditValue(load.params)].filter((part): part is string => Boolean(part));
+    const power = siteAuditValue(load.power_kw);
+    if (power) parts.push(`${power} kW`);
+    if (parts.length) entries.push(parts.join(', '));
+  }
+  return entries.length ? entries.join('; ') : null;
+}
+
+function siteAuditPvInstallationPlace(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const formData = value as Record<string, unknown>;
+  if (formData.has_pv_now !== 'yes') return null;
+  const places: Record<string, string> = { ROOF: 'Dach', GROUND: 'Grunt', OTHER: 'Inne' };
+  return typeof formData.existing_pv_place === 'string' ? places[formData.existing_pv_place] || null : null;
 }
 
 function inside(root: string, target: string) {
@@ -293,6 +344,7 @@ export function serializeTemplate(template: any, includePricing: boolean): Offer
       operatingCostBasis: includePricing ? item.operatingCostBasis : undefined,
       catalogPriceId: includePricing ? item.catalogPriceId : undefined,
       unitPurchaseNet: includePricing ? finiteOrNull(item.unitPurchaseNet) : null,
+      ...(includePricing && item.unitSaleNet != null ? { unitSaleNet: finiteOrNull(item.unitSaleNet) } : {}),
       purchaseVatRate: includePricing ? finiteOrNull(item.purchaseVatRate) : null,
       operatingCostNet: includePricing ? finiteOrNull(item.operatingCostNet) : null,
       marginRate: includePricing ? finiteOrNull(item.marginRate) : null,
@@ -384,7 +436,7 @@ const templateMetadataInclude = (now: Date) => ({
       isOptional: true, requiresReview: true,
       product: {
         select: {
-          id: true, name: true, sku: true, legacySku: true, category: true, producer: true,
+          id: true, updatedAt: true, name: true, sku: true, legacySku: true, category: true, producer: true,
           availability: true, powerCapacity: true,
           prices: { where: { validFrom: { lte: now } }, select: { id: true, validFrom: true, createdAt: true }, orderBy: { validFrom: 'desc' as const }, take: 1 },
         },
@@ -403,7 +455,23 @@ function templateSourceRevision(templates: any[]) {
     updatedAt: template.updatedAt,
     items: template.items.map((item: any) => ({
       id: item.id,
-      productId: item.product?.id ?? null,
+      description: item.description,
+      quantity: item.quantity,
+      role: item.role,
+      supplyMode: item.supplyMode,
+      isOptional: item.isOptional,
+      requiresReview: item.requiresReview,
+      product: item.product ? {
+        id: item.product.id,
+        updatedAt: item.product.updatedAt,
+        name: item.product.name,
+        sku: item.product.sku,
+        legacySku: item.product.legacySku,
+        category: item.product.category,
+        producer: item.product.producer,
+        availability: item.product.availability,
+        powerCapacity: item.product.powerCapacity,
+      } : null,
       prices: (item.product?.prices || []).map((price: any) => ({ id: price.id, validFrom: price.validFrom, createdAt: price.createdAt })),
     })),
   }));
@@ -411,6 +479,24 @@ function templateSourceRevision(templates: any[]) {
 
 function sourceRevision(source: unknown) {
   return createHash('sha256').update(JSON.stringify(source)).digest('hex');
+}
+
+type CachedOfferWorkspaceMeasurements = {
+  schemaVersion: 1;
+  sourceRevision: string;
+  measurements: OfferWorkspaceMeasurements;
+  series: OfferMeasurementSeries;
+};
+
+function cachedOfferWorkspaceMeasurements(value: unknown, revision: string): CachedOfferWorkspaceMeasurements {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Nieprawidłowy cache pomiarów workspace oferty');
+  const artifact = value as Record<string, unknown>;
+  if (artifact.schemaVersion !== 1 || artifact.sourceRevision !== revision
+    || !artifact.measurements || typeof artifact.measurements !== 'object' || Array.isArray(artifact.measurements)
+    || !artifact.series || typeof artifact.series !== 'object' || Array.isArray(artifact.series)) {
+    throw new Error('Cache pomiarów workspace oferty ma niezgodny schemat lub rewizję źródeł');
+  }
+  return artifact as CachedOfferWorkspaceMeasurements;
 }
 
 function parseStoredPricingSnapshot(value: unknown): OfferWorkspacePricingSnapshot | null {
@@ -444,11 +530,23 @@ export function savedDraft(
   const storedInput = row.input && typeof row.input === 'object' && !Array.isArray(row.input)
     ? row.input as Record<string, unknown> : {};
   const pricingSnapshot = includePricingSnapshot ? parseStoredPricingSnapshot(storedInput._pricingSnapshot) : null;
+  const parsedDraft = parseOfferWorkspaceDraft(row.input);
+  const safeDraft = includePricingSnapshot ? parsedDraft : {
+    ...parsedDraft,
+    ...(parsedDraft.configurationEdits ? {
+      configurationEdits: parsedDraft.configurationEdits.flatMap((edit) => {
+        const items = (edit.items || []).map(({ pricing: _pricing, ...item }) => item)
+          .filter((item) => item.description !== undefined || item.quantity !== undefined || item.removed !== undefined);
+        if (!items.length && !edit.technical) return [];
+        return [{ templateId: edit.templateId, ...(items.length ? { items } : {}), ...(edit.technical ? { technical: edit.technical } : {}) }];
+      }),
+    } : {}),
+  };
   return {
     revision: row.revision,
     sourceRevision: row.sourceRevision,
     updatedAt: row.updatedAt.toISOString(),
-    input: parseOfferWorkspaceDraft(row.input),
+    input: safeDraft,
     ...(pricingSnapshot ? { pricingSnapshot } : {}),
   };
 }
@@ -462,13 +560,19 @@ export function createServerOfferWorkspacePricingSnapshot(
     || typeof createPricingSnapshotFromResult !== 'function'
     || templates.some((template) => !Array.isArray(template.items))) return null;
   const { priceOfferWorkspaceConfiguration } = require('./offer-workspace-pricing') as typeof import('./offer-workspace-pricing');
+  const effectiveTemplates = applyOfferWorkspaceConfigurationEdits(templates, input);
   const selected = new Set(input.selectedTemplateIds);
   const pricing = priceOfferWorkspaceConfiguration(
-    templates.filter((template) => selected.has(template.id)),
+    effectiveTemplates.filter((template) => selected.has(template.id)),
     input.saleVatMode,
     clientType,
   );
-  return createPricingSnapshotFromResult(input, clientType, pricing, templates.filter((template) => selected.has(template.id)));
+  if (input.commercialPricing) {
+    const { calculateOfferCommercialPricing } = require('./offer-workspace-commercial-pricing') as typeof import('./offer-workspace-commercial-pricing');
+    try { calculateOfferCommercialPricing(pricing, effectiveTemplates.filter(template => selected.has(template.id)), input.commercialPricing); }
+    catch (error) { throw new OfferWorkspaceConflictError(error instanceof Error ? error.message : 'Nieprawidłowy podział kosztorysu oferty.'); }
+  }
+  return createPricingSnapshotFromResult(input, clientType, pricing, effectiveTemplates.filter((template) => selected.has(template.id)));
 }
 
 export function offerWorkspacePricingSnapshotsMatch(
@@ -514,10 +618,10 @@ export async function loadProjectOfferWorkspace(
   const period = periodSource.period;
   const periodKeys = period.periodKeys;
   const templateClientTypes = compatibleTemplateClientTypes(project.clientType, project.client.clientType);
-  const [energyAuditVersion, energyAudit, ppe, templates, draft] = await Promise.all([
+  const [energyAuditVersion, energyAudit, ppe, templates, draft, siteAudit, referenceProfile] = await Promise.all([
     prisma.energyAudit.findUnique({ where: { projectId }, select: { id: true, updatedAt: true } }),
     canReadEnergy ? prisma.energyAudit.findUnique({ where: { projectId }, select: {
-      annualConsumptionKwh: true, settlementSystem: true, existingPvKw: true,
+      id: true, annualConsumptionKwh: true, profileSource: true, settlementSystem: true, existingPvKw: true, existingBatteryKwh: true,
       roofTiltDeg: true, roofOrientation: true, updatedAt: true,
       terrainType: true, buildingType: true, roofShape: true, connectionType: true,
       connectionPowerKw: true, heatingSource: true, heatingSourceDetail: true, energySupplier: true,
@@ -529,6 +633,12 @@ export async function loadProjectOfferWorkspace(
       orderBy: [{ kind: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
     }),
     canReadDraft ? prisma.offerWorkspace.findUnique({ where: { projectId } }) : Promise.resolve(null),
+    prisma.siteAudit.findFirst({
+      where: { projectId },
+      select: { id: true, updatedAt: true, formData: true },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    }),
+    canReadEnergy ? readProjectReferenceProfileSelection(projectId) : Promise.resolve(null),
   ]);
 
   const locationAddress = textOrNull(project.investmentSite?.fullAddress)
@@ -546,6 +656,15 @@ export async function loadProjectOfferWorkspace(
   if (canReadEnergy && energyAudit && energyAudit.annualConsumptionKwh == null) inputIssues.push('Brak zapisanej rocznej deklaracji zużycia.');
   if (canReadEnergy && energyAudit && !textOrNull(energyAudit.settlementSystem)) inputIssues.push('Brak zapisanego systemu rozliczeń.');
   if (canReadEnergy && energyAudit?.existingPvKw == null) inputIssues.push('Brak potwierdzonej mocy istniejącej PV; nie przyjęto wartości domyślnej.');
+  const existingBatteryPresent = canReadEnergy
+    ? resolveClientEnergyBatteryPresence(energyAudit?.existingBatteryKwh)
+    : null;
+  const existingBatteryKwh = canReadEnergy && energyAudit
+    ? finiteOrNull(energyAudit.existingBatteryKwh)
+    : null;
+  if (canReadEnergy && energyAudit && existingBatteryPresent === null) {
+    inputIssues.push('Nieprawidłowa pojemność istniejącego magazynu w danych energetycznych; nie przyjęto obecności ani braku magazynu.');
+  }
   const hasExistingPv = canReadEnergy && energyAudit?.existingPvKw != null && Number(energyAudit.existingPvKw) > 0;
   const roofTiltDegrees = hasExistingPv ? finiteOrNull(energyAudit?.roofTiltDeg) : null;
   const roofAzimuth = hasExistingPv ? roofAzimuthDegrees(energyAudit?.roofOrientation) : null;
@@ -575,11 +694,22 @@ export async function loadProjectOfferWorkspace(
       heatingSource: textOrNull(heatSourceLabel(energyAudit?.heatingSource)),
       heatingDetails: textOrNull(heatSourceDetailLabel(energyAudit?.heatingSource, energyAudit?.heatingSourceDetail)),
       supplier: textOrNull(energySupplierLabel(energyAudit?.energySupplier)),
+      ...(siteAudit ? {
+        pvInstallationPlace: canReadEnergy ? siteAuditPvInstallationPlace(siteAudit.formData) : null,
+        highLoadDevices: canReadEnergy ? siteAuditHighLoadDevices(siteAudit.formData) : null,
+        plannedHighLoadDevices: canReadEnergy && siteAudit.formData && typeof siteAudit.formData === 'object' && !Array.isArray(siteAudit.formData)
+          ? siteAuditValue((siteAudit.formData as Record<string, unknown>).planned_demand)
+          : null,
+      } : {}),
     },
     existingPv,
+    existingBatteryKwh,
+    existingBatteryPresent,
     location,
     settlementMode: canReadEnergy ? textOrNull(energyAudit?.settlementSystem) : null,
     annualConsumptionKwh: canReadEnergy ? finiteOrNull(energyAudit?.annualConsumptionKwh) : null,
+    energyProfileSource: canReadEnergy ? energyAudit?.profileSource ?? null : null,
+    ...(referenceProfile ? { referenceProfile } : {}),
     issues: inputIssues,
   };
 
@@ -592,6 +722,7 @@ export async function loadProjectOfferWorkspace(
     periodYear: number; periodMonth: number; aggregation: string; storagePath: string | null; fileName: string | null;
     updatedAt: Date; document: OfferWorkspaceStoredMeasurement['document'] & { id?: string; updatedAt?: Date };
   }> = [];
+  let nonDownloadedMeasurementFiles: Array<{ id: string; status: string }> = [];
   if (ppe.sourceAccounts.length) {
     const periodWhere = periodKeys.map((period) => {
       const [periodYear, periodMonth] = period.split('-').map(Number);
@@ -616,69 +747,43 @@ export async function loadProjectOfferWorkspace(
       },
       orderBy: [{ periodYear: 'asc' }, { periodMonth: 'asc' }, { kind: 'asc' }, { id: 'asc' }],
     });
-  }
-
-  let measurements: OfferWorkspaceMeasurements = {
-    periods: [], months: emptyOfferMeasurementMonths(periodKeys), totalsImportKwh: null, totalsExportKwh: null,
-    intervalCount: null, missingDirections: [], issues: measurementIssues,
-  };
-  if (canReadEnergy && ppe.ppeNumber) {
-    const inputs: Array<{ id: string; expectedPeriod: string; expectedKind: OfferMeasurementKind; bytes: Buffer; projectId: string }> = [];
-    if (measurementFiles.length > maxOfferWorkspaceMeasurementFiles) {
-      measurementIssues.push(`Znaleziono więcej niż ${maxOfferWorkspaceMeasurementFiles} miesięcznych plików ENEA; pomiary nie zostały wczytane.`);
-      measurements = { periods: [], months: emptyOfferMeasurementMonths(periodKeys), totalsImportKwh: null, totalsExportKwh: null, intervalCount: null, missingDirections: [], issues: measurementIssues };
-    } else {
-      for (const file of measurementFiles) {
-        const period = `${file.periodYear}-${String(file.periodMonth).padStart(2, '0')}`;
-        if (file.clientId !== project.clientId || file.projectId && file.projectId !== projectId
-          || !ppe.accounts.some((account) => account.id === file.accountId)) {
-          measurementIssues.push(`Plik ${file.id}: niespójne powiązanie klienta, projektu lub konta.`);
-          continue;
-        }
-        if (file.document && (file.document.clientId !== project.clientId || (file.document.projectId && file.document.projectId !== projectId))) {
-          measurementIssues.push(`Plik ${file.id}: dokument nie należy do wskazanego klienta i projektu.`);
-          continue;
-        }
-        if (file.aggregation !== '60 min') {
-          measurementIssues.push(`Plik ${file.id}: oczekiwana agregacja 60 min.`);
-          continue;
-        }
-        try {
-          const bytes = await readOfferWorkspaceMeasurement(file);
-          inputs.push({ id: file.id, expectedPeriod: period, expectedKind: file.kind, bytes, projectId });
-        } catch (error) {
-          measurementIssues.push(`Plik ${file.id}: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-      if (!measurementFiles.length) measurementIssues.push(`Brak pobranych miesięcznych plików ENEA w okresie ${period.startMonth}–${period.endMonth}.`);
-      try {
-        const series = buildOfferMeasurementSeries(inputs, {
-          ppeNumber: ppe.ppeNumber,
-          periodKeys,
-          projectId,
-          ...(energyAudit?.existingPvKw == null ? {} : { hasExistingPv: Number(energyAudit.existingPvKw) > 0 }),
-        });
-        measurements = summarizeOfferMeasurementSeries(series, measurementIssues, periodKeys);
-        onMeasurementSeries?.(series);
-      } catch (error) {
-        measurementIssues.push(error instanceof Error ? error.message : String(error));
-        measurements = { periods: [], months: emptyOfferMeasurementMonths(periodKeys), totalsImportKwh: null, totalsExportKwh: null, intervalCount: null, missingDirections: [], issues: measurementIssues };
+    if (!measurementFiles.length) {
+      nonDownloadedMeasurementFiles = await prisma.energyMeasurementFile.findMany({
+        where: {
+          accountId: { in: ppe.sourceAccounts.map((account) => account.id) },
+          clientId: project.clientId,
+          operator: 'ENEA',
+          status: { not: 'DOWNLOADED' },
+          kind: { in: ['ACTIVE_IMPORT', 'ACTIVE_EXPORT'] },
+          AND: [
+            { OR: periodWhere },
+            { OR: [{ projectId }, { projectId: null }] },
+          ],
+        },
+        select: { id: true, status: true },
+      });
+      if (nonDownloadedMeasurementFiles.length) {
+        measurementIssues.push(`Znaleziono ${nonDownloadedMeasurementFiles.length} zapisanych rekordów plików ENEA poza statusem DOWNLOADED; danych nie uznano za brak plików.`);
       }
     }
-  } else if (canReadEnergy && !ppe.ppeNumber) {
-    if (!measurementFiles.length && ppe.accounts.length) measurementIssues.push(`Brak pobranych miesięcznych plików ENEA w okresie ${period.startMonth}–${period.endMonth}.`);
-    measurements.issues = measurementIssues;
   }
 
-  const serializedTemplates = templates.map((template) => serializeTemplate(template, canReadPricing));
   const source = {
+    energyVisible: canReadEnergy,
+    pricingVisible: canReadPricing,
+    pricing: canReadPricing ? templates.map(template => serializeTemplate(template, true)) : null,
     period,
     project: {
       id: project.id, clientId: project.clientId, title: project.title, clientType: project.clientType,
       locationAddress: project.locationAddress, updatedAt: project.updatedAt,
       client: project.client, investmentSite: project.investmentSite,
     },
-    energyAudit: energyAuditVersion,
+    energyAudit: canReadEnergy
+      ? energyAudit ? { id: energyAudit.id, profileSource: energyAudit.profileSource,
+        annualConsumptionKwh: energyAudit.annualConsumptionKwh, existingBatteryKwh: energyAudit.existingBatteryKwh, updatedAt: energyAudit.updatedAt } : null
+      : energyAuditVersion,
+    referenceProfile: canReadEnergy ? referenceProfile : null,
+    siteAudit: siteAudit && { id: siteAudit.id, updatedAt: siteAudit.updatedAt, formData: siteAudit.formData },
     ppeAccounts: ppe.sourceAccounts.map((account) => ({ id: account.id, projectId: account.projectId, updatedAt: account.updatedAt })),
     measurementFiles: measurementFiles.map((file) => ({
       id: file.id, clientId: file.clientId, projectId: file.projectId, accountId: file.accountId, kind: file.kind,
@@ -690,9 +795,116 @@ export async function loadProjectOfferWorkspace(
         sha256: file.document.sha256, updatedAt: file.document.updatedAt,
       },
     })),
+    nonDownloadedMeasurementFiles,
     templates: templateSourceRevision(templates),
   };
+  let revision = sourceRevision(source);
 
+  let measurements: OfferWorkspaceMeasurements = {
+    periods: [], months: emptyOfferMeasurementMonths(periodKeys), totalsImportKwh: null, totalsExportKwh: null,
+    intervalCount: null, missingDirections: [], issues: measurementIssues,
+  };
+  if (canReadEnergy && ppe.ppeNumber) {
+    const inputs: Array<{ id: string; expectedPeriod: string; expectedKind: OfferMeasurementKind; bytes: Buffer; projectId: string }> = [];
+    if (measurementFiles.length > maxOfferWorkspaceMeasurementFiles) {
+      measurementIssues.push(`Znaleziono więcej niż ${maxOfferWorkspaceMeasurementFiles} miesięcznych plików ENEA; pomiary nie zostały wczytane.`);
+      measurements = { periods: [], months: emptyOfferMeasurementMonths(periodKeys), totalsImportKwh: null, totalsExportKwh: null, intervalCount: null, missingDirections: [], issues: measurementIssues };
+    } else {
+      let cacheEligible = true;
+      for (const file of measurementFiles) {
+        const period = `${file.periodYear}-${String(file.periodMonth).padStart(2, '0')}`;
+        if (file.clientId !== project.clientId || file.projectId && file.projectId !== projectId
+          || !ppe.accounts.some((account) => account.id === file.accountId)) {
+          measurementIssues.push(`Plik ${file.id}: niespójne powiązanie klienta, projektu lub konta.`);
+          cacheEligible = false;
+          continue;
+        }
+        if (file.document && (file.document.clientId !== project.clientId || (file.document.projectId && file.document.projectId !== projectId))) {
+          measurementIssues.push(`Plik ${file.id}: dokument nie należy do wskazanego klienta i projektu.`);
+          cacheEligible = false;
+          continue;
+        }
+        if (file.aggregation !== '60 min') {
+          measurementIssues.push(`Plik ${file.id}: oczekiwana agregacja 60 min.`);
+          cacheEligible = false;
+          continue;
+        }
+        try {
+          const bytes = await readOfferWorkspaceMeasurement(file);
+          inputs.push({ id: file.id, expectedPeriod: period, expectedKind: file.kind, bytes, projectId });
+        } catch (error) {
+          measurementIssues.push(`Plik ${file.id}: ${error instanceof Error ? error.message : String(error)}`);
+          cacheEligible = false;
+        }
+      }
+      if (!measurementFiles.length) measurementIssues.push(`Brak pobranych miesięcznych plików ENEA w okresie ${period.startMonth}–${period.endMonth}.`);
+      // Availability and verified bytes are part of the identity consumed by
+      // energy, financial and document caches as well as the parsed-file cache.
+      revision = sourceRevision({ source, verifiedMeasurements: inputs.map(input => ({
+        id: input.id, sha256: createHash('sha256').update(input.bytes).digest('hex'),
+      })), cacheEligible, measurementIssues });
+      const artifactIdentity = {
+        projectId,
+        kind: 'measurements',
+        key: {
+          algorithmVersion: 'offer-workspace-measurements-v1',
+          sourceRevision: revision,
+          energyPermission: canReadEnergy,
+          ppeNumber: ppe.ppeNumber,
+          periodKeys,
+          hasExistingPv: energyAudit?.existingPvKw == null ? null : Number(energyAudit.existingPvKw) > 0,
+        },
+      };
+      const cachedValue = cacheEligible
+        ? await getOfferWorkspaceArtifact<CachedOfferWorkspaceMeasurements>(artifactIdentity)
+        : null;
+      if (cachedValue) {
+        const cached = cachedOfferWorkspaceMeasurements(cachedValue, revision);
+        measurements = cached.measurements;
+        try {
+          onMeasurementSeries?.(cached.series);
+        } catch (error) {
+          measurementIssues.push(error instanceof Error ? error.message : String(error));
+          measurements = { periods: [], months: emptyOfferMeasurementMonths(periodKeys), totalsImportKwh: null, totalsExportKwh: null, intervalCount: null, missingDirections: [], issues: measurementIssues };
+          revision = sourceRevision({ sourceRevision: revision, measurementIssues });
+        }
+      } else {
+        let series: OfferMeasurementSeries | null = null;
+        let calculationSucceeded = false;
+        try {
+          series = buildOfferMeasurementSeries(inputs, {
+            ppeNumber: ppe.ppeNumber,
+            periodKeys,
+            projectId,
+            ...(energyAudit?.existingPvKw == null ? {} : { hasExistingPv: Number(energyAudit.existingPvKw) > 0 }),
+          });
+          measurements = summarizeOfferMeasurementSeries(series, measurementIssues, periodKeys);
+          onMeasurementSeries?.(series);
+          calculationSucceeded = true;
+        } catch (error) {
+          measurementIssues.push(error instanceof Error ? error.message : String(error));
+          measurements = { periods: [], months: emptyOfferMeasurementMonths(periodKeys), totalsImportKwh: null, totalsExportKwh: null, intervalCount: null, missingDirections: [], issues: measurementIssues };
+          revision = sourceRevision({ sourceRevision: revision, measurementIssues });
+        }
+        if (calculationSucceeded && cacheEligible && series) {
+          await putOfferWorkspaceArtifact(artifactIdentity, {
+            schemaVersion: 1,
+            sourceRevision: revision,
+            measurements,
+            series,
+          } satisfies CachedOfferWorkspaceMeasurements);
+        }
+      }
+    }
+  } else if (canReadEnergy && !ppe.ppeNumber) {
+    if (!measurementFiles.length && ppe.accounts.length) measurementIssues.push(`Brak pobranych miesięcznych plików ENEA w okresie ${period.startMonth}–${period.endMonth}.`);
+    measurements.issues = measurementIssues;
+  }
+
+  measurements.availability = !canReadEnergy ? 'UNKNOWN'
+    : measurementFiles.length || nonDownloadedMeasurementFiles.length ? 'FILES_PRESENT' : 'NO_FILES';
+
+  const serializedTemplates = templates.map((template) => serializeTemplate(template, canReadPricing));
   return {
     projectId: project.id,
     clientId: project.clientId,
@@ -701,11 +913,15 @@ export async function loadProjectOfferWorkspace(
     clientType: offerWorkspaceEffectiveClientType(project.clientType, project.client.clientType),
     period,
     ppeNumber: canReadEnergy ? ppe.ppeNumber : null,
-    revision: sourceRevision(source),
+    revision,
     input,
     measurements,
     templates: serializedTemplates,
-    draft: canReadDraft && draft ? savedDraft(draft, canReadPricing) : null,
+    canEditConfigurationItems: canReadDraft && canReadPricing,
+    draft: canReadDraft && draft ? (() => {
+      const saved = savedDraft(draft, canReadPricing);
+      return { ...saved, input: offerWorkspaceDraftWithBatteryPresence(saved.input, existingBatteryPresent) };
+    })() : null,
   };
 }
 
@@ -737,10 +953,19 @@ export async function saveProjectOfferWorkspaceDraft(options: {
     throw new OfferWorkspaceConflictError('Dane projektu, pomiarów lub katalogu zmieniły się. Odśwież workspace przed zapisem.');
   }
   const canReadPricing = hasStaffPermission(options.user, 'pricing.read');
+  if (!canReadPricing && (configurationEditsContainPricing(options.input.configurationEdits) || options.input.commercialPricing)) {
+    throw new OfferWorkspacePermissionError();
+  }
+  const input = offerWorkspaceDraftWithBatteryPresence(options.input, freshWorkspace.input.existingBatteryPresent);
+  try {
+    validateOfferWorkspaceConfigurationEdits(freshWorkspace.templates, input);
+  } catch (error) {
+    throw new OfferWorkspaceConflictError(error instanceof Error ? error.message : 'Nieprawidłowe zmiany pozycji konfiguracji.');
+  }
   const previewPricingSnapshot = canReadPricing
-    ? createServerOfferWorkspacePricingSnapshot(options.input, freshWorkspace.templates, freshWorkspace.clientType)
+    ? createServerOfferWorkspacePricingSnapshot(input, freshWorkspace.templates, freshWorkspace.clientType)
     : null;
-  await validateOfferWorkspaceTariff(options.input.targetOperatorId, options.input.targetTariffId);
+  await validateOfferWorkspaceTariff(input.targetOperatorId, input.targetTariffId);
 
   try {
     return await prisma.$transaction(async (tx) => {
@@ -752,24 +977,24 @@ export async function saveProjectOfferWorkspaceDraft(options: {
       const templateClientTypes = compatibleTemplateClientTypes(project.clientType, project.client.clientType);
 
       let activeTemplates: any[] = [];
-      if (options.input.selectedTemplateIds.length) {
+      if (input.selectedTemplateIds.length) {
         activeTemplates = await tx.configurationTemplate.findMany({
           where: {
-            id: { in: options.input.selectedTemplateIds },
+            id: { in: input.selectedTemplateIds },
             isActive: true,
             clientType: { in: templateClientTypes },
           },
           select: {
-            id: true, name: true, kind: true,
+            id: true, name: true, kind: true, powerKw: true, capacityKwh: true,
             items: {
               select: {
                 id: true, position: true, description: true, quantity: true, role: true, supplyMode: true,
                 pricingMode: true, operatingCostBasis: true, catalogPriceId: true,
-                productId: true, unitPurchaseNet: true, purchaseVatRate: true, operatingCostNet: true,
+                productId: true, unitPurchaseNet: true, unitSaleNet: true, purchaseVatRate: true, operatingCostNet: true,
                 marginRate: true, saleVatRate: true, isOptional: true, requiresReview: true,
                 product: {
                   select: {
-                    id: true, name: true,
+                    id: true, name: true, category: true,
                     prices: {
                       where: { validFrom: { lte: options.now } },
                       select: {
@@ -785,25 +1010,31 @@ export async function saveProjectOfferWorkspaceDraft(options: {
             },
           },
         });
-        if (activeTemplates.length !== options.input.selectedTemplateIds.length) {
+        if (activeTemplates.length !== input.selectedTemplateIds.length) {
           throw new OfferWorkspaceConflictError('Wybrany zestaw jest nieaktywny lub niedostępny dla tego typu klienta.');
         }
         const scopes = activeTemplates.map((template) => configurationInvestmentScope(template.kind));
         if (scopes.some((scope) => scope == null) || new Set(scopes).size !== scopes.length) {
           throw new OfferWorkspaceConflictError('Wybierz najwyżej jeden szablon PV i jeden szablon magazynu energii.');
         }
-        if (scopes.includes('PV') && options.input.pvStrategy !== 'ADD_TEMPLATE') {
+        if (scopes.includes('PV') && input.pvStrategy !== 'ADD_TEMPLATE') {
           throw new OfferWorkspaceConflictError('Szablon PV wymaga strategii dodania PV.');
         }
       }
 
+      try {
+        validateOfferWorkspaceConfigurationEdits(activeTemplates, input);
+      } catch (error) {
+        throw new OfferWorkspaceConflictError(error instanceof Error ? error.message : 'Nieprawidłowe zmiany pozycji konfiguracji.');
+      }
+
       const clientType = offerWorkspaceEffectiveClientType(project.clientType, project.client.clientType);
-      const pricingSnapshot = createServerOfferWorkspacePricingSnapshot(options.input, activeTemplates, clientType);
+      const pricingSnapshot = createServerOfferWorkspacePricingSnapshot(input, activeTemplates, clientType);
       if (canReadPricing && !offerWorkspacePricingSnapshotsMatch(previewPricingSnapshot, pricingSnapshot)) {
         throw new OfferWorkspaceConflictError('Ceny konfiguracji zmieniły się przed zapisem. Odśwież workspace i porównaj aktualne sumy.');
       }
       const persistedInput = {
-        ...options.input,
+        ...input,
         ...(pricingSnapshot ? { _pricingSnapshot: pricingSnapshot } : {}),
       } as unknown as Prisma.InputJsonValue;
 
@@ -836,6 +1067,10 @@ export async function saveProjectOfferWorkspaceDraft(options: {
       }
       const existingInput = existing.input && typeof existing.input === 'object' && !Array.isArray(existing.input)
         ? existing.input as Record<string, unknown> : {};
+      if (!canReadPricing && (configurationEditsContainPricing(parseOfferWorkspaceDraft(existing.input).configurationEdits)
+        || parseOfferWorkspaceDraft(existing.input).commercialPricing)) {
+        throw new OfferWorkspacePermissionError();
+      }
       const existingPricingSnapshot = parseStoredPricingSnapshot(existingInput._pricingSnapshot);
       if (!offerWorkspacePricingChangeAcknowledged(
         existingPricingSnapshot,

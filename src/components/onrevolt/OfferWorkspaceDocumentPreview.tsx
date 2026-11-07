@@ -8,6 +8,12 @@ import { useEffect, useRef, useState } from 'react';
 import { MdArrowBack, MdArrowForward, MdAdd, MdRemove, MdDownload } from 'react-icons/md';
 import type { OfferWorkspaceDocumentResult } from 'lib/onrevolt/offer-workspace-document';
 import type { OfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
+import {
+  getOfferWorkspaceDocumentCache,
+  isOfferWorkspaceDocumentKey,
+  offerWorkspaceDocumentCacheScope,
+  setOfferWorkspaceDocumentCache,
+} from 'lib/onrevolt/offer-workspace-document-client-cache';
 import type { WorkspaceData } from './OfferWorkspacePanel';
 
 type Props = {
@@ -38,6 +44,16 @@ function isDocumentResult(value: unknown): value is OfferWorkspaceDocumentResult
 }
 
 export async function readDocumentResponse(response: Response): Promise<OfferWorkspaceDocumentResult> {
+  const parsed = await readDocumentResponseEnvelope(response);
+  if (parsed.notModified === true) throw new Error('Serwer potwierdził zapisany dokument, którego nie ma w pamięci.');
+  return parsed.document;
+}
+
+export type OfferWorkspaceDocumentResponse =
+  | { notModified: true; documentKey: string }
+  | { notModified: false; document: OfferWorkspaceDocumentResult; documentKey?: string };
+
+export async function readDocumentResponseEnvelope(response: Response): Promise<OfferWorkspaceDocumentResponse> {
   let body: unknown;
   try {
     body = await response.json();
@@ -46,16 +62,30 @@ export async function readDocumentResponse(response: Response): Promise<OfferWor
   }
 
   const envelope = isRecord(body) ? body : {};
-  const message = typeof envelope.error === 'string' ? envelope.error : `Błąd żądania (${response.status}).`;
+  const wrappedData = 'data' in envelope ? envelope.data : body;
+  const errorData = isRecord(wrappedData) ? wrappedData : {};
+  const message = typeof envelope.error === 'string' ? envelope.error
+    : typeof errorData.error === 'string' ? errorData.error : `Błąd żądania (${response.status}).`;
   if (!response.ok || envelope.ok === false) throw new Error(message);
 
-  const data = 'data' in envelope ? envelope.data : body;
-  const result = isRecord(data) && 'document' in data ? data.document : data;
+  const data = isRecord(wrappedData) ? wrappedData : {};
+  const documentKey = data.documentKey ?? envelope.documentKey;
+  if (documentKey !== undefined && !isOfferWorkspaceDocumentKey(documentKey)) {
+    throw new Error('Serwer zwrócił nieprawidłowy klucz dokumentu.');
+  }
+  if (data.notModified === true) {
+    if (typeof documentKey !== 'string') throw new Error('Serwer nie zwrócił klucza potwierdzonego dokumentu.');
+    return { notModified: true, documentKey };
+  }
+
+  const result = 'document' in data ? data.document : wrappedData;
   if (!isDocumentResult(result)) throw new Error('Serwer nie zwrócił kompletnego dokumentu SVG (10 stron).');
   if (result.templateKey !== offerWorkspaceDocumentPreviewTemplateKey) {
     throw new Error('Podgląd oferty wymaga szablonu REFORM_B2C/2026_10_V4.');
   }
-  return result;
+  return typeof documentKey === 'string'
+    ? { notModified: false, document: result, documentKey }
+    : { notModified: false, document: result };
 }
 
 export const offerWorkspaceDocumentAspectRatio = 595 / 843;
@@ -89,7 +119,7 @@ const format = (value: number | null | undefined) => value == null
   : new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 1 }).format(value);
 
 export default function OfferWorkspaceDocumentPreview({ workspace, draft, templatePreview }: Props) {
-  const [document, setDocument] = useState<OfferWorkspaceDocumentResult | null>(null);
+  const [loadedDocument, setLoadedDocument] = useState<{ requestKey: string; document: OfferWorkspaceDocumentResult } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
@@ -97,6 +127,12 @@ export default function OfferWorkspaceDocumentPreview({ workspace, draft, templa
   const [downloading, setDownloading] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const pages = useRef<Array<HTMLDivElement | null>>([]);
+  // Server document inputs do not include transient energy/valuation loading state or the open menu.
+  const { step: _step, ...documentDraft } = draft;
+  const requestKey = JSON.stringify(templatePreview
+    ? { workspace, draft: documentDraft }
+    : { actorId: workspace.viewerId, projectId: workspace.projectId, sourceRevision: workspace.revision, draft: documentDraft, documentRevision: workspace.documentRevision });
+  const document = loadedDocument?.requestKey === requestKey ? loadedDocument.document : null;
   const colors = {
     line: useColorModeValue('#e0e5f2', 'whiteAlpha.200'),
     muted: useColorModeValue('#8392b4', 'gray.400'),
@@ -108,7 +144,7 @@ export default function OfferWorkspaceDocumentPreview({ workspace, draft, templa
     const controller = new AbortController();
     const { endpoint, body } = createOfferWorkspaceDocumentRequest(workspace, draft, templatePreview);
 
-    setDocument(null);
+    setLoadedDocument(null);
     setError('');
     setLoading(true);
     setPage(1);
@@ -116,15 +152,30 @@ export default function OfferWorkspaceDocumentPreview({ workspace, draft, templa
 
     void (async () => {
       try {
+        const cacheScope = templatePreview ? null : offerWorkspaceDocumentCacheScope(workspace.viewerId, workspace.projectId);
+        const cached = await getOfferWorkspaceDocumentCache(cacheScope);
+        if (controller.signal.aborted) return;
+        const requestBody = cached && !templatePreview ? { ...body, knownDocumentKey: cached.documentKey } : body;
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify(requestBody),
           cache: 'no-store',
           signal: controller.signal,
         });
-        const result = await readDocumentResponse(response);
-        if (!controller.signal.aborted) setDocument(result);
+        const result = await readDocumentResponseEnvelope(response);
+        if (controller.signal.aborted) return;
+        if (result.notModified === true) {
+          if (!cached || cached.documentKey !== result.documentKey) {
+            throw new Error('Serwer potwierdził zapisany dokument, którego nie ma w lokalnej pamięci. Ponów podgląd.');
+          }
+          setLoadedDocument({ requestKey, document: cached.document });
+        } else {
+          setLoadedDocument({ requestKey, document: result.document });
+          if (result.documentKey && cacheScope) {
+            setOfferWorkspaceDocumentCache(cacheScope, { documentKey: result.documentKey, document: result.document });
+          }
+        }
       } catch (requestError) {
         if (!controller.signal.aborted) {
           setError(requestError instanceof Error ? requestError.message : 'Nie udało się wygenerować podglądu dokumentu.');
@@ -135,7 +186,7 @@ export default function OfferWorkspaceDocumentPreview({ workspace, draft, templa
     })();
 
     return () => controller.abort();
-  }, [workspace, draft, templatePreview]);
+  }, [requestKey, templatePreview]);
 
   function navigate(target: number) {
     setPage(target);

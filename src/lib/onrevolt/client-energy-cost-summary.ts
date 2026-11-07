@@ -1,6 +1,7 @@
 import type { OfferWorkspaceScenarioResult, OfferWorkspaceGridPricingResult } from './offer-workspace-billing';
 
 export type ClientEnergyCostSummary = {
+  source?: 'MODELLED';
   status: 'ready' | 'partial' | 'blocked';
   vatBasis: 'NET' | 'GROSS';
   totalPln: number | null;
@@ -22,6 +23,7 @@ export function buildClientEnergyCostSummary(input: {
   settlementResult?: OfferWorkspaceScenarioResult | { status: 'blocked'; reasons: string[] } | null;
   settlementIssue?: string | null;
   assumptions?: string[];
+  source?: 'MODELLED';
 }): ClientEnergyCostSummary {
   const { pricing } = input;
   const settlement = input.settlementResult?.status === 'ready' ? input.settlementResult : null;
@@ -35,6 +37,7 @@ export function buildClientEnergyCostSummary(input: {
     issues.push(...input.settlementResult.reasons);
   }
   return {
+    ...(input.source ? { source: input.source } : {}),
     status: pricing.status === 'ready' && (input.assumptions?.length || input.settlementIssue
       || (input.settlementResult?.status === 'blocked')) ? 'partial' : pricing.status,
     vatBasis: pricing.vatBasis,

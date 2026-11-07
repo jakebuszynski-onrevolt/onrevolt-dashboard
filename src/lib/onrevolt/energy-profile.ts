@@ -31,6 +31,8 @@ export type EnergyUsageProfile = {
   measuredDays?: number;
   pvIncluded?: boolean;
   analysisStartMonth?: string;
+  referenceProfile?: { key: string; name: string; contentHash: string; method?: string; projectionVersion?: number };
+  dailyConsumptionKwh?: Record<string, number[]>;
 };
 
 type MeasurementFile = {

@@ -10,6 +10,7 @@ import {
   settlementSystemOptions, terrainTypeOptions, type EnergyIntakeOption,
 } from 'lib/onrevolt/energy-intake';
 import styles from './ClientEnergyWorkspace.module.css';
+import ReferenceProfileComparison, { type ReferenceProfileSelectionData } from './ReferenceProfileComparison';
 
 export type EnergyWorkspaceSettings = {
   hasOperatorData: boolean; hasEnergyInvoices: boolean; annualConsumptionKwh: string;
@@ -20,6 +21,9 @@ export type EnergyWorkspaceSettings = {
 };
 
 type Props = {
+  projectId?: string;
+  onReferenceProfileSaved?: (data: ReferenceProfileSelectionData) => void;
+  onAnnualConsumptionReload?: (data: ReferenceProfileSelectionData) => void;
   settings: EnergyWorkspaceSettings;
   onChange: (key: keyof EnergyWorkspaceSettings, value: string | boolean) => void;
   operator: string; tariff: string;
@@ -52,6 +56,7 @@ export default function ClientEnergyWorkspace(props: Props) {
   const root = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState('object');
   const [pvExpanded, setPvExpanded] = useState(Number(props.settings.existingPvKw) > 0);
+  const [profilesExpanded, setProfilesExpanded] = useState(false);
   const s = props.settings;
   useEffect(() => { if (Number(s.existingPvKw) > 0) setPvExpanded(true); }, [s.existingPvKw]);
   useEffect(() => {
@@ -76,10 +81,17 @@ export default function ClientEnergyWorkspace(props: Props) {
         onChange={event => props.onChange(key, event.target.value)} />
     </label>
   );
-  const annualField = <div className={styles.manualFields}>
+  const annualField = <><div className={styles.manualFields}>
     {numeric('Roczne zużycie przyjęte do obliczeń [kWh]', 'annualConsumptionKwh', '1')}
     <div className={styles.accepted}><small>Źródło przyjęte do obliczeń</small><strong>{props.annualKwh > 0 ? `${props.annualKwh.toLocaleString('pl-PL', { maximumFractionDigits: 1 })} kWh/rok` : 'Do uzupełnienia'}</strong><small>{props.annualSource}</small></div>
-  </div>;
+  </div>
+    <label className={styles.check}><input type="checkbox" checked={profilesExpanded}
+      onChange={event => setProfilesExpanded(event.target.checked)} aria-expanded={profilesExpanded}
+      aria-controls={`${id}-reference-profiles`} />Porównaj profile zużycia</label>
+    {profilesExpanded && <div id={`${id}-reference-profiles`}><ReferenceProfileComparison
+      annualKwh={Number(s.annualConsumptionKwh)} projectId={props.projectId}
+      onReferenceProfileSaved={props.onReferenceProfileSaved} onAnnualConsumptionReload={props.onAnnualConsumptionReload} /></div>}
+  </>;
   const tariffs = props.catalog.find(item => item.code === props.operator)?.tariffs || [];
   return <LightMode><div className={styles.workspace} ref={root}>
     <div className={styles.heading}><div><h2>Dane energetyczne</h2><p>Obiekt, dokumenty i profil zużycia</p></div>
@@ -117,6 +129,7 @@ export default function ClientEnergyWorkspace(props: Props) {
             {!pvExpanded && s.existingPvKw === '' && <div className={styles.unknownPv}><span>Nie potwierdzono, czy obiekt ma PV.</span><button type="button" disabled={props.pvDisabled} onClick={() => props.onChange('existingPvKw', '0')}>Potwierdź brak PV</button></div>}
             <details className={styles.disclosure}><summary>Istniejący magazyn energii</summary><div className={styles.grid2}>
               {numeric('Pojemność istniejącego magazynu [kWh]', 'existingBatteryKwh', '0.1')}
+              <div className={styles.field}><span>Puste pole lub 0 kWh oznacza brak istniejącego magazynu energii.</span></div>
             </div></details>
           </div>
         </section>

@@ -1,7 +1,10 @@
 import { configurationInvestmentScope } from './configuration-templates';
 import type { OfferWorkspacePricingResult, OfferWorkspacePricingTemplate } from './offer-workspace-pricing';
+import { parseOfferWorkspaceConfigurationEdits, type OfferWorkspaceConfigurationEdit } from './offer-workspace-configuration-edits';
+import { parseOfferWorkspaceCommercialBreakdown, type OfferWorkspaceCommercialBreakdown } from './offer-workspace-commercial-pricing';
 
 export const OFFER_WORKSPACE_SCHEMA_VERSION = 1;
+export const DEFAULT_OFFER_BILLING_CYCLE_MONTHS = 2;
 export const OFFER_WORKSPACE_STEPS = ['SYSTEM', 'CONFIGURATION', 'SAVINGS', 'DESCRIPTION', 'SUMMARY'] as const;
 export type OfferWorkspaceStep = typeof OFFER_WORKSPACE_STEPS[number];
 
@@ -67,6 +70,8 @@ export type OfferWorkspaceDraft = {
   targetTariffId: number | null;
   saleVatMode: 'REDUCED_8' | 'STANDARD_23' | 'MIXED' | 'REVIEW';
   selectedTemplateIds: string[];
+  configurationEdits?: OfferWorkspaceConfigurationEdit[];
+  commercialPricing?: OfferWorkspaceCommercialBreakdown;
   financing: { considerGrant: boolean; considerTaxRelief: boolean };
   calculation?: OfferCalculationAssumptions;
   description: { before: string; after: string };
@@ -133,7 +138,7 @@ function pricingRevisionHash(serialized: string) {
 }
 
 export function createOfferWorkspacePricingSnapshot(
-  draft: Pick<OfferWorkspaceDraft, 'selectedTemplateIds' | 'saleVatMode'>,
+  draft: Pick<OfferWorkspaceDraft, 'selectedTemplateIds' | 'saleVatMode' | 'commercialPricing'>,
   clientType: string,
   pricing: OfferWorkspacePricingResult,
   templates: OfferWorkspacePricingTemplate[] = [],
@@ -150,6 +155,7 @@ export function createOfferWorkspacePricingSnapshot(
           const parsed = Number(value);
           return Number.isFinite(parsed) ? parsed : null;
         };
+        const unitSaleNet = number(item.unitSaleNet);
         return {
           id: item.id,
           quantity: number(item.quantity),
@@ -159,6 +165,7 @@ export function createOfferWorkspacePricingSnapshot(
           catalogPriceId: item.catalogPriceId ?? null,
           productId: item.product?.id ?? item.productId ?? null,
           unitPurchaseNet: number(item.unitPurchaseNet),
+          ...(unitSaleNet === null ? {} : { unitSaleNet }),
           purchaseVatRate: number(item.purchaseVatRate),
           operatingCostNet: number(item.operatingCostNet),
           marginRate: number(item.marginRate),
@@ -193,6 +200,8 @@ export function createOfferWorkspacePricingSnapshot(
   } : null;
   const revisionData = {
     selectedTemplateIds,
+    ...(draft.commercialPricing ? { commercialPricing: { ...draft.commercialPricing,
+      allocations: [...draft.commercialPricing.allocations].sort((a, b) => compareStableIds(`${a.templateId}\u0000${a.itemId}`, `${b.templateId}\u0000${b.itemId}`)) } } : {}),
     saleVatMode: draft.saleVatMode,
     clientType,
     templates: revisionTemplates,
@@ -246,6 +255,13 @@ export function emptyOfferWorkspaceDraft(): OfferWorkspaceDraft {
   };
 }
 
+export function offerWorkspaceDraftWithBatteryPresence(
+  draft: OfferWorkspaceDraft,
+  existingBatteryPresent: boolean | null,
+): OfferWorkspaceDraft {
+  return { ...draft, existingBatteryPresent };
+}
+
 type WorkspaceTemplateReference = { id: string; kind: string };
 
 export function selectOfferWorkspaceTemplate(
@@ -259,9 +275,14 @@ export function selectOfferWorkspaceTemplate(
   if (!scope) throw new Error('Wybierz szablon magazynu lub PV');
   const retained = draft.selectedTemplateIds.filter((id) => id !== templateId
     && (!checked || configurationInvestmentScope(templates.find((item) => item.id === id)?.kind || '') !== scope));
+  const selectedTemplateIds = checked ? [...retained, templateId] : retained;
+  const selectionChanged = selectedTemplateIds.length !== draft.selectedTemplateIds.length
+    || selectedTemplateIds.some(id => !draft.selectedTemplateIds.includes(id));
   return {
     ...draft,
-    selectedTemplateIds: checked ? [...retained, templateId] : retained,
+    selectedTemplateIds,
+    ...(selectionChanged && draft.commercialPricing ? { commercialPricing: undefined } : {}),
+    ...(draft.configurationEdits ? { configurationEdits: draft.configurationEdits.filter((edit) => selectedTemplateIds.includes(edit.templateId)) } : {}),
     pvStrategy: checked && scope === 'PV' ? 'ADD_TEMPLATE' : draft.pvStrategy,
   };
 }
@@ -271,11 +292,14 @@ export function setOfferWorkspacePvStrategy(
   templates: WorkspaceTemplateReference[],
   pvStrategy: OfferWorkspaceDraft['pvStrategy'],
 ): OfferWorkspaceDraft {
+  const selectedTemplateIds = pvStrategy === 'KEEP_EXISTING'
+    ? draft.selectedTemplateIds.filter((id) => configurationInvestmentScope(templates.find((item) => item.id === id)?.kind || '') !== 'PV')
+    : draft.selectedTemplateIds;
   return {
     ...draft, pvStrategy,
-    selectedTemplateIds: pvStrategy === 'KEEP_EXISTING'
-      ? draft.selectedTemplateIds.filter((id) => configurationInvestmentScope(templates.find((item) => item.id === id)?.kind || '') !== 'PV')
-      : draft.selectedTemplateIds,
+    selectedTemplateIds,
+    ...(selectedTemplateIds.length !== draft.selectedTemplateIds.length && draft.commercialPricing ? { commercialPricing: undefined } : {}),
+    ...(draft.configurationEdits ? { configurationEdits: draft.configurationEdits.filter((edit) => selectedTemplateIds.includes(edit.templateId)) } : {}),
   };
 }
 
@@ -426,6 +450,8 @@ export function parseOfferWorkspaceDraft(value: unknown): OfferWorkspaceDraft {
     targetTariffId: optionalId(input.targetTariffId, 'taryfa'),
     saleVatMode: choice(input.saleVatMode, ['REDUCED_8', 'STANDARD_23', 'MIXED', 'REVIEW'], 'VAT'),
     selectedTemplateIds: [...input.selectedTemplateIds] as string[],
+    ...(input.configurationEdits === undefined ? {} : { configurationEdits: parseOfferWorkspaceConfigurationEdits(input.configurationEdits) }),
+    ...(input.commercialPricing == null ? {} : { commercialPricing: parseOfferWorkspaceCommercialBreakdown(input.commercialPricing)! }),
     financing: {
       considerGrant: boolean(financing.considerGrant, 'dotacja'),
       considerTaxRelief: boolean(financing.considerTaxRelief, 'ulga'),
@@ -446,7 +472,9 @@ export function parseOfferWorkspaceDraft(value: unknown): OfferWorkspaceDraft {
     result.calculation = {
       pvReconstructionAccepted: calculation.pvReconstructionAccepted === undefined ? false : boolean(calculation.pvReconstructionAccepted, 'Akceptacja szacowanej produkcji PV'),
       taxEstimateAccepted: calculation.taxEstimateAccepted === undefined ? false : boolean(calculation.taxEstimateAccepted, 'Akceptacja szacowanej ulgi'),
-      billingCycleMonths: nullable('billingCycleMonths', 1, 12),
+      billingCycleMonths: calculation.billingCycleMonths == null
+        ? null
+        : nullable('billingCycleMonths', 1, 12),
       billingCycleStartMonth: parseMonthOrNull(calculation.billingCycleStartMonth, 'billingCycleStartMonth'),
       initialCreditKwh: nullable('initialCreditKwh', 0, 1000000),
       initialCreditLots: parseOpeningCreditLots(calculation.initialCreditLots),

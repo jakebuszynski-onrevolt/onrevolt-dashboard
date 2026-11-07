@@ -3,7 +3,7 @@
 import {
   Accordion, AccordionButton, AccordionIcon, AccordionItem, AccordionPanel,
   Alert, AlertIcon, Box, Button, Checkbox, Flex, FormControl, FormLabel, Grid,
-  Input, Select, Stack, Table, TableContainer, Tbody, Td, Text, Textarea,
+  Input, Link, Select, Stack, Table, TableContainer, Tbody, Td, Text, Textarea,
   Tfoot, Th, Thead, Tooltip, Tr, useColorModeValue,
 } from '@chakra-ui/react';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -12,6 +12,7 @@ import { OfferSavingsBar, OfferSavingsProjectionChart } from './OfferSavingsChar
 import OfferEnergyChart from './OfferEnergyChart';
 import type { OfferEnergyForecast } from './OfferEnergyChart';
 import OfferWorkspaceDocumentPreview from './OfferWorkspaceDocumentPreview';
+import OfferCommercialSummary from './OfferCommercialSummary';
 import { setOfferWorkspacePvStrategy, type OfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
 import type { OfferWorkspaceCalculation } from 'lib/onrevolt/offer-workspace-calculation-types';
 import type { OfferBillingMonthResult } from 'lib/onrevolt/offer-workspace-billing';
@@ -156,7 +157,16 @@ export function OfferSystemScreen(props: SharedProps & { tariffError: string }) 
       <AccordionItem><AccordionButton><Box flex="1"><Text fontSize="14px" fontWeight="700">Stawki</Text><Text fontSize="11px" color={c.muted} mt="2px">Ceny jednostkowe na bieżącą datę</Text></Box><AccordionIcon /></AccordionButton><AccordionPanel><Text color={c.muted} mb="14px">Stawki obowiązujące na {props.tariffRateDate}; nie są to koszty ani prognoza roczna.</Text><Grid templateColumns={{ base: '1fr', xl: 'repeat(2,minmax(0,1fr))' }} gap="24px"><RateRows title={`Bieżąca taryfa · ${props.tariffRateDate}`} rates={currentTariffRates} /><RateRows title={`Taryfa scenariusza · ${props.tariffRateDate}`} rates={targetTariffRates} /></Grid></AccordionPanel></AccordionItem>
       <AccordionItem><AccordionButton><Box flex="1"><Text fontSize="14px" fontWeight="700">Dane instalacji PV</Text><Text fontSize="11px" color={c.muted} mt="2px">Geometria i założenia do modelu produkcji</Text></Box><AccordionIcon /></AccordionButton><AccordionPanel>
         <ReadonlyField label="Lokalizacja" value={workspace.input.location?.address || 'Brak zapisanej lokalizacji'} />
-        <FormControl mt="18px" isDisabled={disabled}><FormLabel>Magazyn energii w okresie pomiarów operatora</FormLabel><Select value={draft.existingBatteryPresent == null ? '' : draft.existingBatteryPresent ? 'yes' : 'no'} placeholder="Potwierdź stan instalacji" onChange={event => { const value = event.target.value; onChange(current => ({ ...current, existingBatteryPresent: value === '' ? null : value === 'yes' })); }}><option value="no">Bez magazynu energii</option><option value="yes">Działał magazyn energii</option></Select></FormControl>
+        <Flex mt="18px" direction={{ base: 'column', sm: 'row' }} gap="8px" justify="space-between" align={{ sm: 'end' }}>
+          <ReadonlyField label="Istniejący magazyn energii · Dane energetyczne" value={workspace.input.existingBatteryPresent == null
+            ? 'Status nieustalony'
+            : workspace.input.existingBatteryPresent
+              ? workspace.input.existingBatteryKwh == null ? 'Tak, pojemność nieustalona' : `Tak, ${format(workspace.input.existingBatteryKwh)} kWh`
+              : 'Nie (0 kWh)'} />
+          <Link href={`/admin/clients/${encodeURIComponent(workspace.clientId)}?projectId=${encodeURIComponent(workspace.projectId)}&tab=billing#energy-data`} color="#8a47ff" textDecoration="underline" fontSize="11px" whiteSpace="nowrap">
+            Otwórz Dane energetyczne
+          </Link>
+        </Flex>
         <Grid templateColumns={{ base: '1fr 1fr', xl: 'repeat(4,minmax(0,1fr))' }} gap="16px" mt="22px">{([
           ['powerKw', 'Moc istniejącej PV', 'kWp', 10000], ['tiltDegrees', 'Nachylenie paneli', '°', 90], ['azimuthDegrees', 'Azymut paneli', '°', 360], ['lossPercent', 'Założone straty PV', '%', 99],
         ] as const).map(([key, label, unit, max]) => <FormControl key={key} isDisabled={disabled} minW="0"><FormLabel minH="32px">{label} [{unit}]</FormLabel><Input type="number" inputMode="decimal" min={0} max={max} step={key === 'powerKw' ? '0.1' : '1'} placeholder="Nie określono" value={draft.existingPv[key] ?? ''} onChange={(event) => { const raw = event.target.value; const value = raw.trim() ? Number(raw) : null; onChange((current) => ({ ...current, existingPv: { ...current.existingPv, [key]: value != null && !Number.isFinite(value) ? null : value } })); }} /></FormControl>)}</Grid>
@@ -201,7 +211,7 @@ export function offerWorkspaceCalculationPresentation(
     recommendationEligible,
     recommendationReasons: recommendationEligible === false ? calculation.recommendationReasons || [] : [],
     paybackYears: recommendationEligible === false || calculation.paybackYears == null
-      ? null : Math.floor(calculation.paybackYears),
+      ? null : calculation.paybackYears,
     breakdown,
   };
 }
@@ -212,10 +222,11 @@ type OfferSavingsBillRow = {
   proposed: OfferBillingMonthResult | null;
 };
 
-export function offerSavingsFinancialRows(calculation: OfferWorkspaceCalculation | null | undefined): OfferSavingsBillRow[] {
-  if (calculation?.status !== 'ready' || !calculation.baselineBill || !calculation.proposedBill) return [];
+export function offerSavingsFinancialRows(calculation: OfferWorkspaceCalculation | null | undefined, comparison: 'CURRENT' | 'TARGET_TARIFF' = 'CURRENT'): OfferSavingsBillRow[] {
+  const baselineBill = comparison === 'TARGET_TARIFF' ? calculation?.tariffOnlyBill : calculation?.baselineBill;
+  if (calculation?.status !== 'ready' || !baselineBill || !calculation.proposedBill) return [];
   const proposedByMonth = new Map(calculation.proposedBill.months.map((row) => [row.month, row]));
-  return calculation.baselineBill.months.map((baseline) => ({
+  return baselineBill.months.map((baseline) => ({
     month: baseline.month,
     baseline,
     proposed: proposedByMonth.get(baseline.month) || null,
@@ -275,6 +286,7 @@ export function OfferSavingsScreen({ workspace, draft, currentTariffLabel, targe
 }) {
   const c = useOfferColors();
   const [expanded, setExpanded] = useState<number[]>([0, 1, 2, 3]);
+  const [billComparison, setBillComparison] = useState<'CURRENT' | 'TARGET_TARIFF'>('CURRENT');
   const isB2B = workspace.clientType === 'B2B';
   const matchesSelection = calculation?.evaluatedTemplateIds?.length === draft.selectedTemplateIds.length
     && draft.selectedTemplateIds.every(id => calculation?.evaluatedTemplateIds?.includes(id));
@@ -299,12 +311,14 @@ export function OfferSavingsScreen({ workspace, draft, currentTariffLabel, targe
   }, [readyCalculation, draft.currentSettlement, draft.targetSettlement]);
   const { forecast, before, after, projection } = results;
   const estimatedPayback = readyCalculation?.estimatedPaybackYears;
-  const displayedPayback = estimatedPayback != null ? Math.floor(estimatedPayback) : calculationPresentation.paybackYears;
+  const displayedPayback = estimatedPayback != null ? estimatedPayback : calculationPresentation.paybackYears;
   const rateTotal = (bill: typeof before) => bill?.totals.averageEnergyPurchasePlnPerKwh == null || bill.totals.averageDistributionPurchasePlnPerKwh == null
     ? null : bill.totals.averageEnergyPurchasePlnPerKwh + bill.totals.averageDistributionPurchasePlnPerKwh;
   const rateMaximum = Math.max(.2, Math.ceil(Math.max(rateTotal(before) ?? 0, rateTotal(after) ?? 0) * 5) / 5);
   const billMaximum = Math.max(1000, Math.ceil(Math.max(before?.totals.cashDuePln ?? 0, after?.totals.cashDuePln ?? 0) / 1000) * 1000);
-  const financialRows = offerSavingsFinancialRows(readyCalculation);
+  const financialRows = offerSavingsFinancialRows(readyCalculation, billComparison);
+  const financialBaseline = billComparison === 'TARGET_TARIFF' ? readyCalculation?.tariffOnlyBill : readyCalculation?.baselineBill;
+  const comparisonSettlement = billComparison === 'TARGET_TARIFF' ? draft.targetSettlement : draft.currentSettlement;
   const financialBasis = isB2B ? 'netto' : 'brutto';
   return <OfferScreen>
     <Flex justify="space-between" align="center" gap="12px" wrap="wrap">
@@ -361,32 +375,43 @@ export function OfferSavingsScreen({ workspace, draft, currentTariffLabel, targe
       </Grid> : null}
       {financialRows.length ? <Box mt="24px" aria-label="Miesięczne rachunki z kalkulacji">
         <Flex justify="space-between" align="baseline" gap="10px" wrap="wrap" mb="8px">
-          <Text fontWeight="700">Rachunki miesięczne · PLN {financialBasis}</Text>
+          <Text fontWeight="700">Rachunki miesięczne · kwoty do zapłaty · PLN {financialBasis}</Text>
           {readyCalculation?.pricesAsOf ? <Text color={c.muted} fontSize="10px">Ceny na {readyCalculation.pricesAsOf}</Text> : null}
         </Flex>
+        <FormControl maxW="440px" mb="12px"><FormLabel htmlFor="offer-bill-comparison">Porównanie rachunków</FormLabel><Select id="offer-bill-comparison" value={billComparison} onChange={event => setBillComparison(event.target.value as 'CURRENT' | 'TARGET_TARIFF')}>
+          <option value="CURRENT">Stan obecny → po inwestycji i zmianie taryfy</option>
+          <option value="TARGET_TARIFF" disabled={!readyCalculation?.tariffOnlyBill}>Ta sama taryfa docelowa → korzyść ze sprzętu</option>
+        </Select></FormControl>
+        <Text fontSize="11px" color={c.muted} mb="12px">
+          {billComparison === 'CURRENT'
+            ? `Stan obecny: ${currentTariffLabel} · ${settlement(draft.currentSettlement)}. Po inwestycji: ${targetTariffLabel} · ${settlement(draft.targetSettlement)}.`
+            : `Oba warianty: ${targetTariffLabel} · ${settlement(draft.targetSettlement)}. To porównanie jest podstawą wykresu zwrotu sprzętu.`}
+          {draft.existingPv.powerKw != null && draft.existingPv.powerKw > 0 ? ` Wariant bez nowej inwestycji obejmuje istniejącą instalację PV ${format(draft.existingPv.powerKw, 2)} kWp.` : ''}
+        </Text>
         <TableContainer maxW="100%" border="1px solid" borderColor={c.line} borderRadius="8px">
-          <Table size="sm" minW="880px" sx={{ th: { fontSize: '10px', color: c.muted, fontWeight: 500, borderColor: c.line }, td: { fontSize: '11px', py: '9px', borderColor: c.line } }}>
+          <Table size="sm" minW="1080px" sx={{ th: { fontSize: '10px', color: c.muted, fontWeight: 500, borderColor: c.line }, td: { fontSize: '11px', py: '9px', borderColor: c.line } }}>
             <Thead>
-              <Tr><Th rowSpan={2}>Miesiąc</Th><Th colSpan={4} textAlign="center">Bez systemu</Th><Th colSpan={4} textAlign="center" color="#14986c">Z systemem</Th></Tr>
-              <Tr><Th isNumeric>Energia</Th><Th isNumeric>Dystrybucja</Th><Th isNumeric>Opłaty stałe</Th><Th isNumeric>Rachunek</Th><Th isNumeric>Energia</Th><Th isNumeric>Dystrybucja</Th><Th isNumeric>Opłaty stałe</Th><Th isNumeric>Rachunek</Th></Tr>
+              <Tr><Th rowSpan={2}>Miesiąc</Th><Th colSpan={5} textAlign="center">{billComparison === 'CURRENT' ? 'Stan obecny' : 'Taryfa docelowa bez inwestycji'} · {settlement(comparisonSettlement)}</Th><Th colSpan={5} textAlign="center" color="#14986c">Po inwestycji · {settlement(draft.targetSettlement)}</Th></Tr>
+              <Tr>{[0, 1].map(side => <SavingsBillHeaders key={side} />)}</Tr>
             </Thead>
             <Tbody>{financialRows.map(({ month, baseline, proposed }) => <Tr key={month}>
               <Td whiteSpace="nowrap">{monthLabel(month)}</Td>
-              {[baseline.energyCostPln, baseline.distributionCostPln, baseline.fixedCostPln, baseline.cashDuePln,
-                proposed?.energyCostPln, proposed?.distributionCostPln, proposed?.fixedCostPln, proposed?.cashDuePln]
+              {[baseline.importKwh, baseline.energyCostPln, baseline.distributionCostPln, baseline.fixedCostPln, baseline.cashDuePln,
+                proposed?.importKwh, proposed?.energyCostPln, proposed?.distributionCostPln, proposed?.fixedCostPln, proposed?.cashDuePln]
                 .map((value, index) => <Td key={index} isNumeric>{value == null ? '—' : format(value, 2)}</Td>)}
             </Tr>)}</Tbody>
-            {readyCalculation?.baselineBill && readyCalculation.proposedBill ? <Tfoot>
+            {financialBaseline && readyCalculation?.proposedBill ? <Tfoot>
               <Tr bg={c.soft} fontWeight="700"><Td>Rok</Td>
-                {[readyCalculation.baselineBill.totals.energyCostPln, readyCalculation.baselineBill.totals.distributionCostPln,
-                  readyCalculation.baselineBill.totals.fixedCostPln, readyCalculation.baselineBill.totals.cashDuePln,
-                  readyCalculation.proposedBill.totals.energyCostPln, readyCalculation.proposedBill.totals.distributionCostPln,
+                {[financialBaseline.totals.importKwh, financialBaseline.totals.energyCostPln, financialBaseline.totals.distributionCostPln,
+                  financialBaseline.totals.fixedCostPln, financialBaseline.totals.cashDuePln,
+                  readyCalculation.proposedBill.totals.importKwh, readyCalculation.proposedBill.totals.energyCostPln, readyCalculation.proposedBill.totals.distributionCostPln,
                   readyCalculation.proposedBill.totals.fixedCostPln, readyCalculation.proposedBill.totals.cashDuePln]
                   .map((value, index) => <Td key={index} isNumeric>{format(value, 2)}</Td>)}
               </Tr>
             </Tfoot> : null}
           </Table>
         </TableContainer>
+        <Text fontSize="11px" color={c.muted} mt="10px">Pobór z sieci pokazuje ilość energii, a kolumny pieniężne — kwoty po rozliczeniu PV. Zero zł nie oznacza zerowego poboru. W net-meteringu opust pokrywa energię i zmienną dystrybucję. W net-billingu depozyt pokrywa tylko energię; dystrybucja i opłaty stałe pozostają do zapłaty. Wyższy rachunek w pojedynczym miesiącu jest możliwy — sumę roku pokazuje ostatni wiersz.</Text>
       </Box> : null}
     </Section>
     <Section title="Finansowanie" subtitle={`Kwoty ${financialBasis} · szacunek warunkowy`}>
@@ -397,21 +422,27 @@ export function OfferSavingsScreen({ workspace, draft, currentTariffLabel, targe
       ]} />
       <Flex justify="space-between" gap="16px" wrap="wrap" mt="18px" p="18px" bg={c.soft} color="#14986c" fontWeight="700" borderRadius="8px"><Text>Koszt systemu po dofinansowaniach</Text><Text fontSize="22px">{format(readyCalculation?.costAfterFinancingPln, 2)} zł</Text></Flex>
     </Section>
-    <Section title="Oszczędność w czasie" subtitle={`Ta sama taryfa docelowa · szacunkowa korzyść ze sprzętu · ${projection?.horizonYears ?? 20} lat`} action={<FormControl maxW="200px"><FormLabel>Roczny wzrost cen energii</FormLabel><Input value="0% · ceny stałe" readOnly /></FormControl>}>
-      {projection ? <OfferSavingsProjectionChart before={projection.annualTariffOnlyCostPln} after={projection.annualTargetCostPln} paybackYears={estimatedPayback ?? null} /> : <EmptyChart label={readyCalculation ? 'Prognoza wieloletnia niedostępna. Przelicz wariant lub sprawdź uwagi do wyniku.' : 'Prognoza wymaga kalkulacji wybranego wariantu'} />}
+    <Section title="Oszczędność w czasie" subtitle={`Koszty skumulowane · ta sama taryfa docelowa · ${projection?.horizonYears ?? 20} lat`} action={<FormControl maxW="220px"><FormLabel>Roczny wzrost kosztów prądu</FormLabel><Input value={projection ? `${format(projection.annualPriceGrowthRate * 100)}% rocznie` : '5% rocznie · po przeliczeniu'} readOnly /></FormControl>}>
+      {projection ? <OfferSavingsProjectionChart before={projection.cumulativeTariffOnlyCostPln} after={projection.cumulativeTargetCostPln} paybackYears={projection.estimatedPaybackYears} /> : <EmptyChart label={readyCalculation ? 'Prognoza wieloletnia niedostępna. Przelicz wariant lub sprawdź uwagi do wyniku.' : 'Prognoza wymaga kalkulacji wybranego wariantu'} />}
+      <Text fontSize="11px" color={c.muted} mt="12px">Linia z systemem zaczyna się od kosztu inwestycji po finansowaniu. Do obu linii dodajemy kolejne rachunki. Ich przecięcie oznacza, że oszczędności pokryły koszt inwestycji.</Text>
       <Metrics items={[
         { label: `Rachunki bez inwestycji · ${projection?.horizonYears ?? 20} lat`, value: `${format(projection?.totalTariffOnlyCostPln, 2)} zł` },
         { label: `Rachunki z systemem · ${projection?.horizonYears ?? 20} lat`, value: `${format(projection?.totalTargetCostPln, 2)} zł` },
         { label: `Oszczędność ze sprzętu · ${projection?.horizonYears ?? 20} lat`, value: `${format(projection?.totalSavingsPln, 2)} zł`, green: true },
       ]} />
       <Flex justify="space-between" gap="16px" wrap="wrap" mt="18px" p="18px" bg={c.soft} color="#14986c" fontWeight="700" borderRadius="8px"><Text>Korzyść po odjęciu kosztu inwestycji</Text><Text fontSize="22px">{format(projection?.netSavingsAfterCostPln, 2)} zł</Text></Flex>
-      <Text fontSize="10px" color={c.muted} mt="10px">Powtórzenie profilu rocznego, z przenoszeniem i wygasaniem depozytu. Stałe ceny i zużycie, bez degradacji, dyskontowania oraz kosztów serwisu. Porównanie nie obejmuje korzyści z przejścia ze starej taryfy na nową.</Text>
+      <Text fontSize="10px" color={c.muted} mt="10px">{projection ? `Założenie: zakup energii, dystrybucja i opłaty stałe +${format(projection.annualPriceGrowthRate * 100)}% rocznie od drugiego roku; cena oddania energii bez wzrostu. Powtórzenie profilu rocznego z przenoszeniem i wygasaniem nominalnego depozytu. Stałe zużycie i praca systemu, bez degradacji, dyskontowania oraz kosztów serwisu. Porównanie nie obejmuje korzyści ani kosztu przejścia ze starej taryfy i rozliczenia na nowe.` : 'Założenia prognozy będą widoczne po przeliczeniu wariantu.'}</Text>
     </Section>
   </OfferScreen>;
 }
 
-export function OfferSummaryScreen({ workspace, draft, templatePreview }: Pick<SharedProps, 'workspace' | 'draft'> & { templatePreview: boolean }) {
+function SavingsBillHeaders() {
+  return <><Th isNumeric>Pobór z sieci (kWh)</Th><Th isNumeric>Energia do zapłaty</Th><Th isNumeric>Dystrybucja do zapłaty</Th><Th isNumeric>Opłaty stałe</Th><Th isNumeric>Rachunek</Th></>;
+}
+
+export function OfferSummaryScreen({ workspace, draft, disabled, onChange, itemsEditable, templatePreview }: Pick<SharedProps, 'workspace' | 'draft' | 'disabled' | 'onChange'> & { itemsEditable: boolean; templatePreview: boolean }) {
   return <OfferScreen><Section title="Podsumowanie" subtitle="Podgląd wygenerowanego dokumentu.">
+    <OfferCommercialSummary workspace={workspace} draft={draft} disabled={disabled || templatePreview} itemsEditable={itemsEditable} onChange={onChange} />
     <OfferWorkspaceDocumentPreview workspace={workspace} draft={draft} templatePreview={templatePreview} />
   </Section></OfferScreen>;
 }

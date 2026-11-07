@@ -12,19 +12,40 @@ const source = ts.transpileModule(readFileSync(sourcePath, 'utf8'), {
 
 function fixture(reference: string | null = null, missing = false) {
   const project = { id: 'project', clientId: 'client', dashboardStation: null, dashboardStationNumber: reference };
-  const state = { writes: 0, resolutions: 0, profileRequests: 0 };
+  const state = { writes: 0, resolutions: 0, profileRequests: 0, profileSyncInputs: [] as any[],
+    selection: { key: null as string | null, revision: 0, contentHash: null as string | null, profileName: null as string | null },
+    auditAnnual: 3650, auditWhere: null as any, events: [] as string[] };
   const prisma: any = {
     project: {
       findMany: async () => missing ? [] : [project],
       findUniqueOrThrow: async () => project,
-      update: async () => { state.writes++; },
+      update: async ({ data }: any) => { state.writes++; Object.assign(project, data); return project; },
     },
-    $queryRaw: async () => [{ id: 'project' }],
-    $transaction: async (fn: any) => fn(prisma),
+    energyAudit: { findFirst: async ({ where }: any) => { state.auditWhere = where; return { annualConsumptionKwh: state.auditAnnual }; } },
+    $queryRaw: async () => { state.events.push('lock'); return [{ id: 'project' }]; },
+    $transaction: async (fn: any) => {
+      state.events.push('transaction-start');
+      const result = await fn(prisma);
+      state.events.push('transaction-commit');
+      return result;
+    },
   };
   const modules: Record<string, unknown> = {
     'node:crypto': {}, 'node:fs/promises': {}, 'node:path': {}, './audit': {},
     './energy-measurement-document': {}, './prisma': { prisma },
+    './project-reference-profile': {
+      readProjectReferenceProfileSelection: async () => state.selection,
+      resolveSelectedReferenceProfile: async (selection: any) => selection.key
+        ? { profile: { key: selection.key, name: selection.profileName }, contentHash: selection.contentHash }
+        : null,
+    },
+    './re-reference-profile': {
+      syncProjectReferenceLoadProfile: async (input: any) => {
+        state.events.push('re-sync');
+        state.profileSyncInputs.push(input);
+        return { status: 'synced', station: '41', retryAllowed: false, message: 'Profil RE zsynchronizowany.' };
+      },
+    },
     './re-consumption-api': {
       validateReConsumptionPeriod: () => undefined,
       preflightReConsumptionWorkbook: async () => { state.profileRequests++; return { status: 'ready', station: '41' }; },
@@ -53,7 +74,7 @@ function fixture(reference: string | null = null, missing = false) {
     exports: exported, Error,
     require: (name: string) => { assert.ok(name in modules, name); return modules[name]; },
   });
-  return { exported, state };
+  return { exported, prisma, state };
 }
 
 for (const reference of [null, '', '   ']) {
@@ -70,7 +91,9 @@ for (const reference of [null, '', '   ']) {
         return true;
       });
     }
-    assert.deepEqual(state, { writes: 0, resolutions: 0, profileRequests: 0 });
+    assert.equal(state.writes, 0);
+    assert.equal(state.resolutions, 0);
+    assert.equal(state.profileRequests, 0);
   });
 }
 
@@ -85,5 +108,77 @@ test('przypisana stacja przechodzi wstępną kontrolę bez zapisu', async () => 
 test('brak projektu nie prowadzi do odczytu ani tworzenia obcej stacji', async () => {
   const { exported, state } = fixture(null, true);
   await assert.rejects(() => exported.requireProjectReStation('client', 'project'), /Nie znaleziono projektu/);
-  assert.deepEqual(state, { writes: 0, resolutions: 0, profileRequests: 0 });
+  assert.equal(state.writes, 0);
+  assert.equal(state.resolutions, 0);
+  assert.equal(state.profileRequests, 0);
+});
+
+test('link init rereads and replays the current selected profile using the latest project annual amount', async () => {
+  const { exported, state } = fixture('41');
+  state.selection = { key: 'bdew-2025-h25', revision: 3, contentHash: 'a'.repeat(64), profileName: 'Dom' };
+  const result = await exported.syncProjectReferenceProfileAfterLink({ clientId: 'client', projectId: 'project', actorId: 'staff' });
+  assert.equal(result.status, 'synced');
+  assert.equal(state.profileSyncInputs.length, 1);
+  assert.equal(state.profileSyncInputs[0].projectId, 'project');
+  assert.equal(state.profileSyncInputs[0].clientId, 'client');
+  assert.equal(state.profileSyncInputs[0].actorId, 'staff');
+  assert.equal(state.profileSyncInputs[0].annualKwh, 3650);
+  assert.equal(state.profileSyncInputs[0].referenceProfile.profile.key, 'bdew-2025-h25');
+  assert.equal(state.profileSyncInputs[0].referenceProfile.contentHash, 'a'.repeat(64));
+  assert.equal(state.auditWhere.profileSource, 'ANNUAL_DECLARATION');
+});
+
+test('link init replays a saved null selection as a default overlay and leaves unselected projects untouched', async () => {
+  const { exported, state } = fixture('41');
+  state.selection = { key: null, revision: 2, contentHash: null, profileName: null };
+  const reset = await exported.syncProjectReferenceProfileAfterLink({ clientId: 'client', projectId: 'project' });
+  assert.equal(reset.status, 'synced');
+  assert.equal(state.profileSyncInputs[0].referenceProfile, null);
+  state.selection = { key: null, revision: 0, contentHash: null, profileName: null };
+  assert.equal(await exported.syncProjectReferenceProfileAfterLink({ clientId: 'client', projectId: 'project' }), null);
+  assert.equal(state.profileSyncInputs.length, 1);
+});
+
+test('station POST commits its link before replaying RE and rejects stale initial station snapshots', async () => {
+  const { exported, state } = fixture();
+  state.selection = { key: 'bdew-2025-h25', revision: 1, contentHash: 'a'.repeat(64), profileName: 'Dom' };
+  const result = await exported.commitProjectStationLinkAndReplay({
+    clientId: 'client', projectId: 'project', expected: { dashboardStation: null, dashboardStationNumber: null },
+    station: { stationHash: 'station-token', station: '41', weatherStation: null }, actorId: 'staff',
+  });
+  assert.equal(result.updatedProject.dashboardStation, 'station-token');
+  assert.equal(result.referenceProfileSync.status, 'synced');
+  assert.deepEqual(state.events.filter(event => event === 'transaction-commit' || event === 're-sync'), [
+    'transaction-commit', 're-sync', 'transaction-commit',
+  ]);
+
+  const stale = fixture();
+  stale.state.events.length = 0;
+  await assert.rejects(() => stale.exported.commitProjectStationLinkAndReplay({
+    clientId: 'client', projectId: 'project', expected: { dashboardStation: 'old-token', dashboardStationNumber: '40' },
+    station: { stationHash: 'other-token', station: '99', weatherStation: null },
+  }), /zmieniło się podczas zapisu/);
+  assert.equal(stale.state.profileSyncInputs.length, 0);
+  assert.equal(stale.state.writes, 0);
+});
+
+test('manual CRM link can replay only after committed exact station fields', async () => {
+  const { exported, prisma, state } = fixture('41');
+  state.selection = { key: 'bdew-2025-h25', revision: 1, contentHash: 'a'.repeat(64), profileName: 'Dom' };
+  await prisma.$transaction(async (tx: any) => {
+    await exported.assertProjectStationSnapshot(tx, { clientId: 'client', projectId: 'project',
+      expected: { dashboardStation: null, dashboardStationNumber: '41' } });
+    await tx.project.update({ where: { id: 'project' }, data: { dashboardStation: 'station-token' } });
+  });
+  const replay = await exported.replayProjectReferenceProfileForLinkedStation({
+    clientId: 'client', projectId: 'project', stationHash: 'station-token', stationNumber: '41',
+  });
+  assert.equal(replay.status, 'synced');
+  assert.equal(state.events.indexOf('transaction-commit') < state.events.indexOf('re-sync'), true);
+  assert.equal(state.profileSyncInputs.length, 1);
+
+  await assert.rejects(() => exported.replayProjectReferenceProfileForLinkedStation({
+    clientId: 'client', projectId: 'project', stationHash: 'old-token', stationNumber: '41',
+  }), /zmieniło się przed odtworzeniem/);
+  assert.equal(state.profileSyncInputs.length, 1);
 });

@@ -5,8 +5,9 @@ import type { OfferWorkspaceDraft } from './offer-workspace';
 import type { OfferWorkspaceCalculation } from './offer-workspace-calculation-types';
 import { prisma } from './prisma';
 
-export const OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION = 'offer-workspace-calculation-v5-savings-presentation';
-export const MAX_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES = 32 * 1024 * 1024;
+export const OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION = 'offer-workspace-calculation-v13-commercial-annual';
+// A full year with the exact breakdown for three settlement scenarios exceeds 32 MiB.
+export const MAX_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES = 64 * 1024 * 1024;
 const COMPRESS_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES = 1024 * 1024;
 const MAX_COMPRESSED_RESULT_OVERHEAD_BYTES = 64 * 1024;
 const RESULT_ENVELOPE_KEY = '__offerWorkspaceCalculationResult';
@@ -20,6 +21,8 @@ export interface OfferWorkspaceCalculationDependencyContext {
   targetTariffId: OfferWorkspaceDraft['targetTariffId'];
   currentSettlement: OfferWorkspaceDraft['currentSettlement'];
   targetSettlement: OfferWorkspaceDraft['targetSettlement'];
+  existingPvPowerKw: OfferWorkspaceDraft['existingPv']['powerKw'];
+  requiresPvSource: boolean;
 }
 
 export interface OfferWorkspaceCalculationSnapshotInput {
@@ -47,6 +50,8 @@ export interface OfferWorkspaceCalculationSnapshotQuery {
   algorithmVersion: string;
   pricesAsOf: string;
   sourceDependencyStamp: string;
+  limit?: number;
+  offset?: number;
 }
 
 export interface StoredOfferWorkspaceCalculationSnapshot {
@@ -88,7 +93,7 @@ export interface OfferWorkspaceCalculationSnapshotRepository {
 
 export class OfferWorkspaceCalculationSnapshotSizeError extends Error {
   constructor() {
-    super('Wynik obliczeń przekracza limit trwałego zapisu 32 MiB.');
+    super('Wynik obliczeń przekracza limit trwałego zapisu 64 MiB.');
     this.name = 'OfferWorkspaceCalculationSnapshotSizeError';
   }
 }
@@ -209,6 +214,10 @@ function parseSnapshot(value: unknown): StoredOfferWorkspaceCalculationSnapshot 
     || typeof row.algorithmVersion !== 'string'
     || (row.targetOperatorId !== null && (!Number.isSafeInteger(row.targetOperatorId) || Number(row.targetOperatorId) < 1))
     || (row.targetTariffId !== null && (!Number.isSafeInteger(row.targetTariffId) || Number(row.targetTariffId) < 1))
+    || (row.existingPvPowerKw !== null && (typeof row.existingPvPowerKw !== 'number'
+      || !Number.isFinite(row.existingPvPowerKw) || row.existingPvPowerKw < 0))
+    || typeof row.requiresPvSource !== 'boolean'
+    || ((row.existingPvPowerKw as number | null) !== null && Number(row.existingPvPowerKw) > 0 && row.requiresPvSource !== true)
     || !isSettlement(row.currentSettlement) || !isSettlement(row.targetSettlement)
     || !admission || !Number.isFinite(timestamp(admission.admittedAt))
     || !Number.isFinite(timestamp(row.createdAt)) || !Number.isFinite(timestamp(row.deadlineAt))
@@ -237,6 +246,8 @@ function parseSnapshot(value: unknown): StoredOfferWorkspaceCalculationSnapshot 
       targetTariffId: row.targetTariffId as number | null,
       currentSettlement: row.currentSettlement as OfferWorkspaceDraft['currentSettlement'],
       targetSettlement: row.targetSettlement as OfferWorkspaceDraft['targetSettlement'],
+      existingPvPowerKw: row.existingPvPowerKw as OfferWorkspaceDraft['existingPv']['powerKw'],
+      requiresPvSource: row.requiresPvSource as boolean,
     },
     deadlineAt: row.deadlineAt as Date,
     createdAt: row.createdAt as Date,
@@ -336,7 +347,8 @@ export class PrismaOfferWorkspaceCalculationSnapshotRepository implements OfferW
       },
       include: { admission: true },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: 10,
+      take: input.limit ?? 10,
+      ...(input.offset ? { skip: input.offset } : {}),
     });
     return rows.map(parseSnapshot).filter((row): row is StoredOfferWorkspaceCalculationSnapshot => row !== null
       && row.actorId === input.actorId && row.projectId === input.projectId && row.sourceRevision === input.sourceRevision

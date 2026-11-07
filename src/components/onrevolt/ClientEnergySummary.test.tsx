@@ -221,6 +221,58 @@ test('profil miesięczny RE bez XLSX pokazuje linię profilu, nie serię poboru 
   assert.doesNotMatch(markup, /Brak pomiarów poboru i oddania w tym okresie/);
 });
 
+test('profil roczny i przepływy MODELLED nie są etykietowane jako pomiary operatora', async () => {
+  const { default: ClientEnergySummary } = await import('./ClientEnergySummary');
+  const annualModel = {
+    source: 'MODELLED' as const,
+    provenance: { kind: 'annual-consumption' as const, source: 'Roczne zużycie · profil godzinowy RE', annualConsumptionKwh: 6000 },
+    annualConsumptionKwh: 6000,
+    flowAvailable: true,
+    months: rollingMonths.map(month => ({ period: month.period, loadKwh: 500, importKwh: 500, exportKwh: 0 })),
+    days: [{ date: '2026-06-12', period: '2026-06', hours: Array.from({ length: 24 }, (_, hour) => ({
+      hour, loadKwh: 1, importKwh: 1, exportKwh: 0,
+    })) }],
+    issues: [],
+  };
+  const cost = {
+    source: 'MODELLED' as const, status: 'partial' as const, vatBasis: 'GROSS' as const, totalPln: 1200,
+    energyPln: 800, distributionPln: 300, fixedPln: 100, exportValuePln: null,
+    settlementBenefitPln: null, settled: false, pricedHours: 8760, totalHours: 8760,
+    tariffLabels: ['G11'], issues: [], assumptions: ['Pobór i oddanie wyznaczono z profilu godzinowego RE.'],
+  };
+  const markup = renderToStaticMarkup(createElement(ClientEnergySummary, {
+    projectId: 'annual-model', profile: null, annualConsumptionKwh: 0,
+    consumptionSource: 'Faktury bez rozpoznanego zużycia', hasPv: false, invoices: [],
+    initialData: { months: [], days: [], issues: [], annualModel, cost },
+  }));
+
+  assert.match(markup, /6[\s\u00a0\u202f]?000 kWh/u);
+  assert.match(markup, /MODELLED · Roczne zużycie · profil godzinowy RE/u);
+  assert.doesNotMatch(markup, /Faktury bez rozpoznanego zużycia/u);
+  assert.match(markup, /Okres profilu MODELLED/);
+  assert.match(markup, /Modelowany pobór z sieci/);
+  assert.match(markup, /Modelowane oddanie do sieci/);
+  assert.match(markup, /MODELLED · Roczne zużycie · profil godzinowy RE/);
+  assert.match(markup, /Doba modelowa/);
+  assert.match(markup, /Szacowany koszt wg taryfy/);
+  assert.doesNotMatch(markup, /ENEA|pomiary operatora|Pobrano z sieci/);
+
+  const loadOnlyMarkup = renderToStaticMarkup(createElement(ClientEnergySummary, {
+    projectId: 'annual-profile-only', profile: null, annualConsumptionKwh: 6000,
+    consumptionSource: 'Deklaracja klienta', hasPv: false, invoices: [],
+    initialData: { months: [], days: [], issues: [], annualModel: {
+      ...annualModel,
+      flowAvailable: false,
+      months: annualModel.months.map(month => ({ ...month, importKwh: null, exportKwh: null })),
+      days: [],
+      issues: ['Nie obliczono importu ani eksportu; status PV jest nieznany.'],
+    } },
+  }));
+  assert.match(loadOnlyMarkup, /MODELLED · profil godzinowy RE/);
+  assert.match(loadOnlyMarkup, /status PV jest nieznany/);
+  assert.doesNotMatch(loadOnlyMarkup, /data-series="import"|data-series="export"/);
+});
+
 test('maskowanie ukrywa KPI poprzedniego okresu do zakończenia przeliczenia', async () => {
   const { default: ClientEnergySummary } = await import('./ClientEnergySummary');
   const markup = renderToStaticMarkup(createElement(ClientEnergySummary, {

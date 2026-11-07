@@ -699,6 +699,100 @@ test('real tariff rows without component_key match reordered NET metadata by com
   assert.ok(result.fixedDailyPln > 0);
 });
 
+test('billing exposes reconciled zone and fee components without changing NET/GROSS settlement amounts', () => {
+  const startUtc = '2026-01-01T23:00:00.000Z';
+  const endUtc = '2026-01-02T23:00:00.000Z';
+  const zonedTariff = semanticTariff() as ClientTariffPayload & {
+    energy_schedule: { model: 'monthly_codes'; monthly: Record<string, string[]> };
+  };
+  zonedTariff.energy_schedule = {
+    model: 'monthly_codes',
+    monthly: Object.fromEntries(Array.from({ length: 12 }, (_, month) => [String(month + 1), Array(24).fill('low')])),
+  };
+  const tariffHistory = history(['2026-01-02'], zonedTariff);
+  const intervals = makeIntervals(startUtc, endUtc, 60, (index) => index === 0
+    ? { importKwh: 2, exportKwh: 0 } : { importKwh: 0, exportKwh: 0 });
+
+  const metering = billOfferWorkspaceScenario({
+    tariffHistory, context, vatBasis: 'GROSS', intervals,
+    settlement: netMetering({
+      initialCreditKwh: 1,
+      initialCreditLots: [{ kwh: 1, expiresMonth: '2026-02' }],
+      coverage: 'ENERGY_AND_VARIABLE_DISTRIBUTION',
+    }),
+  });
+  ready(metering);
+  const meteredMonth = metering.result.months[0];
+  assert.equal(metering.result.intervalTariffs?.length, 1);
+  assert.equal(metering.result.intervalTariffs?.[0].energyZone, 'low');
+  assert.equal(metering.result.intervalTariffs?.[0].distributionZone, 'high');
+  assert.ok(Math.abs(meteredMonth.energyCostPln - 0.28 * 1.23) < 1e-10);
+  assert.ok(Math.abs(meteredMonth.distributionCostPln - (0.3032 + 0.0332) * 1.23) < 1e-10);
+  assert.ok(Math.abs(meteredMonth.fixedCostPln - (14.56 + 3.84) / 31 * 1.23) < 1e-10);
+  assert.equal(meteredMonth.fixedComponents?.some((component) => component.componentKey === 'subscription-2'), false);
+  assert.ok(Math.abs((meteredMonth.distributionComponents || []).reduce((sum, component) => sum + component.amountPln, 0)
+    - meteredMonth.distributionCostPln) < 1e-10);
+  assert.ok(Math.abs((meteredMonth.fixedComponents || []).reduce((sum, component) => sum + component.amountPln, 0)
+    - meteredMonth.fixedCostPln) < 1e-10);
+
+  const billing = billOfferWorkspaceScenario({
+    tariffHistory, context, vatBasis: 'GROSS', intervals,
+    settlement: netBilling(startUtc, endUtc, {
+      initialDeposit: [{ amountPln: 0.1, creditedMonth: '2025-12', expiresMonth: '2026-12', refundCapPln: 0 }],
+    }),
+  });
+  ready(billing);
+  const billedMonth = billing.result.months[0];
+  assert.ok(Math.abs(billedMonth.energyCostPln - (2 * 0.28 * 1.23 - 0.1)) < 1e-10);
+  assert.ok(Math.abs(billedMonth.distributionCostPln - 2 * (0.3032 + 0.0332) * 1.23) < 1e-10);
+  assert.ok(Math.abs((billedMonth.distributionComponents || []).reduce((sum, component) => sum + component.amountPln, 0)
+    - billedMonth.distributionCostPln) < 1e-10);
+  assert.ok(Math.abs((billing.result.totals.fixedComponents || []).reduce((sum, component) => sum + component.amountPln, 0)
+    - billing.result.totals.fixedCostPln) < 1e-10);
+});
+
+test('flat capacity charge uses the selected annual-usage band once in fixed-fee details', () => {
+  const startUtc = '2026-01-01T23:00:00.000Z';
+  const endUtc = '2026-01-02T23:00:00.000Z';
+  const flatCapacity = tariff() as ClientTariffPayload & Record<string, any>;
+  const capacityRow = {
+    component_key: 'capacity-charge', label: 'Opłata mocowa', window_code: 'all',
+    price: 0.15 * 1.23,
+  };
+  flatCapacity.variable.push(capacityRow);
+  flatCapacity.pricing.tariffStorage.variable.push({
+    component_key: 'capacity-charge', label: 'Opłata mocowa', window_code: 'all',
+    net: 0.15, gross: 0.15 * 1.23, vatRate: 0.23,
+  });
+  flatCapacity.capacity_charge = {
+    model: 'pl_capacity_charge', effective_from: '2026-01-01', effective_until: '2027-01-01',
+    flat_eligible: true, flat_max_power_kw: 16, variable_rate: 0.2,
+    flat_monthly: [
+      { annual_usage_min_kwh: 0, annual_usage_max_kwh: 6000, amount: 5 },
+      { annual_usage_min_kwh: 6000, annual_usage_max_kwh: null, amount: 10 },
+    ],
+    qualifying_hour_from: 17, qualifying_hour_until: 22,
+    exclude_weekends: false, exclude_public_holidays: false, profile_factors: [],
+  };
+  const result = billOfferWorkspaceScenario({
+    tariffHistory: history(['2026-01-02'], flatCapacity), context, vatBasis: 'GROSS',
+    settlement: netMetering(),
+    intervals: makeIntervals(startUtc, endUtc, 60, (index) => index === 18
+      ? { importKwh: 1, exportKwh: 0 } : { importKwh: 0, exportKwh: 0 }),
+  });
+
+  ready(result);
+  const month = result.result.months[0];
+  const capacity = month.fixedComponents?.filter((component) => component.category === 'capacity') || [];
+  assert.equal(capacity.length, 1);
+  assert.equal(capacity[0].componentKey, 'capacity-charge-flat');
+  assert.ok(Math.abs(capacity[0].amountPln - 10 / 31 * 1.23) < 1e-10);
+  assert.ok(Math.abs(month.fixedCostPln - 41 / 31 * 1.23) < 1e-10);
+  assert.ok(Math.abs(capacity.reduce((sum, component) => sum + component.amountPln, 0) +
+    (month.fixedComponents || []).filter((component) => component.category !== 'capacity')
+      .reduce((sum, component) => sum + component.amountPln, 0) - month.fixedCostPln) < 1e-10);
+});
+
 test('fixed PHP display amounts rounded to cents retain canonical net precision', () => {
   const value = tariff({ fixed: 24.05 });
   value.fixed[0].amount = 29.58;
@@ -709,6 +803,53 @@ test('fixed PHP display amounts rounded to cents retain canonical net precision'
   assert.ok(Math.abs(result.fixedDailyPln - 24.05 / 31) < 1e-10);
   value.fixed[0].amount = 29.59;
   assert.equal(resolveOfferBillingRates(input).status, 'blocked');
+});
+
+test('PGE G11 energy accepts the four-decimal gross display price and keeps semantic guards', () => {
+  const pgeTariff = (runtimePrice: number, runtimeLabel = 'Energia czynna', includeRuntimeKey = false) => {
+    const value = tariff() as ClientTariffPayload & Record<string, any>;
+    const runtimeEnergy = value.variable[0] as Record<string, any>;
+    const storedRows = value.pricing.tariffStorage.variable as Array<Record<string, any>>;
+    const storedEnergy = storedRows.find((row) => row.component_key === 'energy')!;
+    const componentKey = 'f27d0dd5-ef5e-4a83-9fe7-4b8354731a60';
+
+    runtimeEnergy.label = runtimeLabel;
+    runtimeEnergy.price = runtimePrice;
+    storedEnergy.component_key = componentKey;
+    storedEnergy.net = 0.5032;
+    storedEnergy.gross = 0.6189359999999999;
+    storedEnergy.vatRate = 0.23;
+    if (includeRuntimeKey) runtimeEnergy.component_key = componentKey;
+    else delete runtimeEnergy.component_key;
+
+    return value as unknown as ClientTariffPayload;
+  };
+  const interval = {
+    startUtc: '2026-01-01T23:00:00Z', endUtc: '2026-01-02T00:00:00Z', importKwh: 1, exportKwh: 0,
+  };
+  const resolve = (value: ClientTariffPayload) => resolveOfferBillingRates({
+    tariffHistory: history(['2026-01-02'], value), context, vatBasis: 'NET',
+    settlement: netMetering(), interval,
+  });
+
+  const roundedGross = resolve(pgeTariff(0.6189));
+  ready(roundedGross);
+  assert.equal(roundedGross.energyBuyPlnPerKwh, 0.5032);
+
+  const nearbyWrongPrice = resolve(pgeTariff(0.6188));
+  assert.equal(nearbyWrongPrice.status, 'blocked');
+  if (nearbyWrongPrice.status === 'blocked') {
+    assert.match(nearbyWrongPrice.reasons.join(' '), /nie odpowiada jej zweryfikowanym wartościom netto\/brutto/iu);
+  }
+
+  const impreciselyRoundedGross = resolve(pgeTariff(0.618900001));
+  assert.equal(impreciselyRoundedGross.status, 'blocked');
+
+  const mismatchedIdentity = resolve(pgeTariff(0.6189, 'Energia bierna', true));
+  assert.equal(mismatchedIdentity.status, 'blocked');
+  if (mismatchedIdentity.status === 'blocked') {
+    assert.match(mismatchedIdentity.reasons.join(' '), /nie odpowiada semantycznie metadanym taryfy/iu);
+  }
 });
 
 test('billing blocks duplicate semantic tariff identities instead of choosing by row order', () => {

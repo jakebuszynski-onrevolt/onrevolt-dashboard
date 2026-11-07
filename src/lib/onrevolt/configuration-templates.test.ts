@@ -56,3 +56,49 @@ test('brak ceny katalogowej blokuje użycie szablonu', () => {
     /Brak aktualnej ceny katalogowej: Falownik/,
   );
 });
+
+test('ręczna cena sprzedaży działa niezależnie od trybu źródła ceny i nie wymaga marży', () => {
+  const cases = [
+    {
+      pricingMode: 'CATALOG',
+      productId: 'product-1',
+      product: { prices: [{ purchaseNet: 100, currentPurchaseNet: 90, purchaseVatRate: 0.23, operatingCostNet: 10, marginRate: null }] },
+    },
+    {
+      pricingMode: 'INDIVIDUAL',
+      unitPurchaseNet: 100,
+      purchaseVatRate: 0.23,
+      operatingCostNet: 10,
+      marginRate: null,
+    },
+    {
+      pricingMode: 'LEGACY',
+      productId: 'product-1',
+      product: { prices: [{ purchaseNet: 100, currentPurchaseNet: 90, purchaseVatRate: 0.23, marginRate: null }] },
+      operatingCostNet: 10,
+      marginRate: null,
+    },
+  ];
+
+  for (const item of cases) {
+    const costs = resolveTemplateItemCosts({
+      ...item,
+      description: 'Falownik',
+      unitSaleNet: '12345.6789',
+    });
+    assert.equal(costs.unitSaleNet, 12345.6789);
+    assert.equal(costs.marginRate, 0, 'zero is only the unused calculator parameter when stored margin is absent');
+  }
+});
+
+test('ręczna cena sprzedaży musi być skończona i nieujemna', () => {
+  for (const unitSaleNet of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.throws(() => resolveTemplateItemCosts({
+      unitPurchaseNet: 0,
+      purchaseVatRate: 0.23,
+      operatingCostNet: 0,
+      marginRate: 0.3,
+      unitSaleNet,
+    }), /cena sprzedaży ręczna|skończona|ujemna/i);
+  }
+});

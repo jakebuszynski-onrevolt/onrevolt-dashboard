@@ -31,6 +31,11 @@ export interface OfferWorkspaceCalculationJobRequest {
   draft: OfferWorkspaceDraft;
   series: OfferMeasurementSeries | null;
   mode: OfferWorkspaceCalculationMode;
+  requiresPvSource: boolean;
+  continuation?: {
+    jobId: string;
+    result: OfferWorkspaceCalculation;
+  };
 }
 
 export type OfferWorkspaceCalculationJobRunner = (
@@ -39,13 +44,42 @@ export type OfferWorkspaceCalculationJobRunner = (
   series: OfferMeasurementSeries | null,
   mode: OfferWorkspaceCalculationMode,
   onProgress: (done: number, total: number) => void,
+  previousRecommendation?: OfferWorkspaceCalculation,
 ) => Promise<OfferWorkspaceCalculation>;
+
+export interface OfferWorkspaceRecommendationSearchMetadata {
+  version: 1;
+  candidateSignature: string;
+  evaluatedCandidateIds: string[];
+  totalCandidates: number;
+  evaluatedCandidates: number;
+  batchNumber: number;
+  batchEvaluated: number;
+  hasMore: boolean;
+  phase: 'coarse' | 'refine' | 'complete';
+}
 
 export interface CompletedOfferCalculationLookup {
   actorId: string;
   projectId: string;
   sourceRevision: string;
   draft: OfferWorkspaceDraft;
+}
+
+function recommendationSearchMetadata(value: OfferWorkspaceCalculation): OfferWorkspaceRecommendationSearchMetadata | null {
+  const metadata = (value as OfferWorkspaceCalculation & { recommendationSearch?: unknown }).recommendationSearch;
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const row = metadata as Record<string, unknown>;
+  if (row.version !== 1 || typeof row.candidateSignature !== 'string' || !row.candidateSignature
+    || !Array.isArray(row.evaluatedCandidateIds) || !row.evaluatedCandidateIds.every(id => typeof id === 'string')
+    || !Number.isSafeInteger(row.totalCandidates) || Number(row.totalCandidates) < 0
+    || !Number.isSafeInteger(row.evaluatedCandidates) || Number(row.evaluatedCandidates) < 0
+    || Number(row.evaluatedCandidates) > Number(row.totalCandidates)
+    || !Number.isSafeInteger(row.batchNumber) || Number(row.batchNumber) < 1
+    || !Number.isSafeInteger(row.batchEvaluated) || Number(row.batchEvaluated) < 0
+    || typeof row.hasMore !== 'boolean'
+    || (row.phase !== 'coarse' && row.phase !== 'refine' && row.phase !== 'complete')) return null;
+  return row as unknown as OfferWorkspaceRecommendationSearchMetadata;
 }
 
 export class OfferWorkspaceCalculationCapacityError extends Error {
@@ -67,6 +101,7 @@ interface StoredJob extends OfferWorkspaceCalculationJobView {
   projectId: string;
   mode: OfferWorkspaceCalculationMode;
   draftHash: string;
+  continuationJobId?: string;
   algorithmVersion: string;
   createdAt: number;
   executionActive: boolean;
@@ -104,6 +139,21 @@ function sortedIds(ids: string[]): string[] {
   return [...ids].sort((left, right) => left.localeCompare(right));
 }
 
+function hasConfigurationEdits(draft: OfferWorkspaceDraft): boolean {
+  return Boolean(draft.configurationEdits?.some(edit => Boolean(edit.items?.length || edit.addedItems?.length || edit.technical)));
+}
+
+function canonicalConfigurationEdits(draft: OfferWorkspaceDraft) {
+  return [...(draft.configurationEdits || [])]
+    .sort((left, right) => left.templateId.localeCompare(right.templateId))
+    .map(edit => ({
+      templateId: edit.templateId,
+      items: [...(edit.items || [])].sort((left, right) => left.itemId.localeCompare(right.itemId)),
+      addedItems: [...(edit.addedItems || [])].sort((left, right) => left.id.localeCompare(right.id)),
+      technical: edit.technical ?? null,
+    }));
+}
+
 function calculationDraftIdentity(draft: OfferWorkspaceDraft, mode: OfferWorkspaceCalculationMode) {
   return {
     schemaVersion: draft.schemaVersion,
@@ -122,6 +172,9 @@ function calculationDraftIdentity(draft: OfferWorkspaceDraft, mode: OfferWorkspa
     targetTariffId: draft.targetTariffId,
     saleVatMode: draft.saleVatMode,
     selectedTemplateIds: mode === 'selected' ? sortedIds(draft.selectedTemplateIds) : undefined,
+    configurationEdits: mode === 'selected' ? canonicalConfigurationEdits(draft) : undefined,
+    commercialPricing: mode === 'selected' && draft.commercialPricing ? { ...draft.commercialPricing,
+      allocations: [...draft.commercialPricing.allocations].sort((a, b) => `${a.templateId}\u0000${a.itemId}`.localeCompare(`${b.templateId}\u0000${b.itemId}`)) } : undefined,
     financing: draft.financing,
     calculation: draft.calculation ?? defaultOfferCalculationAssumptions(),
   };
@@ -138,12 +191,14 @@ function sameIds(left: string[] | null | undefined, right: string[]): boolean {
   return Array.isArray(left) && JSON.stringify(sortedIds(left)) === JSON.stringify(sortedIds(right));
 }
 
-function dependencyContext(draft: OfferWorkspaceDraft): OfferWorkspaceCalculationDependencyContext {
+function dependencyContext(draft: OfferWorkspaceDraft, requiresPvSource: boolean): OfferWorkspaceCalculationDependencyContext {
   return {
     targetOperatorId: draft.targetOperatorId,
     targetTariffId: draft.targetTariffId,
     currentSettlement: draft.currentSettlement,
     targetSettlement: draft.targetSettlement,
+    existingPvPowerKw: draft.existingPv.powerKw,
+    requiresPvSource,
   };
 }
 
@@ -152,7 +207,8 @@ function sameDependencyContext(
   right: OfferWorkspaceCalculationDependencyContext,
 ): boolean {
   return left.targetOperatorId === right.targetOperatorId && left.targetTariffId === right.targetTariffId
-    && left.currentSettlement === right.currentSettlement && left.targetSettlement === right.targetSettlement;
+    && left.currentSettlement === right.currentSettlement && left.targetSettlement === right.targetSettlement
+    && left.existingPvPowerKw === right.existingPvPowerKw && left.requiresPvSource === right.requiresPvSource;
 }
 
 function publicView(job: StoredJob): OfferWorkspaceCalculationJobView {
@@ -199,8 +255,19 @@ export class OfferWorkspaceCalculationJobStore {
     stale: boolean;
   } {
     this.prune();
+    if (request.continuation && request.mode !== 'recommend') {
+      throw new Error('Kontynuacja jest dostępna wyłącznie dla rekomendacji.');
+    }
     const draftHash = offerWorkspaceCalculationDraftHash(request.draft, request.mode);
     const reuseKey = this.reuseKey(request, draftHash);
+    if (request.continuation) {
+      const completedContinuation = [...this.jobs.values()].find((job) => !job.executionActive
+        && job.status === 'completed' && job.actorId === request.actorId && job.projectId === request.projectId
+        && job.sourceRevision === request.sourceRevision && job.mode === request.mode && job.draftHash === draftHash
+        && job.algorithmVersion === OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION
+        && job.continuationJobId === request.continuation!.jobId);
+      if (completedContinuation) return { job: publicView(completedContinuation), reused: true, stale: false };
+    }
     const existing = [...this.jobs.values()].find((job) => job.projectId === request.projectId && job.executionActive);
     if (existing) {
       if (existing.actorId !== request.actorId) throw new OfferWorkspaceCalculationCapacityError();
@@ -225,10 +292,11 @@ export class OfferWorkspaceCalculationJobStore {
       projectId: request.projectId,
       mode: request.mode,
       draftHash,
+      ...(request.continuation ? { continuationJobId: request.continuation.jobId } : {}),
       algorithmVersion: OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION,
       createdAt,
       executionActive: true,
-      dependencyContext: dependencyContext(request.draft),
+      dependencyContext: dependencyContext(request.draft, request.requiresPvSource),
       deadlineAt: new Date(createdAt + this.timeBudgetMs),
       request,
     };
@@ -281,6 +349,29 @@ export class OfferWorkspaceCalculationJobStore {
     };
   }
 
+  async findRecommendationContinuationForDraft(input: CompletedOfferCalculationLookup & {
+    jobId: string;
+    pricesAsOf: string;
+    sourceDependencyStamp: string | null;
+    requiresPvSource: boolean;
+  }): Promise<{ jobId: string; result: OfferWorkspaceCalculation } | null> {
+    if (!input.sourceDependencyStamp || !/^[a-f0-9]{64}$/.test(input.sourceDependencyStamp)) return null;
+    const expectedDraftHash = offerWorkspaceCalculationDraftHash(input.draft, 'recommend');
+    const expectedContext = dependencyContext(input.draft, input.requiresPvSource);
+    const [snapshot] = await this.snapshots.findCompletedForDrafts({
+      actorId: input.actorId, projectId: input.projectId, sourceRevision: input.sourceRevision,
+      draftHashes: [expectedDraftHash], algorithmVersion: OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION,
+      pricesAsOf: input.pricesAsOf, sourceDependencyStamp: input.sourceDependencyStamp, limit: 1,
+    });
+    if (!snapshot || snapshot.jobId !== input.jobId || snapshot.actorId !== input.actorId || snapshot.projectId !== input.projectId
+      || snapshot.sourceRevision !== input.sourceRevision || snapshot.mode !== 'recommend'
+      || snapshot.draftHash !== expectedDraftHash || snapshot.algorithmVersion !== OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION
+      || snapshot.pricesAsOf !== input.pricesAsOf || snapshot.sourceDependencyStamp !== input.sourceDependencyStamp
+      || !sameDependencyContext(snapshot.dependencyContext, expectedContext)) return null;
+    const search = recommendationSearchMetadata(snapshot.result);
+    return search?.hasMore ? { jobId: snapshot.jobId, result: snapshot.result } : null;
+  }
+
   private matchesFreshness(
     identity: {
       sourceRevision: string;
@@ -320,7 +411,7 @@ export class OfferWorkspaceCalculationJobStore {
 
     for (const job of matches) {
       if (job.mode === 'selected' && job.draftHash === selectedHash) return job.data!;
-      if (job.mode === 'recommend' && job.draftHash === recommendHash
+      if (!hasConfigurationEdits(input.draft) && job.mode === 'recommend' && job.draftHash === recommendHash
         && (sameIds(job.data!.recommendedTemplateIds, input.draft.selectedTemplateIds)
           || (sameIds(job.data!.estimatedRecommendedTemplateIds, input.draft.selectedTemplateIds)
             && sameIds(job.data!.evaluatedTemplateIds, input.draft.selectedTemplateIds)))) {
@@ -339,37 +430,90 @@ export class OfferWorkspaceCalculationJobStore {
     if (inMemory) return inMemory;
     const selectedHash = offerWorkspaceCalculationDraftHash(input.draft, 'selected');
     const recommendHash = offerWorkspaceCalculationDraftHash(input.draft, 'recommend');
-    let snapshots;
+    const draftHashes = hasConfigurationEdits(input.draft) ? [selectedHash] : [selectedHash, recommendHash];
     try {
-      snapshots = await this.snapshots.findCompletedForDrafts({
-        actorId: input.actorId,
-        projectId: input.projectId,
-        sourceRevision: input.sourceRevision,
-        draftHashes: [selectedHash, recommendHash],
-        algorithmVersion: OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION,
-        pricesAsOf: input.pricesAsOf,
-        sourceDependencyStamp: input.sourceDependencyStamp,
-      });
+      for (let offset = 0; offset < 10; offset += 1) {
+        const snapshots = await this.snapshots.findCompletedForDrafts({
+          actorId: input.actorId,
+          projectId: input.projectId,
+          sourceRevision: input.sourceRevision,
+          draftHashes,
+          algorithmVersion: OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION,
+          pricesAsOf: input.pricesAsOf,
+          sourceDependencyStamp: input.sourceDependencyStamp,
+          limit: 1,
+          offset,
+        });
+        if (!snapshots.length) break;
+        for (const snapshot of snapshots) {
+          if (snapshot.actorId !== input.actorId || snapshot.projectId !== input.projectId
+            || snapshot.sourceRevision !== input.sourceRevision
+            || snapshot.algorithmVersion !== OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION
+            || snapshot.pricesAsOf !== input.pricesAsOf
+            || snapshot.sourceDependencyStamp !== input.sourceDependencyStamp) continue;
+          if (snapshot.mode === 'selected' && snapshot.draftHash === selectedHash) return snapshot.result;
+          if (!hasConfigurationEdits(input.draft) && snapshot.mode === 'recommend' && snapshot.draftHash === recommendHash
+            && (sameIds(snapshot.result.recommendedTemplateIds, input.draft.selectedTemplateIds)
+              || (sameIds(snapshot.result.estimatedRecommendedTemplateIds, input.draft.selectedTemplateIds)
+                && sameIds(snapshot.result.evaluatedTemplateIds, input.draft.selectedTemplateIds)))) return snapshot.result;
+        }
+      }
     } catch {
       throw new Error('Nie udało się odczytać zapisanych obliczeń.');
     }
-    for (const snapshot of snapshots) {
-      if (snapshot.actorId !== input.actorId || snapshot.projectId !== input.projectId
-        || snapshot.sourceRevision !== input.sourceRevision
-        || snapshot.algorithmVersion !== OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION
-        || snapshot.pricesAsOf !== input.pricesAsOf
-        || snapshot.sourceDependencyStamp !== input.sourceDependencyStamp) continue;
-      if (snapshot.mode === 'selected' && snapshot.draftHash === selectedHash) return snapshot.result;
-      if (snapshot.mode === 'recommend' && snapshot.draftHash === recommendHash
-        && (sameIds(snapshot.result.recommendedTemplateIds, input.draft.selectedTemplateIds)
-          || (sameIds(snapshot.result.estimatedRecommendedTemplateIds, input.draft.selectedTemplateIds)
-            && sameIds(snapshot.result.evaluatedTemplateIds, input.draft.selectedTemplateIds)))) return snapshot.result;
+    return null;
+  }
+
+  async findCompletedJobForDraft(input: CompletedOfferCalculationLookup & {
+    mode: OfferWorkspaceCalculationMode;
+    pricesAsOf: string;
+    sourceDependencyStamp: string | null;
+  }): Promise<OfferWorkspaceCalculationJobView | null> {
+    if (!input.sourceDependencyStamp || !/^[a-f0-9]{64}$/.test(input.sourceDependencyStamp)) return null;
+    const selectedHash = offerWorkspaceCalculationDraftHash(input.draft, 'selected');
+    const recommendHash = offerWorkspaceCalculationDraftHash(input.draft, 'recommend');
+    const lookups: Array<{ mode: OfferWorkspaceCalculationMode; draftHash: string; maxPages: number }> = input.mode === 'recommend'
+      ? [{ mode: 'recommend', draftHash: recommendHash, maxPages: 1 }]
+      : [
+        { mode: 'selected', draftHash: selectedHash, maxPages: 1 },
+        ...(input.draft.selectedTemplateIds.length && !hasConfigurationEdits(input.draft)
+          ? [{ mode: 'recommend' as const, draftHash: recommendHash, maxPages: 10 }] : []),
+      ];
+    for (const lookup of lookups) {
+      for (let offset = 0; offset < lookup.maxPages; offset += 1) {
+        const snapshots = await this.snapshots.findCompletedForDrafts({
+          actorId: input.actorId, projectId: input.projectId, sourceRevision: input.sourceRevision,
+          draftHashes: [lookup.draftHash],
+          algorithmVersion: OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION,
+          pricesAsOf: input.pricesAsOf, sourceDependencyStamp: input.sourceDependencyStamp,
+          limit: 1, offset,
+        });
+        if (!snapshots.length) break;
+        for (const snapshot of snapshots) {
+          if (snapshot.actorId !== input.actorId || snapshot.projectId !== input.projectId
+            || snapshot.sourceRevision !== input.sourceRevision
+            || snapshot.algorithmVersion !== OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION
+            || snapshot.pricesAsOf !== input.pricesAsOf || snapshot.sourceDependencyStamp !== input.sourceDependencyStamp) continue;
+          if (snapshot.result.status !== 'ready'
+            && !(input.mode === 'recommend' && lookup.mode === 'recommend'
+              && recommendationSearchMetadata(snapshot.result)?.hasMore === true)) continue;
+          const matches = lookup.mode === 'selected'
+            ? snapshot.mode === 'selected' && snapshot.draftHash === selectedHash
+            : snapshot.mode === 'recommend' && snapshot.draftHash === recommendHash
+              && (input.mode === 'recommend'
+                || (sameIds(snapshot.result.recommendedTemplateIds, input.draft.selectedTemplateIds)
+                  || (sameIds(snapshot.result.estimatedRecommendedTemplateIds, input.draft.selectedTemplateIds)
+                    && sameIds(snapshot.result.evaluatedTemplateIds, input.draft.selectedTemplateIds))));
+          if (matches) return { id: snapshot.jobId, status: 'completed', completed: snapshot.completed,
+            total: snapshot.total, sourceRevision: snapshot.sourceRevision, data: snapshot.result };
+        }
+      }
     }
     return null;
   }
 
   private reuseKey(request: OfferWorkspaceCalculationJobRequest, draftHash: string): string {
-    return [request.actorId, request.projectId, request.sourceRevision, request.mode, draftHash].join('\u0000');
+    return [request.actorId, request.projectId, request.sourceRevision, request.mode, draftHash, request.continuation?.jobId ?? ''].join('\u0000');
   }
 
   private prune(): void {
@@ -425,15 +569,21 @@ export class OfferWorkspaceCalculationJobStore {
             job.total = Math.max(0, Math.floor(total));
           }
         },
+        request.continuation?.result,
       );
       markTimedOutIfExpired();
       if (job.status !== 'running') return;
       const pricesAsOf = typeof data.pricesAsOf === 'string' ? data.pricesAsOf : null;
       const sourceDependencyStamp = (data as OfferWorkspaceCalculation & { sourceDependencyStamp?: unknown }).sourceDependencyStamp;
+      const search = recommendationSearchMetadata(data);
       if ((data.status === 'ready' && (!pricesAsOf || !/^\d{4}-\d{2}-\d{2}$/.test(pricesAsOf)
         || typeof sourceDependencyStamp !== 'string' || !/^[a-f0-9]{64}$/.test(sourceDependencyStamp)))
         || (sourceDependencyStamp != null && (typeof sourceDependencyStamp !== 'string' || !/^[a-f0-9]{64}$/.test(sourceDependencyStamp)))) {
         throw new Error('Brak prawidłowej tożsamości danych obliczenia.');
+      }
+      if (search) {
+        job.completed = search.evaluatedCandidates;
+        job.total = search.totalCandidates;
       }
       const persistence = this.snapshots.savePending({
         jobId: job.id,
@@ -447,7 +597,7 @@ export class OfferWorkspaceCalculationJobStore {
         dependencyContext: job.dependencyContext,
         deadlineAt: job.deadlineAt,
         mode: job.mode,
-        completed: job.total > 0 ? job.total : job.completed,
+        completed: search ? search.evaluatedCandidates : job.total > 0 ? job.total : job.completed,
         total: job.total,
         result: data,
       });
@@ -474,7 +624,7 @@ export class OfferWorkspaceCalculationJobStore {
       if (job.status !== 'running') return;
       job.status = 'completed';
       job.data = data;
-      if (job.total > 0) job.completed = job.total;
+      if (!search && job.total > 0) job.completed = job.total;
       delete job.error;
     } catch {
       if (job.status === 'running') {
@@ -489,6 +639,7 @@ export class OfferWorkspaceCalculationJobStore {
         job.status = 'failed';
         job.error = 'Obliczenie nie powiodło się.';
       }
+      if (job.status === 'completed' && request.continuation) this.jobs.delete(request.continuation.jobId);
       this.prune();
     }
   }

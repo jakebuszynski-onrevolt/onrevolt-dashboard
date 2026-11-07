@@ -525,6 +525,7 @@ model Project {
   configurations         Configuration[]
   offers                 Offer[]
   offerWorkspace         OfferWorkspace?
+  offerWorkspaceArtifacts OfferWorkspaceArtifact[]
   offerCalculationSnapshots OfferWorkspaceCalculationSnapshot[]
   contracts              Contract[]
   installations          Installation[]
@@ -533,6 +534,7 @@ model Project {
   energyMeasurementFiles EnergyMeasurementFile[]
   activities             Activity[]
   energyAudits           EnergyAudit[]
+  referenceLoadProfile   ProjectReferenceLoadProfile?
   siteAudits             SiteAudit[]
   purchaseOrders         PurchaseOrder[]
   stockReservations      StockReservation[]
@@ -566,6 +568,18 @@ model OfferWorkspace {
   updatedAt       DateTime @updatedAt
 }
 
+model OfferWorkspaceArtifact {
+  id        String   @id @db.Char(64)
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind      String   @db.VarChar(32)
+  sourceKey String   @db.Char(64)
+  payload   Bytes    @db.LongBlob
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, kind, sourceKey], map: "OfferWorkspaceArtifact_source_key")
+}
+
 model OfferWorkspaceCalculationSnapshot {
   id                String   @id @default(cuid())
   jobId             String   @unique @db.VarChar(36)
@@ -582,6 +596,8 @@ model OfferWorkspaceCalculationSnapshot {
   targetTariffId     Int?
   currentSettlement String?  @db.VarChar(16)
   targetSettlement  String?  @db.VarChar(16)
+  existingPvPowerKw Float?
+  requiresPvSource  Boolean  @default(false)
   mode              String   @db.VarChar(16)
   completed         Int
   total             Int
@@ -940,6 +956,7 @@ model ConfigurationTemplateItem {
   role             ConfigurationItemRole       @default(OTHER)
   supplyMode       ConfigurationItemSupplyMode @default(ONREVOLT_SUPPLIED)
   unitPurchaseNet  Decimal?                    @db.Decimal(12, 2)
+  unitSaleNet      Decimal?                    @db.Decimal(18, 8)
   purchaseVatRate  Decimal?                    @db.Decimal(5, 4)
   operatingCostNet Decimal?                    @db.Decimal(12, 2)
   marginRate       Decimal?                    @db.Decimal(5, 4)
@@ -1006,6 +1023,7 @@ model ConfigurationItem {
   role                     ConfigurationItemRole       @default(OTHER)
   supplyMode               ConfigurationItemSupplyMode @default(ONREVOLT_SUPPLIED)
   unitPurchaseNet          Decimal                     @db.Decimal(12, 2)
+  unitSaleNet              Decimal?                    @db.Decimal(18, 8)
   purchaseVatRate          Decimal                     @db.Decimal(5, 4)
   operatingCostNet         Decimal                     @db.Decimal(12, 2)
   marginRate               Decimal                     @db.Decimal(5, 4)
@@ -1575,3 +1593,59 @@ model EmailMessage {
 
   @@index([status, scheduledAt])
 }
+
+model ReferenceLoadProfileSource {
+  key         String                @id @db.VarChar(191)
+  title       String                @db.VarChar(500)
+  publisher   String                @db.VarChar(255)
+  url         String                @db.Text
+  downloadUrl String?               @db.Text
+  retrievedAt String                @db.VarChar(191)
+  license     String                @db.VarChar(255)
+  rawSha256   String                @db.Char(64)
+  notes       String?               @db.Text
+  profiles    ReferenceLoadProfile[]
+
+  @@map("ReferenceLoadProfileSource")
+}
+
+model ReferenceLoadProfile {
+  key               String                   @id @db.VarChar(191)
+  sourceKey         String                   @db.VarChar(191)
+  name              String                   @db.VarChar(500)
+  category          String                   @db.VarChar(191)
+  kind              String                   @db.VarChar(64)
+  quantity          String                   @db.VarChar(100)
+  unit              String                   @db.VarChar(64)
+  timeBasis         String                   @db.VarChar(64)
+  resolutionMinutes Int
+  start             String?                  @db.VarChar(191)
+  end               String?                  @db.VarChar(191)
+  pointCount        Int                      @db.UnsignedInt
+  contentHash       String                   @db.Char(64)
+  series            Json
+  metadata          Json
+  quality           Json
+  source            ReferenceLoadProfileSource @relation(fields: [sourceKey], references: [key], onDelete: Restrict, onUpdate: Cascade)
+  projects          ProjectReferenceLoadProfile[]
+
+  @@index([sourceKey], map: "ReferenceLoadProfile_sourceKey_idx")
+  @@index([category, kind], map: "ReferenceLoadProfile_category_kind_idx")
+  @@map("ReferenceLoadProfile")
+}
+
+model ProjectReferenceLoadProfile {
+  projectId         String                @id @db.VarChar(191)
+  profileKey        String?               @db.VarChar(191)
+  contentHash       String?               @db.Char(64)
+  profileName       String?               @db.VarChar(500)
+  revision          Int                   @default(1)
+  projectionVersion Int                   @default(1)
+  selectedById      String?               @db.VarChar(191)
+  updatedAt         DateTime              @updatedAt @db.DateTime(3)
+  project           Project               @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  profile           ReferenceLoadProfile? @relation(fields: [profileKey], references: [key], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([profileKey], map: "ProjectReferenceLoadProfile_profileKey_idx")
+}
+

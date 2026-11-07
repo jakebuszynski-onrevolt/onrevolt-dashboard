@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import { offerSavingsFinancialRows, offerSystemExpandedPanels, offerWorkspaceCalculationPresentation } from './OfferWorkspaceScreens';
 import type { OfferBillingMonthResult } from 'lib/onrevolt/offer-workspace-billing';
@@ -8,6 +10,13 @@ import type { OfferTariffRateState } from 'lib/onrevolt/offer-workspace-tariffs'
 const readyRates: OfferTariffRateState = { status: 'ready', tariff: {} as Extract<OfferTariffRateState, { status: 'ready' }>['tariff'] };
 const loadingRates: OfferTariffRateState = { status: 'loading' };
 const unavailableRates: OfferTariffRateState = { status: 'unavailable', message: 'Brak taryfy.' };
+const screensSource = readFileSync(path.resolve(__dirname, 'OfferWorkspaceScreens.tsx'), 'utf8');
+
+test('status magazynu jest tylko do odczytu i odsyła do Danych energetycznych', () => {
+  assert.match(screensSource, /Istniejący magazyn energii · Dane energetyczne/u);
+  assert.match(screensSource, /Otwórz Dane energetyczne/u);
+  assert.doesNotMatch(screensSource, /Magazyn energii w okresie pomiarów operatora/u);
+});
 
 test('stawki są domyślnie zwinięte przy obu wczytanych taryfach', () => {
   assert.deepEqual(offerSystemExpandedPanels(readyRates, readyRates, null), [0]);
@@ -93,6 +102,17 @@ test('opcjonalne rozbicie nie tworzy wartości, a dopuszczona rekomendacja zacho
 
   const presentation = offerWorkspaceCalculationPresentation(calculation);
   assert.equal(presentation.recommendationEligible, true);
-  assert.equal(presentation.paybackYears, 4);
+  assert.equal(presentation.paybackYears, 4.9);
   assert.deepEqual(presentation.breakdown, [{ label: 'Sama zmiana taryfy', value: 0 }]);
+});
+
+test('porównanie sprzętu używa taryfy docelowej bez inwestycji i nie zastępuje brakującego rachunku obecnym', () => {
+  const current = { month: '2026-01', cashDuePln: 44.75, importKwh: 250 } as OfferBillingMonthResult;
+  const target = { month: '2026-01', cashDuePln: 300, importKwh: 250 } as OfferBillingMonthResult;
+  const proposed = { month: '2026-01', cashDuePln: 125, importKwh: 100 } as OfferBillingMonthResult;
+  const calculation = { status: 'ready', baselineBill: { months: [current] }, tariffOnlyBill: { months: [target] }, proposedBill: { months: [proposed] } } as OfferWorkspaceCalculation;
+  assert.equal(offerSavingsFinancialRows(calculation)[0].baseline, current);
+  assert.equal(offerSavingsFinancialRows(calculation, 'TARGET_TARIFF')[0].baseline, target);
+  assert.equal(offerSavingsFinancialRows(calculation, 'TARGET_TARIFF')[0].proposed, proposed);
+  assert.deepEqual(offerSavingsFinancialRows({ ...calculation, tariffOnlyBill: undefined }, 'TARGET_TARIFF'), []);
 });

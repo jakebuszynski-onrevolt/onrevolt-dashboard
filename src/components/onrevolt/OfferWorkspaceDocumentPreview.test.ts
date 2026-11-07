@@ -6,6 +6,7 @@ import {
   offerWorkspaceDocumentAspectRatio,
   offerWorkspaceDocumentFrameStyle,
   readDocumentResponse,
+  readDocumentResponseEnvelope,
   svgSrcDoc,
 } from './OfferWorkspaceDocumentPreview';
 import type { OfferWorkspaceDocumentResult } from 'lib/onrevolt/offer-workspace-document';
@@ -54,6 +55,26 @@ test('document response parser accepts the confirmed { ok: true, document } enve
     status: 200, headers: { 'Content-Type': 'application/json' },
   });
   assert.deepEqual(await readDocumentResponse(response), result);
+});
+
+test('document response parser keeps legacy full responses without a document key', async () => {
+  const document = {
+    templateKey: offerWorkspaceDocumentPreviewTemplateKey, sourceRevision: 'a'.repeat(64), pageCount: 10,
+    pages: Array.from({ length: 10 }, (_, index) => ({
+      page: (index + 1) as OfferWorkspaceDocumentResult['pages'][number]['page'],
+      svg: `<svg data-page="${index + 1}"/>`, sourceSha256: 'b'.repeat(64), replacedFieldKeys: [],
+    })),
+    sourceFieldsUsed: [], missingData: [], suppressedCharts: [], limitations: [],
+  } satisfies OfferWorkspaceDocumentResult;
+  const response = new Response(JSON.stringify({ ok: true, document, cached: false }), { status: 200 });
+  assert.deepEqual(await readDocumentResponseEnvelope(response), { notModified: false, document });
+});
+
+test('document response parser reads a not-modified confirmation without treating it as a full document', async () => {
+  const documentKey = 'c'.repeat(64);
+  const response = new Response(JSON.stringify({ ok: true, notModified: true, documentKey }), { status: 200 });
+  assert.deepEqual(await readDocumentResponseEnvelope(response), { notModified: true, documentKey });
+  await assert.rejects(readDocumentResponse(new Response(JSON.stringify({ ok: true, notModified: true, documentKey }), { status: 200 })), /którego nie ma w pamięci/);
 });
 
 test('document preview rejects V3 instead of silently showing the archived layout', async () => {

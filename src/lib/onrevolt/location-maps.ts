@@ -11,7 +11,7 @@ export const locationMapProviderValues = [
 
 export type LocationMapProvider = (typeof locationMapProviderValues)[number];
 
-export const LOCATION_MAP_IMAGE_VERSION = '3';
+export const LOCATION_MAP_IMAGE_VERSION = '4';
 
 export type LocationMapProviderOption = {
   value: LocationMapProvider;
@@ -20,12 +20,12 @@ export type LocationMapProviderOption = {
 };
 
 export const locationMapProviders: LocationMapProviderOption[] = [
-  { value: 'GOOGLE', label: 'Google Maps', imageSource: 'Google Maps' },
+  { value: 'GEOPORTAL2', label: 'Geoportal2', imageSource: 'GUGiK - ortofotomapa wysokiej rozdzielczości' },
   { value: 'STREETMAP', label: 'Streetmap.pl', imageSource: 'Esri World Imagery' },
   { value: 'SATELLITES_PRO', label: 'Satellites.pro', imageSource: 'Google Maps' },
   { value: 'ARCGIS_WAYBACK', label: 'ArcGIS Wayback', imageSource: 'Esri World Imagery Wayback' },
   { value: 'ARCGIS', label: 'ArcGIS World Imagery', imageSource: 'Esri World Imagery' },
-  { value: 'GEOPORTAL2', label: 'Geoportal2', imageSource: 'GUGiK - ortofotomapa wysokiej rozdzielczości' },
+  { value: 'GOOGLE', label: 'Google Maps', imageSource: 'Google Maps' },
 ];
 
 const providerValues = new Set<string>(locationMapProviderValues);

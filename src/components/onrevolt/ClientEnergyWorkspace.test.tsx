@@ -24,6 +24,7 @@ test('formularz ma cztery sekcje, magazyn bez PV i zachowuje źródła danych', 
   }));
   assert.equal((html.match(/data-energy-section=/g) || []).length, 4);
   assert.match(html, /Istniejący magazyn energii/);
+  assert.match(html, /Puste pole lub 0 kWh oznacza brak istniejącego magazynu energii/);
   assert.match(html, /value="16"/);
   assert.doesNotMatch(html, /Moc istniejącej instalacji PV/);
   assert.match(html, /Zachowany import ENEA/);
@@ -34,7 +35,7 @@ test('formularz ma cztery sekcje, magazyn bez PV i zachowuje źródła danych', 
 
 test('integracja zachowuje synchronizację, zapis i blokuje ofertę po błędzie zapisu', () => {
   const source = readFileSync('src/components/onrevolt/ClientProfile.tsx', 'utf8');
-  assert.match(source, /if \(!await saveEnergyOverview\(\)\) return;/);
+  assert.match(source, /if \(!await saveEnergyOverview\(true\)\) return;/);
   assert.match(source, /setActiveJourneyKey\('offer'\)/);
   assert.match(source, /variant="energy" mode="invoices"/);
   assert.match(source, /uploadEnergyXlsxFiles\(event\.dataTransfer\.files\)/);

@@ -59,14 +59,18 @@ const props = {
 
 function findSaveClientRequest(sourceFile: ts.SourceFile) {
   let saveClient: ts.FunctionDeclaration | undefined;
+  let payloadBuilder: ts.FunctionDeclaration | undefined;
   const findFunction = (node: ts.Node) => {
     if (ts.isFunctionDeclaration(node) && node.name?.text === 'saveClient') saveClient = node;
+    if (ts.isFunctionDeclaration(node) && node.name?.text === 'buildClientSavePayload') payloadBuilder = node;
     ts.forEachChild(node, findFunction);
   };
   findFunction(sourceFile);
   assert.ok(saveClient, 'ClientProfile must define saveClient');
+  assert.ok(payloadBuilder, 'ClientProfile must define the client save payload');
 
   let payload: ts.ObjectLiteralExpression | undefined;
+  let requestUsesSerializedPayload = false;
   const visitRequest = (node: ts.Node) => {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'fetch'
       && ts.isStringLiteral(node.arguments[0]) && node.arguments[0].text === '/api/crm/clients') {
@@ -74,18 +78,22 @@ function findSaveClientRequest(sourceFile: ts.SourceFile) {
       if (init && ts.isObjectLiteralExpression(init)) {
         const body = init.properties.find(property => ts.isPropertyAssignment(property)
           && property.name.getText(sourceFile) === 'body');
-        if (body && ts.isPropertyAssignment(body) && ts.isCallExpression(body.initializer)
-          && ts.isPropertyAccessExpression(body.initializer.expression)
-          && body.initializer.expression.name.text === 'stringify') {
-          const candidate = body.initializer.arguments[0];
-          if (candidate && ts.isObjectLiteralExpression(candidate)) payload = candidate;
-        }
+        requestUsesSerializedPayload = Boolean(body && ts.isPropertyAssignment(body)
+          && ts.isIdentifier(body.initializer) && body.initializer.text === 'currentClientPayload');
       }
     }
     ts.forEachChild(node, visitRequest);
   };
   visitRequest(saveClient);
-  assert.ok(payload, 'saveClient must send a JSON object to /api/crm/clients');
+  const visitBuilder = (node: ts.Node) => {
+    if (ts.isReturnStatement(node) && node.expression && ts.isObjectLiteralExpression(node.expression)) {
+      payload = node.expression;
+    }
+    ts.forEachChild(node, visitBuilder);
+  };
+  visitBuilder(payloadBuilder);
+  assert.ok(requestUsesSerializedPayload, 'saveClient must send the serialized client payload to /api/crm/clients');
+  assert.ok(payload, 'ClientProfile must build a JSON object for client updates');
   return payload;
 }
 

@@ -1,21 +1,66 @@
 import { callClientTariffs, clientTariffScope, loadClientTariffHistory, readProjectGeneralTariffs } from './client-tariffs-server';
 import { tariffToday, type ClientTariffHistory, type ClientTariffData, type ClientTariffPayload } from './client-tariffs';
-import { calculateOfferWorkspaceEnergy } from './offer-workspace-energy-server';
+import { calculateOfferWorkspaceEnergy, getOfferWorkspaceEnergySourceRevision } from './offer-workspace-energy-server';
+import { overlayOfferWorkspaceMeasurements } from './offer-workspace-energy';
 import { blockedOfferCalculation, calculateOfferWorkspaceScenario, offerLocalTime, type OfferCalculationInput } from './offer-workspace-calculation';
 import { defaultOfferCalculationAssumptions, type OfferWorkspaceDraft } from './offer-workspace';
 import type { OfferWorkspace } from './offer-workspace-server';
 import type { OfferMeasurementSeries } from './offer-measurements';
-import type { OfferWorkspaceCalculation } from './offer-workspace-calculation-types';
+import type { OfferWorkspaceCalculation, OfferWorkspaceRanking } from './offer-workspace-calculation-types';
 import { OfferMarketDataError, offerHourlyMarketPrices, offerMarketIntervalStarts, type OfferStoredMarketRow } from './offer-workspace-market';
 import { rePrisma } from './re-stations';
-import { readOfferPvProfile } from './offer-pv-profile';
+import { OfferPvSourceRevisionError, readOfferPvProfileWithSourceRevision } from './offer-pv-profile';
+import { getOfferPvSourceRevision } from './offer-pv-source-revision';
 import { configurationInvestmentScope } from './configuration-templates';
-import { enumerateOfferCandidates, type ApprovedConfigurationTemplate } from './offer-candidates';
+import {
+  applyOfferWorkspaceConfigurationEdits,
+  hasRemovedCriticalConfigurationItem,
+  validateOfferWorkspaceConfigurationEdits,
+} from './offer-workspace-configuration-edits';
+import { enumerateOfferCandidates, type ApprovedConfigurationTemplate, type OfferCandidateEnumerationInput, type OfferCandidateSnapshot } from './offer-candidates';
 import { offerCalculationDependencyHash, offerCalculationPeriodHours } from './offer-workspace-calculation-dependencies';
 import { completeHistoryForSummary } from './client-energy-cost-summary-server';
+import { OFFER_RECOMMENDATION_BATCH_LIMIT, OFFER_RECOMMENDATION_COARSE_LIMIT, planOfferWorkspaceRecommendationSearch } from './offer-workspace-recommendation-search';
+import { recommendationInputIssues } from './offer-workspace-recommendation-inputs';
+import {
+  calculateOfferWorkspaceExistingPvBatteryBounds,
+  calculateOfferWorkspaceRecommendationBatteryBounds,
+  filterOfferCandidatesByRecommendationBatteryBounds,
+  filterOfferCandidatesByRecommendationPvBounds,
+  OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP,
+  validateOfferWorkspaceRecommendationConsumptionProfile,
+} from './offer-workspace-recommendation-bounds';
+
+const OFFER_RECOMMENDATION_SOFT_BUDGET_MS = 10 * 60 * 1000;
 
 function finiteNonnegative(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function carryForwardWarnings(warnings: string[]): string[] {
+  return warnings.filter(warning => !warning.startsWith('Porównanie niepełne:')
+    && !warning.startsWith('Limit czasu etapu osiągnięty;')
+    && !warning.startsWith('Szacowany czas zwrotu ma charakter orientacyjny')
+    && !warning.startsWith('Wyniki wariantu są diagnostyczne;'));
+}
+
+function copyCalculation(value: OfferWorkspaceCalculation): OfferWorkspaceCalculation {
+  return {
+    ...value,
+    evaluatedTemplateIds: value.evaluatedTemplateIds ? [...value.evaluatedTemplateIds] : undefined,
+    reasons: [...value.reasons],
+    warnings: carryForwardWarnings(value.warnings),
+    recommendationReasons: value.recommendationReasons ? [...value.recommendationReasons] : undefined,
+    recommendationBatteryBounds: value.recommendationBatteryBounds ? { ...value.recommendationBatteryBounds } : undefined,
+    recommendationPvBounds: value.recommendationPvBounds ? { ...value.recommendationPvBounds } : undefined,
+    rankings: value.rankings.map(row => ({ ...row, templateIds: [...row.templateIds], reasons: row.reasons ? [...row.reasons] : undefined })),
+    recommendedTemplateIds: value.recommendedTemplateIds ? [...value.recommendedTemplateIds] : null,
+    estimatedRecommendedTemplateIds: value.estimatedRecommendedTemplateIds ? [...value.estimatedRecommendedTemplateIds] : null,
+    recommendationSearch: value.recommendationSearch ? {
+      ...value.recommendationSearch,
+      evaluatedCandidateIds: [...value.recommendationSearch.evaluatedCandidateIds],
+    } : undefined,
+  };
 }
 
 function templateIdOrder(ids: string[]): string {
@@ -129,41 +174,208 @@ async function financialSources(workspace: OfferWorkspace, draft: OfferWorkspace
   return { baselineHistory, baselineReasons, baselineAssumptions, targetHistory, rdnPricesNet, exportPrices, pricesAsOf, sourceDependencyStamp };
 }
 
-export async function loadOfferCalculationDependencyStamp(workspace: OfferWorkspace, draft: OfferWorkspaceDraft): Promise<string | null> {
+function offerCandidateEnumerationInput(workspace: OfferWorkspace, draft: OfferWorkspaceDraft): OfferCandidateEnumerationInput {
+  const settings = draft.calculation || defaultOfferCalculationAssumptions();
+  return {
+    approvedConfigurationTemplates: workspace.templates.map(template => ({ ...template, isActive: true })) as ApprovedConfigurationTemplate[],
+    clientType: workspace.clientType === 'B2B' ? 'B2B' : 'B2C',
+    roofType: workspace.input.reportDetails?.roofType?.toLocaleLowerCase('pl').includes('płask') ? 'FLAT'
+      : workspace.input.reportDetails?.roofType ? 'SLOPED' : 'UNKNOWN',
+    pvStrategy: draft.pvStrategy,
+    existingPv: { powerKw: draft.existingPv.powerKw!, tiltDegrees: draft.existingPv.tiltDegrees, azimuthDegrees: draft.existingPv.azimuthDegrees },
+    addedPvGeometry: draft.pvStrategy === 'ADD_TEMPLATE' && settings.addedPvTiltDegrees !== null && settings.addedPvAzimuthDegrees !== null
+      ? { tiltDegrees: settings.addedPvTiltDegrees, azimuthDegrees: settings.addedPvAzimuthDegrees } : null,
+    existingPvCompatibilityEvidence: 'unknown',
+    existingInverterCompatibilityEvidence: 'unknown',
+    saleVatMode: draft.saleVatMode,
+  };
+}
+
+function recommendationDraftIdentity(draft: OfferWorkspaceDraft) {
+  const settings = draft.calculation || defaultOfferCalculationAssumptions();
+  return {
+    schemaVersion: draft.schemaVersion,
+    objective: draft.objective,
+    existingBatteryPresent: draft.existingBatteryPresent ?? null,
+    existingPv: {
+      powerKw: draft.existingPv.powerKw,
+      tiltDegrees: draft.existingPv.tiltDegrees,
+      azimuthDegrees: draft.existingPv.azimuthDegrees,
+      lossPercent: draft.existingPv.lossPercent,
+    },
+    pvStrategy: draft.pvStrategy,
+    currentSettlement: draft.currentSettlement,
+    targetSettlement: draft.targetSettlement,
+    targetOperatorId: draft.targetOperatorId,
+    targetTariffId: draft.targetTariffId,
+    saleVatMode: draft.saleVatMode,
+    financing: { ...draft.financing },
+    calculation: { ...settings },
+  };
+}
+
+export function offerWorkspaceCalculationRequiresPvSource(
+  workspace: OfferWorkspace,
+  draft: OfferWorkspaceDraft,
+  mode: 'selected' | 'recommend',
+): boolean {
+  if ((draft.existingPv.powerKw ?? 0) > 0) return true;
+  const settings = draft.calculation || defaultOfferCalculationAssumptions();
+  const location = workspace.input.location;
+  if (location?.latitude == null || location.longitude == null
+    || settings.addedPvTiltDegrees === null || settings.addedPvAzimuthDegrees === null
+    || draft.existingPv.lossPercent === null) return false;
+
+  const sourceTemplates = mode === 'selected'
+    ? applyOfferWorkspaceConfigurationEdits(workspace.templates, draft)
+    : workspace.templates;
+  const pvTemplateIds = new Set(sourceTemplates
+    .filter(template => configurationInvestmentScope(template.kind) === 'PV' && Boolean(template.powerKw))
+    .map(template => template.id));
+  if (!pvTemplateIds.size) return false;
+  if (mode === 'selected') return draft.selectedTemplateIds.some(id => pvTemplateIds.has(id));
+  if (draft.pvStrategy !== 'ADD_TEMPLATE' || draft.existingPv.powerKw == null) return false;
+  const enumeration = enumerateOfferCandidates(offerCandidateEnumerationInput(workspace, draft));
+  return enumeration.candidates.some(candidate => candidate.templateIds.some(id => pvTemplateIds.has(id)));
+}
+
+function dependencyStampWithPvSource(workspace: OfferWorkspace, draft: OfferWorkspaceDraft,
+  financialStamp: string, requiresPvSource: boolean, sourceRevision?: string | null): string | null {
+  if (!requiresPvSource) return financialStamp;
+  const location = workspace.input.location;
+  if (location?.latitude == null || location.longitude == null) return null;
+  const revision = sourceRevision === undefined ? getOfferPvSourceRevision(location) : sourceRevision;
+  if (!revision) return null;
+  return offerCalculationDependencyHash({ financialSourceDependencyStamp: financialStamp, pvSourceRevision: revision });
+}
+
+function currentPvSourceRevision(location: { latitude: number; longitude: number }): string | null {
+  try { return getOfferPvSourceRevision(location); }
+  catch (error) {
+    throw new OfferPvSourceRevisionError(error instanceof Error ? error.message : 'Nie udało się odczytać aktualnego źródła PV.');
+  }
+}
+
+function assertPvSourceRevisionStable(workspace: OfferWorkspace, required: boolean, usedRevision: string | null): void {
+  if (!required) return;
+  const location = workspace.input.location;
+  if (location?.latitude == null || location.longitude == null) {
+    throw new OfferPvSourceRevisionError('Brak współrzędnych dla wymaganej rewizji źródła PV.');
+  }
+  if (!usedRevision || currentPvSourceRevision(location) !== usedRevision) {
+    throw new OfferPvSourceRevisionError('Źródło PV zmieniło się podczas obliczania. Ponów obliczenia.');
+  }
+}
+
+export async function loadOfferCalculationDependencyStamp(
+  workspace: OfferWorkspace,
+  draft: OfferWorkspaceDraft,
+  options: { mode?: 'selected' | 'recommend'; requiresPvSource?: boolean } = {},
+): Promise<string | null> {
   if (!draft.targetOperatorId || !draft.targetTariffId) return null;
-  const hours = offerCalculationPeriodHours(workspace.measurements.months);
+  const dependencyMonths = workspace.measurements.availability === 'NO_FILES'
+    && typeof workspace.input.annualConsumptionKwh === 'number' && workspace.input.annualConsumptionKwh > 0
+    ? workspace.period.periodKeys.map(period => ({ period })) : workspace.measurements.months;
+  const hours = offerCalculationPeriodHours(dependencyMonths);
   if (!hours) return null;
   const sources = await financialSources(workspace, draft, hours);
-  return 'reasons' in sources ? null : sources.sourceDependencyStamp;
+  if ('reasons' in sources) return null;
+  const requiresPvSource = options.requiresPvSource ?? offerWorkspaceCalculationRequiresPvSource(workspace, draft, options.mode ?? 'selected');
+  return dependencyStampWithPvSource(workspace, draft, sources.sourceDependencyStamp, requiresPvSource);
 }
 
 export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace, draft: OfferWorkspaceDraft,
   series: OfferMeasurementSeries | null, mode: 'selected' | 'recommend',
-  onProgress: (completed: number, total: number) => void = () => undefined): Promise<OfferWorkspaceCalculation> {
+  onProgress: (completed: number, total: number) => void = () => undefined,
+  previousRecommendation?: OfferWorkspaceCalculation): Promise<OfferWorkspaceCalculation> {
+  const calculationStartedAt = Date.now();
+  const hasContinuation = mode === 'recommend' && Boolean(previousRecommendation?.recommendationSearch?.hasMore);
   const settings = draft.calculation || defaultOfferCalculationAssumptions();
   const missing: string[] = [];
   if (!draft.targetOperatorId || !draft.targetTariffId) missing.push('Wybierz taryfę docelową.');
   if (!workspace.input.reportDetails?.connectionPowerKw) missing.push('Uzupełnij moc przyłączeniową w danych energetycznych.');
-  if (missing.length) return blockedOfferCalculation(missing);
+  if (mode === 'recommend') missing.push(...recommendationInputIssues(draft).map(issue => issue.message));
+  if (missing.length) {
+    if (hasContinuation) throw new Error(`Nie można kontynuować rekomendacji: ${missing.join(' ')}`);
+    return blockedOfferCalculation(missing);
+  }
+  if (mode === 'selected') {
+    try {
+      validateOfferWorkspaceConfigurationEdits(workspace.templates, draft);
+    } catch (error) {
+      return blockedOfferCalculation([error instanceof Error ? error.message : 'Nieprawidłowe zmiany pozycji konfiguracji.']);
+    }
+    if (hasRemovedCriticalConfigurationItem(workspace.templates, draft)) {
+      const blocked = blockedOfferCalculation([
+        'Usunięto główne urządzenie zestawu. Pełnej kalkulacji nie można wykonać; wybierz inną konfigurację z kompletem wymaganych urządzeń.',
+      ]);
+      blocked.evaluatedTemplateIds = [...draft.selectedTemplateIds];
+      return blocked;
+    }
+  }
+  if (mode === 'recommend' && draft.pvStrategy === 'KEEP_EXISTING'
+    && !(typeof draft.existingPv.powerKw === 'number' && Number.isFinite(draft.existingPv.powerKw) && draft.existingPv.powerKw > 0)) {
+    const reason = 'Uzupełnij dodatnią moc istniejącej instalacji PV albo wybierz rozbudowę PV, aby rekomendować gotowe konfiguracje magazynu.';
+    if (hasContinuation) throw new Error(`Nie można kontynuować rekomendacji: ${reason}`);
+    return blockedOfferCalculation([reason]);
+  }
+  const requiresPvSource = offerWorkspaceCalculationRequiresPvSource(workspace, draft, mode);
   const energy = await calculateOfferWorkspaceEnergy(workspace, draft, series);
-  if (!energy.intervals?.length) return blockedOfferCalculation(['Brak pełnych interwałów energii.']);
+  const calculationWorkspace = energy.modelledMeasurements
+    ? { ...workspace, measurements: overlayOfferWorkspaceMeasurements(workspace.measurements, energy) }
+    : workspace;
+  const existingPvSourceRevision = (draft.existingPv.powerKw ?? 0) > 0
+    ? getOfferWorkspaceEnergySourceRevision(energy) : null;
+  if ((draft.existingPv.powerKw ?? 0) > 0 && !existingPvSourceRevision) {
+    throw new OfferPvSourceRevisionError('Nie udało się potwierdzić rewizji profilu istniejącej instalacji PV.');
+  }
+  let pvSourceRevisionUsed = existingPvSourceRevision
+    ?? (requiresPvSource && workspace.input.location?.latitude != null && workspace.input.location.longitude != null
+      ? currentPvSourceRevision(workspace.input.location) : null);
+  if (existingPvSourceRevision) assertPvSourceRevisionStable(workspace, true, existingPvSourceRevision);
+  if (!energy.intervals?.length) {
+    if (hasContinuation) throw new Error('Nie można kontynuować rekomendacji: brak pełnych interwałów energii.');
+    return blockedOfferCalculation(['Brak pełnych interwałów energii.']);
+  }
+  let recommendationBatteryRange = null;
+  if (mode === 'recommend' && draft.pvStrategy === 'KEEP_EXISTING') {
+    const profileReason = validateOfferWorkspaceRecommendationConsumptionProfile(energy.intervals, workspace.period);
+    recommendationBatteryRange = profileReason
+      ? { bounds: null, reason: profileReason }
+      : calculateOfferWorkspaceExistingPvBatteryBounds(draft.existingPv.powerKw);
+  } else if (mode === 'recommend') {
+    recommendationBatteryRange = calculateOfferWorkspaceRecommendationBatteryBounds(energy.intervals, workspace.period);
+  }
+  if (recommendationBatteryRange && !recommendationBatteryRange.bounds) {
+    if (hasContinuation) throw new Error(`Nie można kontynuować rekomendacji: ${recommendationBatteryRange.reason}`);
+    return blockedOfferCalculation([recommendationBatteryRange.reason]);
+  }
   const first = energy.intervals[0], last = energy.intervals.at(-1)!;
-  const sources = await financialSources(workspace, draft, energy.intervals.map(row => row.startUtc));
+  const sources = await financialSources(calculationWorkspace, draft, energy.intervals.map(row => row.startUtc));
   if ('reasons' in sources) {
+    if (pvSourceRevisionUsed) assertPvSourceRevisionStable(workspace, requiresPvSource, pvSourceRevisionUsed);
+    if (hasContinuation) throw new Error(`Nie można kontynuować rekomendacji: ${sources.reasons!.join(' ')}`);
     const result = blockedOfferCalculation(sources.reasons!);
     result.warnings = [...new Set('baselineAssumptions' in sources ? sources.baselineAssumptions : [])];
     return result;
   }
   const { sourceDependencyStamp, baselineReasons, baselineAssumptions, ...financial } = sources;
+  let dependencyStamp = dependencyStampWithPvSource(workspace, draft, sourceDependencyStamp, requiresPvSource,
+    requiresPvSource ? pvSourceRevisionUsed : undefined);
   const attachSourceIdentity = (result: OfferWorkspaceCalculation) => {
+    if (pvSourceRevisionUsed) assertPvSourceRevisionStable(workspace, requiresPvSource, pvSourceRevisionUsed);
     result.pricesAsOf = financial.pricesAsOf;
-    result.sourceDependencyStamp = sourceDependencyStamp;
+    result.sourceDependencyStamp = dependencyStamp;
     return result;
   };
-  const common: Omit<OfferCalculationInput, 'draft' | 'addedPvHours'> = { workspace, energy, ...financial };
+  const common: Omit<OfferCalculationInput, 'draft' | 'addedPvHours'> = { workspace: calculationWorkspace, energy, ...financial };
   const addedProfiles = new Map<string, Map<string, number>>();
   async function calculate(selectedDraft: OfferWorkspaceDraft) {
-    const pv = workspace.templates.find(item => selectedDraft.selectedTemplateIds.includes(item.id) && configurationInvestmentScope(item.kind) === 'PV');
+    const effectiveDraft = mode === 'recommend' ? { ...selectedDraft, configurationEdits: undefined, commercialPricing: undefined } : selectedDraft;
+    const templates = mode === 'recommend'
+      ? workspace.templates
+      : applyOfferWorkspaceConfigurationEdits(workspace.templates, effectiveDraft);
+    const pv = templates.find(item => effectiveDraft.selectedTemplateIds.includes(item.id) && configurationInvestmentScope(item.kind) === 'PV');
     let addedPvHours = new Map<string, number>();
     if (pv) {
       if (!pv.powerKw || settings.addedPvTiltDegrees === null || settings.addedPvAzimuthDegrees === null || draft.existingPv.lossPercent === null) {
@@ -173,42 +385,141 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
       if (location?.latitude == null || location.longitude == null) return blockedOfferCalculation(['Brak współrzędnych instalacji PV.']);
       const key = String(pv.powerKw);
       if (!addedProfiles.has(key)) {
-        const profile = await readOfferPvProfile({ latitude: location.latitude, longitude: location.longitude, powerKw: pv.powerKw,
+        const profileRead = await readOfferPvProfileWithSourceRevision({ latitude: location.latitude, longitude: location.longitude, powerKw: pv.powerKw,
           tiltDegrees: settings.addedPvTiltDegrees, azimuthDegrees: settings.addedPvAzimuthDegrees, lossPercent: draft.existingPv.lossPercent,
           fromUtc: first.startUtc, untilUtc: last.endUtc });
-        addedProfiles.set(key, new Map(profile.hours.map(hour => [hour.startUtc, hour.pvKwh])));
+        if (!requiresPvSource) throw new OfferPvSourceRevisionError('Obliczenie użyło PV spoza zapisanego kontekstu źródłowego.');
+        if (!profileRead.sourceRevision) {
+          throw new OfferPvSourceRevisionError('Nie udało się potwierdzić rewizji dodanego profilu PV.');
+        }
+        if (pvSourceRevisionUsed && profileRead.sourceRevision !== pvSourceRevisionUsed) {
+          throw new OfferPvSourceRevisionError('Źródło PV zmieniło się między profilami użytymi w obliczeniu. Ponów obliczenia.');
+        }
+        pvSourceRevisionUsed = profileRead.sourceRevision;
+        assertPvSourceRevisionStable(workspace, true, pvSourceRevisionUsed);
+        addedProfiles.set(key, new Map(profileRead.profile.hours.map(hour => [hour.startUtc, hour.pvKwh])));
+        dependencyStamp = dependencyStampWithPvSource(workspace, draft, sourceDependencyStamp, true, profileRead.sourceRevision);
       }
       addedPvHours = addedProfiles.get(key)!;
     }
-    const result = await calculateOfferWorkspaceScenario({ ...common, draft: selectedDraft, addedPvHours });
-    result.sourceDependencyStamp = sourceDependencyStamp;
+    const result = await calculateOfferWorkspaceScenario({ ...common, draft: effectiveDraft, addedPvHours });
+    result.sourceDependencyStamp = dependencyStamp;
     result.pricesAsOf = financial.pricesAsOf;
     result.warnings = [...new Set([...result.warnings, ...baselineReasons, ...baselineAssumptions])];
     return result;
   }
-  if (mode === 'selected') { onProgress(0, 1); const result = await calculate(draft); onProgress(1, 1); return result; }
-  const enumeration = enumerateOfferCandidates({
-    approvedConfigurationTemplates: workspace.templates.map(template => ({ ...template, isActive: true })) as ApprovedConfigurationTemplate[],
-    clientType: workspace.clientType === 'B2B' ? 'B2B' : 'B2C',
-    roofType: workspace.input.reportDetails?.roofType?.toLocaleLowerCase('pl').includes('płask') ? 'FLAT'
-      : workspace.input.reportDetails?.roofType ? 'SLOPED' : 'UNKNOWN',
-    pvStrategy: draft.pvStrategy, existingPv: { powerKw: draft.existingPv.powerKw!, tiltDegrees: draft.existingPv.tiltDegrees, azimuthDegrees: draft.existingPv.azimuthDegrees },
-    addedPvGeometry: draft.pvStrategy === 'ADD_TEMPLATE' && settings.addedPvTiltDegrees !== null && settings.addedPvAzimuthDegrees !== null
-      ? { tiltDegrees: settings.addedPvTiltDegrees, azimuthDegrees: settings.addedPvAzimuthDegrees } : null,
-    existingPvCompatibilityEvidence: 'unknown', existingInverterCompatibilityEvidence: 'unknown', saleVatMode: draft.saleVatMode,
-  });
-  const candidates = enumeration.candidates;
-  if (!candidates.length) {
-    const rejectedReasons = enumeration.rejectedReasonList.flatMap(item => item.reasons);
-    return attachSourceIdentity(blockedOfferCalculation(rejectedReasons.length ? [...new Set(rejectedReasons)]
-      : ['Brak technicznie dopuszczalnego zestawu do obliczeń.']));
+  if (mode === 'selected') { onProgress(0, 1); const result = await calculate(draft); onProgress(1, 1); return attachSourceIdentity(result); }
+  // Every candidate must be comparable to the same target tariff without new equipment.
+  // Check that common bill once before loading added-PV profiles or counting candidates.
+  {
+    const tariffCheck = await calculateOfferWorkspaceScenario({ ...common,
+      draft: { ...draft, pvStrategy: 'KEEP_EXISTING', selectedTemplateIds: [],
+        financing: { considerGrant: false, considerTaxRelief: false }, configurationEdits: undefined, commercialPricing: undefined },
+      addedPvHours: new Map(),
+    });
+    if (tariffCheck.status === 'blocked') {
+      if (hasContinuation) throw new Error(`Nie można kontynuować rekomendacji: ${tariffCheck.reasons.join(' ')}`);
+      const blocked = blockedOfferCalculation(tariffCheck.reasons);
+      blocked.warnings = [...new Set([...tariffCheck.warnings, ...baselineReasons, ...baselineAssumptions])];
+      return attachSourceIdentity(blocked);
+    }
   }
-  if (candidates.length > 50) return attachSourceIdentity(blockedOfferCalculation(['Ponad 50 wariantów: zawęź zakres konfiguracji przed porównaniem.']));
-  const rankings: OfferWorkspaceCalculation['rankings'] = [];
+  const enumeration = enumerateOfferCandidates(offerCandidateEnumerationInput(workspace, draft));
+  const unfilteredCandidates = enumeration.candidates;
+  const batteryFilter = filterOfferCandidatesByRecommendationBatteryBounds(unfilteredCandidates, recommendationBatteryRange!.bounds!);
+  const recommendationBatteryBounds = {
+    ...recommendationBatteryRange!.bounds!,
+    totalCandidatesBeforeFilter: batteryFilter.totalCandidatesBeforeFilter,
+    excludedCandidates: batteryFilter.excludedCandidates,
+  };
+  const pvFilter = draft.pvStrategy === 'ADD_TEMPLATE'
+    ? filterOfferCandidatesByRecommendationPvBounds(batteryFilter.candidates, OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP)
+    : null;
+  const recommendationPvBounds = pvFilter ? {
+    maximumBatteryKwhPerPvKwp: OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP,
+    pvBasis: 'existing_plus_added' as const,
+    totalCandidatesBeforeFilter: pvFilter.totalCandidatesBeforeFilter,
+    excludedCandidates: pvFilter.excludedCandidates,
+  } : undefined;
+  const candidates = pvFilter ? pvFilter.candidates : batteryFilter.candidates;
+  if (!unfilteredCandidates.length) {
+    if (hasContinuation) throw new Error('Nie można kontynuować rekomendacji: katalog nie zawiera już wariantów do oceny.');
+    const rejectedReasons = enumeration.rejectedReasonList.flatMap(item => item.reasons);
+    const result = blockedOfferCalculation(rejectedReasons.length ? [...new Set(rejectedReasons)]
+      : ['Brak technicznie dopuszczalnego zestawu do obliczeń.']);
+    result.recommendationBatteryBounds = recommendationBatteryBounds;
+    result.recommendationPvBounds = recommendationPvBounds;
+    return attachSourceIdentity(result);
+  }
+  if (!batteryFilter.candidates.length) {
+    if (hasContinuation) throw new Error('Nie można kontynuować rekomendacji: katalog nie zawiera już wariantów do oceny.');
+    const formatCapacity = (value: number) => value.toLocaleString('pl-PL', { maximumFractionDigits: 2 });
+    const reason = recommendationBatteryBounds.basis === 'existing_pv'
+      ? `Brak gotowych konfiguracji z magazynem w zakresie ${formatCapacity(recommendationBatteryBounds.minimumBatteryCapacityKwh)}–${formatCapacity(recommendationBatteryBounds.maximumBatteryCapacityKwh)} kWh (0,5–5× istniejąca moc PV: ${formatCapacity(recommendationBatteryBounds.existingPvPowerKw)} kWp).`
+      : `Brak gotowych konfiguracji z magazynem w zakresie ${formatCapacity(recommendationBatteryBounds.minimumBatteryCapacityKwh)}–${formatCapacity(recommendationBatteryBounds.maximumBatteryCapacityKwh)} kWh (0,5–2× średnie dobowe zużycie).`;
+    const result = blockedOfferCalculation([reason]);
+    result.recommendationBatteryBounds = recommendationBatteryBounds;
+    result.recommendationPvBounds = recommendationPvBounds;
+    return attachSourceIdentity(result);
+  }
+  if (!candidates.length) {
+    if (hasContinuation) throw new Error('Nie można kontynuować rekomendacji: nie pozostały warianty spełniające limit PV.');
+    if (!recommendationPvBounds) throw new Error('Nie można kontynuować rekomendacji: brak PV do filtrowania.');
+    const ratio = OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP.toLocaleString('pl-PL', { maximumFractionDigits: 1 });
+    const pvBasis = 'łącznej mocy PV (istniejąca + dodawana)';
+    const result = blockedOfferCalculation([`Brak gotowych konfiguracji spełniających limit PV po filtrze zużycia: maksymalnie ${ratio} kWh magazynu na 1 kWp ${pvBasis}.`]);
+    result.recommendationBatteryBounds = recommendationBatteryBounds;
+    result.recommendationPvBounds = recommendationPvBounds;
+    return attachSourceIdentity(result);
+  }
+  const candidateSignature = offerCalculationDependencyHash({
+    pricesAsOf: financial.pricesAsOf,
+    draft: recommendationDraftIdentity(draft),
+    energy,
+    recommendationBatteryBounds,
+    recommendationPvBounds,
+    candidates: [...candidates].sort((left, right) => compareCandidateOrder(left.id, right.id)).map(candidate => ({
+      id: candidate.id,
+      templateIds: candidate.templateIds,
+      templateVersions: candidate.templateVersions,
+      totals: candidate.totals,
+      existingPvKw: candidate.existingPvKw,
+      addedPvKw: candidate.addedPvKw,
+      totalPvKw: candidate.totalPvKw,
+      batteryCapacityKwh: candidate.batteryCapacityKwh,
+      batteryPowerKw: candidate.batteryPowerKw,
+      requiresReview: candidate.requiresReview,
+      reviewReasons: candidate.reviewReasons,
+      missingPrices: candidate.missingPrices,
+    })),
+  });
+  const candidateIds = new Set(candidates.map(candidate => candidate.id));
+  const previousSearch = previousRecommendation?.recommendationSearch;
+  const previousVisited = previousSearch?.evaluatedCandidateIds;
+  const previousMatches = Boolean(previousRecommendation && previousSearch?.version === 1
+    && previousSearch.candidateSignature === candidateSignature
+    && previousSearch.totalCandidates === candidates.length
+    && previousRecommendation.sourceDependencyStamp === dependencyStamp
+    && previousRecommendation.pricesAsOf === financial.pricesAsOf
+    && dependencyStamp !== null
+    && Array.isArray(previousVisited)
+    && new Set(previousVisited).size === previousVisited.length
+    && previousVisited.every(id => candidateIds.has(id))
+    && previousVisited.length === previousSearch.evaluatedCandidates);
+  if (hasContinuation && !previousMatches) {
+    throw new Error('Źródła taryfy, PV lub katalogu zmieniły się od poprzedniego etapu rekomendacji. Rozpocznij nowe wyszukiwanie.');
+  }
+  const trustedPrevious = previousMatches ? previousRecommendation : undefined;
+  const initialPlan = planOfferWorkspaceRecommendationSearch({ candidates, candidateSignature,
+    previousRecommendation: trustedPrevious });
+  const candidatesById = new Map(candidates.map(candidate => [candidate.id, candidate]));
+  const rankingMap = new Map<string, OfferWorkspaceRanking>();
   const rankingIds = new Map<string, string>();
   const errors: string[] = [];
+  const blockingErrors: string[] = [];
   let winner: OfferWorkspaceCalculation | null = null;
   let winnerTemplateIds: string[] | null = null;
+  let winnerId = '';
   let bestEstimate: OfferWorkspaceCalculation | null = null;
   let bestEstimateTemplateIds: string[] | null = null;
   let bestEstimateId = '';
@@ -216,14 +527,109 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
   let bestEstimatePayback = Infinity;
   let bestEstimateCost = Infinity;
   let bestDiagnostic: OfferWorkspaceCalculation | null = null;
+  let bestDiagnosticTemplateIds: string[] | null = null;
+  let bestDiagnosticId = '';
   let bestDiagnosticReasons: string[] = [];
   let bestDiagnosticSavings = -Infinity;
-  let incompleteCandidates = 0;
+  let incompleteCandidates = previousMatches
+    ? Math.max(0, previousSearch!.evaluatedCandidates - (previousRecommendation!.rankings || []).length) : 0;
   let best = Infinity;
-  onProgress(0, candidates.length);
-  for (const [index, candidate] of candidates.entries()) {
+  const inheritedWarnings = previousMatches ? carryForwardWarnings(previousRecommendation!.warnings) : [];
+  for (const candidate of candidates) rankingIds.set(templateIdOrder(candidate.templateIds), candidateOrder(candidate.id, candidate.templateIds));
+  if (previousMatches) {
+    for (const row of previousRecommendation!.rankings) {
+      const key = templateIdOrder(row.templateIds);
+      if (candidates.some(candidate => templateIdOrder(candidate.templateIds) === key)) {
+        rankingMap.set(key, { ...row, templateIds: [...row.templateIds], reasons: row.reasons ? [...row.reasons] : undefined });
+      }
+    }
+    const priorIds = previousRecommendation!.evaluatedTemplateIds
+      || previousRecommendation!.recommendedTemplateIds
+      || previousRecommendation!.estimatedRecommendedTemplateIds
+      || [];
+    const priorCandidate = candidates.find(candidate => templateIdOrder(candidate.templateIds) === templateIdOrder(priorIds));
+    const priorRanking = priorCandidate ? rankingMap.get(templateIdOrder(priorCandidate.templateIds)) : undefined;
+    if (priorCandidate && priorRanking) {
+      const priorValue = copyCalculation(previousRecommendation!);
+      if (priorRanking.recommendationEligible === true && finiteNonnegative(priorRanking.paybackYears)) {
+        winner = priorValue;
+        winnerTemplateIds = [...priorCandidate.templateIds];
+        winnerId = candidateOrder(priorCandidate.id, priorCandidate.templateIds);
+        best = priorRanking.paybackYears;
+      } else if (finiteNonnegative(priorRanking.estimatedPaybackYears)) {
+        bestEstimate = priorValue;
+        bestEstimateTemplateIds = [...priorCandidate.templateIds];
+        bestEstimateId = candidateOrder(priorCandidate.id, priorCandidate.templateIds);
+        bestEstimateReasons = [...(priorRanking.reasons || [])];
+        bestEstimatePayback = priorRanking.estimatedPaybackYears;
+        bestEstimateCost = finiteNonnegative(priorRanking.costAfterFinancingPln) ? priorRanking.costAfterFinancingPln : Infinity;
+      } else {
+        bestDiagnostic = priorValue;
+        bestDiagnosticTemplateIds = [...priorCandidate.templateIds];
+        bestDiagnosticId = candidateOrder(priorCandidate.id, priorCandidate.templateIds);
+        bestDiagnosticReasons = [...(priorRanking.reasons || [])];
+        bestDiagnosticSavings = typeof priorRanking.annualSavingsPln === 'number' && Number.isFinite(priorRanking.annualSavingsPln)
+          ? priorRanking.annualSavingsPln : -Infinity;
+      }
+    }
+  }
+
+  const sortedRankings = () => [...rankingMap.values()].sort((a, b) => {
+    const tier = (row: OfferWorkspaceRanking) => row.recommendationEligible ? 0
+      : finiteNonnegative(row.estimatedPaybackYears) ? 1 : 2;
+    const leftTier = tier(a), rightTier = tier(b);
+    return leftTier - rightTier
+      || (leftTier === 0 ? (a.paybackYears ?? Infinity) - (b.paybackYears ?? Infinity)
+        : leftTier === 1 ? a.estimatedPaybackYears! - b.estimatedPaybackYears!
+          : (b.annualSavingsPln ?? -Infinity) - (a.annualSavingsPln ?? -Infinity))
+      || (a.costAfterFinancingPln ?? Infinity) - (b.costAfterFinancingPln ?? Infinity)
+      || compareCandidateOrder(rankingIds.get(templateIdOrder(a.templateIds)) || templateIdOrder(a.templateIds),
+        rankingIds.get(templateIdOrder(b.templateIds)) || templateIdOrder(b.templateIds));
+  });
+
+  const initialVisited = previousMatches ? [...previousVisited!] : [];
+  const evaluatedCandidateIds = [...initialVisited];
+  const evaluatedSet = new Set(evaluatedCandidateIds);
+  let batchEvaluated = 0;
+  const batchNumber = initialPlan.batchNumber;
+  const progressTotal = candidates.length;
+  onProgress(initialVisited.length, progressTotal);
+  const queued = initialPlan.candidateIds.map(id => candidatesById.get(id)).filter((candidate): candidate is OfferCandidateSnapshot => Boolean(candidate));
+  let queueIndex = 0;
+  let refinementConsidered = initialPlan.phase !== 'coarse';
+  let timeBudgetReached = false;
+
+  const makeInterimRecommendation = (): OfferWorkspaceCalculation => {
+    const full = winner || bestEstimate || bestDiagnostic || trustedPrevious;
+    const snapshot = full ? copyCalculation(full)
+      : blockedOfferCalculation(['Trwa etapowe porównanie kandydatów.']);
+    snapshot.rankings = sortedRankings();
+    snapshot.recommendedTemplateIds = winnerTemplateIds ? [...winnerTemplateIds] : null;
+    snapshot.estimatedRecommendedTemplateIds = !winner && bestEstimateTemplateIds ? [...bestEstimateTemplateIds] : null;
+    snapshot.evaluatedTemplateIds = winnerTemplateIds || bestEstimateTemplateIds || bestDiagnosticTemplateIds || undefined;
+    snapshot.pricesAsOf = financial.pricesAsOf;
+    snapshot.sourceDependencyStamp = dependencyStamp;
+    snapshot.recommendationSearch = {
+      version: 1,
+      candidateSignature,
+      evaluatedCandidateIds: [...evaluatedCandidateIds],
+      totalCandidates: candidates.length,
+      evaluatedCandidates: evaluatedCandidateIds.length,
+      batchNumber,
+      batchEvaluated,
+      hasMore: evaluatedCandidateIds.length < candidates.length,
+      phase: 'coarse',
+    };
+    snapshot.recommendationBatteryBounds = { ...recommendationBatteryBounds };
+    snapshot.recommendationPvBounds = recommendationPvBounds ? { ...recommendationPvBounds } : undefined;
+    return snapshot;
+  };
+
+  const evaluateCandidate = async (candidate: OfferCandidateSnapshot) => {
     try {
-      const value = await calculate({ ...draft, selectedTemplateIds: candidate.templateIds });
+      const value = await calculate({ ...draft, selectedTemplateIds: candidate.templateIds,
+        ...(mode === 'recommend' ? { configurationEdits: undefined, commercialPricing: undefined } : {}) });
+      value.evaluatedTemplateIds = [...candidate.templateIds];
       const hasTargetComparison = value.proposedAnnualCostPln != null && value.tariffOnlyAnnualCostPln != null
         && value.hardwareAnnualSavingsPln != null;
       const candidateReviewClear = candidate.requiresReview !== true && candidate.totals !== null
@@ -243,10 +649,9 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
             ? 'Wariant policzono diagnostycznie; nie ma podstaw do rekomendacji ani zwrotu inwestycji.'
             : 'Wariant ma wyłącznie szacunkowy czas zwrotu i wymaga weryfikacji.');
         }
-        const templateKey = templateIdOrder(candidate.templateIds);
         const candidateKey = candidateOrder(candidate.id, candidate.templateIds);
-        rankingIds.set(templateKey, candidateKey);
-        rankings.push({
+        const templateKey = templateIdOrder(candidate.templateIds);
+        rankingMap.set(templateKey, {
           templateIds: candidate.templateIds,
           name: workspace.templates.filter(template => candidate.templateIds.includes(template.id)).map(template => template.name).join(' + '),
           annualSavingsPln: value.hardwareAnnualSavingsPln,
@@ -259,8 +664,8 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
           reasons: candidateReasons,
         });
         if (recommendationEligible) {
-          if (value.paybackYears! < best) {
-            best = value.paybackYears!; winner = value; winnerTemplateIds = candidate.templateIds;
+          if (value.paybackYears! < best || (value.paybackYears === best && (!winnerId || compareCandidateOrder(candidateKey, winnerId) < 0))) {
+            best = value.paybackYears!; winner = value; winnerTemplateIds = candidate.templateIds; winnerId = candidateKey;
           }
         } else {
           errors.push(...candidateReasons);
@@ -279,47 +684,97 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
               bestEstimateCost = cost;
             }
           }
-          if (value.hardwareAnnualSavingsPln! > bestDiagnosticSavings) {
+          if (value.hardwareAnnualSavingsPln! > bestDiagnosticSavings
+            || (value.hardwareAnnualSavingsPln === bestDiagnosticSavings && (!bestDiagnosticId || compareCandidateOrder(candidateKey, bestDiagnosticId) < 0))) {
             bestDiagnosticSavings = value.hardwareAnnualSavingsPln!;
             bestDiagnostic = value;
+            bestDiagnosticTemplateIds = candidate.templateIds;
+            bestDiagnosticId = candidateKey;
             bestDiagnosticReasons = candidateReasons;
           }
         }
       } else {
         incompleteCandidates += 1;
+        blockingErrors.push(...value.reasons);
         errors.push(...candidateReasons,
           ...(candidateReasons.length ? [] : ['Brak kompletnego rachunku docelowego lub przyrostu oszczędności sprzętu dla wariantu.']));
       }
     } catch (error) {
+      if (error instanceof OfferPvSourceRevisionError) throw error;
       incompleteCandidates += 1;
-      errors.push(error instanceof Error ? error.message : 'Nie udało się przeliczyć wariantu.');
+      const reason = error instanceof Error ? error.message : 'Nie udało się przeliczyć wariantu.';
+      blockingErrors.push(reason);
+      errors.push(reason);
     }
-    onProgress(index + 1, candidates.length);
+  };
+
+  while (queueIndex < queued.length) {
+    if (Date.now() - calculationStartedAt >= OFFER_RECOMMENDATION_SOFT_BUDGET_MS) {
+      timeBudgetReached = true;
+      break;
+    }
+    const candidate = queued[queueIndex++];
+    if (evaluatedSet.has(candidate.id)) continue;
+    evaluatedSet.add(candidate.id);
+    evaluatedCandidateIds.push(candidate.id);
+    batchEvaluated += 1;
+    await evaluateCandidate(candidate);
+    onProgress(evaluatedCandidateIds.length, progressTotal);
   }
-  rankings.sort((a, b) => {
-    const tier = (row: typeof a) => row.recommendationEligible ? 0
-      : finiteNonnegative(row.estimatedPaybackYears) ? 1 : 2;
-    const leftTier = tier(a), rightTier = tier(b);
-    return leftTier - rightTier
-      || (leftTier === 0 ? (a.paybackYears ?? Infinity) - (b.paybackYears ?? Infinity)
-        : leftTier === 1 ? a.estimatedPaybackYears! - b.estimatedPaybackYears!
-          : (b.annualSavingsPln ?? -Infinity) - (a.annualSavingsPln ?? -Infinity))
-      || (a.costAfterFinancingPln ?? Infinity) - (b.costAfterFinancingPln ?? Infinity)
-      || compareCandidateOrder(rankingIds.get(templateIdOrder(a.templateIds)) || templateIdOrder(a.templateIds),
-        rankingIds.get(templateIdOrder(b.templateIds)) || templateIdOrder(b.templateIds));
-  });
-  const result = winner || bestEstimate || bestDiagnostic || blockedOfferCalculation([
+
+  if (!timeBudgetReached && !refinementConsidered && candidates.length > OFFER_RECOMMENDATION_BATCH_LIMIT
+    && evaluatedCandidateIds.length >= Math.min(candidates.length, OFFER_RECOMMENDATION_COARSE_LIMIT)
+    && batchEvaluated < OFFER_RECOMMENDATION_BATCH_LIMIT) {
+    refinementConsidered = true;
+    const refinementPlan = planOfferWorkspaceRecommendationSearch({
+      candidates,
+      candidateSignature,
+      previousRecommendation: makeInterimRecommendation(),
+      rankings: sortedRankings(),
+      maxNewCandidates: OFFER_RECOMMENDATION_BATCH_LIMIT - batchEvaluated,
+    });
+    for (const id of refinementPlan.candidateIds) {
+      const candidate = candidatesById.get(id);
+      if (candidate && !evaluatedSet.has(id)) queued.push(candidate);
+    }
+    onProgress(evaluatedCandidateIds.length, progressTotal);
+    while (queueIndex < queued.length) {
+      if (Date.now() - calculationStartedAt >= OFFER_RECOMMENDATION_SOFT_BUDGET_MS) {
+        timeBudgetReached = true;
+        break;
+      }
+      const candidate = queued[queueIndex++];
+      if (evaluatedSet.has(candidate.id)) continue;
+      evaluatedSet.add(candidate.id);
+      evaluatedCandidateIds.push(candidate.id);
+      batchEvaluated += 1;
+      await evaluateCandidate(candidate);
+      onProgress(evaluatedCandidateIds.length, progressTotal);
+    }
+  }
+
+  if (!batchEvaluated && (hasContinuation || !trustedPrevious)) {
+    throw new Error(hasContinuation
+      ? 'Limit czasu upłynął przed nową próbą; poprzedni etap rekomendacji pozostaje bez zmian.'
+      : 'Limit czasu obliczeń upłynął przed pierwszym wariantem; ponów rekomendację.');
+  }
+  const rankings = sortedRankings();
+  const result = winner || bestEstimate || bestDiagnostic || (trustedPrevious
+    ? copyCalculation(trustedPrevious)
+    : blockedOfferCalculation([
     errors[0] || 'Brak wycenionych zestawów spełniających kryteria projektu.',
-  ]);
+  ]));
   result.rankings = rankings;
   result.recommendedTemplateIds = winnerTemplateIds;
   result.estimatedRecommendedTemplateIds = !winner && bestEstimate ? bestEstimateTemplateIds : null;
-  if (errors.length) {
+  result.evaluatedTemplateIds = winnerTemplateIds || bestEstimateTemplateIds || bestDiagnosticTemplateIds
+    || (trustedPrevious?.evaluatedTemplateIds ? [...trustedPrevious.evaluatedTemplateIds] : undefined);
+  if (errors.length || incompleteCandidates > 0) {
     if (incompleteCandidates > 0 && (winner || bestEstimate || bestDiagnostic)) {
-      result.warnings.push(`Porównanie niepełne: pokazano ${rankings.length} wariantów z kompletnym rachunkiem docelowym i przyrostem sprzętu; ${incompleteCandidates} z ${candidates.length} kandydatów wymaga uzupełnienia danych.`);
+      result.warnings.push(`Porównanie niepełne: pokazano ${rankings.length} wariantów z kompletnym rachunkiem docelowym i przyrostem sprzętu; ${incompleteCandidates} z ${evaluatedCandidateIds.length} ocenionych kandydatów wymaga uzupełnienia danych.`);
     } else if (!rankings.length) {
       result.status = 'blocked';
-      result.reasons = [...new Set([...(result.reasons || []), ...errors.slice(0, 5)])];
+      result.reasons = [...new Set([...blockingErrors, ...(result.reasons || []), ...errors])].slice(0, 5);
     }
   }
   if (!winner && bestEstimate) {
@@ -338,8 +793,32 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
     result.paybackYears = null;
     result.warnings.push('Wyniki wariantu są diagnostyczne; rekomendacja i czas zwrotu pozostają wyłączone.');
   }
-  result.warnings = [...new Set([...result.warnings, ...baselineAssumptions,
+  if (winner) {
+    result.warnings = result.warnings.filter(warning => !warning.startsWith('Szacowany czas zwrotu ma charakter orientacyjny')
+      && !warning.startsWith('Wyniki wariantu są diagnostyczne;'));
+  } else if (bestEstimate) {
+    result.warnings = result.warnings.filter(warning => !warning.startsWith('Wyniki wariantu są diagnostyczne;'));
+  } else if (bestDiagnostic) {
+    result.warnings = result.warnings.filter(warning => !warning.startsWith('Szacowany czas zwrotu ma charakter orientacyjny'));
+  }
+  const phase: NonNullable<OfferWorkspaceCalculation['recommendationSearch']>['phase'] = evaluatedCandidateIds.length >= Math.min(candidates.length, OFFER_RECOMMENDATION_COARSE_LIMIT)
+    ? (evaluatedCandidateIds.length >= candidates.length ? 'complete' : 'refine') : 'coarse';
+  result.recommendationSearch = {
+    version: 1,
+    candidateSignature,
+    evaluatedCandidateIds: [...evaluatedCandidateIds],
+    totalCandidates: candidates.length,
+    evaluatedCandidates: evaluatedCandidateIds.length,
+    batchNumber,
+    batchEvaluated,
+    hasMore: evaluatedCandidateIds.length < candidates.length,
+    phase,
+  };
+  result.recommendationBatteryBounds = { ...recommendationBatteryBounds };
+  result.recommendationPvBounds = recommendationPvBounds ? { ...recommendationPvBounds } : undefined;
+  result.warnings = [...new Set([...result.warnings, ...inheritedWarnings, ...baselineAssumptions,
     ...(!winner && bestEstimate ? errors.filter(reason => !hasNoPaybackClaim(reason)) : errors),
+    ...(timeBudgetReached ? ['Limit czasu etapu osiągnięty; można kontynuować wyszukiwanie od ocenionych wariantów.'] : []),
     'Rekomendacja ekonomiczna wymaga potwierdzenia zgodności technicznej wybranego zestawu.'])];
   return attachSourceIdentity(result);
 }

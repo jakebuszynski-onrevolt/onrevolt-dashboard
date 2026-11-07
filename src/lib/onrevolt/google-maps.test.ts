@@ -41,3 +41,11 @@ test('zdjęcie satelitarne zachowuje proporcje pola strony Report 0 i rozdzielcz
   assert.equal(url.searchParams.get('scale'), '2');
   assert.equal(url.searchParams.get('maptype'), 'satellite');
 });
+
+test('Google Static Maps przyjmuje zoomy źródłowe odpowiadające efektywnemu zakresowi mapy 18–22', () => {
+  for (const zoom of [17, 18, 19, 20, 21]) {
+    const url = buildGoogleSatelliteUrl(52.1234567, 17.7654321, { key: 'test-key', zoom });
+    assert.equal(url.searchParams.get('zoom'), String(zoom));
+    assert.equal(url.searchParams.get('maptype'), 'satellite');
+  }
+});

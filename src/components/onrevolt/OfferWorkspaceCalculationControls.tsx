@@ -19,6 +19,7 @@ import {
 import React, { useState } from 'react';
 import { MdAdd, MdCalculate, MdDeleteOutline, MdOutlineAutoAwesome } from 'react-icons/md';
 import {
+  DEFAULT_OFFER_BILLING_CYCLE_MONTHS,
   defaultOfferCalculationAssumptions,
   offerWorkspaceDraftWithCalculationValue,
   parseOfferWorkspaceDraft,
@@ -28,6 +29,7 @@ import {
   type OfferWorkspaceInitialDepositLot,
 } from 'lib/onrevolt/offer-workspace';
 import type { OfferWorkspaceCalculation } from 'lib/onrevolt/offer-workspace-calculation-types';
+import { recommendationInputIssues } from 'lib/onrevolt/offer-workspace-recommendation-inputs';
 
 export type OfferWorkspaceCalculationMode = 'selected' | 'recommend';
 
@@ -43,7 +45,7 @@ type Props = {
   calculationIsStale: boolean;
   calculationError: string;
   onChange: (update: (draft: OfferWorkspaceDraft) => OfferWorkspaceDraft) => void;
-  onCalculate: (mode: OfferWorkspaceCalculationMode) => void;
+  onCalculate: (mode: OfferWorkspaceCalculationMode, continueRecommendation?: true) => void;
   onSelectRanking: (templateIds: string[]) => void;
 };
 
@@ -92,7 +94,7 @@ const fields: Array<{
   required?: boolean;
   placeholder?: string;
 }> = [
-  { key: 'billingCycleMonths', label: 'Okres rozliczeniowy', unit: 'mies.', min: 1, max: 12, step: 1, placeholder: 'Nie określono' },
+  { key: 'billingCycleMonths', label: 'Okres rozliczeniowy', unit: 'mies.', min: 1, max: 12, step: 1, placeholder: `${DEFAULT_OFFER_BILLING_CYCLE_MONTHS} (domyślnie)` },
   { key: 'initialCreditKwh', label: 'Saldo opustu na początek okresu danych', unit: 'kWh', min: 0, max: 1000000, step: 0.1, required: true, placeholder: 'Wymagane; 0, jeśli historycznie brak' },
   { key: 'initialDepositPln', label: 'Saldo depozytu na początek okresu danych', unit: 'zł', min: 0, max: 1000000, step: 0.01, required: true, placeholder: 'Wymagane; 0, jeśli historycznie brak' },
   { key: 'batteryReservePercent', label: 'Rezerwa magazynu', unit: '%', min: 0, max: 99, step: 1 },
@@ -108,6 +110,11 @@ const fields: Array<{
 
 const money = (value: number | null) => value == null ? '—' : new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 const number = (value: number) => new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 3 }).format(value);
+const recommendationNumber = (value: number) => new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 1 }).format(value);
+function configurationCountLabel(count: number): string {
+  if (count === 1) return 'konfigurację';
+  return new Intl.PluralRules('pl-PL').select(count) === 'few' ? 'konfiguracje' : 'konfiguracji';
+}
 const knownAmount = (value: number | null | undefined) => value != null && Number.isFinite(value) ? value : null;
 function currentWarsawMonth(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -178,9 +185,10 @@ export default function OfferWorkspaceCalculationControls({
     });
   }
 
-  function requestCalculation(mode: OfferWorkspaceCalculationMode) {
-    if (disabled || calculationDisabled || calculationLoading || hasUncommittedInput) return;
-    onCalculate(mode);
+  function requestCalculation(mode: OfferWorkspaceCalculationMode, continueRecommendation?: true) {
+    if (disabled || calculationDisabled || calculationLoading || hasUncommittedInput
+      || (mode === 'recommend' && recommendationIssues.length > 0)) return;
+    onCalculate(mode, continueRecommendation);
   }
 
   function setAssumption(field: typeof fields[number], raw: string) {
@@ -401,24 +409,43 @@ export default function OfferWorkspaceCalculationControls({
 
   const muted = useColorModeValue('secondaryGray.600', 'secondaryGray.300');
   const line = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
-  const calculationWithEstimates = calculation as CalculationEstimates | null;
-  const strictRecommendation = calculation?.status === 'ready' && calculation.recommendationEligible === true;
-  const warningGroups = groupDatedPriceWarnings(calculation?.warnings || []);
+  const recommendationIssues = recommendationInputIssues(draft);
+  const visibleCalculation = recommendationIssues.length > 0 && calculation?.recommendationSearch
+    ? null
+    : calculation;
+  const calculationWithEstimates = visibleCalculation as CalculationEstimates | null;
+  const strictRecommendation = visibleCalculation?.status === 'ready' && visibleCalculation.recommendationEligible === true;
+  const warningGroups = groupDatedPriceWarnings(visibleCalculation?.warnings || []);
 
   return <Box mt="18px" pt="16px" borderTop="1px solid" borderColor={line}>
+    {recommendationIssues.length ? <Alert status="warning" mb="10px" alignItems="flex-start" borderRadius="6px" data-testid="recommendation-input-issues">
+      <AlertIcon mt="2px" />
+      <AlertDescription>
+        <Text fontWeight="700">Uzupełnij dane wymagane do rekomendacji</Text>
+        {recommendationIssues.map((issue) => <Text key={issue.code} mt="4px">{issue.message}</Text>)}
+      </AlertDescription>
+    </Alert> : null}
     <Grid templateColumns="repeat(auto-fit, minmax(min(100%, 220px), 1fr))" gap="8px">
       <Button leftIcon={<MdCalculate />} colorScheme="purple" bg="#8a47ff" size="sm" isDisabled={disabled || calculationDisabled || calculationLoading || hasUncommittedInput} isLoading={calculationLoading && calculationMode === 'selected'} onClick={() => requestCalculation('selected')}>
         Oblicz wybrany wariant
       </Button>
-      <Button leftIcon={<MdOutlineAutoAwesome />} variant="outline" colorScheme="purple" size="sm" isDisabled={disabled || calculationDisabled || calculationLoading || hasUncommittedInput} isLoading={calculationLoading && calculationMode === 'recommend'} onClick={() => requestCalculation('recommend')}>
+      <Button leftIcon={<MdOutlineAutoAwesome />} variant="outline" colorScheme="purple" size="sm" isDisabled={disabled || calculationDisabled || calculationLoading || hasUncommittedInput || recommendationIssues.length > 0} isLoading={calculationLoading && calculationMode === 'recommend'} onClick={() => requestCalculation('recommend')}>
         Rekomenduj konfigurację
       </Button>
+      {visibleCalculation?.recommendationSearch?.hasMore && recommendationIssues.length === 0 ? <Button variant="outline" colorScheme="purple" size="sm"
+        isDisabled={disabled || calculationDisabled || calculationLoading || hasUncommittedInput || calculationIsStale}
+        isLoading={calculationLoading && calculationMode === 'recommend'}
+        onClick={() => requestCalculation('recommend', true)}>
+        Szukaj dalej
+      </Button> : null}
     </Grid>
 
     {calculationLoading ? <Box mt="10px" role="status" aria-live="polite">
       <Text fontSize="11px" color={muted} mb="5px">{calculationIsStale
         ? 'Trwa kalkulacja wcześniejszej wersji szkicu; jej wynik zostanie pominięty.'
-        : calculationMode === 'recommend' ? 'Trwa ranking konfiguracji…' : 'Trwa obliczanie wariantu…'}</Text>
+        : calculationMode === 'recommend' && visibleCalculation?.recommendationSearch?.hasMore
+          ? 'Trwa dalsze szukanie. Poprzedni wynik pozostaje widoczny.'
+          : calculationMode === 'recommend' ? 'Trwa ranking konfiguracji…' : 'Trwa obliczanie wariantu…'}</Text>
       <Progress size="xs" colorScheme="purple" value={calculationProgress && calculationProgress.total > 0
         ? Math.min(100, calculationProgress.completed / calculationProgress.total * 100) : undefined}
       isIndeterminate={!calculationProgress || calculationProgress.total <= 0} />
@@ -426,11 +453,32 @@ export default function OfferWorkspaceCalculationControls({
     </Box> : null}
 
     {calculationError ? <Alert status="error" mt="12px" borderRadius="6px"><AlertIcon /><AlertDescription>{calculationError}</AlertDescription></Alert> : null}
-    {calculation?.status === 'blocked' && calculation.reasons.length ? <Alert status="warning" mt="12px" alignItems="flex-start" borderRadius="6px"><AlertIcon mt="2px" /><AlertDescription><Text fontWeight="700">Nie można przygotować pełnego wyniku.</Text>{calculation.reasons.map((reason, index) => <Text key={`${index}-${reason}`} mt="4px">{reason}</Text>)}</AlertDescription></Alert> : null}
-    {calculation?.warnings.length ? <Alert status="warning" mt="12px" alignItems="flex-start" borderRadius="6px"><AlertIcon mt="2px" /><AlertDescription width="100%" minW={0}>
-      <Box as="details" key={calculation.warnings.join('\n')} data-testid="calculation-warnings">
+    {visibleCalculation?.recommendationSearch ? <Box mt="12px" role="status" aria-live="polite" data-testid="recommendation-search-status">
+      {visibleCalculation.recommendationSearch.hasMore ? <>
+        <Text fontWeight="700">{visibleCalculation.rankings.length ? 'Najlepszy znaleziony wariant' : 'Brak porównywalnego wariantu w tej partii'}</Text>
+        <Text color={muted} fontSize="11px" mt="2px">Sprawdzono {number(visibleCalculation.recommendationSearch.evaluatedCandidates)} z {number(visibleCalculation.recommendationSearch.totalCandidates)} konfiguracji.</Text>
+      </> : <Text fontWeight="700">Sprawdzono {visibleCalculation.recommendationSearch.totalCandidates === 1 ? '' : 'wszystkie '}{number(visibleCalculation.recommendationSearch.totalCandidates)} {configurationCountLabel(visibleCalculation.recommendationSearch.totalCandidates)}</Text>}
+    </Box> : null}
+    {!calculationIsStale && visibleCalculation?.recommendationBatteryBounds ? <Box mt="10px" role="status" data-testid="recommendation-battery-bounds">
+      <Text color={muted} fontSize="11px">
+        {visibleCalculation.recommendationBatteryBounds.basis === 'daily_consumption'
+          ? `Średnie zużycie: ${recommendationNumber(visibleCalculation.recommendationBatteryBounds.averageDailyConsumptionKwh)} kWh/dobę · Magazyn: ${recommendationNumber(visibleCalculation.recommendationBatteryBounds.minimumBatteryCapacityKwh)}–${recommendationNumber(visibleCalculation.recommendationBatteryBounds.maximumBatteryCapacityKwh)} kWh (0,5–2× dobowe zużycie). `
+          : `Magazyn: ${recommendationNumber(visibleCalculation.recommendationBatteryBounds.minimumBatteryCapacityKwh)}–${recommendationNumber(visibleCalculation.recommendationBatteryBounds.maximumBatteryCapacityKwh)} kWh (0,5–5× istniejąca moc PV: ${number(visibleCalculation.recommendationBatteryBounds.existingPvPowerKw)} kWp). `}
+        {visibleCalculation.recommendationPvBounds
+          ? `Maksymalnie ${number(visibleCalculation.recommendationPvBounds.maximumBatteryKwhPerPvKwp)} kWh magazynu na 1 kWp łącznej mocy PV (istniejąca + dodawana). ` : ''}
+        Tylko gotowe konfiguracje.
+        {visibleCalculation.recommendationBatteryBounds.basis === 'existing_pv'
+          ? visibleCalculation.recommendationBatteryBounds.excludedCandidates > 0
+            ? ` Pominięto: ${number(visibleCalculation.recommendationBatteryBounds.excludedCandidates)} poza zakresem istniejącej PV.` : ''
+          : visibleCalculation.recommendationBatteryBounds.excludedCandidates > 0 || (visibleCalculation.recommendationPvBounds?.excludedCandidates ?? 0) > 0
+            ? ` Pominięto: ${number(visibleCalculation.recommendationBatteryBounds.excludedCandidates)} poza zakresem zużycia; ${number(visibleCalculation.recommendationPvBounds?.excludedCandidates ?? 0)} przekroczyło limit PV.` : ''}
+      </Text>
+    </Box> : null}
+    {visibleCalculation?.status === 'blocked' && visibleCalculation.reasons.length ? <Alert status="warning" mt="12px" alignItems="flex-start" borderRadius="6px"><AlertIcon mt="2px" /><AlertDescription><Text fontWeight="700">Nie można przygotować pełnego wyniku.</Text>{visibleCalculation.reasons.map((reason, index) => <Text key={`${index}-${reason}`} mt="4px">{reason}</Text>)}</AlertDescription></Alert> : null}
+    {visibleCalculation?.warnings.length ? <Alert status="warning" mt="12px" alignItems="flex-start" borderRadius="6px"><AlertIcon mt="2px" /><AlertDescription width="100%" minW={0}>
+      <Box as="details" key={visibleCalculation.warnings.join('\n')} data-testid="calculation-warnings">
       <Box as="summary" cursor="pointer" fontWeight="700" py="2px" _focusVisible={{ outline: '2px solid', outlineColor: 'orange.500', outlineOffset: '4px' }}>
-        Uwagi i założenia do wyniku ({calculation.warnings.length})
+        Uwagi i założenia do wyniku ({visibleCalculation.warnings.length})
       </Box>
       <Box mt="10px">
       {warningGroups.standalone.map((warning, index) => <Text key={`${index}-${warning}`} mt={index ? '4px' : 0}>{warning}</Text>)}
@@ -444,12 +492,12 @@ export default function OfferWorkspaceCalculationControls({
       </Box>
     </AlertDescription></Alert> : null}
 
-    {calculation?.rankings.length ? <Box mt="14px" aria-label="Ranking konfiguracji">
+    {visibleCalculation?.rankings.length ? <Box mt="14px" aria-label="Ranking konfiguracji">
       <Text fontWeight="700" mb="8px">Ranking konfiguracji</Text>
       <Grid gap="8px">
-        {calculation.rankings.map((ranking, index) => {
+        {visibleCalculation.rankings.map((ranking, index) => {
           const strictRecommended = strictRecommendation && ranking.recommendationEligible !== false
-            && sameTemplateIds(calculation.recommendedTemplateIds, ranking.templateIds);
+            && sameTemplateIds(visibleCalculation.recommendedTemplateIds, ranking.templateIds);
           const estimatedRecommended = !strictRecommended
             && sameTemplateIds(calculationWithEstimates?.estimatedRecommendedTemplateIds, ranking.templateIds);
           const strictPayback = strictRecommendation && ranking.recommendationEligible !== false
@@ -458,14 +506,14 @@ export default function OfferWorkspaceCalculationControls({
           const payback = strictPayback ?? estimatedPayback;
           return <Grid key={`${ranking.templateIds.join('-')}-${index}`} templateColumns={{ base: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) auto' }} gap="10px" alignItems="center" border="1px solid" borderColor={strictRecommended || estimatedRecommended ? 'green.300' : line} borderRadius="6px" p="10px">
             <Box minW="0">
-              <Text fontWeight="700" overflowWrap="anywhere">{ranking.name}{strictRecommended ? ' · rekomendowana' : estimatedRecommended ? ' · Najkrótszy szacunkowy zwrot' : ''}{calculation.status === 'blocked' || ranking.recommendationEligible === false ? ' · porównanie częściowe' : ''}</Text>
+              <Text fontWeight="700" overflowWrap="anywhere">{ranking.name}{strictRecommended ? (visibleCalculation.recommendationSearch?.hasMore ? ' · najlepszy znaleziony wariant' : ' · rekomendowana') : estimatedRecommended ? ' · Najkrótszy szacunkowy zwrot' : ''}{visibleCalculation.status === 'blocked' || ranking.recommendationEligible === false ? ' · porównanie częściowe' : ''}</Text>
               <Text color={muted} mt="3px" fontSize="11px">
-                Korzyść sprzętu przy tej samej taryfie: {knownAmount(ranking.annualSavingsPln) == null ? '— zł/rok' : `${money(ranking.annualSavingsPln!)} zł/rok`} · szacunkowo po finansowaniu {knownAmount(ranking.costAfterFinancingPln) == null ? '—' : `${money(ranking.costAfterFinancingPln)} zł`} · {payback == null ? 'czas zwrotu —' : strictPayback != null ? `zwrot ${Math.floor(payback)} lat` : <Tooltip label={`Dokładny szacunek: ${number(payback)} lat`}><Text as="span" title={`Dokładny szacunek: ${number(payback)} lat`} textDecoration="underline dotted">szacunkowy zwrot {Math.floor(payback)} lat</Text></Tooltip>}
+                Korzyść sprzętu przy tej samej taryfie: {knownAmount(ranking.annualSavingsPln) == null ? '— zł/rok' : `${money(ranking.annualSavingsPln!)} zł/rok`} · szacunkowo po finansowaniu {knownAmount(ranking.costAfterFinancingPln) == null ? '—' : `${money(ranking.costAfterFinancingPln)} zł`} · {payback == null ? 'czas zwrotu —' : strictPayback != null ? `zwrot ${number(Math.round(payback * 10) / 10)} lat` : <Tooltip label={`Dokładny szacunek: ${number(payback)} lat`}><Text as="span" title={`Dokładny szacunek: ${number(payback)} lat`} textDecoration="underline dotted">szacunkowy zwrot {number(Math.round(payback * 10) / 10)} lat</Text></Tooltip>}
               </Text>
               {ranking.reasons?.length ? <Box as="details" mt="5px" fontSize="11px"><Box as="summary" cursor="pointer">Do weryfikacji ({ranking.reasons.length})</Box>{ranking.reasons.map((reason, reasonIndex) => <Text key={reasonIndex} mt="3px">{reason}</Text>)}</Box> : null}
             </Box>
             <Button size="xs" variant={estimatedRecommended ? 'solid' : 'outline'} colorScheme={estimatedRecommended ? 'green' : 'purple'} isDisabled={disabled} onClick={() => onSelectRanking(ranking.templateIds)}>
-              {estimatedRecommended ? 'Wybierz zwycięski wariant' : 'Wybierz konfigurację'}
+              {estimatedRecommended ? 'Wybierz szacunkowy wariant' : 'Wybierz konfigurację'}
             </Button>
           </Grid>;
         })}

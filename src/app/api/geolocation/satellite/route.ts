@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleMapsConfigurationError } from 'lib/onrevolt/google-maps';
+import { parseSatelliteCoordinates, parseSatelliteZoom, satelliteMapErrorResponse } from 'lib/onrevolt/geolocation-satellite';
 import { fetchLocationMapImage } from 'lib/onrevolt/location-map-images';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
@@ -8,12 +8,15 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   const access = await authorizeStaffRequest(req);
-  if (!access.ok) return access.response;
+  if (!access.ok) {
+    access.response.headers.set('Cache-Control', 'no-store');
+    return access.response;
+  }
   try {
-    const latitude = Number(req.nextUrl.searchParams.get('lat'));
-    const longitude = Number(req.nextUrl.searchParams.get('lng'));
+    const { latitude, longitude } = parseSatelliteCoordinates(req.nextUrl.searchParams);
+    const zoom = parseSatelliteZoom(req.nextUrl.searchParams);
     const provider = req.nextUrl.searchParams.get('provider');
-    const image = await fetchLocationMapImage(provider, latitude, longitude);
+    const image = await fetchLocationMapImage(provider, latitude, longitude, { zoom });
     return new NextResponse(Uint8Array.from(image.bytes), {
       headers: {
         'Content-Type': image.contentType,
@@ -22,7 +25,6 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    const status = error instanceof GoogleMapsConfigurationError ? 503 : 400;
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status });
+    return satelliteMapErrorResponse(error);
   }
 }

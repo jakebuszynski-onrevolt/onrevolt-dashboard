@@ -127,7 +127,9 @@ test('schema collections remain covered by deletion checks', () => {
   const schema = readFileSync(path.resolve(__dirname, '../../../prisma/schema.prisma'), 'utf8');
   const model = schema.split('model Project {')[1].split('\n}')[0];
   const collections = [...model.matchAll(/^\s+(\w+)\s+\w+\[\]/gm)].map(match => match[1]).sort();
-  assert.deepEqual(collections, Object.keys(lifecycle.projectDeleteRelationLabels).sort());
+  assert.deepEqual(collections, [...Object.keys(lifecycle.projectDeleteRelationLabels), ...lifecycle.projectDeleteCacheRelations].sort());
+  const cacheModel = schema.split('model OfferWorkspaceArtifact {')[1].split('\n}')[0];
+  assert.match(cacheModel, /project\s+Project\s+@relation\([^\n]*onDelete: Cascade/);
 });
 
 test('UI exposes project deletion only to admin and preserves confirmation', () => {

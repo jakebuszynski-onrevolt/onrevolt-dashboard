@@ -40,15 +40,22 @@ try {
         $cursor = new DateTimeImmutable($from, new DateTimeZone('Europe/Warsaw'));
         $end = new DateTimeImmutable($until, new DateTimeZone('Europe/Warsaw'));
         if ($end <= $cursor || $cursor->diff($end)->days > 370) throw new InvalidArgumentException('Nieprawidłowy zakres cennika oferty.');
-        $data = ['strict' => true, 'revision' => 0, 'byDate' => [], 'issues' => []];
+        $data = ['strict' => true, 'revision' => 0, 'byDate' => [], 'issues' => [], 'tariffs' => [], 'format' => 'client-tariffs-v1'];
         while ($cursor < $end) {
             $date = $cursor->format('Y-m-d');
             $tariff = $repo->catalog((int)$input['osdId'], (int)$input['tariffId'], $date);
-            $data['byDate'][$date] = $tariff;
-            if (!$tariff) $data['issues'][] = ['date' => $date, 'message' => 'Brak historycznych cen katalogowych.'];
+            if ($tariff === null) {
+                $data['byDate'][$date] = null;
+                $data['issues'][] = ['date' => $date, 'message' => 'Brak historycznych cen katalogowych.'];
+            } else {
+                // General catalog snapshots have no individual client period.
+                // Deduplicate the exact payload, including dated capacity charges.
+                $key = 'catalog:' . hash('sha256', json_encode($tariff, JSON_THROW_ON_ERROR));
+                $data['tariffs'][$key] = $tariff;
+                $data['byDate'][$date] = $key;
+            }
             $cursor = $cursor->modify('+1 day');
         }
-        $data = \OnRevolt\Pricing\ClientTariffs::packHistory($data);
     } elseif ($action === 'history') {
         if ($profile && ($profile['station'] ?? null) !== ($scope['station'] ?? null)) throw new RuntimeException('Powiązanie taryf ze stacją zmieniło się. Użyj „Połącz z EMS” w zakładce Taryfy.', 409);
         $data = $profile && ($profile['periods'] || $repo->evidence($profile['id'])) ? $repo->history($profile, $input['from'], $input['until']) : null;

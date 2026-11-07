@@ -1,5 +1,7 @@
-import type { OfferMeasurementInterval } from './offer-measurements';
+import type { OfferMeasurementInterval, OfferMeasurementSeries } from './offer-measurements';
 import type { OfferWorkspaceDayProfile } from './offer-workspace-chart-data';
+import type { OfferWorkspaceMeasurements } from './offer-workspace-server';
+import type { OfferAnnualConsumptionProfile } from './offer-workspace-annual-profile';
 
 const consumptionEngine = require('../../../public/shared/re-consumption-engine.js') as {
   reconstructPvLoad(imported: number[], pv: number[], exported: number[]): number[] | null;
@@ -20,7 +22,80 @@ export type OfferWorkspaceEnergy = {
   issues: string[];
   modelBelowExportKwh: number;
   intervals?: Array<OfferEnergyValues & { startUtc: string; endUtc: string; importKwh: number | null; exportKwh: number | null }>;
+  modelledMeasurements?: {
+    provenance: {
+      kind: 'annual-consumption'; source: string; annualConsumptionKwh: number;
+      referenceProfile?: NonNullable<OfferAnnualConsumptionProfile['referenceProfile']>;
+    };
+    months: OfferWorkspaceMeasurements['months'];
+    dayProfiles: OfferWorkspaceDayProfile[];
+    totalsImportKwh: number;
+    totalsExportKwh: number;
+    intervalCount: number;
+  };
 };
+
+export function overlayOfferWorkspaceMeasurements(
+  measurements: OfferWorkspaceMeasurements,
+  energy: OfferWorkspaceEnergy | null | undefined,
+): OfferWorkspaceMeasurements {
+  const modelled = energy?.modelledMeasurements;
+  if (!modelled) return measurements;
+  return {
+    ...measurements,
+    months: modelled.months.map(month => ({ ...month })),
+    dayProfiles: modelled.dayProfiles.map(day => ({ ...day, hours: day.hours.map(hour => ({ ...hour })) })),
+    totalsImportKwh: modelled.totalsImportKwh,
+    totalsExportKwh: modelled.totalsExportKwh,
+    intervalCount: null,
+    missingDirections: [],
+    issues: [...measurements.issues, `Model rocznego zużycia: ${modelled.provenance.source}. To profil szacunkowy, nie dane pomiarowe.`],
+  };
+}
+
+export type AnnualOfferMeasurementSeries = OfferMeasurementSeries & {
+  modelProvenance: {
+    kind: 'annual-consumption'; modelId: 'annual-profile-re' | 'annual-reference-profile'; source: string; annualConsumptionKwh: number;
+    referenceProfile?: NonNullable<OfferAnnualConsumptionProfile['referenceProfile']>;
+  };
+};
+
+/** Adapt ephemeral annual-profile flows for valuation services that consume measurement-series intervals. */
+export function annualOfferMeasurementSeries(
+  profile: OfferAnnualConsumptionProfile,
+  energy: OfferWorkspaceEnergy,
+): AnnualOfferMeasurementSeries {
+  if (energy.modelledMeasurements?.provenance.kind !== 'annual-consumption' || !energy.intervals
+    || profile.intervals.length !== energy.intervals.length) {
+    throw new Error('Nie można zbudować serii modelowanej bez zgodnego profilu rocznego energii.');
+  }
+  const intervals = profile.intervals.map((interval, index) => {
+    const modeled = energy.intervals![index];
+    if (modeled.startUtc !== interval.startUtc || modeled.importKwh == null || modeled.exportKwh == null) {
+      throw new Error('Roczna seria modelowana nie ma kompletnych godzin importu i oddania.');
+    }
+    const reading = (valueKwh: number) => ({ valueKwh, source: 'estimated' as const, fileIds: [] });
+    return {
+      localStart: interval.localStart, localEnd: interval.localEnd,
+      startUtc: interval.startUtc, endUtc: interval.endUtc, occurrence: interval.occurrence,
+      import: reading(modeled.importKwh), export: reading(modeled.exportKwh),
+    };
+  });
+  const periods = energy.modelledMeasurements.months.map(month => ({
+    period: month.period, hasImport: month.importKwh !== null, hasExport: month.exportKwh !== null, missingDirections: [],
+  }));
+  return {
+    ppeNumber: 'MODELLED_ANNUAL_PROFILE',
+    periods,
+    missingMonths: [], missingDirections: [], intervals, files: [],
+    modelProvenance: {
+      kind: 'annual-consumption', modelId: profile.referenceProfile ? 'annual-reference-profile' : 'annual-profile-re',
+      source: energy.modelledMeasurements.provenance.source,
+      annualConsumptionKwh: energy.modelledMeasurements.provenance.annualConsumptionKwh,
+      ...(profile.referenceProfile ? { referenceProfile: profile.referenceProfile } : {}),
+    },
+  };
+}
 
 function sum(values: Array<number | null>): number | null {
   if (!values.length || values.some(value => value == null)) return null;
@@ -32,6 +107,94 @@ function aggregate(values: OfferEnergyValues[]): OfferEnergyValues {
     loadKwh: sum(values.map(value => value.loadKwh)),
     pvKwh: sum(values.map(value => value.pvKwh)),
     directKwh: sum(values.map(value => value.directKwh)),
+  };
+}
+
+export function buildAnnualProfileOfferWorkspaceEnergy(input: {
+  profile: OfferAnnualConsumptionProfile;
+  pvHours: Array<{ startUtc: string; pvKwh: number }>;
+  noPv: boolean;
+  pvSource?: string;
+  pvModel?: string;
+}): OfferWorkspaceEnergy {
+  const pv = new Map<string, number>();
+  for (const hour of input.pvHours) {
+    const time = Date.parse(hour.startUtc);
+    if (!Number.isFinite(time) || time % 3_600_000 || pv.has(hour.startUtc)
+      || !Number.isFinite(hour.pvKwh) || hour.pvKwh < 0) throw new Error('Nieprawidłowy godzinowy profil PV.');
+    pv.set(hour.startUtc, hour.pvKwh);
+  }
+  const rows = input.profile.intervals.map(interval => {
+    const pvKwh = input.noPv ? 0 : pv.get(interval.startUtc);
+    if (pvKwh == null) throw new Error(`Brak modelu PV dla ${interval.startUtc}.`);
+    const directKwh = Math.min(interval.loadKwh, pvKwh);
+    return {
+      startUtc: interval.startUtc, endUtc: interval.endUtc,
+      loadKwh: interval.loadKwh, pvKwh, directKwh,
+      importKwh: Math.max(0, interval.loadKwh - pvKwh),
+      exportKwh: Math.max(0, pvKwh - interval.loadKwh),
+      date: interval.date, period: interval.period, hour: interval.hour,
+    };
+  });
+  const byMonth = new Map<string, typeof rows>();
+  const byDate = new Map<string, typeof rows>();
+  for (const row of rows) {
+    if (!byMonth.has(row.period)) byMonth.set(row.period, []);
+    if (!byDate.has(row.date)) byDate.set(row.date, []);
+    byMonth.get(row.period)!.push(row);
+    byDate.get(row.date)!.push(row);
+  }
+  const energyMonths = [...byMonth].sort(([left], [right]) => left.localeCompare(right)).map(([period, values]) => ({
+    period,
+    ...aggregate(values.map(({ loadKwh, pvKwh, directKwh }) => ({ loadKwh, pvKwh, directKwh }))),
+  }));
+  const measuredMonths = [...byMonth].sort(([left], [right]) => left.localeCompare(right)).map(([period, values]) => ({
+    period,
+    importKwh: values.reduce((sum, row) => sum + row.importKwh, 0),
+    exportKwh: values.reduce((sum, row) => sum + row.exportKwh, 0),
+  }));
+  const selectedDays = input.profile.dayProfiles.map(day => {
+    const dayRows = byDate.get(day.date) || [];
+    const hours = Array.from({ length: 24 }, (_, hour) => {
+      const matching = dayRows.filter(row => row.hour === hour);
+      return {
+        hour,
+        loadKwh: matching.reduce((sum, row) => sum + row.loadKwh, 0),
+        pvKwh: matching.reduce((sum, row) => sum + row.pvKwh, 0),
+        directKwh: matching.reduce((sum, row) => sum + row.directKwh, 0),
+        importKwh: matching.reduce((sum, row) => sum + row.importKwh, 0),
+        exportKwh: matching.reduce((sum, row) => sum + row.exportKwh, 0),
+      };
+    });
+    return { period: day.period, dayType: day.dayType, date: day.date, hours };
+  });
+  const totals = aggregate(energyMonths);
+  const totalImportKwh = measuredMonths.reduce((sum, month) => sum + month.importKwh!, 0);
+  const totalExportKwh = measuredMonths.reduce((sum, month) => sum + month.exportKwh!, 0);
+  const source = input.profile.source;
+  const loadShapeLabel = input.profile.referenceProfile
+    ? `Profil referencyjny ${input.profile.referenceProfile.name}`
+    : 'RE DEFAULT_HOURLY_PERCENT';
+  const loadShapeIssue = input.profile.referenceProfile
+    ? `Zużycie jest szacowane z jawnej rocznej deklaracji według profilu referencyjnego ${input.profile.referenceProfile.name}.`
+    : 'Zużycie jest szacowane z jawnej rocznej deklaracji według profilu godzinowego RE.';
+  return {
+    quality: 'MODELLED', source,
+    model: `${loadShapeLabel}${input.noPv ? ' · bez instalacji PV' : ` · ${input.pvSource || 'model PV'} · ${input.pvModel || 'model PV'}`}`,
+    months: energyMonths,
+    dayProfiles: selectedDays.map(day => ({ date: day.date, hours: day.hours.map(({ hour, loadKwh, pvKwh, directKwh }) => ({ hour, loadKwh, pvKwh, directKwh })) })),
+    totals, issues: [`${loadShapeIssue} Import, oddanie, autokonsumpcja i produkcja PV są modelowane; nie są pomiarami.`],
+    modelBelowExportKwh: 0,
+    intervals: rows.map(({ date: _date, period: _period, hour: _hour, ...row }) => row),
+    modelledMeasurements: {
+      provenance: {
+        kind: 'annual-consumption', source, annualConsumptionKwh: input.profile.annualConsumptionKwh,
+        ...(input.profile.referenceProfile ? { referenceProfile: input.profile.referenceProfile } : {}),
+      },
+      months: measuredMonths, dayProfiles: selectedDays.map(day => ({ period: day.period, dayType: day.dayType, date: day.date,
+        hours: day.hours.map(({ hour, importKwh, exportKwh }) => ({ hour, importKwh, exportKwh })) })),
+      totalsImportKwh: totalImportKwh, totalsExportKwh: totalExportKwh, intervalCount: rows.length,
+    },
   };
 }
 

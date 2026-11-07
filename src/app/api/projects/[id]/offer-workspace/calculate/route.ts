@@ -1,13 +1,16 @@
 import { NextRequest } from 'next/server';
 import { badRequest, forbidden, jsonResponse, notFound } from 'lib/onrevolt/api';
 import { authorizeStaffRequest, hasStaffPermission } from 'lib/onrevolt/staff-server';
-import { emptyOfferWorkspaceDraft, parseOfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
+import { emptyOfferWorkspaceDraft, offerWorkspaceDraftWithBatteryPresence, parseOfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
 import {
   loadProjectOfferWorkspace,
   OfferWorkspaceNotFoundError,
   OfferWorkspacePermissionError,
 } from 'lib/onrevolt/offer-workspace-server';
-import { calculateOfferWorkspaceOnServer } from 'lib/onrevolt/offer-workspace-calculation-server';
+import {
+  calculateOfferWorkspaceOnServer,
+  offerWorkspaceCalculationRequiresPvSource,
+} from 'lib/onrevolt/offer-workspace-calculation-server';
 import {
   OfferWorkspaceCalculationCapacityError,
   OfferWorkspaceCalculationConflictError,
@@ -17,6 +20,9 @@ import { loadOfferCalculationDependencyStamp } from 'lib/onrevolt/offer-workspac
 import { tariffToday } from 'lib/onrevolt/client-tariffs';
 import type { OfferMeasurementSeries } from 'lib/onrevolt/offer-measurements';
 import type { OfferWorkspaceCalculationJobView } from 'lib/onrevolt/offer-workspace-calculation-jobs';
+import type { OfferWorkspaceCalculation } from 'lib/onrevolt/offer-workspace-calculation-types';
+import { recommendationInputIssues } from 'lib/onrevolt/offer-workspace-recommendation-inputs';
+import { configurationEditsContainPricing, validateOfferWorkspaceConfigurationEdits } from 'lib/onrevolt/offer-workspace-configuration-edits';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,8 +31,12 @@ const MAX_REQUEST_BYTES = 128 * 1024;
 
 class RequestTooLargeError extends Error {}
 
-async function currentDependencyStamp(workspace: Parameters<typeof loadOfferCalculationDependencyStamp>[0], draft: Parameters<typeof loadOfferCalculationDependencyStamp>[1]) {
-  try { return await loadOfferCalculationDependencyStamp(workspace, draft); }
+async function currentDependencyStamp(
+  workspace: Parameters<typeof loadOfferCalculationDependencyStamp>[0],
+  draft: Parameters<typeof loadOfferCalculationDependencyStamp>[1],
+  options: Parameters<typeof loadOfferCalculationDependencyStamp>[2] = {},
+) {
+  try { return await loadOfferCalculationDependencyStamp(workspace, draft, options); }
   catch { throw new Error('Nie udało się zweryfikować aktualności danych obliczenia.'); }
 }
 
@@ -116,12 +126,27 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   if (body.mode !== 'selected' && body.mode !== 'recommend') {
     return badRequest('Tryb obliczeń musi być jawnie selected albo recommend.');
   }
+  if (body.cacheOnly !== undefined && typeof body.cacheOnly !== 'boolean') return badRequest('cacheOnly musi być wartością logiczną.');
+  if (body.continueFromJobId !== undefined
+    && (typeof body.continueFromJobId !== 'string' || !body.continueFromJobId || body.continueFromJobId.length > 100)) {
+    return badRequest('Brak prawidłowego identyfikatora poprzedniej rekomendacji.');
+  }
+  if (body.continueFromJobId !== undefined && (body.mode !== 'recommend' || body.cacheOnly === true)) {
+    return badRequest('Kontynuacja jest dostępna wyłącznie dla nowej rekomendacji.');
+  }
 
   let draft;
   try {
     draft = parseOfferWorkspaceDraft(body.draft);
   } catch (error) {
     return badRequest(error instanceof Error ? error.message : 'Nieprawidłowy szkic oferty.');
+  }
+  if (body.mode === 'recommend') {
+    // Recommendations always compare the original ready templates.
+    draft = { ...draft, configurationEdits: undefined, commercialPricing: undefined };
+  } else if ((configurationEditsContainPricing(draft.configurationEdits) || draft.commercialPricing)
+    && !hasStaffPermission(access.user, 'pricing.read')) {
+    return forbidden('Do edycji cen konfiguracji wymagane jest uprawnienie pricing.read.');
   }
 
   try {
@@ -130,6 +155,42 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     const workspace = await loadProjectOfferWorkspace(projectId, access.user, new Date(), (value) => { series = value; });
     if (body.sourceRevision !== workspace.revision) {
       return noStore({ ok: false, error: 'Dane projektu zmieniły się. Odśwież kreator przed obliczeniami.' }, { status: 409 });
+    }
+    draft = offerWorkspaceDraftWithBatteryPresence(draft, workspace.input.existingBatteryPresent ?? null);
+    try {
+      validateOfferWorkspaceConfigurationEdits(workspace.templates, draft);
+    } catch (error) {
+      return badRequest(error instanceof Error ? error.message : 'Nieprawidłowe zmiany pozycji konfiguracji.');
+    }
+
+    if (body.mode === 'recommend') {
+      const issues = recommendationInputIssues(draft);
+      if (issues.length) return noStore({
+        ok: false,
+        error: `Nie można rozpocząć rekomendacji. ${issues.map(issue => issue.message).join(' ')}`,
+        issues,
+      }, { status: 422 });
+    }
+
+    const requiresPvSource = offerWorkspaceCalculationRequiresPvSource(workspace, draft, body.mode);
+    const pricesAsOf = tariffToday();
+    const sourceDependencyStamp = await currentDependencyStamp(workspace, draft, { requiresPvSource });
+    let continuation: { jobId: string; result: OfferWorkspaceCalculation } | undefined;
+    if (typeof body.continueFromJobId === 'string') {
+      const previous = await offerWorkspaceCalculationJobs.findRecommendationContinuationForDraft({
+        actorId: String(access.user.id), projectId, sourceRevision: workspace.revision, draft,
+        jobId: body.continueFromJobId, pricesAsOf, sourceDependencyStamp, requiresPvSource,
+      });
+      if (!previous) return noStore({ ok: false, error: 'Poprzednia rekomendacja jest nieaktualna lub nie może być kontynuowana.' }, { status: 409 });
+      continuation = previous;
+    } else {
+      const cached = await offerWorkspaceCalculationJobs.findCompletedJobForDraft({
+        actorId: String(access.user.id), projectId, sourceRevision: workspace.revision, draft,
+        mode: body.mode, pricesAsOf, sourceDependencyStamp,
+      });
+      const invalidRecommendation = cached?.data?.recommendationSearch && recommendationInputIssues(draft).length > 0;
+      if (cached && !invalidRecommendation) return noStore({ ok: true, job: publicJob(cached), cached: true });
+      if (body.cacheOnly === true) return noStore({ ok: true, job: null, cached: false });
     }
 
     const queued = offerWorkspaceCalculationJobs.enqueue({
@@ -140,6 +201,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       draft,
       series,
       mode: body.mode,
+      requiresPvSource,
+      ...(continuation ? { continuation } : {}),
     }, calculateOfferWorkspaceOnServer);
     return noStore({ ok: true, job: publicJob(queued.job, queued.stale) }, { status: 202 });
   } catch (error) {
@@ -168,12 +231,20 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       jobId, String(access.user.id), projectId,
       async (candidate, dependencyContext) => {
         if (candidate.sourceRevision !== workspace.revision || candidate.data?.pricesAsOf !== pricesAsOf) return null;
-        const draft = { ...emptyOfferWorkspaceDraft(), ...dependencyContext };
+        const baseDraft = emptyOfferWorkspaceDraft();
+        const { existingPvPowerKw, ...financialContext } = dependencyContext;
+        const draft = {
+          ...baseDraft,
+          ...financialContext,
+          existingPv: { ...baseDraft.existingPv, powerKw: existingPvPowerKw },
+        };
         return {
           sourceRevision: workspace.revision,
           dependencyContext,
           pricesAsOf,
-          sourceDependencyStamp: await currentDependencyStamp(workspace, draft),
+          sourceDependencyStamp: await currentDependencyStamp(workspace, draft, {
+            requiresPvSource: dependencyContext.requiresPvSource,
+          }),
         };
       },
     );

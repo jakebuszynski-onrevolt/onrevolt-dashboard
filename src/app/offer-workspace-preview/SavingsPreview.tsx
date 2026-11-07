@@ -18,9 +18,13 @@ const intervals = periods.flatMap((period, i) => Array.from({ length: 24 }, (_, 
   creditAddedKwh: 0, creditUsedKwh: 0, creditExpiredKwh: 0, creditBalanceKwh: null, cashDuePln: 11,
 })));
 function sum(rows: typeof intervals) {
-  return Object.fromEntries(Object.entries(rows[0]).filter(([, v]) => typeof v === 'number').map(([key]) => [key, rows.reduce((a, row) => a + Number(row[key as keyof typeof row]), 0)]));
+  const { startUtc: _start, endUtc: _end, month: _month, ...totals } = rows[0];
+  for (const key of Object.keys(totals) as Array<keyof typeof totals>) {
+    if (key !== 'creditBalanceKwh') totals[key] = rows.reduce((amount, row) => amount + row[key], 0);
+  }
+  return totals;
 }
-const bill = { intervals, months: periods.map(month => ({ month, ...sum(intervals.filter(row => row.month === month)) })), totals: sum(intervals) } as OfferBillingScenarioResult;
+const bill: OfferBillingScenarioResult = { intervals, months: periods.map(month => ({ month, ...sum(intervals.filter(row => row.month === month)) })), totals: sum(intervals) };
 const measurements = { months: periods.map(period => ({ period, importKwh: 480, exportKwh: 48 })), totalsImportKwh: 5760, totalsExportKwh: 576, issues: [],
   dayProfiles: periods.map(period => ({ period, date: `${period}-05`, dayType: 'workday' as const, hours: Array.from({ length: 24 }, (_, hour) => ({ hour, importKwh: 20, exportKwh: 2 })) })) };
 const energy = { source: 'QA', quality: 'MODELLED', issues: [], totals: { loadKwh: 7992, pvKwh: 4500, directKwh: 2232 },

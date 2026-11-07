@@ -2,6 +2,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { vatBreakdown } from 'lib/onrevolt/configuration-vat';
 import { buildEnergyUsageProfile, type EnergyUsageProfile } from 'lib/onrevolt/energy-profile';
 import { readProjectReConsumptionProfile } from 'lib/onrevolt/re-consumption-profile';
+import { readProjectReferenceProfileSelection } from 'lib/onrevolt/project-reference-profile';
 import {
   calculateEnergyScenario,
   defaultHourlyLoadProfile,
@@ -15,6 +16,7 @@ import { loadEnergyTariffSnapshots } from 'lib/onrevolt/energy-tariff-pricing';
 import { buildEnergyTariffCostSnapshot } from 'lib/onrevolt/energy-tariff-pricing';
 import { loadClientTariffHistory } from 'lib/onrevolt/client-tariffs-server';
 import { clientTariffAt, tariffToday, tariffScenarioCalendar, tariffScenarioIssue } from 'lib/onrevolt/client-tariffs';
+import { DEFAULT_OFFER_BILLING_CYCLE_MONTHS } from 'lib/onrevolt/offer-workspace';
 import {
   calculateHomeEnergyStorageSubsidy,
   calculateThermomodernizationRelief,
@@ -55,6 +57,10 @@ export function selectOfferInvoiceForAnalysisPeriod<T extends OfferInvoiceCycle>
   period: OfferInvoicePeriod,
 ): T | null {
   return energyInvoicesInAnalysisPeriod(invoices, period).included.find((invoice) => invoice.billingCycleMonths != null) || null;
+}
+
+export function resolveOfferBillingCycleMonths(invoiceCycleMonths: number | null | undefined): number {
+  return invoiceCycleMonths ?? DEFAULT_OFFER_BILLING_CYCLE_MONTHS;
 }
 
 async function offerInvoiceCycleForProject(prisma: PrismaClient, projectId: string): Promise<OfferInvoiceCycle | null> {
@@ -151,7 +157,7 @@ function requireConfigurationTarget(
 }
 
 function usageProfileInputs(profileSource: string | null | undefined, annualConsumptionKwh: number, usageProfile?: EnergyUsageProfile | null) {
-  if (profileSource !== 'OPERATOR_HOURLY' && usageProfile?.source !== 'RE') {
+  if (profileSource !== 'OPERATOR_HOURLY' && usageProfile?.source !== 'RE' && !usageProfile?.referenceProfile) {
     return {
       monthlyConsumptionKwh: distributeAnnualConsumption(annualConsumptionKwh),
       hourlyLoadProfile: defaultHourlyLoadProfile,
@@ -160,6 +166,9 @@ function usageProfileInputs(profileSource: string | null | undefined, annualCons
 
   if (!usageProfile?.months?.length) {
     throw new OfferRecalculationError('Wybrano dane godzinowe operatora, ale nie ma wczytanego profilu zużycia.');
+  }
+  if (usageProfile.referenceProfile && !usageProfile.dailyConsumptionKwh) {
+    throw new OfferRecalculationError('Wybrany profil referencyjny nie zawiera pełnego rozkładu dziennego. Przelicz profil zużycia.');
   }
   const monthlyConsumptionKwh = Array.from({ length: 12 }, (_, index) => usageProfile.months
     .filter((month) => month.month === index + 1)
@@ -179,6 +188,8 @@ function usageProfileInputs(profileSource: string | null | undefined, annualCons
     monthlyConsumptionKwh,
     hourlyLoadProfile: hourlyTotals.some((value) => value > 0) ? hourlyTotals : defaultHourlyLoadProfile,
     monthlyHourlyLoadProfiles,
+    ...(usageProfile.referenceProfile ? { dailyConsumptionKwh: usageProfile.dailyConsumptionKwh,
+      consumptionProfileProvenance: usageProfile.referenceProfile } : {}),
   };
 }
 
@@ -207,6 +218,8 @@ export function buildOfferScenarioInput(options: OfferScenarioInputOptions): Ene
   const batteryPowerKw = sumConfigurationTarget(batteryConfigurations, 'targetPowerKw');
   const batteryCapacityKwh = existingBatteryKwh + addedBatteryKwh;
   const profile = usageProfileInputs(options.profileSource, options.annualConsumptionKwh, options.usageProfile);
+  const profileCalendar = 'dailyConsumptionKwh' in profile && profile.dailyConsumptionKwh && options.usageProfile?.months?.length
+    ? tariffScenarioCalendar(options.usageProfile) : null;
   const setting = (key: keyof typeof defaultScenarioAssumptions) => finiteNumber(
     existingInput[key],
     defaultScenarioAssumptions[key],
@@ -235,6 +248,10 @@ export function buildOfferScenarioInput(options: OfferScenarioInputOptions): Ene
     targetTariff: options.targetTariff,
     depositPayoutRate: setting('depositPayoutRate'),
     investmentGross: options.investmentGross,
+    ...(profileCalendar ? {
+      scenarioYear: profileCalendar.scenarioYear,
+      calendarYearsByMonth: profileCalendar.calendarYearsByMonth,
+    } : {}),
   };
 }
 
@@ -387,7 +404,8 @@ async function energySnapshot(project: any, scenario?: any) {
   const months = Array.from(new Set<string>(downloaded.map((file: any) => `${file.periodYear}-${String(file.periodMonth).padStart(2, '0')}`)))
     .sort();
   const importFiles = downloaded.filter((file: any) => file.kind === 'ACTIVE_IMPORT');
-  const usageProfile = project.dashboardStation || project.dashboardStationNumber
+  const referenceSelection = await readProjectReferenceProfileSelection(project.id);
+  const usageProfile = project.dashboardStation || project.dashboardStationNumber || (referenceSelection.key && !importFiles.length)
     ? await readProjectReConsumptionProfile(project.id)
     : await buildEnergyUsageProfile(importFiles);
   const siteAudit = project.siteAudits?.[0];
@@ -592,7 +610,7 @@ export async function createOfferFromConfiguration(prisma: PrismaClient, input: 
     const operator = String(current.osd_name || account?.operator || '');
     const annualConsumptionKwh = finiteNumber(draft.data.energySnapshot.usageProfile?.annualKwh ?? audit.annualConsumptionKwh);
     const invoice = await offerInvoiceCycleForProject(prisma, input.projectId);
-    const billingCycleMonths = invoice?.billingCycleMonths || 1;
+    const billingCycleMonths = resolveOfferBillingCycleMonths(invoice?.billingCycleMonths);
     const target = await loadEnergyTariffSnapshots({ operator, tariffCodes: [input.tariffAfter], annualUsageKwh: annualConsumptionKwh,
       billingCycleMonths, connectionPowerKw: finiteNumber(audit.connectionPowerKw) });
     const scenarioInput = buildOfferScenarioInput({ annualConsumptionKwh, profileSource: audit.profileSource,
@@ -699,6 +717,7 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
     }),
     offerInvoiceCycleForProject(prisma, existing.projectId),
   ]);
+  const billingCycleMonths = resolveOfferBillingCycleMonths(invoiceWithCycle?.billingCycleMonths);
   if (!audit) {
     throw new OfferRecalculationError('Najpierw zapisz dane zużycia w zakładce „Dane energetyczne”.');
   }
@@ -721,6 +740,9 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
       take: 12,
     });
     usageProfile = await buildEnergyUsageProfile(measurementFiles);
+  } else if ((await readProjectReferenceProfileSelection(existing.projectId)).key) {
+    usageProfile = await readProjectReConsumptionProfile(existing.projectId);
+    annualConsumptionKwh = usageProfile.annualKwh;
   }
 
   const lineItems = mergeConfigurationLineItems(configurations);
@@ -742,7 +764,7 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
       operator,
       tariffCodes: clientHistory ? [tariffAfter] : [tariffBefore, tariffAfter],
       annualUsageKwh: annualConsumptionKwh,
-      billingCycleMonths: invoiceWithCycle?.billingCycleMonths || 1,
+      billingCycleMonths,
       connectionPowerKw: finiteNumber(audit.connectionPowerKw),
     });
   } catch (error) {
@@ -766,12 +788,12 @@ export async function recalculateOfferFromCurrentData(prisma: PrismaClient, offe
     const current = clientTariffAt(clientHistory, tariffToday());
     if (!current) throw new OfferRecalculationError('Wymaga uzupełnienia: bieżąca taryfa klienta.');
     scenarioInput.currentTariff = buildEnergyTariffCostSnapshot({ tariff: current, operator,
-      annualUsageKwh: annualConsumptionKwh, billingCycleMonths: invoiceWithCycle?.billingCycleMonths || 1,
+      annualUsageKwh: annualConsumptionKwh, billingCycleMonths,
       connectionPowerKw: finiteNumber(audit.connectionPowerKw) });
     scenarioInput.currentTariffHistory = clientHistory;
     scenarioInput.scenarioYear = calendar.scenarioYear;
     scenarioInput.calendarYearsByMonth = calendar.calendarYearsByMonth;
-    scenarioInput.billingCycleMonths = invoiceWithCycle?.billingCycleMonths || 1;
+    scenarioInput.billingCycleMonths = billingCycleMonths;
     scenarioInput.connectionPowerKw = finiteNumber(audit.connectionPowerKw);
   }
   const scenarioResult = calculateEnergyScenario(scenarioInput);

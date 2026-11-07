@@ -2,6 +2,7 @@ import { energyInvoicesInAnalysisPeriod } from './client-energy-summary';
 import { blockedClientEnergyCostSummary, buildClientEnergyCostSummary } from './client-energy-cost-summary';
 import { callClientTariffs, clientTariffScope } from './client-tariffs-server';
 import { tariffToday, type ClientTariffData, type ClientTariffHistory, type ClientTariffPayload, type ClientTariffPeriod } from './client-tariffs';
+import { DEFAULT_OFFER_BILLING_CYCLE_MONTHS } from './offer-workspace';
 import { currentScenario, hourlyMarketPrices } from './offer-workspace-valuation-server';
 import { billOfferWorkspaceScenario, canonicalNetRows, priceOfferWorkspaceGrid, type NetBillingPolicy, type NetMeteringPolicy } from './offer-workspace-billing';
 import type { OfferMeasurementSeries } from './offer-measurements';
@@ -21,6 +22,9 @@ export type ClientEnergyCostSummaryProject = {
   }>;
 };
 export type ClientEnergyCostSummaryMonth = { period: string; importKwh: number | null; exportKwh: number | null; importAvailable: boolean; exportAvailable: boolean };
+type ClientEnergyCostSummarySeries = OfferMeasurementSeries & {
+  modelProvenance?: { kind: 'annual-consumption'; modelId: string; source: string; annualConsumptionKwh: number };
+};
 export type ClientEnergyCostHistoryDependencies = {
   clientTariffScope: typeof clientTariffScope;
   callClientTariffs: <T>(input: { action: string; scope: unknown } & Record<string, unknown>) => Promise<T>;
@@ -31,6 +35,17 @@ function finiteNonnegative(value: unknown): number | null {
   if (value == null || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function parsedBillingCycle(value: unknown): { value: number | null; invalid: boolean } {
+  if (value == null || value === '' || (typeof value === 'string' && value.trim() === '')) {
+    return { value: null, invalid: false };
+  }
+  if (typeof value !== 'number' && typeof value !== 'string') return { value: null, invalid: true };
+  const months = Number(value);
+  return Number.isInteger(months) && months >= 1 && months <= 12
+    ? { value: months, invalid: false }
+    : { value: null, invalid: true };
 }
 
 function nextMonthStart(month: string): string {
@@ -294,33 +309,53 @@ const defaultSummaryDependencies: ClientEnergyCostSummaryServerDependencies = {
 export async function calculateClientEnergyCostSummaryOnServer(input: {
   project: ClientEnergyCostSummaryProject;
   period: AnalysisPeriod;
-  series: OfferMeasurementSeries | null;
+  series: ClientEnergyCostSummarySeries | null;
   months: ClientEnergyCostSummaryMonth[];
+  energySource?: 'MODELLED';
 }, dependencies: ClientEnergyCostSummaryServerDependencies = defaultSummaryDependencies) {
   const { project, period, series, months } = input;
   const vatBasis = project.clientType === 'B2B' ? 'NET' : 'GROSS';
   const totalHours = (Date.parse(period.untilUtc) - Date.parse(period.fromUtc)) / 3_600_000;
+  const blocked = (issue: string) => ({
+    ...blockedClientEnergyCostSummary(vatBasis, totalHours, issue),
+    ...(input.energySource ? { source: input.energySource } : {}),
+  });
   const audit = project.energyAudits[0];
   const draft = project.offerWorkspace?.input && typeof project.offerWorkspace.input === 'object'
     ? project.offerWorkspace.input as Record<string, unknown> : {};
   const calculation = draft.calculation && typeof draft.calculation === 'object'
     ? draft.calculation as Record<string, unknown> : {};
   const settlement = currentSettlement(audit?.settlementSystem) || currentSettlement(draft.currentSettlement);
-  let cycleValue = finiteNonnegative(calculation.billingCycleMonths);
+  const explicitCycle = parsedBillingCycle(calculation.billingCycleMonths);
+  let cycleValue = explicitCycle.value;
   const savedCycleStart = typeof calculation.billingCycleStartMonth === 'string' ? calculation.billingCycleStartMonth : null;
   let invoiceCycleStart: string | null = null;
   let invoiceIssue: string | null = null;
-  if (cycleValue == null || (cycleValue > 1 && !savedCycleStart)) {
+  let cycleIssue: string | null = explicitCycle.invalid
+    ? 'Jawny cykl rozliczeniowy w ofercie musi być liczbą całkowitą od 1 do 12.'
+    : null;
+  let invoiceReadFailed = false;
+  if (!cycleIssue && (cycleValue == null || (cycleValue > 1 && !savedCycleStart))) {
     try {
       const invoiceCycle = await dependencies.invoiceBillingCycleForPeriod(project.id, period, cycleValue);
-      if (cycleValue == null) cycleValue = invoiceCycle.cycleMonths;
+      if (cycleValue == null && invoiceCycle.cycleMonths != null) {
+        const parsedInvoiceCycle = parsedBillingCycle(invoiceCycle.cycleMonths);
+        if (parsedInvoiceCycle.invalid) {
+          cycleIssue = 'Cykl rozliczeniowy odczytany z faktury musi być liczbą całkowitą od 1 do 12.';
+        } else {
+          cycleValue = parsedInvoiceCycle.value;
+        }
+      }
       invoiceCycleStart = invoiceCycle.startMonth;
       if (invoiceCycle.crossingCount > 0) invoiceIssue = `Pominięto ${invoiceCycle.crossingCount} faktur przecinających granice okresu analizy.`;
     } catch (error) {
+      invoiceReadFailed = true;
       invoiceIssue = `Nie udało się odczytać cyklu z faktur: ${error instanceof Error ? error.message : 'błąd źródła'}.`;
     }
   }
-  const billingCycleMonths = cycleValue != null && Number.isInteger(cycleValue) && cycleValue >= 1 && cycleValue <= 12 ? cycleValue : null;
+  const cycleDefaulted = !cycleIssue && !invoiceReadFailed && cycleValue == null;
+  if (cycleDefaulted) cycleValue = DEFAULT_OFFER_BILLING_CYCLE_MONTHS;
+  const billingCycleMonths = cycleValue;
   const connectionPowerKw = finiteNonnegative(audit?.connectionPowerKw);
   const completeMeasuredImport = months.length === period.periodKeys.length
     && months.every(month => month.importAvailable && month.importKwh != null);
@@ -328,13 +363,22 @@ export async function calculateClientEnergyCostSummaryOnServer(input: {
   const auditedAnnualUsage = finiteNonnegative(audit?.annualConsumptionKwh);
   const annualUsageKwh = measuredAnnualUsage ?? auditedAnnualUsage;
   const assumptions: string[] = [];
+  if (cycleDefaulted) {
+    assumptions.push(`Nie znaleziono jednoznacznego cyklu rozliczeniowego; w szacunku przyjęto cykl ${DEFAULT_OFFER_BILLING_CYCLE_MONTHS}-miesięczny.`);
+  }
   if (invoiceCycleStart && billingCycleMonths != null) assumptions.push(`Cykl ${billingCycleMonths}-miesięczny i jego kotwica pochodzą z faktury w wybranym okresie.`);
   if (measuredAnnualUsage == null && auditedAnnualUsage != null) {
     assumptions.push('Zużycie roczne do wyznaczenia stawek pochodzi z audytu; pomiar importu w okresie nie jest kompletny.');
   }
-  if (connectionPowerKw == null || annualUsageKwh == null || billingCycleMonths == null) {
-    return blockedClientEnergyCostSummary(vatBasis, totalHours,
-      [invoiceIssue, 'Brak jawnej mocy przyłączeniowej, rocznego zużycia lub cyklu rozliczeniowego potrzebnego do wyceny taryfy.'].filter(Boolean).join(' '));
+  const missingPricingInputs: string[] = [];
+  if (connectionPowerKw == null) missingPricingInputs.push('mocy przyłączeniowej');
+  if (annualUsageKwh == null) missingPricingInputs.push('rocznego zużycia');
+  if (billingCycleMonths == null && !cycleIssue) missingPricingInputs.push('cyklu rozliczeniowego');
+  if (missingPricingInputs.length || cycleIssue || billingCycleMonths == null) {
+    return blocked(
+      [invoiceIssue, cycleIssue, missingPricingInputs.length
+        ? `Do wyceny taryfy brakuje: ${missingPricingInputs.join(', ')}.`
+        : null].filter(Boolean).join(' '));
   }
 
   let current;
@@ -342,11 +386,11 @@ export async function calculateClientEnergyCostSummaryOnServer(input: {
     current = await dependencies.currentScenario({ clientId: project.clientId, projectId: project.id }, settlement,
       { from: `${period.startMonth}-01`, until: nextMonthStart(period.endMonth) });
   } catch (error) {
-    return blockedClientEnergyCostSummary(vatBasis, totalHours,
+    return blocked(
       `Nie udało się odczytać bieżącej taryfy projektu: ${error instanceof Error ? error.message : 'błąd źródła'}.`);
   }
   if (!current.tariffHistory) {
-    return blockedClientEnergyCostSummary(vatBasis, totalHours,
+    return blocked(
       (current.issues || []).join(' ') || 'Brak jawnej historii bieżącej taryfy projektu.');
   }
 
@@ -358,7 +402,9 @@ export async function calculateClientEnergyCostSummaryOnServer(input: {
   const tariffHistory = completion.history;
   const intervals = (series?.intervals || []).filter(row => row.import != null || row.export != null);
   const estimatedIntervalCount = intervals.filter(row => row.import?.source === 'estimated' || row.export?.source === 'estimated').length;
-  if (estimatedIntervalCount > 0) {
+  if (input.energySource === 'MODELLED' && series?.modelProvenance?.kind === 'annual-consumption') {
+    assumptions.push(`Pobór i oddanie wyznaczono z rocznej deklaracji: ${series.modelProvenance.source} (${series.modelProvenance.annualConsumptionKwh} kWh/rok). Wartości są modelem, nie pomiarami.`);
+  } else if (estimatedIntervalCount > 0) {
     assumptions.push(`Liczba interwałów z danymi oznaczonymi w plikach OSD jako szacowane (import lub eksport): ${estimatedIntervalCount}. Wynik należy traktować jako szacunek.`);
   }
   const hours = Array.from(new Set(intervals.map(row => utcHourKey(row.startUtc)).filter((hour): hour is string => hour !== null))).sort();
@@ -395,8 +441,8 @@ export async function calculateClientEnergyCostSummaryOnServer(input: {
   });
   const pricing = {
     ...rawPricing,
-    issues: [...rawPricing.issues, ...completion.issues, ...marketIssues],
-    status: rawPricing.status === 'ready' && (completion.issues.length || marketIssues.length) ? 'partial' as const : rawPricing.status,
+    issues: [...rawPricing.issues, ...completion.issues, ...marketIssues, ...(invoiceIssue ? [invoiceIssue] : [])],
+    status: rawPricing.status === 'ready' && (completion.issues.length || marketIssues.length || invoiceIssue) ? 'partial' as const : rawPricing.status,
   };
   const hasNetMeteringExport = settlement === 'NET_METERING'
     && intervals.some(row => (row.export?.valueKwh || 0) > 0);
@@ -482,5 +528,8 @@ export async function calculateClientEnergyCostSummaryOnServer(input: {
     pricing.issues.push(...current.issues.map(issue => `Taryfa: ${issue}`));
     if (pricing.status === 'ready') pricing.status = 'partial';
   }
-  return buildClientEnergyCostSummary({ pricing, settlementResult, settlementIssue, assumptions });
+  return buildClientEnergyCostSummary({
+    pricing, settlementResult, settlementIssue, assumptions,
+    ...(input.energySource ? { source: input.energySource } : {}),
+  });
 }

@@ -15,6 +15,8 @@ import {
 } from './re-consumption-api';
 import { resolveReStation, type ResolvedReStation } from './re-stations';
 import { readProjectAnalysisPeriod } from './project-analysis-period-server';
+import { readProjectReferenceProfileSelection, resolveSelectedReferenceProfile } from './project-reference-profile';
+import { syncProjectReferenceLoadProfile, type ReReferenceProfileSyncResult } from './re-reference-profile';
 
 export type ReConsumptionSyncResult = {
   status: 'synced' | 'existing' | 'failed';
@@ -27,6 +29,41 @@ export type ReConsumptionSyncOptions = {
   actorId?: string | null;
   replaceExisting?: boolean;
 };
+
+/** Replays the current CRM selection when a dashboard station link becomes available. */
+export async function syncProjectReferenceProfileAfterLink(input: {
+  clientId: string;
+  projectId: string;
+  actorId?: string | null;
+  crmDb?: Prisma.TransactionClient;
+}): Promise<ReReferenceProfileSyncResult | null> {
+  try {
+    const db = input.crmDb ?? prisma;
+    const selection = await readProjectReferenceProfileSelection(input.projectId, db);
+    if (selection.revision <= 0) return null;
+    const referenceProfile = await resolveSelectedReferenceProfile(selection);
+    const audit = await db.energyAudit.findFirst({
+      where: { projectId: input.projectId, profileSource: 'ANNUAL_DECLARATION', annualConsumptionKwh: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+      select: { annualConsumptionKwh: true },
+    });
+    if (!audit || audit.annualConsumptionKwh === null) {
+      return { status: 'skipped', station: null, retryAllowed: false,
+        message: 'Brak rocznej deklaracji zużycia w projekcie; profil RE zostanie zsynchronizowany po jej zapisaniu.' };
+    }
+    return await syncProjectReferenceLoadProfile({
+      projectId: input.projectId,
+      clientId: input.clientId,
+      actorId: input.actorId,
+      annualKwh: Number(audit.annualConsumptionKwh),
+      referenceProfile,
+      crmDb: db,
+    });
+  } catch (error) {
+    return { status: 'failed', station: null, retryAllowed: true,
+      message: `Nie udało się odtworzyć wybranego profilu po przypisaniu stacji RE: ${error instanceof Error ? error.message : String(error)}.` };
+  }
+}
 
 const reErrorPrefix = '[RE] ';
 export class ReStationRequiredError extends Error {
@@ -57,6 +94,74 @@ async function lockProject(tx: Prisma.TransactionClient, clientId: string, proje
   `;
   if (rows.length !== 1) throw new Error('Nie znaleziono projektu tego klienta');
   return tx.project.findUniqueOrThrow({ where: { id: projectId }, select: projectSelect });
+}
+
+/** Lock and compare the pre-link station snapshot before changing a CRM association. */
+export async function assertProjectStationSnapshot(
+  tx: Prisma.TransactionClient,
+  input: { clientId: string; projectId: string; expected: { dashboardStation: string | null; dashboardStationNumber: string | null } },
+) {
+  const project = await lockProject(tx, input.clientId, input.projectId);
+  if ((project.dashboardStation ?? null) !== input.expected.dashboardStation
+    || (project.dashboardStationNumber ?? null) !== input.expected.dashboardStationNumber) {
+    throw new Error('Powiązanie stacji RE zmieniło się podczas zapisu; odśwież projekt i ponów operację');
+  }
+  return project;
+}
+
+/** Reacquire the project lock after a committed link, verify its exact target, then replay the latest selection. */
+export async function replayProjectReferenceProfileForLinkedStation(input: {
+  clientId: string;
+  projectId: string;
+  stationHash: string | null;
+  stationNumber: string | null;
+  actorId?: string | null;
+}): Promise<ReReferenceProfileSyncResult | null> {
+  return prisma.$transaction(async tx => {
+    const project = await lockProject(tx, input.clientId, input.projectId);
+    if ((project.dashboardStation ?? null) !== input.stationHash || (project.dashboardStationNumber ?? null) !== input.stationNumber) {
+      throw new Error('Powiązanie stacji RE zmieniło się przed odtworzeniem profilu; sprawdź projekt i ponów operację');
+    }
+    if (!input.stationHash && !input.stationNumber) return null;
+    return syncProjectReferenceProfileAfterLink({ ...input, crmDb: tx });
+  }, transactionOptions);
+}
+
+/** Commit a station link before opening a second locked transaction for RE replay. */
+export async function commitProjectStationLinkAndReplay(input: {
+  clientId: string;
+  projectId: string;
+  expected: { dashboardStation: string | null; dashboardStationNumber: string | null };
+  station: { stationHash: string; station: string; weatherStation: string | null };
+  actorId?: string | null;
+}) {
+  const updatedProject = await prisma.$transaction(async tx => {
+    await assertProjectStationSnapshot(tx, { clientId: input.clientId, projectId: input.projectId, expected: input.expected });
+    return tx.project.update({
+      where: { id: input.projectId },
+      data: {
+        dashboardStation: input.station.stationHash,
+        dashboardStationNumber: input.station.station,
+        weatherStationNumber: input.station.weatherStation,
+      },
+    });
+  }, transactionOptions);
+  let referenceProfileSync: ReReferenceProfileSyncResult | null;
+  try {
+    referenceProfileSync = await replayProjectReferenceProfileForLinkedStation({
+      clientId: input.clientId,
+      projectId: input.projectId,
+      stationHash: input.station.stationHash,
+      stationNumber: input.station.station,
+      actorId: input.actorId,
+    });
+  } catch (error) {
+    referenceProfileSync = {
+      status: 'failed', station: input.station.station, retryAllowed: true,
+      message: `Stację zapisano w CRM, ale nie udało się odtworzyć wybranego profilu RE: ${error instanceof Error ? error.message : String(error)}.`,
+    };
+  }
+  return { updatedProject, referenceProfileSync };
 }
 
 async function resolveProjectStation(project: ProjectLink): Promise<ResolvedReStation | null> {

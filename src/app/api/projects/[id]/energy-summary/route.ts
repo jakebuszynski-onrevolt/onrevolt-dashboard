@@ -15,6 +15,10 @@ import { readOfferPvProfile } from 'lib/onrevolt/offer-pv-profile';
 import { completeProjectPvProfileInput, projectPvSettingsFromSources } from 'lib/onrevolt/project-pv-settings';
 import { buildClientEnergyPvSummary, resolveClientEnergyBatteryPresence } from 'lib/onrevolt/client-energy-pv-summary';
 import { calculateClientEnergyCostSummaryOnServer, type ClientEnergyCostSummaryProject } from 'lib/onrevolt/client-energy-cost-summary-server';
+import { blockedClientEnergyCostSummary } from 'lib/onrevolt/client-energy-cost-summary';
+import { buildAnnualOfferConsumptionProfile, type OfferAnnualConsumptionProfile } from 'lib/onrevolt/offer-workspace-annual-profile';
+import { annualOfferMeasurementSeries, buildAnnualProfileOfferWorkspaceEnergy, type OfferWorkspaceEnergy } from 'lib/onrevolt/offer-workspace-energy';
+import { readProjectReferenceProfileSelection, resolveSelectedReferenceProfile } from 'lib/onrevolt/project-reference-profile';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,6 +41,52 @@ function finiteCoordinate(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
+function positiveAnnualConsumption(value: unknown): number | null {
+  const number = finiteCoordinate(value);
+  return number != null && number > 0 ? number : null;
+}
+
+function annualModelPayload(profile: OfferAnnualConsumptionProfile, energy: OfferWorkspaceEnergy | null, reason: string | null) {
+  const profileMonths = new Map<string, number>();
+  for (const interval of profile.intervals) profileMonths.set(interval.period, (profileMonths.get(interval.period) || 0) + interval.loadKwh);
+  const energyMonths = new Map((energy?.modelledMeasurements?.months || []).map(month => [month.period, month]));
+  const energyDays = new Map((energy?.modelledMeasurements?.dayProfiles || []).map(day => [day.date, day]));
+  const days = profile.dayProfiles.map(day => {
+    const modeledDay = energyDays.get(day.date);
+    const intervalsByHour = new Map<number, number>();
+    for (const interval of profile.intervals) {
+      if (interval.date === day.date) intervalsByHour.set(interval.hour, (intervalsByHour.get(interval.hour) || 0) + interval.loadKwh);
+    }
+    return {
+      date: day.date,
+      period: day.period,
+      hours: Array.from({ length: 24 }, (_, hour) => ({
+        hour,
+        loadKwh: energy?.dayProfiles.find(item => item.date === day.date)?.hours.find(item => item.hour === hour)?.loadKwh
+          ?? intervalsByHour.get(hour) ?? null,
+        importKwh: modeledDay?.hours.find(item => item.hour === hour)?.importKwh ?? null,
+        exportKwh: modeledDay?.hours.find(item => item.hour === hour)?.exportKwh ?? null,
+      })),
+    };
+  });
+  return {
+    source: 'MODELLED' as const,
+    provenance: {
+      kind: 'annual-consumption' as const,
+      source: profile.source,
+      annualConsumptionKwh: profile.annualConsumptionKwh,
+      ...(profile.referenceProfile ? { referenceProfile: profile.referenceProfile } : {}),
+    },
+    flowAvailable: energy?.modelledMeasurements != null,
+    months: [...profileMonths].sort(([left], [right]) => left.localeCompare(right)).map(([period, loadKwh]) => {
+      const month = energyMonths.get(period);
+      return { period, loadKwh, importKwh: month?.importKwh ?? null, exportKwh: month?.exportKwh ?? null };
+    }),
+    days,
+    issues: [...(energy?.issues || []), ...(reason ? [reason] : [])],
+  };
+}
+
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const access = await authorizeStaffRequest(req, 'energy.manage');
   if (!access.ok) return access.response;
@@ -54,7 +104,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         energyAudits: {
           select: {
             existingPvKw: true, roofTiltDeg: true, roofOrientation: true, existingBatteryKwh: true,
-            annualConsumptionKwh: true, settlementSystem: true, connectionPowerKw: true,
+            annualConsumptionKwh: true, profileSource: true, settlementSystem: true, connectionPowerKw: true,
           },
           take: 1,
         },
@@ -73,7 +123,6 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       energyAudit,
     });
     const existingBatteryPresent = resolveClientEnergyBatteryPresence(
-      project.offerWorkspace?.input,
       energyAudit?.existingBatteryKwh,
     );
     let modelHours: Array<{ startUtc: string; pvKwh: number }> | null = null;
@@ -115,16 +164,108 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         existingBatteryPresent,
       });
     }
-    const accounts = await prisma.energyPortalAccount.findMany({
-      where: { projectId, clientId: project.clientId, operator: 'ENEA' },
-      select: { id: true, ppeNumber: true },
+    async function annualFallback(measurementIssue: string, months: ReturnType<typeof emptyMonths>) {
+      const annualConsumptionKwh = energyAudit?.profileSource === 'ANNUAL_DECLARATION'
+        ? positiveAnnualConsumption(energyAudit.annualConsumptionKwh) : null;
+      if (annualConsumptionKwh == null) return null;
+      let referenceSelection: Awaited<ReturnType<typeof readProjectReferenceProfileSelection>> | null = null;
+      let selectionRead = false;
+      let profile: OfferAnnualConsumptionProfile;
+      try {
+        referenceSelection = await readProjectReferenceProfileSelection(projectId);
+        selectionRead = true;
+        const referenceProfile = await resolveSelectedReferenceProfile(referenceSelection);
+        profile = buildAnnualOfferConsumptionProfile({ annualConsumptionKwh, period, referenceProfile: referenceProfile || undefined });
+      } catch (error) {
+        const reason = `Nie udało się zbudować profilu MODELLED: ${error instanceof Error ? error.message : String(error)}`;
+        const profileSource = !selectionRead
+          ? 'Roczne zużycie · źródło nieustalone'
+          : referenceSelection?.key
+            ? `Roczne zużycie · profil referencyjny ${referenceSelection.profileName || referenceSelection.key}`
+            : 'Roczne zużycie · profil godzinowy RE';
+        return {
+          period, months, days: [], issues: [measurementIssue, reason],
+          ...(pvSummary ? { pv: pvSummary(null, months) } : {}),
+          annualModel: { source: 'MODELLED' as const, flowAvailable: false, profileSource, annualConsumptionKwh,
+            months: [], days: [], issues: [reason] },
+          cost: { ...blockedClientEnergyCostSummary(project.clientType === 'B2B' ? 'NET' : 'GROSS',
+            (Date.parse(period.untilUtc) - Date.parse(period.fromUtc)) / 3_600_000,
+            'Nie obliczono kosztu: nie udało się zbudować modelowanego profilu rocznego.'), source: 'MODELLED' as const },
+        };
+      }
+
+      const noPv = pvSettings.powerKw === 0;
+      const pvKnown = noPv || (pvSettings.powerKw != null && pvSettings.powerKw > 0 && modelHours != null);
+      const flowBlockedReason = existingBatteryPresent !== false
+        ? existingBatteryPresent === null
+          ? 'Nie obliczono poboru i oddania: status istniejącego magazynu energii wymaga potwierdzenia.'
+          : 'Nie obliczono poboru i oddania: w obiekcie jest magazyn energii, którego przepływów nie modelowano.'
+        : !pvKnown
+          ? 'Nie obliczono poboru i oddania: status PV jest nieznany albo model produkcji PV jest niekompletny.'
+          : null;
+      let energy: OfferWorkspaceEnergy | null = null;
+      if (!flowBlockedReason && pvKnown) {
+        energy = buildAnnualProfileOfferWorkspaceEnergy({
+          profile,
+          pvHours: noPv ? [] : modelHours || [],
+          noPv,
+          pvSource: noPv ? 'Potwierdzony brak PV' : 'Model PV',
+          pvModel: noPv ? 'model zerowej produkcji PV' : 'profil godzinowy PV',
+        });
+      }
+      const annualModel = annualModelPayload(profile, energy, flowBlockedReason);
+      const modeledSeries = energy ? annualOfferMeasurementSeries(profile, energy) : null;
+      const cost = modeledSeries
+        ? await calculateClientEnergyCostSummaryOnServer({
+          project: project as unknown as ClientEnergyCostSummaryProject,
+          period,
+          series: modeledSeries,
+          months,
+          energySource: 'MODELLED',
+        })
+        : {
+          ...blockedClientEnergyCostSummary(project.clientType === 'B2B' ? 'NET' : 'GROSS',
+            (Date.parse(period.untilUtc) - Date.parse(period.fromUtc)) / 3_600_000,
+            flowBlockedReason || 'Nie obliczono kosztu: brak kompletnych danych do modelu godzinowego.'),
+          source: 'MODELLED' as const,
+        };
+      const pv = energy && !noPv
+        ? {
+          productionKwh: energy.totals.pvKwh,
+          selfConsumptionKwh: energy.totals.directKwh,
+          coveredMonths: period.periodKeys.length,
+          totalMonths: period.periodKeys.length,
+          coveredHours: profile.intervals.length,
+          totalHours: profile.intervals.length,
+          modelUrl,
+          note: 'MODELLED · produkcja PV z profilu pogodowego; autokonsumpcja to suma godzinowego min(zużycie, produkcja).',
+          issues: energy.issues,
+        }
+        : pvSummary ? pvSummary(null, months) : undefined;
+      return {
+        period, months, days: [], issues: [measurementIssue, ...annualModel.issues], annualModel,
+        ...(pv ? { pv } : {}), cost,
+      };
+    }
+    const projectAccounts = await prisma.energyPortalAccount.findMany({
+      where: { projectId, clientId: project.clientId },
+      select: { id: true, ppeNumber: true, operator: true },
       orderBy: { updatedAt: 'desc' },
     });
+    // The measurement reader currently supports ENEA exports only. Other
+    // operators still use their own selected tariff in the cost summary.
+    const accounts = projectAccounts.filter(account => account.operator === 'ENEA');
     if (!accounts.length) {
       const months = emptyMonths(periodKeys);
+      const operators = Array.from(new Set(projectAccounts.map(account => account.operator)));
+      const measurementIssue = operators.length
+        ? `Import pomiarów godzinowych dla operatora ${operators.join(', ')} nie jest jeszcze obsługiwany.`
+        : 'Nie znaleziono konta operatora energii przypisanego do projektu.';
+      const modeled = projectAccounts.length === 0 ? await annualFallback(measurementIssue, months) : null;
+      if (modeled) return jsonResponse({ ok: true, data: modeled }, { headers: { 'Cache-Control': 'private, no-store' } });
       return jsonResponse({ ok: true, data: {
         period, months, days: [],
-        issues: ['Nie znaleziono konta ENEA przypisanego do projektu.'],
+        issues: [measurementIssue],
         ...(pvSummary ? { pv: pvSummary(null, months) } : {}),
         cost: await calculateClientEnergyCostSummaryOnServer({ project: project as unknown as ClientEnergyCostSummaryProject, period, series: null, months }),
       } }, { headers: { 'Cache-Control': 'private, no-store' } });
@@ -185,6 +326,29 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       issues.push(`Znaleziono więcej niż ${maxMeasurementDocuments} pliki pomiarowe; dane nie zostały wczytane.`);
     } else if (!records.length) {
       issues.push(`Brak pobranych miesięcznych plików ENEA w okresie ${period.startMonth}–${period.endMonth}.`);
+      const periodWhere = periodKeys.map((period) => {
+        const [periodYear, periodMonth] = period.split('-').map(Number);
+        return { periodYear, periodMonth };
+      });
+      const nonDownloadedRecords = await prisma.energyMeasurementFile.findMany({
+        where: {
+          accountId: { in: scopedAccounts.map((account) => account.id) },
+          clientId: project.clientId,
+          operator: 'ENEA',
+          status: { not: 'DOWNLOADED' },
+          kind: { in: ['ACTIVE_IMPORT', 'ACTIVE_EXPORT'] },
+          AND: [
+            { OR: periodWhere },
+            { OR: [{ projectId }, { projectId: null }] },
+          ],
+        },
+        select: { id: true, status: true },
+      });
+      if (nonDownloadedRecords.length) {
+        issues.push(`Znaleziono ${nonDownloadedRecords.length} rekordów plików ENEA poza statusem DOWNLOADED; profil roczny nie zastępuje tych źródeł.`);
+      }
+      const modeled = nonDownloadedRecords.length ? null : await annualFallback(issues[0], months);
+      if (modeled) return jsonResponse({ ok: true, data: modeled }, { headers: { 'Cache-Control': 'private, no-store' } });
     } else {
       const eligible = records.filter((file) => {
         if (file.clientId !== project.clientId || (file.projectId && file.projectId !== projectId)) {

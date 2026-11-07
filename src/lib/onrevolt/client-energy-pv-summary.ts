@@ -60,18 +60,14 @@ function uniqueIssues(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
-export function resolveClientEnergyBatteryPresence(draftInput: unknown, auditBatteryKwh: unknown): boolean | null {
-  if (draftInput && typeof draftInput === 'object' && !Array.isArray(draftInput)) {
-    const explicit = (draftInput as Record<string, unknown>).existingBatteryPresent;
-    if (typeof explicit === 'boolean') return explicit;
-  }
-  if (auditBatteryKwh == null) return null;
+/** Dane energetyczne: an empty existing-battery capacity means no battery.
+ * The offer's historical battery choice is separate from this saved field. */
+export function resolveClientEnergyBatteryPresence(auditBatteryKwh: unknown): boolean | null {
+  if (auditBatteryKwh == null || (typeof auditBatteryKwh === 'string' && auditBatteryKwh.trim() === '')) return false;
   const value = typeof auditBatteryKwh === 'object' && auditBatteryKwh !== null
     && 'toNumber' in auditBatteryKwh && typeof auditBatteryKwh.toNumber === 'function'
     ? auditBatteryKwh.toNumber()
-    : typeof auditBatteryKwh === 'string' && auditBatteryKwh.trim() === ''
-      ? Number.NaN
-      : Number(auditBatteryKwh);
+    : Number(auditBatteryKwh);
   if (!Number.isFinite(value) || value < 0) return null;
   return value > 0;
 }
@@ -104,7 +100,7 @@ export function buildClientEnergyPvSummary(input: {
   }
 
   if (input.existingBatteryPresent === null) {
-    issues.push('Nie wiadomo, czy w okresie działał magazyn energii; autokonsumpcja pozostaje nieznana.');
+    issues.push('Pojemność istniejącego magazynu energii jest nieprawidłowa. Popraw ją w danych energetycznych, aby wyliczyć autokonsumpcję.');
   } else if (input.existingBatteryPresent) {
     issues.push('W okresie działał magazyn energii; bez danych o przepływach magazynu autokonsumpcja pozostaje nieznana.');
   }
@@ -174,8 +170,10 @@ export function buildClientEnergyPvSummary(input: {
 
   const note = productionKwh === null
     ? 'Produkcja PV nie jest dostępna: nie udało się uzyskać kompletnego profilu modelowego dla okresu.'
-    : input.existingBatteryPresent !== false
-      ? 'Produkcja PV jest szacunkiem modelowym; autokonsumpcja wymaga potwierdzenia braku magazynu energii.'
+    : input.existingBatteryPresent === null
+      ? 'Produkcja PV jest szacunkiem modelowym; wyliczenie autokonsumpcji wymaga poprawnej pojemności istniejącego magazynu.'
+      : input.existingBatteryPresent
+        ? 'Produkcja PV jest szacunkiem modelowym; przy istniejącym magazynie autokonsumpcja wymaga pomiarów produkcji i przepływów magazynu.'
       : coveredHours === 0
         ? 'Produkcja PV jest szacunkiem modelowym; autokonsumpcja nie jest dostępna bez pełnych miesięcy pomiaru oddania.'
         : `Autokonsumpcja to suma godzinowych max(model PV − oddanie ENEA, 0) dla ${coveredHours}/${totalHours} zmierzonych godzin; brakujące godziny pominięto.`;

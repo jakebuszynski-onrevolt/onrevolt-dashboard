@@ -1,6 +1,8 @@
 import { prisma } from './prisma';
 import { writeAuditLog } from './audit';
 import { resolveReStation } from './re-stations';
+import { readProjectReferenceProfileSelection, resolveSelectedReferenceProfile } from './project-reference-profile';
+import { syncProjectReferenceLoadProfile } from './re-reference-profile';
 import {
   readReConsumptionProfile,
   saveReConsumptionProfile,
@@ -88,6 +90,28 @@ export async function syncProjectReConsumptionDeclaration(input: {
         || Number(audit.annualConsumptionKwh) !== input.annualConsumptionKwh) {
         return skipped('Deklaracja została zastąpiona nowszym zapisem audytu; nie zmieniono RE.');
       }
+      const selection = await readProjectReferenceProfileSelection(input.projectId, tx);
+      const selectedReferenceProfile = await resolveSelectedReferenceProfile(selection);
+      if (selectedReferenceProfile) {
+        const result = await syncProjectReferenceLoadProfile({
+          projectId: input.projectId,
+          clientId: input.clientId,
+          actorId: input.actorId,
+          annualKwh: input.annualConsumptionKwh,
+          referenceProfile: selectedReferenceProfile,
+          crmDb: tx,
+        });
+        await writeAuditLog({
+          actorId: input.actorId, clientId: input.clientId, entityType: 'EnergyAudit', entityId: input.auditId,
+          action: `RE_REFERENCE_PROFILE_${result.status.toUpperCase()}`,
+          after: { projectId: input.projectId, station: result.station, profileKey: selectedReferenceProfile.profile.key,
+            annualKwh: input.annualConsumptionKwh, message: result.message },
+        });
+        return { ...result, profileAnnualUsageKwh: input.annualConsumptionKwh,
+          message: result.status === 'synced'
+            ? `${result.message} Roczna deklaracja RE pozostaje ${input.annualConsumptionKwh} kWh.`
+            : result.message };
+      }
       const ref = project.dashboardStation?.trim() || project.dashboardStationNumber?.trim();
       if (!ref) return skipped('Deklarację zapisano w CRM. Projekt nie ma powiązanej stacji RE.');
       const resolved = await resolveReStation(ref);
@@ -101,6 +125,20 @@ export async function syncProjectReConsumptionDeclaration(input: {
         await writeAuditLog({ actorId: input.actorId, clientId: input.clientId, entityType: 'EnergyAudit', entityId: input.auditId,
           action: 'RE_DECLARATION_VERIFIED', after: { projectId: input.projectId, station,
             declaredAnnualKwh: input.annualConsumptionKwh, profileAnnualUsageKwh: before.annualUsageKwh } });
+        if (selection.revision > 0) {
+          const resetOverlay = await syncProjectReferenceLoadProfile({
+            projectId: input.projectId, clientId: input.clientId, actorId: input.actorId,
+            annualKwh: input.annualConsumptionKwh, referenceProfile: null, crmDb: tx,
+          });
+          await writeAuditLog({ actorId: input.actorId, clientId: input.clientId, entityType: 'EnergyAudit', entityId: input.auditId,
+            action: `RE_REFERENCE_PROFILE_${resetOverlay.status.toUpperCase()}`,
+            after: { projectId: input.projectId, station: resetOverlay.station, profileKey: null,
+              annualKwh: input.annualConsumptionKwh, message: resetOverlay.message } });
+          return { ...resetOverlay, changedMonths: [], profileAnnualUsageKwh: input.annualConsumptionKwh,
+            message: resetOverlay.status === 'synced'
+              ? 'Nie zmieniono standardowych miesięcy RE. Zaktualizowano roczne zużycie domyślnego profilu.'
+              : resetOverlay.message };
+        }
         return skipped('Nie zmieniono RE: miesiące standard są aktualne albo profil zawiera wyłącznie chronione miesiące.');
       }
 
@@ -115,6 +153,20 @@ export async function syncProjectReConsumptionDeclaration(input: {
       const expectedExport = before.exportSources ?? Array(12).fill('standard');
       if (JSON.stringify(after.exportSources) !== JSON.stringify(expectedExport)) {
         throw new Error('Podczas zapisu zmieniły się źródła energii oddanej w RE; sprawdź profil przed ponowieniem');
+      }
+      if (selection.revision > 0) {
+        const resetOverlay = await syncProjectReferenceLoadProfile({
+          projectId: input.projectId, clientId: input.clientId, actorId: input.actorId,
+          annualKwh: input.annualConsumptionKwh, referenceProfile: null, crmDb: tx,
+        });
+        await writeAuditLog({ actorId: input.actorId, clientId: input.clientId, entityType: 'EnergyAudit', entityId: input.auditId,
+          action: `RE_REFERENCE_PROFILE_${resetOverlay.status.toUpperCase()}`,
+          after: { projectId: input.projectId, station: resetOverlay.station, profileKey: null,
+            annualKwh: input.annualConsumptionKwh, message: resetOverlay.message } });
+        if (resetOverlay.status === 'failed') {
+          return { ...resetOverlay, profileAnnualUsageKwh: after.annualUsageKwh,
+            message: `${resetOverlay.message} Standardowe miesiące RE zostały zaktualizowane.` };
+        }
       }
       await writeAuditLog({
         actorId: input.actorId, clientId: input.clientId, entityType: 'EnergyAudit', entityId: input.auditId,

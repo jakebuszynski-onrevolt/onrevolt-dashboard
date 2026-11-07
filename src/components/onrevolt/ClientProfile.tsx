@@ -929,9 +929,54 @@ function formFromClient(client: any, selectedProject?: any): ClientFormState {
   };
 }
 
+function buildClientSavePayload(clientId: string, client: any, project: any, form: ClientFormState) {
+  const contact = client?.contacts?.[0];
+  return {
+    id: clientId,
+    contactId: contact?.id,
+    projectId: project?.id,
+    displayName: form.displayName,
+    clientType: form.clientType,
+    taxId: form.taxId,
+    clientProblem: form.clientProblem,
+    expectedResult: form.expectedResult,
+    contact: {
+      email: form.email,
+      phone: form.phone,
+      addressLine: form.addressLine,
+      postalCode: form.postalCode,
+      city: form.city,
+      investmentAddress: form.investmentAddress,
+    },
+    project: {
+      title: form.projectTitle || `Projekt - ${form.displayName}`,
+      clientType: form.projectClientType,
+      status: form.status,
+      stageId: form.stageId,
+      ownerId: form.ownerId,
+      nextActionTitle: form.nextActionTitle,
+      nextActionAt: form.nextActionAt || null,
+      dashboardStation: form.dashboardStation,
+      dashboardStationNumber: form.dashboardStationNumber,
+      weatherStationNumber: form.weatherStationNumber,
+      locationAddress: form.investmentAddress,
+      latitude: form.latitude || null,
+      longitude: form.longitude || null,
+      mapProvider: form.mapProvider,
+      source: project?.source || 'manual',
+    },
+  };
+}
+
+function serializeClientSavePayload(clientId: string, client: any, project: any, form: ClientFormState): string {
+  return JSON.stringify(buildClientSavePayload(clientId, client, project, form));
+}
+
 export default function ClientProfile({ clientId }: ClientProfileProps) {
   const searchParams = useSearchParams();
+  const initialJourneyKey = searchParams.get('tab') === 'billing' ? 'billing' : null;
   const [client, setClient] = useState<any>(null);
+  const [savedClientPayload, setSavedClientPayload] = useState('');
   const [clientTasks, setClientTasks] = useState<ClientTaskRow[]>([]);
   const [stages, setStages] = useState<StageRow[]>([]);
   const [form, setForm] = useState<ClientFormState>(emptyForm);
@@ -1019,11 +1064,11 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [selectedClientConfigurationIds, setSelectedClientConfigurationIds] = useState<string[]>([]);
   const [selectedClientOfferId, setSelectedClientOfferId] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState(searchParams.get('projectId') || '');
-  const [activeTabIndex, setActiveTabIndex] = useState(0);
+  const [activeTabIndex, setActiveTabIndex] = useState(() => initialJourneyKey === 'billing' ? 9 : 0);
   const [showOfferWorkspace, setShowOfferWorkspace] = useState(offerWorkspaceEnabled && searchParams.get('offerWorkspace') === '1');
   const [savedOfferWorkspaceDraftKeys, setSavedOfferWorkspaceDraftKeys] = useState<Set<string>>(() => new Set());
   const [dismissedOfferWorkspaceDraftKeys, setDismissedOfferWorkspaceDraftKeys] = useState<Set<string>>(() => new Set());
-  const [activeJourneyKey, setActiveJourneyKey] = useState<ClientJourneyKey | null>(null);
+  const [activeJourneyKey, setActiveJourneyKey] = useState<ClientJourneyKey | null>(initialJourneyKey);
   const [staffUsers, setStaffUsers] = useState<StaffOption[]>([]);
   const [projectCreating, setProjectCreating] = useState(false);
   const [projectDeleting, setProjectDeleting] = useState(false);
@@ -1042,6 +1087,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const activeProject = client?.projects?.find((item: any) => item.id === selectedProjectId)
     || client?.projects?.[0];
   const activeProjectId = activeProject?.id || '';
+  const currentClientPayload = serializeClientSavePayload(clientId, client, activeProject, form);
   const isAdmin = currentUser?.systemRole === 'ADMIN';
   const canManageEnergy = isAdmin || currentUser?.permissions?.includes('energy.manage') === true;
   const canUseOfferWorkspace = canManageEnergy && (isAdmin || currentUser?.permissions?.includes('offers.manage') === true);
@@ -1234,7 +1280,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       setStages(stagesPayload.data || []);
       setStaffUsers(tasksPayload.data?.meta?.users || []);
       setSelectedProjectId(loadedProject?.id || '');
-      setForm(formFromClient(clientPayload.data, loadedProject));
+      const loadedForm = formFromClient(clientPayload.data, loadedProject);
+      setForm(loadedForm);
+      setSavedClientPayload(serializeClientSavePayload(clientId, clientPayload.data, loadedProject, loadedForm));
       setEnergyAccount(energyAccountFromClient(clientPayload.data, loadedProject?.id));
       setEnergyDataSettings(current => ({
         ...energyDataSettingsFromClient(clientPayload.data, loadedProject),
@@ -1399,15 +1447,33 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
   function selectProject(projectId: string) {
     const project = client?.projects?.find((item: any) => item.id === projectId);
+    const projectForm = formFromClient(client, project);
     offerWorkspaceAutoOpenRequest.current += 1;
     setShowOfferWorkspace(false);
     setSelectedProjectId(projectId);
-    setForm(formFromClient(client, project));
+    setForm(projectForm);
+    setSavedClientPayload(serializeClientSavePayload(clientId, client, project, projectForm));
     setEnergyAccount(energyAccountFromClient(client, projectId));
     setEnergyDataSettings(current => ({
       ...energyDataSettingsFromClient(client, project),
       ...(energyPvSourceProjectRef.current === projectId ? { existingPvKw: current.existingPvKw } : {}),
     }));
+  }
+
+  function applyReferenceProfileSnapshot(projectId: string, data: { annualConsumptionKwh: number | null; auditUpdatedAt: string | null; auditId?: string | null; profileSource?: string | null }, reloadAnnual = false) {
+    // Keep project switching consistent without reloading unrelated unsaved fields.
+    setClient((current: any) => current ? { ...current, projects: current.projects.map((item: any) => {
+      if (item.id !== projectId) return item;
+      const prior = item.energyAudits?.[0] || {};
+      const audit = { ...prior, ...(data.auditId ? { id: data.auditId } : {}), projectId,
+        annualConsumptionKwh: data.annualConsumptionKwh, updatedAt: data.auditUpdatedAt,
+        ...(data.profileSource ? { profileSource: data.profileSource } : {}) };
+      return { ...item, energyAudits: [audit, ...(item.energyAudits || []).slice(1)] };
+    }) } : current);
+    setEnergyDataSettings(current => ({ ...current, ...(data.auditId ? { auditId: data.auditId } : {}),
+      ...(reloadAnnual ? { annualConsumptionKwh: data.annualConsumptionKwh == null ? '' : String(data.annualConsumptionKwh),
+        ...(data.profileSource ? { profileSource: data.profileSource } : {}) } : {}) }));
+    setAnalysisRefreshKey(value => value + 1);
   }
 
   function openOfferWorkspace() {
@@ -1777,55 +1843,23 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   }
 
   async function saveClient() {
-    if (deletingLegacyNote) return;
+    if (deletingLegacyNote || saving || currentClientPayload === savedClientPayload) return;
     setSaving(true);
     setSaveError('');
     try {
-      const contact = client?.contacts?.[0];
-      const project = activeProject;
       const response = await fetch('/api/crm/clients', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: clientId,
-          contactId: contact?.id,
-          projectId: project?.id,
-          displayName: form.displayName,
-          clientType: form.clientType,
-          taxId: form.taxId,
-          clientProblem: form.clientProblem,
-          expectedResult: form.expectedResult,
-          contact: {
-            email: form.email,
-            phone: form.phone,
-            addressLine: form.addressLine,
-            postalCode: form.postalCode,
-            city: form.city,
-            investmentAddress: form.investmentAddress,
-          },
-          project: {
-            title: form.projectTitle || `Projekt - ${form.displayName}`,
-            clientType: form.projectClientType,
-            status: form.status,
-            stageId: form.stageId,
-            ownerId: form.ownerId,
-            nextActionTitle: form.nextActionTitle,
-            nextActionAt: form.nextActionAt || null,
-            dashboardStation: form.dashboardStation,
-            dashboardStationNumber: form.dashboardStationNumber,
-            weatherStationNumber: form.weatherStationNumber,
-            locationAddress: form.investmentAddress,
-            latitude: form.latitude || null,
-            longitude: form.longitude || null,
-            mapProvider: form.mapProvider,
-            source: project?.source || 'manual',
-          },
-        }),
+        body: currentClientPayload,
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+      setSavedClientPayload(currentClientPayload);
       await load();
-      if (payload.tariffWarning) setSaveError(payload.tariffWarning);
+      const clientWarnings = [payload.tariffWarning,
+        payload.referenceProfileSync?.status === 'failed'
+          ? `${payload.referenceProfileSync.message} Ponów zapis profilu w danych energetycznych.` : null].filter(Boolean);
+      if (clientWarnings.length) setSaveError(clientWarnings.join(' '));
       window.dispatchEvent(new Event('client-tariffs-changed'));
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
@@ -1860,7 +1894,10 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       }));
       setStationMessage(`${hadStationReference ? 'Uzupełniono' : 'Utworzono'} stację RE ${payload.data?.station || ''}.`);
       await load();
-      if (payload.tariffWarning) setStationError(payload.tariffWarning);
+      const stationWarnings = [payload.tariffWarning,
+        payload.referenceProfileSync?.status === 'failed'
+          ? `${payload.referenceProfileSync.message} Ponów zapis profilu w danych energetycznych.` : null].filter(Boolean);
+      if (stationWarnings.length) setStationError(stationWarnings.join(' '));
       window.dispatchEvent(new Event('client-tariffs-changed'));
     } catch (e) {
       setStationError(e instanceof Error ? e.message : String(e));
@@ -2924,8 +2961,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
             <Badge colorScheme={project.status === 'ZAKONCZONY' ? 'green' : 'blue'} px="12px" py="6px" borderRadius="8px">
               {projectStatus}
             </Badge>
-            <Button colorScheme="purple" onClick={saveClient} isLoading={saving} isDisabled={deletingLegacyNote || projectDeleting}>
-              Zapisz zmiany
+            <Button colorScheme="purple" onClick={saveClient} isLoading={saving} isDisabled={deletingLegacyNote || projectDeleting || saving || currentClientPayload === savedClientPayload}>
+              Zapisz dane klienta
             </Button>
           </Flex>
         </Flex>
@@ -3028,6 +3065,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
           </TabPanel>
           <TabPanel px="0">
             <ClientDetailsForm
+              key={`${client.id}:${selectedProjectId}`}
               values={form}
               registeredAt={client?.createdAt}
               origin={project.source === 'manual' ? 'Wprowadzony ręcznie' : project.source || ''}
@@ -4664,9 +4702,12 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
 
             if (tab === 'Dane energetyczne') {
               return (
-                <TabPanel key={tab} px="0">
+                <TabPanel key={tab} id="energy-data" px="0">
                   <ClientEnergyWorkspace
                     key={project.id}
+                    projectId={project.id}
+                    onReferenceProfileSaved={data => applyReferenceProfileSnapshot(project.id, data)}
+                    onAnnualConsumptionReload={data => applyReferenceProfileSnapshot(project.id, data, true)}
                     analysisPeriod={<>
                       <ClientAnalysisPeriod state={analysisPeriod} onPendingChange={onAnalysisSelectionPendingChange}
                         disabled={!canManageEnergy || energyOverviewSaving || energyDataSaving || energyXlsxUploading || energySyncing || energyProfileSyncing || !!energyMonthAction} />

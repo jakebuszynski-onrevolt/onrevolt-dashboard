@@ -6,7 +6,11 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { OfferMarketDataError, offerHourlyMarketPrices, offerMarketIntervalStarts } from './offer-workspace-market';
 import * as dependencies from './offer-workspace-calculation-dependencies';
+import * as recommendationSearch from './offer-workspace-recommendation-search';
+import * as recommendationBounds from './offer-workspace-recommendation-bounds';
+import { recommendationInputIssues } from './offer-workspace-recommendation-inputs';
 import { completeHistoryForSummary } from './client-energy-cost-summary-server';
+import { applyOfferWorkspaceConfigurationEdits, configurationEnergyQuantityFingerprint, hasRemovedCriticalConfigurationItem, validateOfferWorkspaceConfigurationEdits } from './offer-workspace-configuration-edits';
 
 const filename = path.resolve(__dirname, 'offer-workspace-calculation-server.ts');
 const code = ts.transpileModule(readFileSync(filename, 'utf8'), {
@@ -25,6 +29,41 @@ function marketRows(nullQuarter = -1) {
     stamp: new Date(Date.parse(firstHour) + (quarter + 1) * 900000).toISOString(),
     periodUtc: `${String(Math.floor(quarter * 15 / 60)).padStart(2, '0')}:${String(quarter * 15 % 60).padStart(2, '0')} - ${String(Math.floor((quarter + 1) * 15 / 60)).padStart(2, '0')}:${String((quarter + 1) * 15 % 60).padStart(2, '0')}`,
     price: quarter === nullQuarter ? null : 100,
+  }));
+}
+
+function marketRowsForRange(startValue: unknown, endValue: unknown) {
+  const utcTimestamp = (value: unknown) => {
+    const normalized = String(value).replace(' ', 'T');
+    return Date.parse(`${normalized.endsWith('Z') ? normalized : `${normalized}Z`}`);
+  };
+  const start = utcTimestamp(startValue), end = utcTimestamp(endValue);
+  const clock = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
+  };
+  return Array.from({ length: Math.max(0, Math.ceil((end - start) / 900000)) }, (_, index) => {
+    const intervalStart = start + index * 900000;
+    const intervalEnd = intervalStart + 900000;
+    const crossesDay = new Date(intervalStart).getUTCDate() !== new Date(intervalEnd).getUTCDate();
+    return {
+      stamp: new Date(intervalEnd).toISOString(),
+      periodUtc: `${clock(intervalStart)} - ${crossesDay ? '24:00' : clock(intervalEnd)}`,
+      price: 100,
+    };
+  });
+}
+
+function fullYearRecommendationEnergy(loadKwhPerHour = 0.5, importKwhPerHour = 0.01) {
+  const months = Array.from({ length: 12 }, (_, index) => ({ period: `2026-${String(index + 1).padStart(2, '0')}` }));
+  const starts = dependencies.offerCalculationPeriodHours(months)!;
+  return starts.map(startUtc => ({
+    startUtc,
+    endUtc: new Date(Date.parse(startUtc) + 3600000).toISOString(),
+    loadKwh: loadKwhPerHour,
+    pvKwh: 0,
+    importKwh: importKwhPerHour,
+    exportKwh: 0,
   }));
 }
 
@@ -72,15 +111,29 @@ function fixture(options: {
   currentBaselineTariff?: any;
   profilePeriods?: any[];
   energyDates?: string[];
-  templates?: Array<{ id: string; name: string; kind: string }>;
-  candidates?: Array<{ id?: string; templateIds: string[]; totals: unknown; missingPrices: string[]; requiresReview?: boolean; reviewReasons?: string[] }>;
+  recommendationEnergyIntervals?: Array<{ startUtc: string; endUtc: string; loadKwh: number | null; importKwh?: number | null; exportKwh?: number | null }>;
+  templates?: Array<{ id: string; name: string; kind: string; powerKw?: number | null }>;
+  location?: { latitude: number; longitude: number } | null;
+  pvSourceRevision?: string | null;
+  pvSourceRevisionAfterProfile?: string;
+  existingPvPowerKw?: number | null;
+  candidates?: Array<{ id?: string; templateIds: string[]; totals: unknown; missingPrices: string[]; requiresReview?: boolean; reviewReasons?: string[];
+    totalPvKw?: number; existingPvKw?: number; addedPvKw?: number; batteryCapacityKwh?: number; batteryPowerKw?: number }>;
   billingCycleMonths?: number | null;
   scenario?: (input: any) => ReturnType<typeof calculation>;
+  preflightScenario?: (input: any) => ReturnType<typeof calculation>;
 } = {}) {
-  const state = { marketQueries: [] as string[], scenarioInputs: [] as any[], targetCatalogCalls: 0,
-    clientTariffRequests: [] as any[], completedHistories: [] as any[] };
+  let calculationMode: 'selected' | 'recommend' = 'selected';
+  const state = { preflightInputs: [] as any[], progress: [] as number[][], addedProfileReads: 0, profileReads: [] as any[], energyCalls: 0, overlayCalls: 0, marketQueries: [] as string[], scenarioInputs: [] as any[], targetCatalogCalls: 0,
+    clientTariffRequests: [] as any[], completedHistories: [] as any[], pvSourceRevision: options.pvSourceRevision ?? null };
+  const months = Array.from({ length: 12 }, (_, index) => ({ period: `2026-${String(index + 1).padStart(2, '0')}` }));
+  const fullPeriodHours = dependencies.offerCalculationPeriodHours(months)!;
   const energyDates = options.energyDates || ['2026-10-01'];
-  const historyDates = [...new Set(energyDates.map(value => value.slice(0, 10)))];
+  const recommendationIntervals = options.recommendationEnergyIntervals || fullYearRecommendationEnergy(10 / 24, 0.01);
+  const historyDates = [...new Set([
+    ...energyDates.map(value => localTime.format(new Date(value.includes('T') ? value : `${value}T00:00:00.000Z`)).slice(0, 10)),
+    ...recommendationIntervals.map(value => localTime.format(new Date(value.startUtc)).slice(0, 10)),
+  ])];
   const baselineHistory = {
     strict: true, revision: 1,
     byDate: options.baselineByDate || Object.fromEntries(historyDates.map(date => [date, 'baseline'])),
@@ -90,14 +143,24 @@ function fixture(options: {
   const targetTariff = { id: 2, sell_method: options.targetSellMethod || 'fixed', catalogRevision: 3 };
   const workspace: any = {
     clientId: 'client-1', projectId: 'project-1', clientType: 'B2C',
-    input: { reportDetails: { connectionPowerKw: 16, roofType: 'skośny' }, location: null },
-    measurements: { months: Array.from({ length: 12 }, (_, index) => ({ period: `2026-${String(index + 1).padStart(2, '0')}` })), dayProfiles: [] },
+    period: {
+      startMonth: '2026-01', endMonth: '2026-12', endDate: '2026-12-31',
+      periodKeys: months.map(month => month.period), fromUtc: fullPeriodHours[0],
+      untilUtc: new Date(Date.parse(fullPeriodHours.at(-1)!) + 3600000).toISOString(),
+    },
+    input: { reportDetails: { connectionPowerKw: 16, roofType: 'skośny' }, location: options.location ?? null },
+    measurements: { months, dayProfiles: [] },
     templates: options.templates || [],
   };
   const draft: any = {
     targetOperatorId: 1, targetTariffId: 2,
     currentSettlement: 'NET_METERING', targetSettlement: 'NET_METERING',
-    existingPv: { powerKw: 0, tiltDegrees: null, azimuthDegrees: null, lossPercent: null },
+    existingPv: {
+      powerKw: options.existingPvPowerKw === undefined ? 0 : options.existingPvPowerKw,
+      tiltDegrees: (options.existingPvPowerKw ?? 0) > 0 ? 30 : null,
+      azimuthDegrees: (options.existingPvPowerKw ?? 0) > 0 ? 180 : null,
+      lossPercent: (options.existingPvPowerKw ?? 0) > 0 ? 12 : null,
+    },
     pvStrategy: 'KEEP_EXISTING', saleVatMode: 'REVIEW', selectedTemplateIds: [],
     financing: { considerGrant: false, considerTaxRelief: false },
     calculation: { billingCycleMonths: options.billingCycleMonths === undefined ? 1 : options.billingCycleMonths,
@@ -106,14 +169,15 @@ function fixture(options: {
       addedPvTiltDegrees: null, addedPvAzimuthDegrees: null, taxRatePercent: null,
       taxRemainingLimitPln: null, taxEligibleCostPln: null, taxBasePln: null },
   };
-  const energy = {
+  const energy: any = {
     issues: [], modelBelowExportKwh: 0,
     intervals: energyDates.map(value => {
       const startUtc = value.includes('T') ? value : `${value}T00:00:00.000Z`;
       return { startUtc, endUtc: new Date(Date.parse(startUtc) + 3600000).toISOString(),
-        loadKwh: 1, pvKwh: 0, importKwh: 1, exportKwh: 0 };
+        loadKwh: 10 / 24, pvKwh: 0, importKwh: 0.01, exportKwh: 0 };
     }),
   };
+  const recommendationEnergy = { ...energy, intervals: recommendationIntervals };
   const blocked = (reasons: string[]) => calculation('blocked', reasons);
   const modules: Record<string, unknown> = {
     './client-tariffs-server': {
@@ -136,11 +200,28 @@ function fixture(options: {
       },
     },
     './client-tariffs': { tariffToday: () => '2026-10-01' },
-    './offer-workspace-energy-server': { calculateOfferWorkspaceEnergy: async () => energy },
+    './offer-workspace-energy-server': {
+      calculateOfferWorkspaceEnergy: async () => { state.energyCalls++; return calculationMode === 'recommend' ? recommendationEnergy : energy; },
+      getOfferWorkspaceEnergySourceRevision: () => state.pvSourceRevision,
+    },
+    './offer-workspace-energy': {
+      overlayOfferWorkspaceMeasurements: (measurements: any, modelledEnergy: any) => {
+        state.overlayCalls += 1;
+        if (!modelledEnergy.modelledMeasurements) return measurements;
+        return { ...measurements, months: modelledEnergy.modelledMeasurements.months,
+          dayProfiles: modelledEnergy.modelledMeasurements.dayProfiles,
+          totalsImportKwh: modelledEnergy.modelledMeasurements.totalsImportKwh,
+          totalsExportKwh: modelledEnergy.modelledMeasurements.totalsExportKwh };
+      },
+    },
     './offer-workspace-calculation': {
       blockedOfferCalculation: blocked,
       offerLocalTime: (value: string) => localTime.format(new Date(value)),
       calculateOfferWorkspaceScenario: async (input: any) => {
+        if (calculationMode === 'recommend' && input.draft.selectedTemplateIds.length === 0) {
+          state.preflightInputs.push(input);
+          return options.preflightScenario ? options.preflightScenario(input) : calculation('ready');
+        }
         state.scenarioInputs.push(input);
         return options.scenario ? options.scenario(input) : calculation('ready');
       },
@@ -148,16 +229,39 @@ function fixture(options: {
     './offer-workspace': { defaultOfferCalculationAssumptions: () => draft.calculation },
     './offer-workspace-market': { OfferMarketDataError, offerHourlyMarketPrices, offerMarketIntervalStarts },
     './offer-workspace-calculation-dependencies': dependencies,
-    './re-stations': { rePrisma: () => ({ $queryRawUnsafe: async (query: string) => {
+    './re-stations': { rePrisma: () => ({ $queryRawUnsafe: async (query: string, start: unknown, end: unknown) => {
       state.marketQueries.push(query);
-      return options.rdnRows || marketRows();
+      return options.rdnRows || marketRowsForRange(start, end);
     } }) },
-    './offer-pv-profile': { readOfferPvProfile: async () => ({ hours: [] }) },
+    './offer-pv-profile': {
+      OfferPvSourceRevisionError: class OfferPvSourceRevisionError extends Error {},
+      readOfferPvProfile: async () => ({ hours: [] }),
+      readOfferPvProfileWithSourceRevision: async (profileInput: any) => {
+        state.addedProfileReads++;
+        state.profileReads.push(profileInput);
+        const sourceRevision = state.pvSourceRevision ?? options.pvSourceRevisionAfterProfile ?? null;
+        if (options.pvSourceRevisionAfterProfile) state.pvSourceRevision = options.pvSourceRevisionAfterProfile;
+        return { profile: { hours: [] }, sourceRevision };
+      },
+    },
+    './offer-pv-source-revision': { getOfferPvSourceRevision: () => state.pvSourceRevision },
     './configuration-templates': { configurationInvestmentScope: (kind: string) => kind === 'MAGAZYN'
       ? 'BATTERY' : kind.startsWith('PV_') ? 'PV' : null },
+    './offer-workspace-configuration-edits': {
+      applyOfferWorkspaceConfigurationEdits,
+      hasRemovedCriticalConfigurationItem,
+      validateOfferWorkspaceConfigurationEdits,
+    },
     './offer-candidates': { enumerateOfferCandidates: () => ({
-      candidates: options.candidates || [], rejectedReasonList: [],
+      candidates: (options.candidates || []).map(candidate => ({ ...candidate,
+        batteryCapacityKwh: candidate.batteryCapacityKwh ?? 10,
+        totalPvKw: candidate.totalPvKw ?? 10,
+        id: candidate.id || `offer-candidate:${candidate.templateIds.map(encodeURIComponent).join(':')}` })),
+      rejectedReasonList: [],
     }) },
+    './offer-workspace-recommendation-search': recommendationSearch,
+    './offer-workspace-recommendation-bounds': recommendationBounds,
+    './offer-workspace-recommendation-inputs': { recommendationInputIssues },
   };
   const exports: any = {};
   vm.runInNewContext(code, {
@@ -169,11 +273,471 @@ function fixture(options: {
   });
   return {
     state,
-    calculate: (mode: 'selected' | 'recommend' = 'selected') =>
-      exports.calculateOfferWorkspaceOnServer(workspace, draft, null, mode),
+    workspace,
+    draft,
+    energy: recommendationEnergy,
+    baseEnergy: energy,
+    calculate: (mode: 'selected' | 'recommend' = 'selected', previousRecommendation?: any) => {
+      calculationMode = mode;
+      return exports.calculateOfferWorkspaceOnServer(workspace, draft, null, mode,
+        (completed: number, total: number) => state.progress.push([completed, total]), previousRecommendation);
+    },
     loadDependencyStamp: () => exports.loadOfferCalculationDependencyStamp(workspace, draft),
+    requiresPvSource: (mode: 'selected' | 'recommend' = 'selected') =>
+      exports.offerWorkspaceCalculationRequiresPvSource(workspace, draft, mode),
   };
 }
+
+function recommendationFixture(options: Parameters<typeof fixture>[0] = {}) {
+  const f = fixture(options);
+  f.draft.targetSettlement = 'NET_BILLING';
+  f.draft.saleVatMode = 'STANDARD_23';
+  if (options.existingPvPowerKw === undefined && options.pvSourceRevision === undefined && options.location === undefined) {
+    f.draft.existingPv = { powerKw: 10, tiltDegrees: 30, azimuthDegrees: 180, lossPercent: 12 };
+    f.workspace.input.location = { latitude: 52.23, longitude: 21.01 };
+    f.state.pvSourceRevision = 'recommendation-fixture-pv-source';
+  }
+  return f;
+}
+
+test('common recommendation input issues stop before energy, financial sources and candidate progress', async () => {
+  const f = fixture();
+  f.draft.pvStrategy = 'ADD_TEMPLATE';
+  const result = await f.calculate('recommend');
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.reasons.length, 3);
+  assert.match(result.reasons.join(' '), /VAT sprzedaży/u);
+  assert.match(result.reasons.join(' '), /nachylenie dodatkowej PV/u);
+  assert.match(result.reasons.join(' '), /net-metering/u);
+  assert.equal(result.recommendationSearch, undefined);
+  assert.equal(f.state.energyCalls, 0);
+  assert.equal(f.state.scenarioInputs.length, 0);
+  assert.equal(f.state.marketQueries.length, 0);
+  assert.equal(f.state.clientTariffRequests.length, 0);
+  await assert.rejects(f.calculate('recommend', { recommendationSearch: { hasMore: true } }), /Nie można kontynuować rekomendacji/u);
+  assert.equal(f.state.scenarioInputs.length, 0);
+  assert.equal(f.state.clientTariffRequests.length, 0);
+});
+
+test('annual-only energy overlays modelled months for calculation without mutating workspace input', async () => {
+  const f = fixture();
+  f.workspace.measurements.availability = 'NO_FILES';
+  f.workspace.input.annualConsumptionKwh = 8760;
+  f.workspace.measurements.months = f.workspace.measurements.months.map((month: any) => ({ ...month, importKwh: null, exportKwh: null }));
+  f.workspace.measurements.totalsImportKwh = null;
+  f.baseEnergy.modelledMeasurements = {
+    provenance: { kind: 'annual-consumption', source: 'Roczne zużycie · profil godzinowy RE', annualConsumptionKwh: 8760 },
+    months: f.workspace.period.periodKeys.map((period: string) => ({ period, importKwh: 730, exportKwh: 0 })),
+    dayProfiles: [], totalsImportKwh: 8760, totalsExportKwh: 0, intervalCount: 8760,
+  };
+  const result = await f.calculate('selected');
+  assert.equal(result.status, 'ready');
+  assert.equal(f.state.overlayCalls, 1);
+  assert.ok(f.state.scenarioInputs[0].workspace.measurements.months.every((month: any) => month.importKwh === 730));
+  assert.ok(f.workspace.measurements.months.every((month: any) => month.importKwh === null), 'overlay is ephemeral');
+});
+
+test('a common target bill error stops recommendations before candidate counts and keeps the real cause', async () => {
+  const failure = 'Brak aktualnej reguły opłaty mocowej dla 2025-06-01.';
+  const f = recommendationFixture({
+    templates: [{ id: 'battery-a', name: 'Magazyn', kind: 'MAGAZYN' }],
+    candidates: [{ templateIds: ['battery-a'], totals: {}, missingPrices: [], reviewReasons: ['Potwierdź zgodność PV.'] }],
+    preflightScenario: () => ({ ...calculation('blocked', [failure]), warnings: ['Jawne założenie rachunku.'] }),
+  });
+  const result = await f.calculate('recommend');
+  assert.equal(result.status, 'blocked');
+  assert.deepEqual(Array.from(result.reasons), [failure]);
+  assert.equal(result.recommendationSearch, undefined);
+  assert.ok(result.warnings.includes('Jawne założenie rachunku.'));
+  assert.equal(f.state.preflightInputs.length, 1);
+  assert.equal(f.state.scenarioInputs.length, 0);
+  assert.equal(f.state.progress.length, 0);
+  assert.match(result.sourceDependencyStamp, /^[a-f0-9]{64}$/u);
+  await assert.rejects(f.calculate('recommend', { recommendationSearch: { hasMore: true } }), /Nie można kontynuować rekomendacji.*opłaty mocowej/u);
+  assert.equal(f.state.scenarioInputs.length, 0);
+});
+
+test('common bill probe isolates financing and keeps all candidate draft assumptions intact', async () => {
+  const f = recommendationFixture({
+    templates: [{ id: 'battery-a', name: 'Magazyn', kind: 'MAGAZYN' }],
+    candidates: [{ templateIds: ['battery-a'], totals: {}, missingPrices: [] }],
+    preflightScenario: input => {
+      assert.equal(input.draft.financing.considerGrant, false);
+      assert.equal(input.draft.financing.considerTaxRelief, false);
+      assert.equal(input.draft.pvStrategy, 'KEEP_EXISTING');
+      assert.equal(input.draft.selectedTemplateIds.length, 0);
+      assert.equal(input.addedPvHours.size, 0);
+      return calculation('ready');
+    },
+  });
+  f.draft.financing = { considerGrant: true, considerTaxRelief: true };
+  f.draft.calculation.taxEligibleCostPln = 10000;
+  const original = JSON.stringify(f.draft);
+  const result = await f.calculate('recommend');
+  assert.equal(result.status, 'ready');
+  assert.equal(JSON.stringify(f.draft), original);
+  assert.equal(f.state.scenarioInputs[0].draft.financing.considerGrant, true);
+  assert.equal(f.state.scenarioInputs[0].draft.financing.considerTaxRelief, true);
+  assert.equal(f.state.scenarioInputs[0].draft.calculation.taxEligibleCostPln, 10000);
+});
+
+test('cold added PV is not loaded when the common target bill is blocked', async () => {
+  const f = recommendationFixture({
+    templates: [{ id: 'pv', name: 'PV', kind: 'PV_DACH_SKOSNY', powerKw: 5 }],
+    candidates: [{ templateIds: ['pv'], totals: {}, missingPrices: [] }],
+    location: { latitude: 52.23, longitude: 21.01 },
+    preflightScenario: () => calculation('blocked', ['Brak reguły taryfy.']),
+  });
+  f.draft.pvStrategy = 'ADD_TEMPLATE';
+  f.draft.existingPv.lossPercent = 12;
+  f.draft.calculation.addedPvTiltDegrees = 25;
+  f.draft.calculation.addedPvAzimuthDegrees = 180;
+  const result = await f.calculate('recommend');
+  assert.deepEqual(Array.from(result.reasons), ['Brak reguły taryfy.']);
+  assert.equal(f.state.addedProfileReads, 0);
+  assert.equal(f.state.scenarioInputs.length, 0);
+  assert.equal(result.recommendationSearch, undefined);
+});
+
+test('actual candidate failures precede technical review messages in a blocked comparison', async () => {
+  const f = recommendationFixture({
+    templates: [{ id: 'battery-a', name: 'Magazyn', kind: 'MAGAZYN' }],
+    candidates: [{ templateIds: ['battery-a'], totals: {}, missingPrices: [], reviewReasons: Array.from({ length: 7 }, (_, i) => 'Ocena techniczna ' + i) }],
+    scenario: () => calculation('blocked', ['Niepełny profil wariantu.']),
+  });
+  const result = await f.calculate('recommend');
+  assert.equal(result.reasons[0], 'Niepełny profil wariantu.');
+});
+
+test('rekomendacja filtruje inclusive granice po loadKwh przed planowaniem i symulacją', async () => {
+  const candidates = [
+    { id: 'minimum', templateIds: ['battery-minimum'], totals: {}, missingPrices: [], batteryCapacityKwh: 6 },
+    { id: 'maximum', templateIds: ['battery-maximum'], totals: {}, missingPrices: [], batteryCapacityKwh: 24 },
+    { id: 'below', templateIds: ['battery-below'], totals: {}, missingPrices: [], batteryCapacityKwh: 5.999 },
+    { id: 'above', templateIds: ['battery-above'], totals: {}, missingPrices: [], batteryCapacityKwh: 24.001 },
+  ];
+  const f = recommendationFixture({
+    templates: candidates.map(candidate => ({ id: candidate.templateIds[0], name: candidate.id, kind: 'MAGAZYN' })),
+    candidates,
+    recommendationEnergyIntervals: fullYearRecommendationEnergy(0.5, 10),
+  });
+  f.draft.pvStrategy = 'ADD_TEMPLATE';
+  f.draft.calculation.addedPvTiltDegrees = 30;
+  f.draft.calculation.addedPvAzimuthDegrees = 180;
+
+  const result = await f.calculate('recommend');
+
+  const dailyBounds = result.recommendationBatteryBounds;
+  assert.ok(dailyBounds?.basis === 'daily_consumption');
+  assert.equal(dailyBounds.averageDailyConsumptionKwh, 12);
+  assert.equal(dailyBounds.minimumDailyConsumptionMultiplier, 0.5);
+  assert.equal(dailyBounds.minimumBatteryCapacityKwh, 6);
+  assert.equal(dailyBounds.maximumBatteryCapacityKwh, 24);
+  assert.equal(dailyBounds.totalCandidatesBeforeFilter, 4);
+  assert.equal(dailyBounds.excludedCandidates, 2);
+  assert.equal(result.recommendationSearch?.totalCandidates, 2);
+  assert.equal(result.recommendationSearch?.evaluatedCandidates, 2);
+  assert.deepEqual(f.state.scenarioInputs.map(input => input.draft.selectedTemplateIds[0]).sort(), [
+    'battery-maximum', 'battery-minimum',
+  ]);
+  assert.ok(result.status === 'ready', 'candidates fit by total load even though each import interval is much larger');
+});
+
+test('brak dopasowania pokazuje konkretny zakres i nie rozszerza go automatycznie', async () => {
+  const f = recommendationFixture({
+    templates: [{ id: 'battery-large', name: 'Duży magazyn', kind: 'MAGAZYN' }],
+    candidates: [{ id: 'large', templateIds: ['battery-large'], totals: {}, missingPrices: [], batteryCapacityKwh: 30, totalPvKw: 10 }],
+  });
+  f.draft.pvStrategy = 'ADD_TEMPLATE';
+  f.draft.calculation.addedPvTiltDegrees = 30;
+  f.draft.calculation.addedPvAzimuthDegrees = 180;
+  const result = await f.calculate('recommend');
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.recommendationSearch, undefined);
+  assert.equal(result.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 1);
+  assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 1);
+  assert.equal(result.recommendationBatteryBounds?.basis, 'daily_consumption');
+  assert.ok(Math.abs(result.recommendationBatteryBounds!.minimumBatteryCapacityKwh - 5) < 1e-9);
+  assert.match(result.reasons.join(' '), /Brak gotowych konfiguracji.*5–20 kWh.*0,5–2× średnie dobowe zużycie/u);
+  assert.equal(f.state.scenarioInputs.length, 0, 'the out-of-range candidate was not simulated');
+  assert.equal(f.state.preflightInputs.length, 1);
+});
+
+test('limit PV 2,5 kWh/kWp przyjmuje 48 kWh przy 19,2 kWp łącznej istniejącej i dodanej PV', async () => {
+  const candidates = [
+    { id: 'combined-boundary', templateIds: ['battery-48', 'pv-9-3'], totals: {}, missingPrices: [],
+      batteryCapacityKwh: 48, existingPvKw: 9.9, addedPvKw: 9.3, totalPvKw: 9.9 + 9.3 },
+    { id: 'combined-below', templateIds: ['battery-below', 'pv-9-299'], totals: {}, missingPrices: [],
+      batteryCapacityKwh: 48, existingPvKw: 9.9, addedPvKw: 9.299, totalPvKw: 19.199 },
+    { id: 'too-small-for-consumption', templateIds: ['battery-small'], totals: {}, missingPrices: [],
+      batteryCapacityKwh: 10, existingPvKw: 9.9, addedPvKw: 100, totalPvKw: 109.9 },
+  ];
+  const f = recommendationFixture({
+    existingPvPowerKw: 9.9,
+    pvSourceRevision: 'pv-source-a',
+    location: { latitude: 52.23, longitude: 21.01 },
+    templates: [
+      { id: 'battery-48', name: 'Bateria 48', kind: 'MAGAZYN' },
+      { id: 'pv-9-3', name: 'PV 9,3', kind: 'PV_DACH_SKOSNY', powerKw: 9.3 },
+      { id: 'battery-below', name: 'Bateria 48 poniżej', kind: 'MAGAZYN' },
+      { id: 'pv-9-299', name: 'PV 9,299', kind: 'PV_DACH_SKOSNY', powerKw: 9.299 },
+      { id: 'battery-small', name: 'Bateria za mała', kind: 'MAGAZYN' },
+    ],
+    candidates,
+    recommendationEnergyIntervals: fullYearRecommendationEnergy(1),
+  });
+  f.draft.pvStrategy = 'ADD_TEMPLATE';
+  f.draft.calculation.addedPvTiltDegrees = 30;
+  f.draft.calculation.addedPvAzimuthDegrees = 180;
+
+  const result = await f.calculate('recommend');
+
+  assert.ok(result.recommendationBatteryBounds?.basis === 'daily_consumption');
+  assert.equal(result.recommendationBatteryBounds.averageDailyConsumptionKwh, 24);
+  assert.equal(result.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 3);
+  assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 1);
+  assert.equal(result.recommendationPvBounds?.maximumBatteryKwhPerPvKwp, 2.5);
+  assert.equal(result.recommendationPvBounds?.totalCandidatesBeforeFilter, 2);
+  assert.equal(result.recommendationPvBounds?.excludedCandidates, 1);
+  assert.equal(result.recommendationSearch?.totalCandidates, 1);
+  assert.deepEqual(f.state.scenarioInputs.map(input => input.draft.selectedTemplateIds), [['battery-48', 'pv-9-3']]);
+  assert.equal(f.state.addedProfileReads, 1, 'the filtered-out PV pair is not loaded for annual simulation');
+  assert.equal(candidates[0].existingPvKw! + candidates[0].addedPvKw!, candidates[0].totalPvKw);
+});
+
+test('ADD_TEMPLATE wyjaśnia brak dopasowania po przekroczeniu 2,5 kWh/kWp łącznej PV', async () => {
+  const f = recommendationFixture({
+    existingPvPowerKw: 0,
+    pvSourceRevision: 'added-pv-source',
+    location: { latitude: 52.23, longitude: 21.01 },
+    templates: [
+      { id: 'battery-large', name: 'Magazyn', kind: 'MAGAZYN' },
+      { id: 'pv-small', name: 'PV 5 kWp', kind: 'PV_DACH_SKOSNY', powerKw: 5 },
+    ],
+    candidates: [{ id: 'large', templateIds: ['battery-large', 'pv-small'], totals: {}, missingPrices: [], batteryCapacityKwh: 20,
+      totalPvKw: 5, existingPvKw: 0, addedPvKw: 5 }],
+    recommendationEnergyIntervals: fullYearRecommendationEnergy(0.5),
+  });
+  f.draft.pvStrategy = 'ADD_TEMPLATE';
+  f.draft.existingPv.lossPercent = 12;
+  f.draft.calculation.addedPvTiltDegrees = 30;
+  f.draft.calculation.addedPvAzimuthDegrees = 180;
+  const result = await f.calculate('recommend');
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 0);
+  assert.equal(result.recommendationPvBounds?.totalCandidatesBeforeFilter, 1);
+  assert.equal(result.recommendationPvBounds?.excludedCandidates, 1);
+  assert.match(result.reasons.join(' '), /Brak gotowych konfiguracji.*limit PV.*2,5 kWh.*łącznej mocy PV/u);
+  assert.equal(f.state.scenarioInputs.length, 0, 'the PV-limited candidate was not simulated');
+  assert.equal(f.state.preflightInputs.length, 1);
+});
+
+test('KEEP_EXISTING bez dodatniej PV ma czytelny blokujący powód bez automatycznego obejścia', async () => {
+  const f = recommendationFixture({
+    existingPvPowerKw: 0,
+    templates: [{ id: 'battery', name: 'Magazyn', kind: 'MAGAZYN' }],
+    candidates: [{ templateIds: ['battery'], totals: {}, missingPrices: [], batteryCapacityKwh: 10, totalPvKw: 0 }],
+  });
+  const result = await f.calculate('recommend');
+
+  assert.equal(result.status, 'blocked');
+  assert.match(result.reasons.join(' '), /Uzupełnij dodatnią moc istniejącej instalacji PV albo wybierz rozbudowę PV/u);
+  assert.equal(result.recommendationBatteryBounds, undefined);
+  assert.equal(result.recommendationPvBounds, undefined);
+  assert.equal(f.state.energyCalls, 0);
+  assert.equal(f.state.preflightInputs.length, 0);
+  assert.equal(f.state.scenarioInputs.length, 0);
+});
+
+test('KEEP_EXISTING filtruje 19 konfiguracji wyłącznie do zakresu 0,5–5× istniejącej PV: zostają 3 magazyny 16 kWh', async () => {
+  const candidates = Array.from({ length: 19 }, (_, index) => ({
+    id: `keep-candidate-${index}`,
+    templateIds: [`keep-battery-${index}`],
+    totals: {},
+    missingPrices: [],
+    batteryCapacityKwh: index < 3 ? 16 : 50,
+    totalPvKw: 9.9,
+    existingPvKw: 9.9,
+    addedPvKw: 0,
+  }));
+  const f = recommendationFixture({
+    existingPvPowerKw: 9.9,
+    pvSourceRevision: 'existing-pv-source',
+    location: { latitude: 52.23, longitude: 21.01 },
+    templates: candidates.map(candidate => ({ id: candidate.templateIds[0], name: candidate.id, kind: 'MAGAZYN' })),
+    candidates,
+    recommendationEnergyIntervals: fullYearRecommendationEnergy(51.5953774858 / 24),
+  });
+
+  const result = await f.calculate('recommend');
+
+  const existingPvBounds = result.recommendationBatteryBounds;
+  assert.ok(existingPvBounds?.basis === 'existing_pv');
+  assert.equal(existingPvBounds.existingPvPowerKw, 9.9);
+  assert.equal(existingPvBounds.minimumBatteryKwhPerPvKwp, 0.5);
+  assert.equal(existingPvBounds.maximumBatteryKwhPerPvKwp, 5);
+  assert.equal(existingPvBounds.minimumBatteryCapacityKwh, 4.95);
+  assert.equal(existingPvBounds.maximumBatteryCapacityKwh, 49.5);
+  assert.equal('averageDailyConsumptionKwh' in existingPvBounds, false,
+    'complete consumption remains required by simulation but is not used to derive KEEP bounds');
+  assert.equal(result.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 19);
+  assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 16);
+  assert.equal(result.recommendationPvBounds, undefined, 'KEEP uses one PV-based capacity range, not an additional PV ceiling');
+  assert.equal(result.recommendationSearch?.totalCandidates, 3);
+  assert.equal(result.recommendationSearch?.evaluatedCandidates, 3);
+  assert.deepEqual(Array.from(result.rankings as Array<{ templateIds: string[] }>, row => row.templateIds[0]).sort(),
+    ['keep-battery-0', 'keep-battery-1', 'keep-battery-2']);
+  assert.equal(f.state.scenarioInputs.length, 3);
+});
+
+test('KEEP_EXISTING przy braku dopasowań pokazuje dokładny zakres istniejącej PV bez automatycznego rozszerzania', async () => {
+  const f = recommendationFixture({
+    existingPvPowerKw: 9.9,
+    pvSourceRevision: 'existing-pv-source',
+    location: { latitude: 52.23, longitude: 21.01 },
+    templates: [{ id: 'battery-50', name: 'Magazyn 50 kWh', kind: 'MAGAZYN' }],
+    candidates: [{ id: 'battery-outside', templateIds: ['battery-50'], totals: {}, missingPrices: [],
+      batteryCapacityKwh: 50, totalPvKw: 9.9, existingPvKw: 9.9, addedPvKw: 0 }],
+  });
+  const result = await f.calculate('recommend');
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.recommendationSearch, undefined);
+  assert.equal(result.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 1);
+  assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 1);
+  assert.equal(result.recommendationPvBounds, undefined);
+  assert.match(result.reasons.join(' '), /Brak gotowych konfiguracji.*4,95–49,5 kWh.*0,5–5× istniejąca moc PV: 9,9 kWp/u);
+  assert.equal(f.state.scenarioInputs.length, 0, 'the out-of-range configuration was not simulated');
+});
+
+test('KEEP_EXISTING przy 9,9 kWp zachowuje 7 konfiguracji 16, 32, 48 i 48,12 kWh; poprzedni limit PV zostawiał 3', async () => {
+  const capacities = [16, 16, 16, 32, 48, 48.12, 48.12, ...Array.from({ length: 12 }, () => 50)];
+  const candidates = capacities.map((batteryCapacityKwh, index) => ({
+    id: `shape-candidate-${index}`,
+    templateIds: [`shape-battery-${index}`],
+    totals: {},
+    missingPrices: [],
+    batteryCapacityKwh,
+    totalPvKw: 9.9,
+    existingPvKw: 9.9,
+    addedPvKw: 0,
+  }));
+  assert.equal(recommendationBounds.filterOfferCandidatesByRecommendationPvBounds(candidates, 2.5).candidates.length, 3,
+    'the superseded 2.5 kWh/kWp upper limit would have retained only the three 16 kWh configurations');
+  const f = recommendationFixture({
+    existingPvPowerKw: 9.9,
+    pvSourceRevision: 'existing-pv-source',
+    location: { latitude: 52.23, longitude: 21.01 },
+    templates: candidates.map(candidate => ({ id: candidate.templateIds[0], name: candidate.id, kind: 'MAGAZYN' })),
+    candidates,
+  });
+
+  const result = await f.calculate('recommend');
+
+  assert.equal(result.recommendationBatteryBounds?.basis, 'existing_pv');
+  assert.equal(result.recommendationBatteryBounds?.minimumBatteryCapacityKwh, 4.95);
+  assert.equal(result.recommendationBatteryBounds?.maximumBatteryCapacityKwh, 49.5);
+  assert.equal(result.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 19);
+  assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 12);
+  assert.equal(result.recommendationPvBounds, undefined);
+  assert.equal(result.recommendationSearch?.totalCandidates, 7);
+  assert.equal(result.recommendationSearch?.evaluatedCandidates, 7);
+  assert.equal(f.state.scenarioInputs.length, 7);
+  assert.deepEqual(Array.from(result.rankings as Array<{ templateIds: string[] }>, row => row.templateIds[0]).sort(),
+    ['shape-battery-0', 'shape-battery-1', 'shape-battery-2', 'shape-battery-3', 'shape-battery-4', 'shape-battery-5', 'shape-battery-6']);
+});
+
+test('ADD_TEMPLATE nadal filtruje 152→128 po zużyciu i 128→36 po PV', async () => {
+  const candidates = Array.from({ length: 152 }, (_, index) => {
+    const inPvRange = index >= 24 && index < 60;
+    const pvId = inPvRange || index < 24 ? 'added-pv-16' : 'added-pv-15';
+    const addedPvKw = pvId === 'added-pv-16' ? 16 : 15;
+    return {
+      id: `add-candidate-${String(index).padStart(3, '0')}`,
+      templateIds: [`add-battery-${index}`, pvId],
+      totals: {},
+      missingPrices: [],
+      batteryCapacityKwh: index < 24 ? 20 : 40,
+      totalPvKw: addedPvKw,
+      existingPvKw: 0,
+      addedPvKw,
+    };
+  });
+  const f = recommendationFixture({
+    existingPvPowerKw: 0,
+    pvSourceRevision: 'added-pv-source',
+    location: { latitude: 52.23, longitude: 21.01 },
+    templates: [
+      ...candidates.map(candidate => ({ id: candidate.templateIds[0], name: candidate.id, kind: 'MAGAZYN' })),
+      { id: 'added-pv-16', name: 'PV 16 kWp', kind: 'PV_DACH_SKOSNY', powerKw: 16 },
+      { id: 'added-pv-15', name: 'PV 15 kWp', kind: 'PV_DACH_SKOSNY', powerKw: 15 },
+    ],
+    candidates,
+    recommendationEnergyIntervals: fullYearRecommendationEnergy(51.5953774858 / 24),
+  });
+  f.draft.pvStrategy = 'ADD_TEMPLATE';
+  f.draft.existingPv.lossPercent = 12;
+  f.draft.calculation.addedPvTiltDegrees = 30;
+  f.draft.calculation.addedPvAzimuthDegrees = 180;
+
+  const result = await f.calculate('recommend');
+
+  assert.ok(result.recommendationBatteryBounds?.basis === 'daily_consumption');
+  assert.equal(result.recommendationBatteryBounds.minimumDailyConsumptionMultiplier, 0.5);
+  assert.equal(result.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 152);
+  assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 24);
+  assert.equal(result.recommendationPvBounds?.pvBasis, 'existing_plus_added');
+  assert.equal(result.recommendationPvBounds?.totalCandidatesBeforeFilter, 128);
+  assert.equal(result.recommendationPvBounds?.excludedCandidates, 92);
+  assert.equal(result.recommendationSearch?.totalCandidates, 36);
+  assert.equal(result.recommendationSearch?.evaluatedCandidates, 36);
+  assert.equal(result.rankings.length, 36);
+  assert.equal(f.state.scenarioInputs.length, 36);
+  assert.equal(f.state.addedProfileReads, 1);
+});
+
+test('brak load lub niepełny workspace period blokuje tylko rekomendację i odrzuca kontynuację bez zmiany poprzedniego wyniku', async () => {
+  const invalidLoad = fullYearRecommendationEnergy();
+  invalidLoad[10].loadKwh = null;
+  const blockedFixture = recommendationFixture({
+    recommendationEnergyIntervals: invalidLoad,
+    templates: [{ id: 'battery', name: 'Magazyn', kind: 'MAGAZYN' }],
+    candidates: [{ templateIds: ['battery'], totals: {}, missingPrices: [], batteryCapacityKwh: 10 }],
+  });
+  const blocked = await blockedFixture.calculate('recommend');
+  assert.equal(blocked.status, 'blocked');
+  assert.match(blocked.reasons.join(' '), /Nie można wyznaczyć zakresu pojemności magazynu/u);
+  assert.equal(blocked.recommendationBatteryBounds, undefined);
+  assert.equal(blocked.recommendationSearch, undefined);
+  assert.equal(blockedFixture.state.scenarioInputs.length, 0);
+
+  const candidates = Array.from({ length: 64 }, (_, index) => ({
+    id: `candidate-${index}`, templateIds: [`battery-${index}`], totals: {}, missingPrices: [], batteryCapacityKwh: 10,
+  }));
+  const continuationFixture = recommendationFixture({
+    templates: candidates.map(candidate => ({ id: candidate.templateIds[0], name: candidate.id, kind: 'MAGAZYN' })),
+    candidates,
+  });
+  const first = await continuationFixture.calculate('recommend');
+  assert.equal(first.recommendationSearch?.hasMore, true);
+  const beforeContinuation = JSON.stringify(first);
+  continuationFixture.energy.intervals = continuationFixture.energy.intervals.slice(24);
+  await assert.rejects(continuationFixture.calculate('recommend', first), /Nie można kontynuować rekomendacji:.*kompletnego okresu/u);
+  assert.equal(JSON.stringify(first), beforeContinuation);
+  assert.equal(continuationFixture.state.scenarioInputs.length, 50);
+});
+
+test('wybrany wariant pozostaje policzalny poza zakresem rekomendacji', async () => {
+  const f = fixture({ templates: [{ id: 'battery-large', name: 'Duży magazyn', kind: 'MAGAZYN' }] });
+  f.draft.selectedTemplateIds = ['battery-large'];
+  const result = await f.calculate('selected');
+
+  assert.equal(result.status, 'ready');
+  assert.equal(result.recommendationBatteryBounds, undefined);
+  assert.deepEqual(f.state.scenarioInputs.map(input => input.draft.selectedTemplateIds), [['battery-large']]);
+});
 
 test('null RDN market price stops selected calculation before scenario pricing', async () => {
   const f = fixture({ targetSellMethod: 'rdn', rdnRows: marketRows(2) });
@@ -212,6 +776,125 @@ test('baseline history issues remain explicit while target tariff calculation an
   assert.equal(f.state.scenarioInputs[0].targetHistory.tariffs.scenario.id, 2);
   assert.match(result.sourceDependencyStamp, /^[a-f0-9]{64}$/);
   assert.match(await f.loadDependencyStamp(), /^[a-f0-9]{64}$/);
+});
+
+test('added-PV source fingerprint is shared by calculation and dependency polling', async () => {
+  const f = fixture({
+    templates: [{ id: 'possible-pv', name: 'PV', kind: 'PV_DACH_SKOSNY', powerKw: 5 }],
+    location: { latitude: 52.23, longitude: 21.01 }, pvSourceRevision: 'pv-source-a',
+    energyDates: dependencies.offerCalculationPeriodHours(Array.from({ length: 12 }, (_, index) => ({
+      period: `2026-${String(index + 1).padStart(2, '0')}`,
+    })))!,
+  });
+  f.draft.selectedTemplateIds = ['possible-pv'];
+  f.draft.existingPv.lossPercent = 12;
+  f.draft.calculation.addedPvTiltDegrees = 30;
+  f.draft.calculation.addedPvAzimuthDegrees = 180;
+  const result = await f.calculate();
+  const polledStamp = await f.loadDependencyStamp();
+  assert.equal(result.sourceDependencyStamp, polledStamp);
+  assert.match(polledStamp || '', /^[a-f0-9]{64}$/u);
+
+  f.state.pvSourceRevision = 'pv-source-b';
+  const changedStamp = await f.loadDependencyStamp();
+  assert.notEqual(changedStamp, polledStamp);
+});
+
+test('existing PV contributes its source fingerprint without any PV templates', async () => {
+  const location = { latitude: 52.23, longitude: 21.01 };
+  const energyDates = dependencies.offerCalculationPeriodHours(Array.from({ length: 12 }, (_, index) => ({
+    period: `2026-${String(index + 1).padStart(2, '0')}`,
+  })))!;
+  const existingPv = fixture({ location, pvSourceRevision: 'pv-source-a', existingPvPowerKw: 4.5, energyDates });
+  const result = await existingPv.calculate();
+  assert.equal(result.status, 'ready');
+  assert.deepEqual(existingPv.state.scenarioInputs[0].workspace.templates, []);
+  const existingPvPolledStamp = await existingPv.loadDependencyStamp();
+  assert.equal(existingPvPolledStamp, result.sourceDependencyStamp,
+    `the exact existing PV input must select the same source stamp used by polling; polled=${existingPvPolledStamp}, result=${result.sourceDependencyStamp}`);
+
+  const noExistingPv = fixture({ location, pvSourceRevision: 'pv-source-a', existingPvPowerKw: 0, energyDates });
+  const noPvResult = await noExistingPv.calculate();
+  assert.notEqual(noPvResult.sourceDependencyStamp, result.sourceDependencyStamp,
+    'without existing PV and without PV templates, the PV source is not a calculation dependency');
+});
+
+test('added PV is a source dependency only when selected or present in recommendation candidates', () => {
+  const f = fixture({
+    location: { latitude: 52.23, longitude: 21.01 },
+    templates: [{ id: 'pv-1', name: 'PV', kind: 'PV_DACH_SKOSNY', powerKw: 5 }],
+    candidates: [{ templateIds: ['battery-1', 'pv-1'], totals: {}, missingPrices: [] }],
+  });
+  f.draft.pvStrategy = 'ADD_TEMPLATE';
+  f.draft.existingPv = { powerKw: 0, tiltDegrees: null, azimuthDegrees: null, lossPercent: 12 };
+  f.draft.calculation.addedPvTiltDegrees = 30;
+  f.draft.calculation.addedPvAzimuthDegrees = 180;
+  f.draft.selectedTemplateIds = ['pv-1'];
+
+  assert.equal(f.requiresPvSource('selected'), true);
+  f.draft.selectedTemplateIds = [];
+  assert.equal(f.requiresPvSource('selected'), false, 'unselected workspace PV templates are not dependencies');
+  assert.equal(f.requiresPvSource('recommend'), true);
+
+  const noEligiblePv = fixture({
+    location: { latitude: 52.23, longitude: 21.01 },
+    templates: [{ id: 'pv-1', name: 'PV', kind: 'PV_DACH_SKOSNY', powerKw: 5 }],
+  });
+  noEligiblePv.draft.pvStrategy = 'ADD_TEMPLATE';
+  noEligiblePv.draft.existingPv = { powerKw: 0, tiltDegrees: null, azimuthDegrees: null, lossPercent: 12 };
+  noEligiblePv.draft.calculation.addedPvTiltDegrees = 30;
+  noEligiblePv.draft.calculation.addedPvAzimuthDegrees = 180;
+  assert.equal(noEligiblePv.requiresPvSource('recommend'), false, 'PV templates rejected by enumeration are not source dependencies');
+});
+
+test('selected calculation profiles the confirmed effective PV power; recommendation drops per-offer edits', async () => {
+  const pvTemplate = {
+    id: 'pv-add', name: 'PV', kind: 'PV_DACH_SKOSNY', powerKw: 2, capacityKwh: null,
+    items: [{ id: 'panel', position: 1, description: 'Moduł PV', quantity: 1, role: 'MAIN_EQUIPMENT',
+      supplyMode: 'ONREVOLT_SUPPLIED', pricingMode: 'INDIVIDUAL', operatingCostBasis: 'PER_UNIT',
+      unitPurchaseNet: 1000, purchaseVatRate: 0.23, operatingCostNet: 0, marginRate: 0.2, saleVatRate: 0.23,
+      isOptional: false, requiresReview: false, productId: null, product: null }],
+  };
+  const confirmedTemplate = { ...pvTemplate, items: [{ ...pvTemplate.items[0], quantity: 2 }] };
+  const configurationEdits = [{ templateId: 'pv-add', items: [{ itemId: 'panel', quantity: 2 }], technical: {
+    powerKw: 3, capacityKwh: null, quantityFingerprint: configurationEnergyQuantityFingerprint(confirmedTemplate),
+  } }];
+  const selected = fixture({ templates: [pvTemplate], location: { latitude: 52.23, longitude: 21.01 }, pvSourceRevision: 'pv-source-stable' });
+  selected.draft.selectedTemplateIds = ['pv-add'];
+  selected.draft.pvStrategy = 'ADD_TEMPLATE';
+  selected.draft.existingPv.lossPercent = 12;
+  selected.draft.calculation.addedPvTiltDegrees = 30;
+  selected.draft.calculation.addedPvAzimuthDegrees = 180;
+  selected.draft.configurationEdits = configurationEdits;
+  await selected.calculate('selected');
+  assert.equal(selected.state.profileReads[0]?.powerKw, 3);
+  assert.equal(selected.state.scenarioInputs[0]?.draft.configurationEdits[0]?.technical.powerKw, 3);
+
+  const recommendation = fixture({ templates: [pvTemplate], candidates: [], location: { latitude: 52.23, longitude: 21.01 },
+    pvSourceRevision: 'pv-source-stable', existingPvPowerKw: 5 });
+  recommendation.draft.pvStrategy = 'ADD_TEMPLATE';
+  recommendation.draft.targetSettlement = 'NET_BILLING';
+  recommendation.draft.calculation.addedPvTiltDegrees = 30;
+  recommendation.draft.calculation.addedPvAzimuthDegrees = 180;
+  recommendation.draft.configurationEdits = configurationEdits;
+  await recommendation.calculate('recommend');
+  assert.equal(recommendation.state.preflightInputs[0]?.draft.configurationEdits, undefined);
+  assert.equal(recommendation.state.profileReads.length, 0);
+});
+
+test('PV source changing after a candidate profile is read aborts the calculation', async () => {
+  const f = fixture({
+    templates: [{ id: 'pv-1', name: 'PV', kind: 'PV_DACH_SKOSNY', powerKw: 5 }],
+    location: { latitude: 52.23, longitude: 21.01 },
+    pvSourceRevision: 'pv-source-a', pvSourceRevisionAfterProfile: 'pv-source-b',
+  });
+  f.draft.selectedTemplateIds = ['pv-1'];
+  f.draft.existingPv.lossPercent = 12;
+  f.draft.calculation.addedPvTiltDegrees = 30;
+  f.draft.calculation.addedPvAzimuthDegrees = 180;
+
+  await assert.rejects(f.calculate(), /Źródło PV zmieniło się podczas obliczania/);
+  assert.equal(f.state.scenarioInputs.length, 0, 'a result is not calculated from a changed source revision');
 });
 
 test('missing project baseline general tariff does not substitute a tariff or block target calculation', async () => {
@@ -310,7 +993,7 @@ test('partial completion preserves tariff conflicts while clearing only recovere
 });
 
 test('a failed candidate does not erase a recommendation from successfully computed candidates', async () => {
-  const f = fixture({
+  const f = recommendationFixture({
     templates: [
       { id: 'battery-a', name: 'Magazyn A', kind: 'MAGAZYN' },
       { id: 'battery-b', name: 'Magazyn B', kind: 'MAGAZYN' },
@@ -340,7 +1023,7 @@ test('blocked recommendation aggregate retains source identity and the candidate
     totals: {},
     missingPrices: [],
   }));
-  const f = fixture({
+  const f = recommendationFixture({
     templates: candidates.map(({ id }, index) => ({ id: id!, name: `Magazyn ${index}`, kind: 'MAGAZYN' })),
     candidates,
     scenario: () => calculation('blocked', ['Brak pełnego godzinowego profilu energii do symulacji.']),
@@ -364,7 +1047,7 @@ test('missing billing cycle is delegated to partial scenario calculation instead
 });
 
 test('diagnostic storage output is not promoted to an economic recommendation', async () => {
-  const f = fixture({
+  const f = recommendationFixture({
     templates: [{ id: 'battery', name: 'Magazyn', kind: 'MAGAZYN' }],
     candidates: [{ templateIds: ['battery'], totals: {}, missingPrices: [] }],
     scenario: () => ({ ...calculation('ready'), recommendationEligible: false,
@@ -382,7 +1065,7 @@ test('diagnostic storage output is not promoted to an economic recommendation', 
 });
 
 test('a candidate with unresolved catalog price remains in the diagnostic comparison without a recommendation', async () => {
-  const f = fixture({
+  const f = recommendationFixture({
     templates: [{ id: 'battery', name: 'Magazyn', kind: 'MAGAZYN' }],
     candidates: [{ templateIds: ['battery'], totals: null, missingPrices: ['Magazyn / BOM: Tryb VAT wymaga przeglądu'],
       requiresReview: true, reviewReasons: ['Pozycja wymaga przeglądu VAT.'] }],
@@ -402,7 +1085,7 @@ test('a candidate with unresolved catalog price remains in the diagnostic compar
 
 test('estimated ranking selects the shortest finite forecast with cost and id tie-breaks without promoting eligibility', async () => {
   const ids = ['estimate-c', 'estimate-b', 'estimate-same-payback-cheaper', 'estimate-fast-missing-price', 'estimate-fast-no-totals', 'estimate-slower-cheap', 'diagnostic'];
-  const f = fixture({
+  const f = recommendationFixture({
     templates: ids.map(id => ({ id, name: id, kind: 'MAGAZYN' })),
     candidates: [
       { id: 'candidate-id-a', templateIds: ['estimate-c'], totals: {}, missingPrices: [], requiresReview: true, reviewReasons: ['Nieznana kompatybilność istniejącego falownika.'] },
@@ -460,7 +1143,7 @@ test('estimated ranking selects the shortest finite forecast with cost and id ti
 });
 
 test('strict recommendation ranks ahead of a faster estimate and remains the selected result', async () => {
-  const f = fixture({
+  const f = recommendationFixture({
     templates: [
       { id: 'strict', name: 'Strict', kind: 'MAGAZYN' },
       { id: 'estimate', name: 'Estimate', kind: 'MAGAZYN' },
@@ -484,4 +1167,154 @@ test('strict recommendation ranks ahead of a faster estimate and remains the sel
   assert.deepEqual(result.recommendedTemplateIds, ['strict']);
   assert.equal(result.estimatedRecommendedTemplateIds, null);
   assert.equal(result.recommendationEligible, true);
+});
+
+test('more than fifty candidates return the best partial result and continue without repeats or regression', async () => {
+  const allCandidates = Array.from({ length: 64 }, (_, index) => ({
+    id: `candidate-${String(index).padStart(2, '0')}`,
+    templateIds: [`battery-${index}`],
+    totals: {},
+    missingPrices: [],
+    totalPvKw: 10,
+    addedPvKw: 0,
+    batteryCapacityKwh: 5 + Math.floor(index / 8) * 2,
+    batteryPowerKw: 2 + index % 3,
+  }));
+  const f = recommendationFixture({
+    templates: allCandidates.map(candidate => ({ id: candidate.templateIds[0], name: candidate.id, kind: 'MAGAZYN' })),
+    candidates: allCandidates,
+    scenario: input => {
+      const index = Number(input.draft.selectedTemplateIds[0].slice('battery-'.length));
+      const value = calculation('ready');
+      value.paybackYears = index === 61 ? 0.25 : index === 40 ? 1.5 : 2 + index % 12;
+      value.estimatedPaybackYears = 1 + index % 5;
+      value.costAfterFinancingPln = 1000 + index;
+      return value;
+    },
+  });
+
+  const first = await f.calculate('recommend');
+  assert.equal(first.status, 'ready');
+  assert.ok(first.recommendationSearch);
+  assert.equal(first.recommendationSearch.totalCandidates, 64);
+  assert.equal(first.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 64);
+  assert.equal(first.recommendationBatteryBounds?.excludedCandidates, 0);
+  assert.equal(first.recommendationBatteryBounds?.basis, 'existing_pv');
+  assert.equal(first.recommendationPvBounds, undefined);
+  assert.equal(first.recommendationSearch.evaluatedCandidates, 50);
+  assert.equal(first.recommendationSearch.batchEvaluated, 50);
+  assert.equal(first.recommendationSearch.batchNumber, 1);
+  assert.equal(first.recommendationSearch.hasMore, true);
+  assert.equal(first.recommendationSearch.phase, 'refine');
+  assert.ok(first.recommendedTemplateIds, 'a partial run retains the best eligible candidate found');
+  assert.ok(!first.recommendationSearch.evaluatedCandidateIds.includes('candidate-61'), 'the constructed late optimum is outside the first batch');
+  assert.equal(f.state.scenarioInputs.length, 50);
+
+  const firstJson = JSON.stringify(first);
+  const second = await f.calculate('recommend', first);
+  assert.equal(JSON.stringify(first), firstJson, 'continuation must not mutate its previous snapshot');
+  assert.equal(second.status, 'ready');
+  assert.equal(second.recommendationSearch?.evaluatedCandidates, 64);
+  assert.equal(second.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 64);
+  assert.equal(second.recommendationPvBounds, undefined);
+  assert.equal(second.recommendationSearch?.batchEvaluated, 14);
+  assert.equal(second.recommendationSearch?.batchNumber, 2);
+  assert.equal(second.recommendationSearch?.hasMore, false);
+  assert.equal(second.recommendationSearch?.phase, 'complete');
+  assert.deepEqual(second.recommendedTemplateIds, ['battery-61'], 'the later non-unimodal optimum replaces the partial winner');
+  assert.equal(second.paybackYears, 0.25);
+  const firstVisited = new Set(first.recommendationSearch.evaluatedCandidateIds);
+  assert.ok(second.recommendationSearch?.evaluatedCandidateIds.slice(firstVisited.size).every(id => !firstVisited.has(id)));
+  assert.ok((second.paybackYears ?? Infinity) <= (first.paybackYears ?? Infinity), 'the selected payback cannot get worse');
+  assert.equal(f.state.scenarioInputs.length, 64);
+});
+
+test('recommendation continuation rejects a changed tariff or prices-as-of identity', async () => {
+  const candidate = { id: 'candidate-one', templateIds: ['battery-one'], totals: {}, missingPrices: [],
+    totalPvKw: 5, addedPvKw: 0, batteryCapacityKwh: 10, batteryPowerKw: 5 };
+  const many = Array.from({ length: 64 }, (_, index) => ({ ...candidate,
+    id: `candidate-${String(index).padStart(2, '0')}`, templateIds: [`battery-${index}`] }));
+  const original = recommendationFixture({ templates: many.map(item => ({ id: item.templateIds[0], name: item.id, kind: 'MAGAZYN' })), candidates: many });
+  const first = await original.calculate('recommend');
+  const changed = recommendationFixture({
+    baselineTariff: { sell_method: 'fixed', revision: 'changed tariff' },
+    templates: many.map(item => ({ id: item.templateIds[0], name: item.id, kind: 'MAGAZYN' })), candidates: many,
+  });
+  await assert.rejects(changed.calculate('recommend', first), /Źródła taryfy, PV lub katalogu zmieniły się/u);
+  assert.equal(changed.state.scenarioInputs.length, 0, 'stale parent results must not be merged into a new source set');
+});
+
+test('continuation rejects a changed PV battery bound even when the filtered candidate count is unchanged', async () => {
+  const candidates = Array.from({ length: 64 }, (_, index) => ({
+    id: `candidate-${String(index).padStart(2, '0')}`,
+    templateIds: [`battery-${index}`], totals: {}, missingPrices: [],
+    totalPvKw: 10, batteryCapacityKwh: 10, batteryPowerKw: 5,
+  }));
+  const f = recommendationFixture({
+    templates: candidates.map(candidate => ({ id: candidate.templateIds[0], name: candidate.id, kind: 'MAGAZYN' })),
+    candidates,
+  });
+  const first = await f.calculate('recommend');
+  assert.equal(first.recommendationSearch?.hasMore, true);
+  const firstJson = JSON.stringify(first);
+  f.draft.existingPv.powerKw = 9;
+
+  await assert.rejects(f.calculate('recommend', first), /Źródła taryfy, PV lub katalogu zmieniły się/u);
+  assert.equal(JSON.stringify(first), firstJson);
+  assert.equal(f.state.scenarioInputs.length, 50);
+});
+
+test('cold added-PV source identity warms on the first profile and remains resumable after UI-only draft edits', async () => {
+  const allCandidates = Array.from({ length: 64 }, (_, index) => ({
+    id: `candidate-${String(index).padStart(2, '0')}`,
+    templateIds: [`battery-${index}`, 'pv-template'],
+    totals: {}, missingPrices: [], totalPvKw: 5, addedPvKw: 5,
+    batteryCapacityKwh: 5 + Math.floor(index / 8), batteryPowerKw: 3 + index % 2,
+  }));
+  const f = recommendationFixture({
+    templates: [
+      ...allCandidates.map(candidate => ({ id: candidate.templateIds[0], name: candidate.templateIds[0], kind: 'MAGAZYN' })),
+      { id: 'pv-template', name: 'PV', kind: 'PV_DACH_SKOSNY', powerKw: 5 },
+    ],
+    candidates: allCandidates,
+    location: { latitude: 52.23, longitude: 21.01 },
+    pvSourceRevision: null,
+    pvSourceRevisionAfterProfile: 'warmed-pv-source',
+  });
+  f.draft.pvStrategy = 'ADD_TEMPLATE';
+  f.draft.existingPv.lossPercent = 12;
+  f.draft.calculation.addedPvTiltDegrees = 30;
+  f.draft.calculation.addedPvAzimuthDegrees = 180;
+
+  const first = await f.calculate('recommend');
+  assert.equal(first.recommendationSearch?.evaluatedCandidates, 50);
+  assert.equal(first.sourceDependencyStamp?.length, 64);
+  f.draft.step = 'FINANCING';
+  f.draft.description = 'Zmieniony opis widoku';
+  const second = await f.calculate('recommend', first);
+  assert.equal(second.recommendationSearch?.evaluatedCandidates, 64);
+  assert.equal(second.recommendationSearch?.hasMore, false);
+  assert.equal(f.state.scenarioInputs.length, 64);
+});
+
+test('continuation retains per-candidate errors and rebuilds one cumulative incomplete warning', async () => {
+  const allCandidates = Array.from({ length: 64 }, (_, index) => ({
+    id: `candidate-${String(index).padStart(2, '0')}`,
+    templateIds: [`battery-${index}`], totals: {}, missingPrices: [], totalPvKw: 10, addedPvKw: 0,
+    batteryCapacityKwh: 5 + Math.floor(index / 8) * 2, batteryPowerKw: 2 + index % 3,
+  }));
+  const failure = 'Awaria obliczenia wariantu 0.';
+  const f = recommendationFixture({
+    templates: allCandidates.map(candidate => ({ id: candidate.templateIds[0], name: candidate.id, kind: 'MAGAZYN' })),
+    candidates: allCandidates,
+    scenario: input => input.draft.selectedTemplateIds[0] === 'battery-0'
+      ? calculation('blocked', [failure]) : calculation('ready'),
+  });
+
+  const first = await f.calculate('recommend');
+  assert.ok(first.warnings.includes(failure));
+  const second = await f.calculate('recommend', first);
+  assert.ok(second.warnings.includes(failure));
+  assert.equal(second.warnings.filter(warning => warning.startsWith('Porównanie niepełne:')).length, 1);
+  assert.ok(second.warnings.some(warning => warning.includes('1 z 64 ocenionych kandydatów')));
 });

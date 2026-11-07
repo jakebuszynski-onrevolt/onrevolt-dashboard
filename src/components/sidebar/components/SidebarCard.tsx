@@ -1,6 +1,9 @@
+'use client';
+
 // Chakra imports
-import { Box, Flex, Text, Badge, Icon, LightMode } from '@chakra-ui/react';
+import { Box, Flex, Text, Badge, Icon } from '@chakra-ui/react';
 import LineChart from 'components/charts/LineChart';
+import { useOfferMarginSnapshot } from 'contexts/OfferMarginStore';
 import { BsArrowsAngleExpand } from 'react-icons/bs';
 // Custom components
 import {
@@ -12,6 +15,16 @@ export default function SidebarDocs(props: {
   hovered: boolean;
 }) {
   const { mini, hovered } = props;
+  const offerMargin = useOfferMarginSnapshot();
+  const marginPercent = offerMargin?.marginPercent;
+  const percentage =
+    marginPercent === null || marginPercent === undefined
+      ? '—'
+      : `${marginPercent > 0 ? '+' : ''}${new Intl.NumberFormat('pl-PL', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }).format(marginPercent)}%`;
+
   return (
     <Flex
       justify="center"
@@ -98,7 +111,7 @@ export default function SidebarDocs(props: {
           mx="auto"
           borderRadius="58px"
         >
-          +2.45%
+          {offerMargin ? percentage : '+2.45%'}
         </Badge>
         <Box
           h="160px"

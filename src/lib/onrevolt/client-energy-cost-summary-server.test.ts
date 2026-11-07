@@ -185,3 +185,101 @@ test('settled net-metering export does not claim the cost is before export settl
     'Liczba interwałów z danymi oznaczonymi w plikach OSD jako szacowane (import lub eksport): 2. Wynik należy traktować jako szacunek.',
   ));
 });
+
+async function calculateForBillingCycle(input: {
+  includeDraftCycle?: boolean;
+  draftCycle?: unknown;
+  invoiceCycle?: number | null;
+  invoiceStartMonth?: string | null;
+  invoiceReadError?: boolean;
+}) {
+  let invoiceReads = 0;
+  let invoiceExpectedCycle: number | null | undefined;
+  let pricedContext: { annualUsageKwh: number; billingCycleMonths: number; connectionPowerKw: number } | null = null;
+  const tariffHistory: ClientTariffHistory = { strict: true, revision: 1, byDate: {}, tariffs: {}, issues: [] };
+  const calculation = input.includeDraftCycle ? { billingCycleMonths: input.draftCycle } : {};
+  const summary = await calculateClientEnergyCostSummaryOnServer({
+    project: {
+      id: 'project-1', clientId: 'client-1', clientType: 'B2C',
+      offerWorkspace: { input: { calculation } },
+      energyAudits: [{ annualConsumptionKwh: 16611.029, settlementSystem: 'net-billing', existingPvKw: 9.9, connectionPowerKw: 17 }],
+    },
+    period: { startMonth: '2026-01', endMonth: '2026-01', endDate: '2026-01-31',
+      fromUtc: '2026-01-01T00:00:00.000Z', untilUtc: '2026-02-01T00:00:00.000Z', periodKeys: ['2026-01'] },
+    series: null,
+    months: [],
+  }, {
+    invoiceBillingCycleForPeriod: async (_projectId: string, _period: unknown, expectedCycleMonths?: number | null) => {
+      invoiceReads += 1;
+      invoiceExpectedCycle = expectedCycleMonths;
+      if (input.invoiceReadError) throw new Error('invoice database unavailable');
+      return { cycleMonths: input.invoiceCycle ?? null, startMonth: input.invoiceStartMonth ?? null, crossingCount: 0 };
+    },
+    currentScenario: async () => ({ tariffHistory, issues: [] }),
+    hourlyMarketPrices: async () => ({ prices: new Map(), issue: null }),
+    completeHistoryForSummary: async ({ history }: { history: ClientTariffHistory }) => ({ history, assumptions: [], issues: [] }),
+    priceOfferWorkspaceGrid: (pricingInput: { context: { annualUsageKwh: number; billingCycleMonths: number; connectionPowerKw: number } }) => {
+      pricedContext = pricingInput.context;
+      return { status: 'ready', vatBasis: 'GROSS', energyPln: 100, distributionPln: 20,
+        fixedPln: 10, exportValuePln: null, pricedHours: 0, totalHours: 744, tariffLabels: [], issues: [] };
+    },
+    billOfferWorkspaceScenario: () => { throw new Error('Settlement should not run without measurement intervals'); },
+  } as any);
+  return { summary, invoiceReads, invoiceExpectedCycle, pricedContext };
+}
+
+test('missing billing cycle uses the shared two-month estimate and says so', async () => {
+  const result = await calculateForBillingCycle({ includeDraftCycle: true, draftCycle: null, invoiceCycle: null });
+
+  assert.equal(result.invoiceReads, 1);
+  assert.equal(result.pricedContext?.billingCycleMonths, 2);
+  assert.ok(result.summary.assumptions.includes(
+    'Nie znaleziono jednoznacznego cyklu rozliczeniowego; w szacunku przyjęto cykl 2-miesięczny.',
+  ));
+});
+
+test('explicit six-month cycle is preserved', async () => {
+  const result = await calculateForBillingCycle({ includeDraftCycle: true, draftCycle: 6, invoiceCycle: 6, invoiceStartMonth: '2026-01' });
+
+  assert.equal(result.invoiceExpectedCycle, 6);
+  assert.equal(result.pricedContext?.billingCycleMonths, 6);
+  assert.ok(!result.summary.assumptions.some(assumption => assumption.includes('przyjęto cykl')));
+});
+
+test('one-month invoice cycle is preserved instead of using the two-month estimate', async () => {
+  const result = await calculateForBillingCycle({ includeDraftCycle: true, draftCycle: null, invoiceCycle: 1 });
+
+  assert.equal(result.pricedContext?.billingCycleMonths, 1);
+  assert.ok(!result.summary.assumptions.some(assumption => assumption.includes('przyjęto cykl')));
+});
+
+test('invalid explicit billing cycle blocks the estimate instead of using the default', async () => {
+  const result = await calculateForBillingCycle({ includeDraftCycle: true, draftCycle: 13, invoiceCycle: 2 });
+
+  assert.equal(result.invoiceReads, 0);
+  assert.equal(result.pricedContext, null);
+  assert.equal(result.summary.status, 'blocked');
+  assert.deepEqual(result.summary.issues, [
+    'Jawny cykl rozliczeniowy w ofercie musi być liczbą całkowitą od 1 do 12.',
+  ]);
+});
+
+test('invalid invoice billing cycle blocks the estimate instead of using the default', async () => {
+  const result = await calculateForBillingCycle({ includeDraftCycle: true, draftCycle: null, invoiceCycle: 13 });
+
+  assert.equal(result.pricedContext, null);
+  assert.equal(result.summary.status, 'blocked');
+  assert.deepEqual(result.summary.issues, [
+    'Cykl rozliczeniowy odczytany z faktury musi być liczbą całkowitą od 1 do 12.',
+  ]);
+});
+
+test('invoice read failure remains visible and does not silently use the two-month estimate', async () => {
+  const result = await calculateForBillingCycle({ includeDraftCycle: true, draftCycle: null, invoiceReadError: true });
+
+  assert.equal(result.pricedContext, null);
+  assert.equal(result.summary.status, 'blocked');
+  assert.deepEqual(result.summary.issues, [
+    'Nie udało się odczytać cyklu z faktur: invoice database unavailable. Do wyceny taryfy brakuje: cyklu rozliczeniowego.',
+  ]);
+});

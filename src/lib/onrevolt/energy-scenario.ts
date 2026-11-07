@@ -1,7 +1,7 @@
 import type { ClientTariffHistory } from './client-tariffs';
 import tariffEngine from '../../../public/shared/re-tariff-engine';
 
-export const energyScenarioEngineVersion = 'ONREVOLT_RE_SIM_1.2.0';
+export const energyScenarioEngineVersion = 'ONREVOLT_RE_SIM_1.3.0';
 
 export type EnergyTariffZoneRate = {
   code: string;
@@ -53,6 +53,8 @@ export type EnergyScenarioInput = {
   monthlyConsumptionKwh: number[];
   hourlyLoadProfile: number[];
   monthlyHourlyLoadProfiles?: number[][];
+  dailyConsumptionKwh?: Record<string, number[]>;
+  consumptionProfileProvenance?: { key: string; name: string; contentHash: string };
   pvPowerKw: number;
   pvSpecificYieldKwhPerKw: number;
   pvMonthlyDistribution: number[];
@@ -335,6 +337,24 @@ export function calculateEnergyScenario(input: EnergyScenarioInput): EnergyScena
   const fixedOptions = { annualUsageKwh: input.monthlyConsumptionKwh.reduce((sum, kwh) => sum + kwh, 0),
     billingCycleMonths: input.billingCycleMonths || 1, connectionPowerKw: input.connectionPowerKw ?? 0 };
 
+  if (input.dailyConsumptionKwh) {
+    for (let month = 0; month < 12; month++) {
+      const year = input.calendarYearsByMonth?.[month] || input.scenarioYear;
+      if (!year) throw new Error('Profil dzienny wymaga jawnego roku każdego miesiąca.');
+      const days = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+      let total = 0;
+      for (let day = 1; day <= days; day++) {
+        const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const values = input.dailyConsumptionKwh[key];
+        assertArray(values, 24, `dailyConsumptionKwh[${key}]`);
+        total += values.reduce((sum, value) => sum + value, 0);
+      }
+      if (Math.abs(total - input.monthlyConsumptionKwh[month]) > Math.max(0.000001, total * 1e-9)) {
+        throw new Error(`Suma profilu dziennego nie zgadza się ze zużyciem miesiąca ${month + 1}.`);
+      }
+    }
+  }
+
   for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
     const year = input.calendarYearsByMonth?.[monthIndex] || input.scenarioYear;
     const days = year ? new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate() : daysInMonth[monthIndex];
@@ -356,8 +376,8 @@ export function calculateEnergyScenario(input: EnergyScenarioInput): EnergyScena
     for (let day = 0; day < days; day += 1) {
       const date = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day + 1).padStart(2, '0')}`;
       const datedTariff = history ? tariffEngine.resolve(history, date, null) : null;
-      const dayLoadProfile = (monthlyLoadProfiles?.[monthIndex] || loadProfile)
-        .map((share) => monthConsumption * share / days);
+      const dayLoadProfile = input.dailyConsumptionKwh ? input.dailyConsumptionKwh[date]
+        : (monthlyLoadProfiles?.[monthIndex] || loadProfile).map((share) => monthConsumption * share / days);
       const dayScenarioGrid = Array.from({ length: 24 }, () => 0);
       if (datedTariff) monthTotals.baselineFixed += tariffEngine.fixedDaily(datedTariff, date, fixedOptions);
       for (let hour = 0; hour < 24; hour += 1) {

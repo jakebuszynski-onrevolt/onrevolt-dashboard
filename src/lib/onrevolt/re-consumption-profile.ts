@@ -7,6 +7,8 @@ import { readProjectAnalysisPeriod } from './project-analysis-period-server';
 import type { ProjectAnalysisPeriod } from './project-analysis-period';
 import { projectPvSettingsFromSources } from './project-pv-settings';
 import { selectReConsumptionHistory } from './re-consumption-history';
+import { buildReferenceProfileProjection } from './reference-profile-comparison';
+import { readProjectReferenceProfileSelection, resolveSelectedReferenceProfile, type SelectedReferenceProfile } from './project-reference-profile';
 
 type Payload = Record<string, any>;
 type Series = Array<[string, number, number?]>;
@@ -86,10 +88,21 @@ export function buildReEnergyUsageProfile(input: {
   profile: ReConsumptionProfile; dashboard: Payload; hourly?: Series; pv?: Series; linked?: boolean;
   analysisPeriod?: ProjectAnalysisPeriod; hourlySourceYears?: HourlySourceYears;
   projectPv?: ProjectPvProfileSource | null;
+  referenceProfile?: SelectedReferenceProfile | null;
+  referenceProfileSelectionRevision?: number;
+  currentCRMAnnualKwh?: number | null;
 }): EnergyUsageProfile {
-  const { profile, dashboard, hourly = [], pv = [], linked = true, analysisPeriod, hourlySourceYears, projectPv } = input;
+  const { profile, dashboard, hourly = [], pv = [], linked = true, analysisPeriod, hourlySourceYears, projectPv,
+    referenceProfile = null, referenceProfileSelectionRevision = 0 } = input;
   const explicitStart = analysisPeriod ? `${analysisPeriod.startMonth}-01` : undefined;
   const config = settings(dashboard, profile, explicitStart, projectPv);
+  if (referenceProfile || referenceProfileSelectionRevision > 0) {
+    const currentCRMAnnualKwh = finite(input.currentCRMAnnualKwh);
+    if (!(currentCRMAnnualKwh > 0)) {
+      throw new Error('Wybrany lub zresetowany profil RE wymaga dodatniej, aktualnej rocznej deklaracji zużycia z CRM.');
+    }
+    config.annualKwh = currentCRMAnnualKwh;
+  }
   const payload = { ...dashboard, rawEnergy: dashboard.rawEnergy || dashboard.energy || {} };
   for (const field of ['usageData', 'pvData', 'storageData']) {
     if (Array.isArray(payload[field]?.records)) payload[field] = { ...payload[field],
@@ -133,8 +146,46 @@ export function buildReEnergyUsageProfile(input: {
   const years = analysisPeriod
     ? Array.from(new Set(analysisPeriod.periodKeys.map(periodKey => Number(periodKey.slice(0, 4)))))
     : [config.year];
+  const referenceHoursByDate = new Map<string, number[]>();
+  const referenceAnnualWeightByYear = new Map<number, number>();
+  const referenceMonthWeightByKey = new Map<string, number>();
+  let referenceProjectionMethod: string | null = null;
+  if (referenceProfile) {
+    for (const year of years) {
+      const projection = buildReferenceProfileProjection(referenceProfile.profile, calendarYearDates(year));
+      referenceProjectionMethod = projection.method;
+      const annualWeight = projection.days.reduce((total, day) => total + day.hours.reduce((dayTotal, value) => dayTotal + value, 0), 0);
+      if (!(annualWeight > 0) || !Number.isFinite(annualWeight)) {
+        throw new Error(`Wybrany profil referencyjny ${referenceProfile.profile.key} ma nieprawidłową sumę roczną dla ${year}.`);
+      }
+      for (const day of projection.days) referenceHoursByDate.set(day.date, day.hours);
+      referenceAnnualWeightByYear.set(year, annualWeight);
+    }
+    if (analysisPeriod) {
+      const targetAnnualWeight = [...referenceHoursByDate]
+        .filter(([date]) => requestedKeys!.has(date.slice(0, 7)))
+        .reduce((total, [, hours]) => total + hours.reduce((dayTotal, value) => dayTotal + value, 0), 0);
+      if (!(targetAnnualWeight > 0) || !Number.isFinite(targetAnnualWeight)) {
+        throw new Error(`Wybrany profil referencyjny ${referenceProfile.profile.key} ma nieprawidłową sumę okresu analizy.`);
+      }
+      for (const year of years) referenceAnnualWeightByYear.set(year, targetAnnualWeight);
+    }
+    const targetMonths = analysisPeriod?.periodKeys || years.flatMap(year => Array.from({ length: 12 }, (_, index) =>
+      `${year}-${String(index + 1).padStart(2, '0')}`));
+    for (const monthKey of targetMonths) {
+      const monthWeight = [...referenceHoursByDate]
+        .filter(([date]) => date.slice(0, 7) === monthKey)
+        .reduce((total, [, hours]) => total + hours.reduce((dayTotal, value) => dayTotal + value, 0), 0);
+      if (!Number.isFinite(monthWeight) || monthWeight < 0) {
+        throw new Error(`Wybrany profil referencyjny ${referenceProfile.profile.key} ma nieprawidłową sumę dla ${monthKey}.`);
+      }
+      referenceMonthWeightByKey.set(monthKey, monthWeight);
+    }
+  }
   const projected: Array<{ item: EnergyUsageMonth; baseImportSource: string; baseExportSource: string;
     sourceFiles: number }> = [];
+  const dailyConsumptionKwh: Record<string, number[]> = {};
+  let referenceModelDayCount = 0;
   const patternWarnings: string[] = [];
   for (const year of years) {
     const yearSources = [...sources];
@@ -167,7 +218,12 @@ export function buildReEnergyUsageProfile(input: {
       }
     }
     const result = engine.buildProfile({ year, annualKwh: config.annualKwh,
-      monthlyKwh: profile.months, sources: yearSources, exportSources: yearExportSources, getDayInputs(dayKey: string) {
+      monthlyKwh: profile.months, sources: yearSources, exportSources: yearExportSources,
+      onDayResolved(dayKey: string, hours: number[]) {
+        const monthKey = dayKey.slice(0, 7);
+        if (referenceProfile && (!requestedKeys || requestedKeys.has(monthKey))) dailyConsumptionKwh[dayKey] = hours.slice();
+      },
+      getDayInputs(dayKey: string) {
         const date = new Date(dayKey), month = date.getUTCMonth(), actualDay = actual.get(dayKey);
         const selected = hourlyDays.get(dayKey) || patterns.get(dayKey.slice(5));
         const complete = actualDay?.isComplete && actualDay.hours.every(hour => hour.hasUse);
@@ -176,10 +232,21 @@ export function buildReEnergyUsageProfile(input: {
           throw new Error(`Brak godzinowego profilu XLSX: ${dayKey}`);
         }
         const hasExportPattern = selectedMonth && exportSources[month] === 'xlsx' && !!selected;
-        return { hourlyProfile: selected?.imports,
+        const suppressGeneratedManualDefault = referenceProfile != null && sources[month] === 'manual'
+          && exportSources[month] !== 'xlsx';
+        const detailedPatternAvailable = sources[month] !== 'standard' && !!selected && !suppressGeneratedManualDefault;
+        const learnedPatternAvailable = sources[month] === 'standard' && !!forecast?.monthlyHours[month];
+        if (referenceProfile && selectedMonth && !complete && !detailedPatternAvailable && !learnedPatternAvailable) {
+          referenceModelDayCount += 1;
+        }
+        return { hourlyProfile: suppressGeneratedManualDefault ? undefined : selected?.imports,
           exportHourlyKwh: selected?.exports, hasExport: hasExportPattern,
           pvHourlyKwh: selectedMonth && !complete && sources[month] !== 'standard' && selected && hasExportPattern ? pvHours(date) : null,
-          learnedHours: forecast?.monthlyHours[month], actualDay };
+          learnedHours: forecast?.monthlyHours[month], actualDay,
+          referenceProfileSelected: referenceProfile != null && selectedMonth,
+          referenceHours24: referenceHoursByDate.get(dayKey),
+          referenceAnnualWeight: referenceAnnualWeightByYear.get(year),
+          referenceMonthWeight: referenceMonthWeightByKey.get(`${year}-${String(month + 1).padStart(2, '0')}`) };
       } });
     for (const item of result.months) {
       const periodKey = `${year}-${String(item.month).padStart(2, '0')}`;
@@ -206,7 +273,17 @@ export function buildReEnergyUsageProfile(input: {
   if (importOnly.length) warnings.push(`Brak plików energii oddanej: ${importOnly.map(month => analysisPeriod
     ? `${month.label} ${month.year}` : month.label).join(', ')}; te miesiące obejmują pobór z sieci, nie pełne zużycie budynku`);
   if (analysisPeriod && !linked) warnings.push('Brak powiązanej stacji RE; profil oparto na rocznym zużyciu deklarowanym, nie na pomiarach.');
+  if (referenceProfile && referenceModelDayCount > 0) warnings.push(`Wybrany profil referencyjny ${referenceProfile.profile.name} (${referenceProfile.profile.key}, SHA-256 ${referenceProfile.contentHash}) został użyty jako znormalizowany kształt godzinowy dla ${referenceModelDayCount} dni po uwzględnieniu dostępnych danych rzeczywistych, XLSX i nauczonych.`);
+  else if (referenceProfile) warnings.push(`Wybrano profil referencyjny ${referenceProfile.profile.name} (${referenceProfile.profile.key}, SHA-256 ${referenceProfile.contentHash}), lecz wszystkie wymagane dni miały już dostępne dane o wyższym priorytecie.`);
+  else if (referenceProfileSelectionRevision > 0) warnings.push('Wybrany profil referencyjny został zresetowany; użyto domyślnego kształtu RE i aktualnej rocznej deklaracji CRM.');
   return { annualKwh: projectedAnnualKwh, months, warnings, ...(linked ? { source: 'RE' as const, station: profile.station } : {}),
+    ...(referenceProfile && referenceProjectionMethod ? {
+      referenceProfile: {
+        key: referenceProfile.profile.key, name: referenceProfile.profile.name, contentHash: referenceProfile.contentHash,
+        method: referenceProjectionMethod, projectionVersion: 1 as const,
+      },
+      dailyConsumptionKwh,
+    } : {}),
     measuredDays: actual.size, pvIncluded: needsPv,
     ...(analysisPeriod ? { analysisStartMonth: analysisPeriod.startMonth } : {}) };
 }
@@ -238,6 +315,16 @@ function dayAfter(date: string): string {
   return key(next);
 }
 
+function calendarYearDates(year: number): string[] {
+  const dates: string[] = [];
+  const date = new Date(Date.UTC(year, 0, 1, 12));
+  while (date.getUTCFullYear() === year) {
+    dates.push(date.toISOString().slice(0, 10));
+    date.setUTCDate(date.getUTCDate() + 1);
+  }
+  return dates;
+}
+
 async function readSeries(api: 'pv', params: Record<string, string>): Promise<Series> {
   const url = new URL('get_dbdata.php', process.env.ONREVOLT_RE_PROFILE_URL?.trim() || 'https://my.onrevolt.com/re/setup_func.php');
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Nieprawidłowy adres API RE');
@@ -256,7 +343,7 @@ export async function readProjectReConsumptionProfile(projectId: string, options
       dashboardStation: true,
       dashboardStationNumber: true,
       offerWorkspace: { select: { input: true } },
-      energyAudits: { select: { existingPvKw: true, roofTiltDeg: true, roofOrientation: true }, take: 1 },
+      energyAudits: { select: { annualConsumptionKwh: true, existingPvKw: true, roofTiltDeg: true, roofOrientation: true }, take: 1 },
       investmentSite: { select: { latitude: true, longitude: true } },
     } });
   if (!project) throw new Error('Nie znaleziono projektu tego klienta');
@@ -275,12 +362,17 @@ export async function readProjectReConsumptionProfile(projectId: string, options
   const analysis = await readProjectAnalysisPeriod(projectId);
   if (!analysis) throw new Error('Nie znaleziono okresu analizy projektu');
   const analysisPeriod = analysis.period;
+  const referenceProfileSelection = await readProjectReferenceProfileSelection(projectId);
+  const referenceProfile = await resolveSelectedReferenceProfile(referenceProfileSelection);
+  let currentCRMAnnualKwh = finite(energyAudit?.annualConsumptionKwh);
   const ref = project.dashboardStation?.trim() || project.dashboardStationNumber?.trim();
   if (!ref) {
     const audit = await prisma.energyAudit.findUnique({ where: { projectId }, select: { annualConsumptionKwh: true } });
+    currentCRMAnnualKwh = finite(audit?.annualConsumptionKwh) ?? currentCRMAnnualKwh;
     return buildReEnergyUsageProfile({ linked: false, profile: { station: '', months: null, sources: null, exportSources: null,
-      annualUsageKwh: Number(audit?.annualConsumptionKwh || 0), hourlyProfile: { exists: false, rows: 0 } },
-      dashboard: { account: { dateStart: `${analysisPeriod.startMonth}-01` } }, analysisPeriod, projectPv });
+      annualUsageKwh: currentCRMAnnualKwh || 0, hourlyProfile: { exists: false, rows: 0 } },
+      dashboard: { account: { dateStart: `${analysisPeriod.startMonth}-01` } }, analysisPeriod, projectPv,
+      referenceProfile, referenceProfileSelectionRevision: referenceProfileSelection.revision, currentCRMAnnualKwh });
   }
   const station = await resolveReStation(ref);
   if (!station || (project.dashboardStationNumber && project.dashboardStationNumber.trim() !== station.station)) {
@@ -317,5 +409,7 @@ export async function readProjectReConsumptionProfile(projectId: string, options
       : 'Brak lokalizacji do pobrania danych PV');
     pv = await readSeries('pv', { lat: String(config.lat), lon: String(config.lon), ...range });
   }
-  return buildReEnergyUsageProfile({ profile, dashboard, hourly, pv, analysisPeriod, hourlySourceYears: hourlySourceYears(rows), projectPv });
+  return buildReEnergyUsageProfile({ profile, dashboard, hourly, pv, analysisPeriod,
+    hourlySourceYears: hourlySourceYears(rows), projectPv, referenceProfile,
+    referenceProfileSelectionRevision: referenceProfileSelection.revision, currentCRMAnnualKwh });
 }

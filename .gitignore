@@ -20,6 +20,8 @@ build
 .env.local
 .local/
 /_workspace-artifacts/
+# Generated reports, test exports and downloaded datasets
+/output/
 .env.development.local
 .env.test.local
 .env.production.local

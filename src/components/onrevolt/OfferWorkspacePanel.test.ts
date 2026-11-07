@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   isCurrentOfferWorkspaceCalculationRequest,
+  offerWorkspaceCalculationRestoreOrder,
+  beginOfferWorkspaceCalculationState,
+  failOfferWorkspaceCalculationState,
   monthlyMeasurementBarHeight,
   monthlyMeasurementValueLabel,
   offerWorkspaceCalculationInputKey,
@@ -12,8 +15,22 @@ import {
   parseCalculationJob,
   resolveDraftAfterSave,
   resolveCachedOfferDraft,
+  staleOfferWorkspaceCalculationState,
 } from './OfferWorkspacePanel';
 import { defaultOfferCalculationAssumptions, emptyOfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
+
+test('edycja kosztorysu unieważnia wybrany wynik i nie przywraca katalogowej rekomendacji', () => {
+  const draft = { ...emptyOfferWorkspaceDraft(), selectedTemplateIds: ['battery'],
+    targetOperatorId: 1, targetTariffId: 27,
+    commercialPricing: { schemaVersion: 1 as const, batteryInstallationScopeConfirmed: true as const,
+      allocations: [{ templateId: 'battery', itemId: 'battery-cell', group: 'STORAGE_INSTALLATION' as const }] } };
+  const edited = { ...draft, configurationEdits: [{ templateId: 'battery', items: [{ itemId: 'inverter', pricing: { marginRate: 0.25 } }] }] };
+  assert.notEqual(offerWorkspaceCalculationInputKey(draft), offerWorkspaceCalculationInputKey(edited));
+  assert.deepEqual(offerWorkspaceCalculationRestoreOrder(edited), ['selected']);
+  const selectedRanking = offerWorkspaceDraftWithRanking(edited, [{ id: 'battery', kind: 'MAGAZYN' }], ['battery']);
+  assert.deepEqual(selectedRanking.configurationEdits, []);
+  assert.equal(selectedRanking.commercialPricing, undefined);
+});
 
 test('identyczny lokalny szkic nie blokuje otwarcia po zmianie wersji serwera', () => {
   const server = emptyOfferWorkspaceDraft();
@@ -57,6 +74,14 @@ test('brak lokalnych zmian otwiera aktualny szkic bez konfliktu', () => {
   assert.equal(restored.expectedRevision, 3);
 });
 
+test('lokalny szkic nie nadpisuje kanonicznej obecności magazynu z danych energetycznych', () => {
+  const server = { ...emptyOfferWorkspaceDraft(), existingBatteryPresent: true };
+  const cached = { expectedRevision: 2, input: { ...server, existingBatteryPresent: false } };
+  const restored = resolveCachedOfferDraft(server, 'source', 2, cached);
+  assert.equal(restored.input.existingBatteryPresent, true);
+  assert.equal(restored.dirty, false);
+});
+
 test('zapis odpowiedzi nie nadpisuje zmian wpisanych podczas oczekującego PUT', () => {
   const submitted = { description: 'wysłany szkic' };
   const editedWhileSaving = { description: 'nowszy opis wpisany w trakcie zapisu' };
@@ -78,10 +103,73 @@ test('zapis odpowiedzi przyjmuje wersję serwera, jeśli szkic nie zmienił się
   assert.equal(result.draft, canonicalServerValue);
 });
 
+test('kontynuacja zachowuje poprzedni ranking podczas błędu i wyłącza go po utracie świeżości', () => {
+  const previous = {
+    status: 'blocked' as const, reasons: ['Brak pełnego profilu.'], warnings: [],
+    baselineAnnualCostPln: null, proposedAnnualCostPln: null, annualSavingsPln: null,
+    systemCostPln: null, costAfterFinancingPln: null, paybackYears: null, grantPln: null, taxReliefPln: null,
+    rankings: [], recommendedTemplateIds: null,
+    recommendationSearch: {
+      version: 1 as const, candidateSignature: 'f'.repeat(64), evaluatedCandidateIds: ['candidate-1'],
+      totalCandidates: 5, evaluatedCandidates: 1, batchNumber: 1, batchEvaluated: 1,
+      hasMore: true, phase: 'coarse' as const,
+    },
+  };
+  const original = {
+    key: 'same-input', projectId: 'project-1', data: previous, jobId: 'parent-1',
+    loading: false, mode: null, error: '', completed: 1, total: 5,
+  };
+  const running = beginOfferWorkspaceCalculationState(original, 'same-input', 'project-1', 'recommend', 'parent-1');
+  assert.equal(running.data, previous);
+  assert.equal(running.jobId, 'parent-1');
+  assert.equal(running.loading, true);
+
+  const failed = failOfferWorkspaceCalculationState(running, {
+    key: 'same-input', error: 'Błąd kontynuacji.', continueFromJobId: 'parent-1',
+    resultMatchesDraft: true, staleContinuation: false,
+  });
+  assert.equal(failed.data, previous);
+  assert.equal(failed.jobId, 'parent-1', 'transient failure keeps the parent available for retry');
+  assert.equal(failed.loading, false);
+  assert.equal(failed.error, 'Błąd kontynuacji.');
+
+  const stale = failOfferWorkspaceCalculationState(running, {
+    key: 'same-input', error: 'Poprzednia rekomendacja jest nieaktualna.', continueFromJobId: 'parent-1',
+    resultMatchesDraft: true, staleContinuation: true,
+  });
+  assert.equal(stale.data, previous, 'stale continuation still leaves the old result visible');
+  assert.equal(stale.jobId, null, 'stale parent cannot be submitted again');
+
+  const changedDraft = staleOfferWorkspaceCalculationState(original, 'changed-input');
+  assert.equal(changedDraft.data, null);
+  assert.equal(changedDraft.jobId, null);
+});
+
 test('lokalny cache szkicu jest rozdzielony na użytkownika i projekt', () => {
   assert.notEqual(offerWorkspaceStorageKey('user-a', 'project-1'), offerWorkspaceStorageKey('user-b', 'project-1'));
   assert.notEqual(offerWorkspaceStorageKey('user-a', 'project-1'), offerWorkspaceStorageKey('user-a', 'project-2'));
   assert.equal(offerWorkspaceStorageKey(undefined, 'project-1'), null);
+});
+
+test('restore zachowuje obliczenie wybranego zestawu przed rankingiem, a bez wyboru szuka rekomendacji najpierw', () => {
+  const selectedDraft = { ...emptyOfferWorkspaceDraft(), saleVatMode: 'STANDARD_23' as const,
+    currentSettlement: 'NET_BILLING' as const, targetSettlement: 'NET_BILLING' as const };
+  assert.deepEqual(offerWorkspaceCalculationRestoreOrder({ ...selectedDraft, selectedTemplateIds: ['battery-b'] }), ['selected', 'recommend']);
+  assert.deepEqual(offerWorkspaceCalculationRestoreOrder(selectedDraft), ['recommend', 'selected']);
+});
+
+test('zapisany podział komercyjny unieważnia cache i przywraca wybrane obliczenie', () => {
+  const draft = { ...emptyOfferWorkspaceDraft(), selectedTemplateIds: ['battery'],
+    commercialPricing: { schemaVersion: 1 as const, batteryInstallationScopeConfirmed: true as const,
+      allocations: [{ templateId: 'battery', itemId: 'battery-cell', group: 'STORAGE_INSTALLATION' as const }] } };
+  assert.notEqual(offerWorkspaceCalculationInputKey(draft), offerWorkspaceCalculationInputKey(emptyOfferWorkspaceDraft()));
+  assert.deepEqual(offerWorkspaceCalculationRestoreOrder(draft), ['selected']);
+});
+
+test('restore pomija rekomendację z brakującymi danymi i nadal przywraca wybrane obliczenie', () => {
+  const invalidDraft = { ...emptyOfferWorkspaceDraft(), targetOperatorId: 1, targetTariffId: 2 };
+  assert.deepEqual(offerWorkspaceCalculationRestoreOrder(invalidDraft), ['selected']);
+  assert.deepEqual(offerWorkspaceCalculationRestoreOrder({ ...invalidDraft, selectedTemplateIds: ['battery-b'] }), ['selected']);
 });
 
 test('wykres rozróżnia zarejestrowane zero od brakującego kierunku pomiaru', () => {
@@ -160,8 +248,17 @@ test('brak salda nie blokuje żądania częściowych obliczeń ani nie podstawia
   draft.targetTariffId = 2;
   draft.calculation = defaultOfferCalculationAssumptions();
   assert.equal(offerWorkspaceCalculationPreflightError(draft), null);
+  assert.match(offerWorkspaceCalculationPreflightError(draft, 'recommend') || '', /VAT sprzedaży/);
   assert.equal(draft.calculation.initialCreditKwh, null);
   assert.equal(draft.calculation.initialDepositPln, null);
+});
+
+test('wybrana diagnostyka zachowuje dotychczasowy preflight nawet gdy rekomendacja wymaga danych', () => {
+  const draft = { ...emptyOfferWorkspaceDraft(), targetOperatorId: 1, targetTariffId: 2 };
+
+  assert.equal(offerWorkspaceCalculationPreflightError(draft, 'selected'), null);
+  assert.match(offerWorkspaceCalculationPreflightError(draft, 'recommend') || '', /VAT sprzedaży/);
+  assert.match(offerWorkspaceCalculationPreflightError(emptyOfferWorkspaceDraft(), 'recommend') || '', /taryfę scenariusza/);
 });
 
 test('wybór rankingu aktualizuje zestawy bez zmiany innych założeń szkicu', () => {

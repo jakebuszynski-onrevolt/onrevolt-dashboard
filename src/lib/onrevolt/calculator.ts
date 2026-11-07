@@ -8,6 +8,7 @@ export type CalculationInput = {
   saleVatRate: number;
   includeVatSurplus?: boolean;
   forcedSaleNet?: number;
+  unitSaleNet?: number;
 };
 
 export type CalculationResult = {
@@ -20,6 +21,7 @@ export type CalculationResult = {
   saleNet: number;
   saleVatValue: number;
   saleGross: number;
+  rawSaleNet?: number;
   vatSurplus: number;
   profitNet: number;
   profitWithVatSurplus: number;
@@ -39,6 +41,32 @@ function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+const MAX_LINE_MONEY = 9_999_999_999.99;
+
+export class ManualSaleTotalsValidationError extends Error {
+  constructor(message = `Łączna cena pozycji przekracza limit ${MAX_LINE_MONEY.toFixed(2)}`) {
+    super(message);
+    this.name = 'ManualSaleTotalsValidationError';
+  }
+}
+
+export function validateManualSaleTotals(unitSaleNet: number, quantity: number) {
+  if (!Number.isFinite(unitSaleNet) || !Number.isFinite(quantity)) {
+    throw new ManualSaleTotalsValidationError('Ręczna cena sprzedaży i ilość muszą być wartościami skończonymi');
+  }
+  if (unitSaleNet < 0 || quantity < 0) {
+    throw new ManualSaleTotalsValidationError('Ręczna cena sprzedaży i ilość nie mogą być ujemne');
+  }
+
+  const rawSaleNet = unitSaleNet * quantity;
+  const saleNet = roundMoney(rawSaleNet);
+  const saleGrossAtVat23 = roundMoney(rawSaleNet * 1.23);
+  if (!Number.isFinite(rawSaleNet) || saleNet > MAX_LINE_MONEY || saleGrossAtVat23 > MAX_LINE_MONEY) {
+    throw new ManualSaleTotalsValidationError();
+  }
+  return rawSaleNet;
+}
+
 export function calculateConfigurationLine(input: CalculationInput): CalculationResult {
   assertFiniteMoney(input.quantity, 'quantity');
   assertFiniteMoney(input.unitPurchaseNet, 'unitPurchaseNet');
@@ -46,9 +74,13 @@ export function calculateConfigurationLine(input: CalculationInput): Calculation
   assertFiniteMoney(input.operatingCostNet, 'operatingCostNet');
   assertFiniteMoney(input.marginRate, 'marginRate');
   assertFiniteMoney(input.saleVatRate, 'saleVatRate');
+  if (input.unitSaleNet !== undefined) assertFiniteMoney(input.unitSaleNet, 'unitSaleNet');
 
   if (input.quantity < 0 || input.unitPurchaseNet < 0 || input.operatingCostNet < 0) {
     throw new Error('Ilość, cena zakupu i koszt operacyjny nie mogą być ujemne');
+  }
+  if (input.unitSaleNet !== undefined && input.unitSaleNet < 0) {
+    throw new Error('Ręczna cena sprzedaży nie może być ujemna');
   }
 
   const purchaseNet = roundMoney(input.unitPurchaseNet * input.quantity);
@@ -59,10 +91,17 @@ export function calculateConfigurationLine(input: CalculationInput): Calculation
   }
   const operatingCostNet = roundMoney(input.operatingCostNet * (input.operatingCostBasis === 'PER_UNIT' ? input.quantity : 1));
   const totalCostNet = roundMoney(purchaseNet + operatingCostNet);
-  const marginNet = roundMoney(totalCostNet * input.marginRate);
-  const saleNet = roundMoney(input.forcedSaleNet ?? (totalCostNet + marginNet));
-  const saleVatValue = roundMoney(saleNet * input.saleVatRate);
-  const saleGross = roundMoney(saleNet + saleVatValue);
+  const manualSale = input.unitSaleNet !== undefined && input.forcedSaleNet === undefined;
+  const rawSaleNet = manualSale ? validateManualSaleTotals(input.unitSaleNet!, input.quantity) : undefined;
+  const calculatedMarginNet = roundMoney(totalCostNet * input.marginRate);
+  const saleNet = roundMoney(input.forcedSaleNet ?? rawSaleNet ?? (totalCostNet + calculatedMarginNet));
+  const saleGross = rawSaleNet === undefined
+    ? roundMoney(saleNet + roundMoney(saleNet * input.saleVatRate))
+    : roundMoney(rawSaleNet * (1 + input.saleVatRate));
+  const saleVatValue = rawSaleNet === undefined
+    ? roundMoney(saleNet * input.saleVatRate)
+    : roundMoney(saleGross - saleNet);
+  const marginNet = manualSale ? roundMoney(saleNet - totalCostNet) : calculatedMarginNet;
   const vatSurplus = input.includeVatSurplus === false
     ? 0
     : roundMoney(Math.max(0, purchaseVatValue - saleVatValue));
@@ -79,6 +118,7 @@ export function calculateConfigurationLine(input: CalculationInput): Calculation
     saleNet,
     saleVatValue,
     saleGross,
+    ...(rawSaleNet === undefined ? {} : { rawSaleNet }),
     vatSurplus,
     profitNet,
     profitWithVatSurplus,

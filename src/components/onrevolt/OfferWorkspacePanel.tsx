@@ -25,6 +25,7 @@ import {
   defaultOfferCalculationAssumptions,
   emptyOfferWorkspaceDraft,
   parseOfferWorkspaceDraft,
+  offerWorkspaceDraftWithBatteryPresence,
   createOfferWorkspacePricingSnapshot,
   offerWorkspacePricingFreshness,
   type OfferWorkspaceDraft,
@@ -34,13 +35,18 @@ import {
   type SavedOfferWorkspaceDraft,
 } from 'lib/onrevolt/offer-workspace';
 import { configurationInvestmentScope } from 'lib/onrevolt/configuration-templates';
-import { priceOfferWorkspaceConfiguration } from 'lib/onrevolt/offer-workspace-pricing';
+import { priceOfferWorkspaceConfiguration, type OfferWorkspacePricingResult } from 'lib/onrevolt/offer-workspace-pricing';
+import { applyOfferWorkspaceConfigurationEdits } from 'lib/onrevolt/offer-workspace-configuration-edits';
+import { usePublishOfferMargin } from 'contexts/OfferMarginStore';
 import type { OfferWorkspaceCalculation } from 'lib/onrevolt/offer-workspace-calculation-types';
+import { recommendationInputIssues } from 'lib/onrevolt/offer-workspace-recommendation-inputs';
 import { tariffToday, type ClientTariffData, type ClientTariffPayload } from 'lib/onrevolt/client-tariffs';
 import { offerTariffCatalogKey, resolveCurrentOfferTariff, type OfferTariffRateState } from 'lib/onrevolt/offer-workspace-tariffs';
 import OfferWorkspaceConfiguration from './OfferWorkspaceConfiguration';
 import type { OfferWorkspaceCalculationMode } from './OfferWorkspaceCalculationControls';
 import type { OfferWorkspaceEnergy } from 'lib/onrevolt/offer-workspace-energy';
+import { overlayOfferWorkspaceMeasurements } from 'lib/onrevolt/offer-workspace-energy';
+import type { OfferWorkspaceMeasurements } from 'lib/onrevolt/offer-workspace-server';
 import type { OfferWorkspaceValuation } from 'lib/onrevolt/offer-workspace-valuation';
 import { OfferDescriptionScreen, OfferSavingsScreen, OfferSummaryScreen, OfferSystemScreen } from './OfferWorkspaceScreens';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -69,6 +75,7 @@ type WorkspaceTemplateItem = {
   pricingMode?: 'LEGACY' | 'CATALOG' | 'INDIVIDUAL';
   operatingCostBasis?: 'PER_LINE' | 'PER_UNIT';
   catalogPriceId?: string | null;
+  unitSaleNet?: number | null;
   unitPurchaseNet: number | null;
   purchaseVatRate: number | null;
   operatingCostNet: number | null;
@@ -118,6 +125,9 @@ export type WorkspaceTemplate = {
 };
 
 export type WorkspaceData = {
+  canEditConfigurationItems?: boolean;
+  viewerId?: string;
+  documentRevision?: number;
   valuation?: OfferWorkspaceValuation | null;
   valuationLoading?: boolean;
   valuationError?: string;
@@ -139,21 +149,14 @@ export type WorkspaceData = {
       heatingSource: string | null; heatingDetails: string | null; supplier: string | null;
     };
     existingPv: { powerKw: number | null; tiltDegrees: number | null; azimuthDegrees: number | null } | null;
+    existingBatteryKwh: number | null;
+    existingBatteryPresent: boolean | null;
     location: { address: string | null; latitude: number | null; longitude: number | null } | null;
     settlementMode: string | null;
     annualConsumptionKwh: number | null;
     issues: string[];
   };
-  measurements: {
-    periods: Array<{ period: string; hasImport: boolean; hasExport: boolean; missingDirections: string[] }>;
-    months: Array<{ period: string; importKwh: number | null; exportKwh: number | null }>;
-    dayProfiles?: Array<{ period: string; dayType: 'workday' | 'free'; date: string; hours: Array<{ hour: number; importKwh: number | null; exportKwh: number | null }> }>;
-    totalsImportKwh: number | null;
-    totalsExportKwh: number | null;
-    intervalCount: number | null;
-    missingDirections: Array<{ period: string; kind: string }>;
-    issues: string[];
-  };
+  measurements: OfferWorkspaceMeasurements;
   templates: WorkspaceTemplate[];
   draft: SavedOfferWorkspaceDraft | null;
 };
@@ -178,7 +181,9 @@ export function resolveCachedOfferDraft(
   if (!Number.isSafeInteger(cached.expectedRevision) || cached.expectedRevision < 0) {
     throw new Error('Nieprawidłowa wersja lokalnego szkicu.');
   }
-  const input = parseOfferWorkspaceDraft(cached.input);
+  const input = offerWorkspaceDraftWithBatteryPresence(
+    parseOfferWorkspaceDraft(cached.input), serverDraft.existingBatteryPresent ?? null,
+  );
   const content = ({ step: _step, ...value }: OfferWorkspaceDraft) => JSON.stringify(value);
   if (content(input) === content(serverDraft)) {
     return { input: { ...serverDraft, step: input.step }, dirty: false, expectedRevision: serverRevision, conflict: null as DraftConflict };
@@ -220,6 +225,72 @@ type OfferWorkspaceCalculationJob = {
   stale?: boolean;
   blockedReasons?: string[];
 };
+
+export type OfferWorkspaceCalculationPanelState = {
+  key: string;
+  projectId: string;
+  data: OfferWorkspaceCalculation | null;
+  jobId: string | null;
+  loading: boolean;
+  mode: OfferWorkspaceCalculationMode | null;
+  error: string;
+  completed: number;
+  total: number;
+};
+
+export function beginOfferWorkspaceCalculationState(
+  current: OfferWorkspaceCalculationPanelState,
+  key: string,
+  projectId: string,
+  mode: OfferWorkspaceCalculationMode,
+  continueFromJobId?: string,
+): OfferWorkspaceCalculationPanelState {
+  const continuing = Boolean(continueFromJobId && current.jobId === continueFromJobId
+    && current.data?.recommendationSearch?.hasMore === true);
+  return {
+    ...current,
+    key, projectId,
+    data: continuing ? current.data : null,
+    jobId: continuing ? current.jobId : null,
+    loading: true,
+    mode,
+    error: '',
+    completed: continuing ? current.completed : 0,
+    total: continuing ? current.total : 0,
+  };
+}
+
+export function failOfferWorkspaceCalculationState(
+  current: OfferWorkspaceCalculationPanelState,
+  options: { key: string; error: string; continueFromJobId?: string; resultMatchesDraft: boolean; staleContinuation: boolean },
+): OfferWorkspaceCalculationPanelState {
+  const keepPrevious = Boolean(options.continueFromJobId && options.resultMatchesDraft);
+  return {
+    ...current,
+    key: options.key,
+    data: keepPrevious ? current.data : null,
+    jobId: keepPrevious && !options.staleContinuation ? current.jobId : null,
+    loading: false,
+    mode: null,
+    error: options.resultMatchesDraft ? options.error : '',
+  };
+}
+
+export function staleOfferWorkspaceCalculationState(
+  current: OfferWorkspaceCalculationPanelState,
+  key: string,
+): OfferWorkspaceCalculationPanelState {
+  return { ...current, key, data: null, jobId: null, error: '' };
+}
+
+export function offerWorkspaceCalculationRestoreOrder(draft: OfferWorkspaceDraft): Array<'selected' | 'recommend'> {
+  if (draft.commercialPricing) return ['selected'];
+  if (draft.configurationEdits?.length) return ['selected'];
+  const order: Array<'selected' | 'recommend'> = draft.selectedTemplateIds.length
+    ? ['selected', 'recommend']
+    : ['recommend', 'selected'];
+  return recommendationInputIssues(draft).length ? order.filter((mode) => mode !== 'recommend') : order;
+}
 
 export function parseCalculationJob(payload: unknown, response: Response): OfferWorkspaceCalculationJob {
   const body = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
@@ -288,9 +359,12 @@ function currentTariffLabel(data: TariffData | null) {
 function initialDraft(workspace: WorkspaceData, tariffs: TariffData | null): OfferWorkspaceDraft {
   const actualSettlement = parseSettlement(workspace.input.settlementMode);
   if (workspace.draft) {
-    return parseOfferWorkspaceDraft(workspace.draft.input);
+    return offerWorkspaceDraftWithBatteryPresence(
+      parseOfferWorkspaceDraft(workspace.draft.input), workspace.input.existingBatteryPresent ?? null,
+    );
   }
   const input = emptyOfferWorkspaceDraft();
+  input.existingBatteryPresent = workspace.input.existingBatteryPresent ?? null;
   input.existingPv = {
     powerKw: workspace.input.existingPv?.powerKw ?? null,
     tiltDegrees: workspace.input.existingPv?.tiltDegrees ?? null,
@@ -346,13 +420,22 @@ export function offerWorkspaceCalculationInputKey(draft: OfferWorkspaceDraft): s
     targetTariffId: draft.targetTariffId,
     saleVatMode: draft.saleVatMode,
     selectedTemplateIds: draft.selectedTemplateIds,
+    configurationEdits: draft.configurationEdits || [],
+    commercialPricing: draft.commercialPricing ?? null,
     financing: draft.financing,
     calculation: draft.calculation ?? defaultOfferCalculationAssumptions(),
   });
 }
 
-export function offerWorkspaceCalculationPreflightError(draft: OfferWorkspaceDraft): string | null {
+export function offerWorkspaceCalculationPreflightError(
+  draft: OfferWorkspaceDraft,
+  mode: OfferWorkspaceCalculationMode = 'selected',
+): string | null {
   if (!draft.targetOperatorId || !draft.targetTariffId) return 'Wybierz operatora i taryfę scenariusza w kroku System rozliczeń.';
+  if (mode === 'recommend') {
+    const issues = recommendationInputIssues(draft);
+    if (issues.length) return issues.map((issue) => issue.message).join(' ');
+  }
   return null;
 }
 
@@ -365,6 +448,8 @@ export function offerWorkspaceDraftWithRanking(
   return {
     ...draft,
     selectedTemplateIds: [...templateIds],
+    ...(draft.configurationEdits ? { configurationEdits: [] } : {}),
+    commercialPricing: undefined,
     pvStrategy: hasPv ? 'ADD_TEMPLATE' : 'KEEP_EXISTING',
   };
 }
@@ -416,6 +501,13 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
   const [tariffs, setTariffs] = useState<TariffData | null>(null);
   const [draft, setDraft] = useState<OfferWorkspaceDraft | null>(null);
+  const [itemPricingPreview, setItemPricingPreview] = useState<{ projectId: string; pricing: OfferWorkspacePricingResult | null } | null>(null);
+  const itemEditsPendingRef = useRef(false);
+  const itemEditsPending = itemPricingPreview?.projectId === projectId;
+  const updatePricingPreview = useCallback((pricing: OfferWorkspacePricingResult | null, active: boolean) => {
+    itemEditsPendingRef.current = active;
+    setItemPricingPreview(active ? { projectId, pricing } : null);
+  }, [projectId]);
   const [expectedRevision, setExpectedRevision] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [acknowledgedPricingRevision, setAcknowledgedPricingRevision] = useState('');
@@ -435,16 +527,10 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   const latestDraft = useRef<OfferWorkspaceDraft | null>(null);
   const saveAbort = useRef<AbortController | null>(null);
   const calculationRequestId = useRef(0);
-  const [calculationState, setCalculationState] = useState<{
-    key: string;
-    projectId: string;
-    data: OfferWorkspaceCalculation | null;
-    loading: boolean;
-    mode: OfferWorkspaceCalculationMode | null;
-    error: string;
-    completed: number;
-    total: number;
-  }>({ key: '', projectId: '', data: null, loading: false, mode: null, error: '', completed: 0, total: 0 });
+  const [documentRevision, setDocumentRevision] = useState(0);
+  const [calculationState, setCalculationState] = useState<OfferWorkspaceCalculationPanelState>({
+    key: '', projectId: '', data: null, jobId: null, loading: false, mode: null, error: '', completed: 0, total: 0,
+  });
 
   const background = useColorModeValue('white', 'navy.800');
   const softBackground = useColorModeValue('secondaryGray.50', 'whiteAlpha.50');
@@ -482,12 +568,12 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
       : catalogLoadState
     : { status: 'unavailable' as const, message: 'Wybierz operatora i taryfę docelową.' };
   const storageKey = offerWorkspaceStorageKey(actorId, projectId);
-  const energyKey = workspace && draft ? JSON.stringify({ projectId, sourceRevision: workspace.revision, existingPv: draft.existingPv, existingBatteryPresent: draft.existingBatteryPresent ?? null, pvReconstructionAccepted: draft.calculation?.pvReconstructionAccepted === true }) : '';
+  const energyKey = workspace && draft ? JSON.stringify({ projectId, sourceRevision: workspace.revision, existingPv: draft.existingPv, existingBatteryPresent: workspace.input.existingBatteryPresent ?? null, pvReconstructionAccepted: draft.calculation?.pvReconstructionAccepted === true }) : '';
   const valuationKey = workspace && draft ? JSON.stringify({ projectId, sourceRevision: workspace.revision,
     currentSettlement: parseSettlement(workspace.input.settlementMode), targetSettlement: draft.targetSettlement,
     targetOperatorId: draft.targetOperatorId, targetTariffId: draft.targetTariffId, pricesAsOf: tariffRateDate }) : '';
   const calculationKey = workspace && draft
-    ? JSON.stringify([projectId, workspace.revision, offerWorkspaceCalculationInputKey(draft)])
+    ? JSON.stringify([projectId, workspace.revision, tariffRateDate, offerWorkspaceCalculationInputKey(draft)])
     : '';
   const calculationKeyRef = useRef(calculationKey);
   calculationKeyRef.current = calculationKey;
@@ -536,8 +622,39 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   }, [valuationKey, templatePreview]);
 
   useEffect(() => {
-    setCalculationState((current) => ({ ...current, key: calculationKey, data: null, error: '' }));
-  }, [calculationKey]);
+    setCalculationState((current) => staleOfferWorkspaceCalculationState(current, calculationKey));
+    if (!calculationKey || !workspace || !draft || templatePreview) return;
+    const controller = new AbortController();
+    const requestId = calculationRequestId.current;
+    const key = calculationKey;
+    const timer = setTimeout(async () => {
+      try {
+        // Prefer the exact selected result when the draft has a selection.
+        // With no selection, restore the ranking first so its continuation button survives reload.
+        for (const mode of offerWorkspaceCalculationRestoreOrder(draft)) {
+          const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/offer-workspace/calculate`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+            body: JSON.stringify({ sourceRevision: workspace.revision, draft, mode, cacheOnly: true }),
+          });
+          const payload = await response.json();
+          if (response.ok && payload.ok === true && payload.cached === false && payload.job === null) continue;
+          const job = parseCalculationJob(payload, response);
+          if (!isCurrentOfferWorkspaceCalculationRequest(controller.signal, key, calculationKeyRef.current, requestId, calculationRequestId.current)) return;
+          if (job.status !== 'completed' || !job.data || job.stale) return;
+          setCalculationState(current => current.loading ? current : {
+            key, projectId, data: job.data!, jobId: job.id, loading: false, mode: null, error: '', completed: job.completed, total: job.total,
+          });
+          return;
+        }
+      } catch (cause) {
+        if (!isCurrentOfferWorkspaceCalculationRequest(controller.signal, key, calculationKeyRef.current, requestId, calculationRequestId.current)) return;
+        setCalculationState(current => current.loading ? current : {
+          ...current, error: cause instanceof Error ? cause.message : 'Nie udało się odczytać zapisanej kalkulacji.',
+        });
+      }
+    }, 500);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [calculationKey, templatePreview]);
 
   const tariffCatalogRequests = useMemo(() => {
     const requests = new Map<string, { osdId: number; tariffId: number }>();
@@ -586,6 +703,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   }, [workspace, tariffsLoaded, projectId, tariffRateDate, tariffCatalogRequests]);
 
   const load = useCallback(async (signal: AbortSignal, requestGeneration: number, ignoreLocalCache = false, clearLocalCacheAfterLoad = false, refreshLocalDraft?: LocalDraftCache): Promise<boolean> => {
+    if (itemEditsPendingRef.current) return false;
     setLoading(true);
     setError('');
     setTariffError('');
@@ -605,7 +723,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
         if (signal.aborted) return false;
         tariffLoadError = cause instanceof Error ? cause.message : 'Nie udało się odczytać taryf.';
       }
-      if (signal.aborted || generation.current !== requestGeneration) return false;
+      if (signal.aborted || generation.current !== requestGeneration || itemEditsPendingRef.current) return false;
 
       if (clearLocalCacheAfterLoad && storageKey) window.sessionStorage.removeItem(storageKey);
 
@@ -617,7 +735,9 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
       try {
         const cachedText = !ignoreLocalCache && storageKey ? window.sessionStorage.getItem(storageKey) : null;
         if (refreshLocalDraft || cachedText) {
-          const cached = refreshLocalDraft || JSON.parse(cachedText!) as LocalDraftCache;
+          let cached = refreshLocalDraft || JSON.parse(cachedText!) as LocalDraftCache;
+          if (data.canEditConfigurationItems !== true) cached = { ...cached, input: { ...cached.input,
+            configurationEdits: serverDraft.configurationEdits } };
           const resolved = resolveCachedOfferDraft(serverDraft, data.revision, data.draft?.revision || 0, cached);
           nextDraft = resolved.input;
           nextDirty = resolved.dirty;
@@ -662,6 +782,8 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
     setTariffsLoaded(false);
     setTariffCatalogRates({});
     setDraft(null);
+    itemEditsPendingRef.current = false;
+    setItemPricingPreview(null);
     latestDraft.current = null;
     editSequence.current = 0;
     setExpectedRevision(0);
@@ -676,6 +798,16 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
       if (generation.current === requestGeneration) generation.current += 1;
     };
   }, [load]);
+
+  useEffect(() => {
+    if (!itemEditsPending) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [itemEditsPending]);
 
   useEffect(() => {
     if (!draft || !workspace || !dirty || !storageKey || conflict) return;
@@ -700,9 +832,13 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
     setStatus('Niezapisane zmiany');
   }, [canEdit, conflict]);
 
-  async function calculateOffer(mode: OfferWorkspaceCalculationMode) {
-    if (!workspace || !draft || !canEdit || conflict || templatePreview || calculationState.loading) return;
-    const preflightError = offerWorkspaceCalculationPreflightError(draft);
+  async function calculateOffer(mode: OfferWorkspaceCalculationMode, continueRecommendation?: true) {
+    const continueFromJobId = continueRecommendation ? calculationState.jobId ?? undefined : undefined;
+    if (!workspace || !draft || !canEdit || conflict || templatePreview || calculationState.loading || itemEditsPendingRef.current) return;
+    if (continueRecommendation && (!continueFromJobId || calculationState.key !== calculationKeyRef.current
+      || calculationState.projectId !== projectId || mode !== 'recommend'
+      || !calculationState.data?.recommendationSearch?.hasMore)) return;
+    const preflightError = offerWorkspaceCalculationPreflightError(draft, mode);
     if (preflightError) {
       setCalculationState((current) => ({ ...current, key: calculationKeyRef.current, data: null, loading: false, mode: null, error: preflightError }));
       return;
@@ -711,7 +847,9 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
     const requestId = ++calculationRequestId.current;
     const requestKey = calculationKeyRef.current;
     const projectAtStart = projectId;
-    setCalculationState({ key: requestKey, projectId: projectAtStart, data: null, loading: true, mode, error: '', completed: 0, total: 0 });
+    setCalculationState((current) => beginOfferWorkspaceCalculationState(
+      current, requestKey, projectAtStart, mode, continueFromJobId,
+    ));
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/offer-workspace/calculate`, {
         method: 'POST',
@@ -724,13 +862,14 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
           },
           sourceRevision: workspace.revision,
           mode,
+          ...(continueFromJobId ? { continueFromJobId } : {}),
         }),
       });
       let job = parseCalculationJob(await response.json(), response);
       // Keep polling the server-owned job when the draft changes; aborting fetch does not stop its worker.
       while (job.status === 'running') {
         if (controller.signal.aborted || requestId !== calculationRequestId.current) return;
-        if (job.stale) throw new Error(offerWorkspaceCalculationStaleMessage(job.blockedReasons));
+        if (job.stale) throw Object.assign(new Error(offerWorkspaceCalculationStaleMessage(job.blockedReasons)), { status: 409 });
         setCalculationState((current) => ({ ...current, completed: job.completed, total: job.total }));
         await waitForCalculationPoll();
         const pollParams = new URLSearchParams({ jobId: job.id });
@@ -750,17 +889,19 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
           }));
         }
       }
-      if (job.stale) throw new Error(offerWorkspaceCalculationStaleMessage(job.blockedReasons));
+      if (job.stale) throw Object.assign(new Error(offerWorkspaceCalculationStaleMessage(job.blockedReasons)), { status: 409 });
       if (job.status === 'failed') throw new Error(job.error || 'Obliczenie oferty nie powiodło się.');
       if (!job.data) throw new Error('Zadanie zakończyło się bez wyniku kalkulacji.');
       if (controller.signal.aborted || requestId !== calculationRequestId.current) return;
       const resultMatchesDraft = isCurrentOfferWorkspaceCalculationRequest(
         controller.signal, requestKey, calculationKeyRef.current, requestId, calculationRequestId.current,
       ) && projectAtStart === projectId;
+      if (resultMatchesDraft) setDocumentRevision(value => value + 1);
       setCalculationState((current) => ({
         ...current,
         key: calculationKeyRef.current,
         data: resultMatchesDraft ? job.data || null : null,
+        jobId: resultMatchesDraft ? job.id : null,
         loading: false,
         mode: null,
         error: '',
@@ -772,19 +913,23 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
         const resultMatchesDraft = isCurrentOfferWorkspaceCalculationRequest(
           controller.signal, requestKey, calculationKeyRef.current, requestId, calculationRequestId.current,
         ) && projectAtStart === projectId;
-        setCalculationState((current) => ({
-          ...current,
+        const statusCode = cause && typeof cause === 'object' && 'status' in cause ? Number(cause.status) : 0;
+        const errorMessage = cause instanceof Error ? cause.message : '';
+        const continuationIsStale = continueFromJobId !== undefined && statusCode === 409
+          && /^(?:Poprzednia rekomendacja jest nieaktualna|Dane projektu zmieniły się|Wynik kalkulacji jest nieaktualny)/.test(errorMessage);
+        setCalculationState((current) => failOfferWorkspaceCalculationState(current, {
           key: calculationKeyRef.current,
-          data: null,
-          loading: false,
-          mode: null,
-          error: resultMatchesDraft ? cause instanceof Error ? cause.message : 'Nie udało się obliczyć oferty.' : '',
+          continueFromJobId,
+          resultMatchesDraft,
+          staleContinuation: continuationIsStale,
+          error: resultMatchesDraft ? errorMessage || 'Nie udało się obliczyć oferty.' : '',
         }));
       }
     }
   }
 
   const changeStep = useCallback((next: OfferWorkspaceStep) => {
+    if (itemEditsPendingRef.current) return;
     if (!canEdit) {
       setDraft((current) => {
         const updated = current ? { ...current, step: next } : current;
@@ -797,7 +942,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   }, [canEdit, updateDraft]);
 
   async function saveDraft() {
-    if (!workspace || !draft || !canEdit || saving || conflict || (!dirty && !pricingIsStale)
+    if (!workspace || !draft || !canEdit || saving || conflict || itemEditsPendingRef.current || (!dirty && !pricingIsStale)
       || (pricingIsStale && !pricingChangeAcknowledged)) return;
     const projectAtStart = projectId;
     const requestGeneration = generation.current;
@@ -859,7 +1004,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   }
 
   async function discardLocalDraft() {
-    if (!workspace || !conflict) return;
+    if (!workspace || !conflict || itemEditsPendingRef.current) return;
     const projectAtStart = projectId;
     const requestGeneration = generation.current;
     editSequence.current += 1;
@@ -874,7 +1019,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   }
 
   async function refreshLocalDraft() {
-    if (!workspace || !draft || !conflict || conflictKind === 'draft') return;
+    if (!workspace || !draft || !conflict || conflictKind === 'draft' || itemEditsPendingRef.current) return;
     const requestGeneration = generation.current;
     setStatus('Sprawdzam aktualne dane; zachowuję lokalny szkic…');
     await load(new AbortController().signal, requestGeneration, false, false, {
@@ -890,13 +1035,25 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
     }));
   }
 
-  const selectedTemplates = useMemo(() => workspace?.templates.filter((item) => draft?.selectedTemplateIds.includes(item.id)) || [], [draft?.selectedTemplateIds, workspace?.templates]);
-  const currentPricingSnapshot: OfferWorkspacePricingSnapshot | null = workspace && draft
+  const configurationResolution = useMemo(() => {
+    try { return { templates: workspace && draft ? applyOfferWorkspaceConfigurationEdits(workspace.templates, draft)
+      .filter(item => draft.selectedTemplateIds.includes(item.id)) : [], error: '' }; }
+    catch (cause) { return { templates: [], error: cause instanceof Error ? cause.message : 'Nie można odczytać pozycji konfiguracji.' }; }
+  }, [draft?.selectedTemplateIds, draft?.configurationEdits, workspace?.templates]);
+  const selectedTemplates = configurationResolution.templates;
+  const selectedPricing = workspace && draft && !configurationResolution.error && ['B2C', 'B2B'].includes(workspace.clientType)
+    ? priceOfferWorkspaceConfiguration(selectedTemplates, draft.saleVatMode, workspace.clientType) : null;
+  const marginPricing = itemPricingPreview?.projectId === projectId ? itemPricingPreview.pricing : selectedPricing;
+  const marginPercent = marginPricing?.totals && marginPricing.totals.saleNet > 0
+    ? marginPricing.totals.profitNet / marginPricing.totals.saleNet * 100 : null;
+  usePublishOfferMargin({ projectId, actorId, visible: !loading && Boolean(workspace && draft) && !templatePreview
+    && canEdit && workspace?.canEditConfigurationItems === true && !conflict, marginPercent });
+  const currentPricingSnapshot: OfferWorkspacePricingSnapshot | null = workspace && draft && selectedPricing
     && ['B2C', 'B2B'].includes(workspace.clientType)
     ? createOfferWorkspacePricingSnapshot(
       draft,
       workspace.clientType,
-      priceOfferWorkspaceConfiguration(selectedTemplates, draft.saleVatMode, workspace.clientType),
+      selectedPricing!,
       selectedTemplates,
     )
     : null;
@@ -905,7 +1062,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   const pricingIsStale = pricingFreshness === 'STALE';
   const pricingChangeAcknowledged = Boolean(currentPricingSnapshot)
     && acknowledgedPricingRevision === currentPricingSnapshot?.revision;
-  const canSaveDraft = canEdit && !conflict && !saving
+  const canSaveDraft = canEdit && !conflict && !saving && !itemEditsPending && !configurationResolution.error
     && (dirty || pricingIsStale)
     && (!pricingIsStale || pricingChangeAcknowledged);
 
@@ -923,6 +1080,11 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   if (!workspace || !draft) return null;
 
   const calculatedWorkspace: WorkspaceData = { ...workspace,
+    viewerId: actorId,
+    documentRevision,
+    measurements: energyState.key === energyKey && energyState.data
+      ? overlayOfferWorkspaceMeasurements(workspace.measurements, energyState.data)
+      : workspace.measurements,
     valuation: valuationState.key === valuationKey ? valuationState.data : null,
     valuationLoading: !templatePreview && (valuationState.key !== valuationKey || valuationState.loading),
     valuationError: valuationState.key === valuationKey ? valuationState.error : '',
@@ -943,17 +1105,22 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
         draft={draft}
         templates={workspace.templates}
         clientType={workspace.clientType}
-        disabled={!canEdit || conflict}
-        calculationDisabled={templatePreview}
+        disabled={!canEdit || conflict || saving}
+        itemsEditable={workspace.canEditConfigurationItems === true}
+        onPricingPreview={updatePricingPreview}
+        pendingConfigurationEdits={itemEditsPending}
+        pendingPricing={itemPricingPreview?.projectId === projectId ? itemPricingPreview.pricing : null}
+        calculationDisabled={templatePreview || itemEditsPending}
         calculation={calculationState.key === calculationKey ? calculationState.data : null}
         calculationLoading={calculationState.loading}
         calculationMode={calculationState.mode}
         calculationProgress={calculationState.loading ? { completed: calculationState.completed, total: calculationState.total } : null}
-        calculationIsStale={calculationState.loading && calculationState.key !== calculationKey}
+        calculationIsStale={(calculationState.loading && calculationState.key !== calculationKey)
+          || (calculationState.key === calculationKey && calculationState.data?.recommendationSearch?.hasMore === true && !calculationState.jobId)}
         calculationError={calculationState.key === calculationKey ? calculationState.error : ''}
         onCalculate={calculateOffer}
         onSelectRanking={(templateIds) => {
-          if (templateIds.length > 2 || templateIds.some((id) => !workspace.templates.some((template) => template.id === id))) return;
+          if (itemEditsPendingRef.current || templateIds.length > 2 || templateIds.some((id) => !workspace.templates.some((template) => template.id === id))) return;
           updateDraft((current) => offerWorkspaceDraftWithRanking(current, workspace.templates, templateIds));
         }}
         onChange={updateDraft}
@@ -961,7 +1128,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
       : step === 'SAVINGS'
         ? <OfferSavingsScreen {...screenProps}
           targetTariffLabel={tariffs?.catalog.flatMap(operator => operator.tariffs.filter(tariff => tariff.id === draft.targetTariffId && operator.id === draft.targetOperatorId).map(tariff => `${operator.name} · ${tariff.code}`))[0] || 'Nie wybrano taryfy'}
-          calculation={calculationState.key === calculationKey ? calculationState.data : null}
+          calculation={calculationState.key === calculationKey && !(draft.configurationEdits?.length && calculationState.data?.recommendationSearch) ? calculationState.data : null}
           calculationLoading={calculationState.loading}
           calculationError={calculationState.key === calculationKey ? calculationState.error : ''}
           calculationDisabled={!canEdit || conflict || templatePreview}
@@ -969,9 +1136,17 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
         />
         : step === 'DESCRIPTION'
           ? <OfferDescriptionScreen draft={draft} disabled={!canEdit || conflict} onChange={updateDraft} />
-          : <OfferSummaryScreen workspace={calculatedWorkspace} draft={draft} templatePreview={templatePreview} />;
+        : <OfferSummaryScreen
+          workspace={calculatedWorkspace}
+          draft={draft}
+          disabled={!canEdit || conflict || saving || itemEditsPending}
+          itemsEditable={workspace.canEditConfigurationItems === true}
+          onChange={updateDraft}
+          templatePreview={templatePreview}
+        />;
 
   function exportDraft() {
+    if (itemEditsPendingRef.current) return;
     const url = URL.createObjectURL(new Blob([JSON.stringify({ projectId, input: draft }, null, 2)], { type: 'application/json;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
@@ -983,25 +1158,26 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   return <Box bg={background} color={text} minW="0" sx={{ letterSpacing: 0, button: { boxShadow: 'none' } }}>
     <Flex justify="space-between" align="end" gap="14px" mb="24px" wrap="wrap">
       <Flex align="end" gap="10px" flex="1" minW="200px" maxW="400px">
-        {onBack ? <Tooltip label="Wróć do projektu"><IconButton aria-label="Wróć do projektu" icon={<MdArrowBack />} variant="ghost" size="sm" mb="5px" onClick={onBack} /></Tooltip> : null}
+        {onBack ? <Tooltip label="Wróć do projektu"><IconButton aria-label="Wróć do projektu" icon={<MdArrowBack />} variant="ghost" size="sm" mb="5px" isDisabled={itemEditsPending} onClick={() => { if (!itemEditsPendingRef.current) onBack(); }} /></Tooltip> : null}
         <FormControl minW="0"><FormLabel fontSize="11px" fontWeight="500" mb="6px">Wariant oferty</FormLabel><Select aria-label="Wariant oferty" value="draft" onChange={() => undefined} h="42px" fontSize="12px" borderRadius="13px" title={workspace.projectName}><option value="draft">{selectedTemplates.length ? selectedTemplates.map((item) => templateKindLabel(item.kind)).join(' + ') : 'Nowa oferta'} · wariant roboczy</option></Select></FormControl>
       </Flex>
       <HStack spacing="8px" wrap="wrap" sx={{ button: { fontSize: '12px', borderRadius: '13px', height: '40px' } }}>
         <Tooltip label="Wczytywanie innych wariantów będzie dostępne po podłączeniu wersji ofert."><Box><Button variant="outline" isDisabled>Wczytaj</Button></Box></Tooltip>
-        <Button variant="outline" leftIcon={<MdDownload />} onClick={exportDraft}>Eksport JSON</Button>
+        <Button variant="outline" leftIcon={<MdDownload />} isDisabled={itemEditsPending} onClick={exportDraft}>Eksport JSON</Button>
         <Tooltip label="Ten etap zapisuje jeden szkic projektu; kolejne warianty nie są jeszcze dostępne."><Box><Button variant="outline" isDisabled>Nowy wariant</Button></Box></Tooltip>
         {workspace.revision ? <Tooltip label={`Rewizja danych źródłowych: ${workspace.revision}`}><IconButton aria-label="Pokaż rewizję danych źródłowych" icon={<MdOutlineInfo />} variant="ghost" size="xs" /></Tooltip> : null}
         <Button colorScheme="purple" bg="#8a47ff" isLoading={saving} isDisabled={!canSaveDraft} onClick={saveDraft}>Zapisz szkic</Button>
       </HStack>
     </Flex>
     <Text role="status" fontSize="11px" color={conflict ? 'orange.600' : muted} mb="12px" textAlign="right">{pricingIsStale ? 'Ceny wymagają przeliczenia' : status || (dirty ? 'Niezapisane zmiany' : 'Szkic')}{conflict ? ' · konflikt szkicu' : ''}</Text>
+    {itemEditsPending ? <Alert status="info" borderRadius="8px" mb="14px"><AlertIcon /><AlertDescription fontSize="sm">Zastosuj lub anuluj zmiany w tabeli „Wybrana konfiguracja”, aby zapisać szkic, obliczyć ofertę albo przejść dalej.</AlertDescription></Alert> : null}
 
     {error && workspace ? <Alert status={conflict ? 'warning' : 'error'} alignItems="flex-start" borderRadius="0"><AlertIcon mt="2px" /><AlertDescription flex="1">
       <Text fontSize="sm">{error}</Text>
       {conflict ? <Flex mt="8px" gap="8px" wrap="wrap">
-        {conflictKind !== 'draft' ? <Button size="xs" variant="outline" colorScheme="orange" onClick={refreshLocalDraft}>Zachowaj szkic i odśwież dane</Button> : null}
-        <Button size="xs" variant="outline" leftIcon={<MdDownload />} onClick={exportDraft}>Eksportuj mój szkic JSON</Button>
-        <Button size="xs" variant="outline" colorScheme="orange" onClick={discardLocalDraft}>Odrzuć lokalne zmiany i wczytaj zapisany szkic</Button>
+        {conflictKind !== 'draft' ? <Button size="xs" variant="outline" colorScheme="orange" isDisabled={itemEditsPending} onClick={refreshLocalDraft}>Zachowaj szkic i odśwież dane</Button> : null}
+        <Button size="xs" variant="outline" leftIcon={<MdDownload />} isDisabled={itemEditsPending} onClick={exportDraft}>Eksportuj mój szkic JSON</Button>
+        <Button size="xs" variant="outline" colorScheme="orange" isDisabled={itemEditsPending} onClick={discardLocalDraft}>Odrzuć lokalne zmiany i wczytaj zapisany szkic</Button>
       </Flex> : null}
     </AlertDescription></Alert> : null}
     {pricingIsStale && savedPricingSnapshot && currentPricingSnapshot ? <Alert status="warning" alignItems="flex-start" borderRadius="0" mb="14px">
@@ -1013,7 +1189,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
         <Checkbox
           mt="8px"
           isChecked={pricingChangeAcknowledged}
-          isDisabled={!canEdit || conflict}
+          isDisabled={!canEdit || conflict || itemEditsPending}
           onChange={(event) => setAcknowledgedPricingRevision(event.target.checked ? currentPricingSnapshot.revision : '')}
         >Potwierdzam nowe ceny przed zapisem</Checkbox>
       </AlertDescription>
@@ -1032,7 +1208,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
         <Flex direction={{ base: 'row', lg: 'column' }} gap="8px" overflowX={{ base: 'auto', lg: 'visible' }}>
           {steps.map((item, index) => {
             const active = item.id === step;
-            return <Button key={item.id} variant="ghost" flex={{ base: '0 0 auto', lg: 'initial' }} justifyContent="flex-start" alignItems="center" h="auto" minH="58px" px="9px" py="12px" textAlign="left" whiteSpace="normal" bg={active ? selectedBackground : 'transparent'} _hover={{ bg: selectedBackground }} color={text} borderRadius="13px" onClick={() => changeStep(item.id)} aria-current={active ? 'step' : undefined}>
+            return <Button key={item.id} variant="ghost" flex={{ base: '0 0 auto', lg: 'initial' }} justifyContent="flex-start" alignItems="center" h="auto" minH="58px" px="9px" py="12px" textAlign="left" whiteSpace="normal" bg={active ? selectedBackground : 'transparent'} _hover={{ bg: selectedBackground }} color={text} borderRadius="13px" isDisabled={itemEditsPending} onClick={() => changeStep(item.id)} aria-current={active ? 'step' : undefined}>
               <Flex minW="25px" h="25px" align="center" justify="center" borderRadius="50%" bg={active ? '#8a47ff' : softBackground} color={active ? 'white' : muted} mr="10px" fontSize="12px" fontWeight="500">{index + 1}</Flex>
               <Box minW="0"><Text fontSize="12px" fontWeight="500">{item.title}</Text><Text fontSize="10px" color={muted} fontWeight="400" mt="3px">{item.subtitle}</Text></Box>
             </Button>;
@@ -1045,8 +1221,8 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
         <Box minH="370px">{stepContent}</Box>
         <Divider my="18px" />
         <Flex justify="space-between" gap="10px" wrap="wrap">
-          <Button size="sm" variant="outline" leftIcon={<MdArrowBack />} isDisabled={currentIndex === 0} onClick={() => changeStep(steps[Math.max(0, currentIndex - 1)].id)}>Wstecz</Button>
-          {currentIndex < steps.length - 1 ? <Button size="sm" colorScheme="purple" rightIcon={<MdArrowForward />} onClick={() => changeStep(steps[currentIndex + 1].id)}>Dalej</Button> : <Button size="sm" colorScheme="purple" leftIcon={<MdSave />} isLoading={saving} isDisabled={!canSaveDraft} onClick={saveDraft}>Zapisz szkic</Button>}
+          <Button size="sm" variant="outline" leftIcon={<MdArrowBack />} isDisabled={currentIndex === 0 || itemEditsPending} onClick={() => changeStep(steps[Math.max(0, currentIndex - 1)].id)}>Wstecz</Button>
+          {currentIndex < steps.length - 1 ? <Button size="sm" colorScheme="purple" rightIcon={<MdArrowForward />} isDisabled={itemEditsPending} onClick={() => changeStep(steps[currentIndex + 1].id)}>Dalej</Button> : <Button size="sm" colorScheme="purple" leftIcon={<MdSave />} isLoading={saving} isDisabled={!canSaveDraft} onClick={saveDraft}>Zapisz szkic</Button>}
         </Flex>
       </Box>
     </Grid>

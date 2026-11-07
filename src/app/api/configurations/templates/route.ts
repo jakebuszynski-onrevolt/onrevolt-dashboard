@@ -14,6 +14,16 @@ import {
 import { prisma } from 'lib/onrevolt/prisma';
 import { authorizeStaffRequest, isAdminUser } from 'lib/onrevolt/staff-server';
 import { resolveTemplateItemCosts, resolveTemplateItemSaleVat } from 'lib/onrevolt/configuration-templates';
+import { ManualSaleTotalsValidationError, validateManualSaleTotals } from 'lib/onrevolt/calculator';
+import {
+  assertTemplateCatalogSnapshot,
+  buildTemplateItemWrites,
+  CatalogPriceChangedError,
+  matchesStoredTemplateCatalogSnapshot,
+  normalizeTemplateUnitSaleNet,
+  normalizeTemplateSourceRow,
+  TemplateUnitSaleNetValidationError,
+} from 'lib/onrevolt/template-manager-save';
 
 function templateInclude(asOf = new Date()) {
   return {
@@ -44,12 +54,17 @@ function requiredNumber(value: unknown, fieldName: string) {
   return number;
 }
 
-class CatalogPriceChangedError extends Error {}
+class TemplateVersionConflictError extends Error {}
 
-async function itemData(item: Record<string, any>, index: number) {
+async function itemData(item: Record<string, any>, index: number, existingItem?: Record<string, any>) {
   const productId = typeof item.productId === 'string' && item.productId ? item.productId : undefined;
   const pricingMode = item.pricingMode || (productId ? 'CATALOG' : 'INDIVIDUAL');
   const operatingCostBasis = pricingMode === 'CATALOG' ? 'PER_UNIT' : item.operatingCostBasis || 'PER_UNIT';
+  const unitSaleNet = Object.prototype.hasOwnProperty.call(item, 'unitSaleNet')
+    ? normalizeTemplateUnitSaleNet(item.unitSaleNet)
+    : existingItem?.unitSaleNet ?? null;
+  const quantity = requiredNumber(item.quantity, `items[${index}].quantity`);
+  if (unitSaleNet !== null) validateManualSaleTotals(Number(unitSaleNet), quantity);
   if (!['CATALOG', 'INDIVIDUAL', 'LEGACY'].includes(pricingMode)) throw new Error(`Nieprawidłowe źródło ceny pozycji ${index + 1}`);
   if (!['PER_UNIT', 'PER_LINE'].includes(operatingCostBasis)) throw new Error(`Nieprawidłowy koszt realizacji pozycji ${index + 1}`);
   let priceFields: Record<string, unknown> = {};
@@ -57,59 +72,91 @@ async function itemData(item: Record<string, any>, index: number) {
 
   if (pricingMode === 'CATALOG') {
     if (!productId) throw new Error(`Pozycja ${index + 1} wymaga produktu z katalogu`);
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
-      include: { prices: { where: { validFrom: { lte: new Date() } }, orderBy: { validFrom: 'desc' }, take: 1 } },
-    });
-    const price = product?.prices[0];
-    if (!price) throw new Error(`Brak aktualnej ceny katalogowej: ${item.description || item.name || `pozycja ${index + 1}`}`);
-    const costs = resolveTemplateItemCosts({
-      productId,
-      product: { name: product.name, prices: [price] },
-      pricingMode,
-      operatingCostBasis,
-      description: item.description,
-    });
-    catalogPriceId = costs.catalogPriceId || undefined;
-    if (item._requireCurrentCatalogPrice === true && item.catalogPriceId && item.catalogPriceId !== catalogPriceId) {
-      throw new CatalogPriceChangedError(`Cena katalogowa pozycji „${item.description || 'bez nazwy'}” zmieniła się. Odśwież podgląd przed zapisem.`);
-    }
-    priceFields = {
-      unitPurchaseNet: costs.unitPurchaseNet,
-      purchaseVatRate: costs.purchaseVatRate,
-      operatingCostNet: costs.operatingCostNet,
-      marginRate: costs.marginRate,
-      saleVatRate: resolveTemplateItemSaleVat({
+    const preserveStoredSnapshot = item._requireCatalogSnapshot === true
+      && existingItem
+      && matchesStoredTemplateCatalogSnapshot(item, existingItem);
+    if (preserveStoredSnapshot) {
+      catalogPriceId = existingItem.catalogPriceId || undefined;
+      priceFields = {
+        unitPurchaseNet: existingItem.unitPurchaseNet,
+        purchaseVatRate: existingItem.purchaseVatRate,
+        operatingCostNet: existingItem.operatingCostNet,
+        marginRate: existingItem.marginRate,
+        saleVatRate: existingItem.saleVatRate,
+      };
+    } else {
+      const product = await prisma.product.findUnique({
+        where: { id: productId },
+        include: { prices: { where: { validFrom: { lte: new Date() } }, orderBy: { validFrom: 'desc' }, take: 1 } },
+      });
+      const price = product?.prices[0];
+      if (!price) throw new Error(`Brak aktualnej ceny katalogowej: ${item.description || item.name || `pozycja ${index + 1}`}`);
+      const costs = resolveTemplateItemCosts({
+        productId,
+        product: { name: product.name, prices: [price] },
+        pricingMode,
+        operatingCostBasis,
+        unitSaleNet,
+        description: item.description,
+      });
+      catalogPriceId = costs.catalogPriceId || undefined;
+      const saleVatRate = resolveTemplateItemSaleVat({
         productId,
         product: { name: product.name, prices: [price] },
         pricingMode,
         description: item.description,
-      }),
-    };
+      });
+      const marginRate = price.marginRate == null && unitSaleNet !== null
+        ? (item.marginRate == null ? null : optionalNumber(item.marginRate) ?? null)
+        : costs.marginRate;
+      if (item._requireCurrentCatalogPrice === true && item.catalogPriceId && item.catalogPriceId !== catalogPriceId) {
+        throw new CatalogPriceChangedError(item.description);
+      }
+      if (item._requireCatalogSnapshot === true) {
+        assertTemplateCatalogSnapshot(item, {
+          catalogPriceId,
+          unitPurchaseNet: costs.unitPurchaseNet,
+          purchaseVatRate: costs.purchaseVatRate,
+          operatingCostNet: costs.operatingCostNet,
+          marginRate,
+          saleVatRate,
+          operatingCostBasis: costs.operatingCostBasis,
+          description: item.description,
+        }, { allowMissingMargin: unitSaleNet !== null });
+      }
+      priceFields = {
+        unitPurchaseNet: costs.unitPurchaseNet,
+        purchaseVatRate: costs.purchaseVatRate,
+        operatingCostNet: costs.operatingCostNet,
+        marginRate,
+        saleVatRate,
+      };
+    }
   }
 
   return {
-    productId,
+    productId: productId ?? null,
     position: Number.isInteger(Number(item.position)) ? Number(item.position) : index + 1,
     description: String(item.description || item.name || `Pozycja ${index + 1}`),
-    quantity: requiredNumber(item.quantity, `items[${index}].quantity`),
+    quantity,
+    unitSaleNet,
     role: (typeof item.role === 'string' ? item.role : 'OTHER') as any,
     supplyMode: (typeof item.supplyMode === 'string' ? item.supplyMode : 'ONREVOLT_SUPPLIED') as any,
     ...priceFields,
     ...(pricingMode === 'CATALOG' ? {} : {
-      unitPurchaseNet: optionalNumber(item.unitPurchaseNet),
-      purchaseVatRate: optionalNumber(item.purchaseVatRate),
-      operatingCostNet: optionalNumber(item.operatingCostNet),
-      marginRate: optionalNumber(item.marginRate),
-      saleVatRate: optionalNumber(item.saleVatRate),
+      unitPurchaseNet: optionalNumber(item.unitPurchaseNet) ?? null,
+      purchaseVatRate: optionalNumber(item.purchaseVatRate) ?? null,
+      operatingCostNet: optionalNumber(item.operatingCostNet) ?? null,
+      marginRate: optionalNumber(item.marginRate) ?? null,
+      saleVatRate: optionalNumber(item.saleVatRate) ?? null,
     }),
     pricingMode,
     operatingCostBasis,
-    catalogPriceId,
+    catalogPriceId: catalogPriceId ?? null,
     isOptional: Boolean(item.isOptional),
     requiresReview: Boolean(item.requiresReview),
     sourceSheet: typeof item.sourceSheet === 'string' ? item.sourceSheet : undefined,
-    sourceRow: Number.isInteger(Number(item.sourceRow)) ? Number(item.sourceRow) : undefined,
+    sourceRow: normalizeTemplateSourceRow(item.sourceRow),
     notes: typeof item.notes === 'string' ? item.notes : undefined,
   };
 }
@@ -197,6 +244,8 @@ export async function POST(req: NextRequest) {
     return jsonResponse({ ok: true, data: template }, { status: 201 });
   } catch (error) {
     if (error instanceof CatalogPriceChangedError) return badRequest(error.message);
+    if (error instanceof TemplateUnitSaleNetValidationError) return badRequest(error.message);
+    if (error instanceof ManualSaleTotalsValidationError) return badRequest(error.message);
     return serverError('Nie udało się zapisać szablonu konfiguracji', error);
   }
 }
@@ -213,21 +262,52 @@ export async function PUT(req: NextRequest) {
     const existing = await prisma.configurationTemplate.findUnique({ where: { id }, include: templateInclude() });
     if (!existing) return notFound('Nie znaleziono szablonu konfiguracji');
 
-    const items = await Promise.all(rawItems.map(itemData));
+    const suppliedVersion = body.expectedVersion !== undefined ? body.expectedVersion : body.version;
+    let expectedVersion: number | undefined;
+    if (suppliedVersion !== undefined) {
+      if (suppliedVersion === null || suppliedVersion === '') return badRequest('Nieprawidłowa wersja szablonu');
+      expectedVersion = Number(suppliedVersion);
+      if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+        return badRequest('Nieprawidłowa wersja szablonu');
+      }
+      if (expectedVersion !== existing.version) {
+        return jsonResponse({ ok: false, error: 'Wróć do listy i otwórz aktualny szablon przed zapisem.' }, { status: 409 });
+      }
+    }
+
+    const existingItemsById = new Map(existing.items.map((item) => [item.id, item]));
+    const items = await Promise.all(rawItems.map((item, index) => itemData(
+      item,
+      index,
+      typeof item?.id === 'string' ? existingItemsById.get(item.id) : undefined,
+    )));
+    const itemWrites = buildTemplateItemWrites(
+      existing.items.map((item) => item.id),
+      rawItems,
+      items,
+    );
+    const sharedName = requireString(body, 'name');
     const updated = await prisma.$transaction(async (tx) => {
-      const sharedName = requireString(body, 'name');
-      await tx.configurationTemplate.updateMany({
-        where: { familyKey: existing.familyKey },
-        data: { name: sharedName },
+      const guarded = await tx.configurationTemplate.updateMany({
+        where: { id, version: existing.version },
+        data: { version: { increment: 1 } },
       });
+      if (guarded.count !== 1) throw new TemplateVersionConflictError();
+
+      if (sharedName !== existing.name) {
+        await tx.configurationTemplate.updateMany({
+          where: { familyKey: existing.familyKey },
+          data: { name: sharedName },
+        });
+      }
       return tx.configurationTemplate.update({
         where: { id },
         data: {
           ...templateData(body),
-          version: { increment: 1 },
           items: {
-            deleteMany: {},
-            create: items,
+            ...(itemWrites.deleteMany ? { deleteMany: itemWrites.deleteMany } : {}),
+            ...(itemWrites.update.length > 0 ? { update: itemWrites.update } : {}),
+            ...(itemWrites.create.length > 0 ? { create: itemWrites.create } : {}),
           },
         },
         include: templateInclude(),
@@ -244,6 +324,11 @@ export async function PUT(req: NextRequest) {
     return jsonResponse({ ok: true, data: updated });
   } catch (error) {
     if (error instanceof CatalogPriceChangedError) return badRequest(error.message);
+    if (error instanceof TemplateUnitSaleNetValidationError) return badRequest(error.message);
+    if (error instanceof ManualSaleTotalsValidationError) return badRequest(error.message);
+    if (error instanceof TemplateVersionConflictError) {
+      return jsonResponse({ ok: false, error: 'Wróć do listy i otwórz aktualny szablon przed zapisem.' }, { status: 409 });
+    }
     return serverError('Nie udało się zaktualizować szablonu konfiguracji', error);
   }
 }

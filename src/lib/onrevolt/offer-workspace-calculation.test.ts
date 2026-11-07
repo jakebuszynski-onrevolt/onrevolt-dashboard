@@ -293,8 +293,13 @@ test('accepted tax estimate uses 12 percent after grant and is not certified eco
   assert.equal(result.estimatedAnnualSavingsPln?.length, 20);
   assert.equal(result.estimatedAnnualTargetCostPln?.length, 20);
   assert.equal(result.estimatedAnnualTariffOnlyCostPln?.length, 20);
+  assert.equal(result.estimatedAnnualPriceGrowthRate, 0.05);
+  assert.equal(result.estimatedAnnualExportPriceGrowthRate, 0);
+  assert.equal(result.estimatedMonthlyTargetCostPln?.length, 240);
+  assert.equal(result.estimatedMonthlyTariffOnlyCostPln?.length, 240);
   assert.deepEqual(result.estimatedAnnualSavingsPln,
     result.estimatedAnnualTariffOnlyCostPln!.map((cost, index) => cost - result.estimatedAnnualTargetCostPln![index]));
+  assert.ok(result.warnings.some(warning => warning.includes('5% rocznie') && warning.includes('ceny eksportu')));
   assert.ok(result.warnings.some(warning => warning.includes('wystarczający dochód')));
 });
 

@@ -1,6 +1,7 @@
 import childProcess from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { getOfferPvSourceRevision, isOfferPvSourceUpdateActive } from './offer-pv-source-revision';
 
 const MAX_HOURS = 366 * 24;
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
@@ -38,9 +39,18 @@ export type OfferPvProfile = {
 type NormalizedInput = OfferPvProfileInput & { startMs: number; hourCount: number };
 type RuntimeProfile = { hours: Array<{ startUtc: string; pvKwh: number }>; source: string; model: string; referencePeriod: string };
 type CachedProfile = { expiresAt: number; profile: OfferPvProfile };
+export type OfferPvProfileRead = { profile: OfferPvProfile; sourceRevision: string | null };
+
+export class OfferPvSourceRevisionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OfferPvSourceRevisionError';
+  }
+}
 
 const profileCache = new Map<string, CachedProfile>();
-const profileInflight = new Map<string, Promise<OfferPvProfile>>();
+const profileInflight = new Map<string, Promise<OfferPvProfileRead>>();
+let activeProfileComputations = 0;
 
 function numberInRange(value: unknown, minimum: number, maximum: number, name: string) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum) {
@@ -92,8 +102,9 @@ function cloneProfile(profile: OfferPvProfile): OfferPvProfile {
   return { ...profile, hours: profile.hours.map((hour) => ({ ...hour })) };
 }
 
-function cacheKey(input: NormalizedInput) {
+function cacheKey(input: NormalizedInput, sourceRevision: string) {
   return JSON.stringify([
+    sourceRevision,
     input.latitude,
     input.longitude,
     input.powerKw,
@@ -103,6 +114,13 @@ function cacheKey(input: NormalizedInput) {
     input.fromUtc,
     input.untilUtc,
   ]);
+}
+
+function coldInFlightKey(input: NormalizedInput) {
+  return `cold:${JSON.stringify([
+    input.latitude, input.longitude, input.powerKw, input.tiltDegrees, input.azimuthDegrees,
+    input.lossPercent, input.fromUtc, input.untilUtc,
+  ])}`;
 }
 
 function getCachedProfile(key: string): OfferPvProfile | null {
@@ -277,27 +295,57 @@ async function computeProfile(normalized: NormalizedInput): Promise<OfferPvProfi
   };
 }
 
-export async function readOfferPvProfile(input: OfferPvProfileInput): Promise<OfferPvProfile> {
+export async function readOfferPvProfileWithSourceRevision(input: OfferPvProfileInput): Promise<OfferPvProfileRead> {
   const normalized = normalizeInput(input);
-  if (normalized.powerKw === 0) return zeroProfile(normalized);
+  if (normalized.powerKw === 0) return { profile: zeroProfile(normalized), sourceRevision: null };
 
-  const key = cacheKey(normalized);
-  const cached = getCachedProfile(key);
-  if (cached) return cached;
+  const coldKey = coldInFlightKey(normalized);
+  const coldPending = profileInflight.get(coldKey);
+  if (coldPending) return coldPending.then(result => ({ ...result, profile: cloneProfile(result.profile) }));
+  if (isOfferPvSourceUpdateActive(normalized)) {
+    throw new OfferPvSourceRevisionError('Dane PVGIS dla tej lokalizacji są właśnie aktualizowane. Ponów obliczenia.');
+  }
 
-  const pending = profileInflight.get(key);
-  if (pending) return pending.then(cloneProfile);
-  if (profileInflight.size >= PROFILE_INFLIGHT_MAX) {
+  const sourceRevisionBefore = getOfferPvSourceRevision(normalized);
+  if (sourceRevisionBefore === null && isOfferPvSourceUpdateActive(normalized)) {
+    throw new OfferPvSourceRevisionError('Dane PVGIS dla tej lokalizacji są właśnie aktualizowane. Ponów obliczenia.');
+  }
+  const keyBefore = sourceRevisionBefore ? cacheKey(normalized, sourceRevisionBefore) : null;
+  if (keyBefore) {
+    const cached = getCachedProfile(keyBefore);
+    if (cached) return { profile: cached, sourceRevision: sourceRevisionBefore };
+
+    const pending = profileInflight.get(keyBefore);
+    if (pending) return pending.then(result => ({ ...result, profile: cloneProfile(result.profile) }));
+  }
+  if (activeProfileComputations >= PROFILE_INFLIGHT_MAX) {
     throw new Error('Osiągnięto limit 16 równoległych obliczeń profilu PV');
   }
 
-  const task = computeProfile(normalized);
-  profileInflight.set(key, task);
+  activeProfileComputations += 1;
+  const inFlightKey = keyBefore ?? coldKey;
+  const task = (async (): Promise<OfferPvProfileRead> => {
+    const profile = await computeProfile(normalized);
+    const sourceRevisionAfter = getOfferPvSourceRevision(normalized);
+    if (!sourceRevisionAfter) {
+      throw new OfferPvSourceRevisionError('Nie udało się ustalić rewizji źródła PV po obliczeniu profilu.');
+    }
+    if (sourceRevisionBefore !== null && sourceRevisionAfter !== sourceRevisionBefore) {
+      throw new OfferPvSourceRevisionError('Źródło PV zmieniło się podczas generowania profilu. Ponów obliczenia.');
+    }
+    rememberProfile(cacheKey(normalized, sourceRevisionAfter), profile);
+    return { profile, sourceRevision: sourceRevisionAfter };
+  })();
+  profileInflight.set(inFlightKey, task);
   try {
-    const profile = await task;
-    rememberProfile(key, profile);
-    return cloneProfile(profile);
+    const result = await task;
+    return { ...result, profile: cloneProfile(result.profile) };
   } finally {
-    if (profileInflight.get(key) === task) profileInflight.delete(key);
+    activeProfileComputations -= 1;
+    if (profileInflight.get(inFlightKey) === task) profileInflight.delete(inFlightKey);
   }
+}
+
+export async function readOfferPvProfile(input: OfferPvProfileInput): Promise<OfferPvProfile> {
+  return (await readOfferPvProfileWithSourceRevision(input)).profile;
 }

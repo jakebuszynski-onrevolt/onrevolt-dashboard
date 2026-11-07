@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { parseOfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
+import { offerWorkspaceDraftWithBatteryPresence, parseOfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
 import {
   renderOfferWorkspaceDocument,
   type OfferWorkspaceDocumentData,
@@ -73,7 +73,8 @@ export async function POST(req: NextRequest) {
     } catch (error) {
       return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 400 });
     }
-    const document = renderOfferWorkspaceDocument(body.workspace, draft, { templateKey: 'REFORM_B2C/2026_10_V4' });
+    const canonicalDraft = offerWorkspaceDraftWithBatteryPresence(draft, body.workspace.input.existingBatteryPresent ?? null);
+    const document = renderOfferWorkspaceDocument(body.workspace, canonicalDraft, { templateKey: 'REFORM_B2C/2026_10_V4' });
     return NextResponse.json({ ok: true, document });
   } catch (error) {
     if (error instanceof RequestTooLargeError) return NextResponse.json({ ok: false, error: 'Żądanie przekracza limit 256 KiB.' }, { status: 413 });

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { badRequest, forbidden, jsonResponse, notFound } from 'lib/onrevolt/api';
 import { authorizeStaffRequest, hasStaffPermission } from 'lib/onrevolt/staff-server';
-import { parseOfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
+import { offerWorkspaceDraftWithBatteryPresence, parseOfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
 import { loadProjectOfferWorkspace, OfferWorkspaceNotFoundError } from 'lib/onrevolt/offer-workspace-server';
 import { calculateOfferWorkspaceEnergy } from 'lib/onrevolt/offer-workspace-energy-server';
 import type { OfferMeasurementSeries } from 'lib/onrevolt/offer-measurements';
@@ -34,7 +34,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     let series: OfferMeasurementSeries | null = null;
     const workspace = await loadProjectOfferWorkspace(id, access.user, new Date(), value => { series = value; });
     if (body.sourceRevision !== workspace.revision) return jsonResponse({ ok: false, error: 'Dane projektu zmieniły się. Odśwież kreator przed obliczeniami.' }, { status: 409 });
-    const data = await calculateOfferWorkspaceEnergy(workspace, draft, series);
+    const canonicalDraft = offerWorkspaceDraftWithBatteryPresence(draft, workspace.input.existingBatteryPresent ?? null);
+    const data = await calculateOfferWorkspaceEnergy(workspace, canonicalDraft, series);
     const fresh = await loadProjectOfferWorkspace(id, access.user, new Date());
     if (fresh.revision !== workspace.revision) return jsonResponse({ ok: false, error: 'Dane zmieniły się podczas obliczeń. Odśwież kreator.' }, { status: 409 });
     return jsonResponse({ ok: true, data }, { headers: { 'Cache-Control': 'private, no-store' } });

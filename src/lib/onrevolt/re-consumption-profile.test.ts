@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { prisma } from './prisma';
 import { rePrisma } from './re-stations';
 import type { ReConsumptionProfile } from './re-consumption-api';
 import { buildReEnergyUsageProfile, readProjectReConsumptionProfile } from './re-consumption-profile';
 import { resolveProjectAnalysisPeriod } from './project-analysis-period';
+import type { CatalogProfile } from './reference-profile-comparison';
+import { buildReferenceProfileProjection } from './reference-profile-comparison';
+import { profileContentHash } from '../../../scripts/profile-catalog/storage-core';
+
+const profileCatalog = JSON.parse(readFileSync(path.join(process.cwd(), 'output', 'profile-catalog-20261106', 'catalog.json'), 'utf8')) as { profiles: CatalogProfile[] };
+const bdewH25 = profileCatalog.profiles.find(item => item.key === 'bdew-2025-h25')!;
 
 const profile = (): ReConsumptionProfile => ({ station: '41', months: null, sources: null, exportSources: null,
   annualUsageKwh: 3650, hourlyProfile: { exists: false, rows: 0 } });
@@ -113,6 +121,8 @@ function linked(t: TestContext, hasMeasurements: boolean, fixture: {
   pvRows?: Array<[string, number, number?]>;
   pvUrls?: string[];
   projectQuery?: (args: any) => void;
+  referenceSelection?: { key: string | null; revision: number; contentHash: string | null; profileName: string | null };
+  referenceProfile?: CatalogProfile;
 } = {}) {
   const previous = process.env.ONREVOLT_RE_DATABASE_URL;
   process.env.ONREVOLT_RE_DATABASE_URL = 'mysql://test:test@localhost:1/unused';
@@ -129,7 +139,22 @@ function linked(t: TestContext, hasMeasurements: boolean, fixture: {
   }) as unknown as typeof originalFind;
   t.after(() => { prisma.project.findFirst = originalFind; });
   const originalRaw = prisma.$queryRaw;
-  prisma.$queryRaw = (async () => [{ analysisStartMonth: fixture.analysisStartMonth ?? null }]) as typeof originalRaw;
+  prisma.$queryRaw = (async (strings: TemplateStringsArray) => {
+    const sql = Array.from(strings).join(' ');
+    if (sql.includes('ProjectReferenceLoadProfile')) {
+      if (!fixture.referenceSelection) return [];
+      return [{ profileKey: fixture.referenceSelection.key, revision: fixture.referenceSelection.revision,
+        contentHash: fixture.referenceSelection.contentHash, profileName: fixture.referenceSelection.profileName, projectionVersion: 1 }];
+    }
+    if (sql.includes('FROM ReferenceLoadProfile') && fixture.referenceProfile) {
+      const profile = fixture.referenceProfile;
+      return [{ key: profile.key, sourceKey: profile.sourceKey, name: profile.name, category: profile.category, kind: profile.kind,
+        quantity: profile.quantity, unit: profile.unit, timeBasis: profile.timeBasis, resolutionMinutes: profile.resolutionMinutes,
+        start: profile.start, end: profile.end, contentHash: profileContentHash(profile as any), pointCount: profile.series.length,
+        seriesJson: JSON.stringify(profile.series), metadataJson: JSON.stringify(profile.metadata), qualityJson: JSON.stringify(profile.quality) }];
+    }
+    return [{ analysisStartMonth: fixture.analysisStartMonth ?? null }];
+  }) as typeof originalRaw;
   t.after(() => { prisma.$queryRaw = originalRaw; });
   t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
@@ -191,6 +216,71 @@ test('explicit project period overrides RE station dateStart and returns exactly
   assert.equal(result.measuredDays, 0);
 });
 
+test('linked selected reference shape uses current CRM annual across an exact rolling year and returns daily provenance', async t => {
+  const contentHash = profileContentHash(bdewH25 as any);
+  const selection = { key: bdewH25.key, revision: 4, contentHash, profileName: bdewH25.name };
+  linked(t, false, {
+    profile: { ...profile(), annualUsageKwh: 99_999 },
+    metadata: { annualUsageKwh: 88_888, dateStart: '2022-01-01' },
+    analysisStartMonth: '2025-10',
+    referenceSelection: selection,
+    referenceProfile: bdewH25,
+    project: { energyAudits: [{ annualConsumptionKwh: 3600.001, existingPvKw: 0 }] },
+  });
+
+  const result = await readProjectReConsumptionProfile('project');
+  const monthlyTotal = result.months.reduce((sum, month) => sum + month.totalKwh, 0);
+  const period = resolveProjectAnalysisPeriod('2025-10', new Date('2026-10-30T12:00:00.000Z'));
+
+  assert.ok(Math.abs(monthlyTotal - 3600.001) < 1e-9,
+    'the selected shape normalizes the exact requested 12 months to current CRM annual consumption');
+  assert.deepEqual(result.months.map(month => month.key), period.periodKeys);
+  assert.equal(result.referenceProfile?.key, bdewH25.key);
+  assert.equal(result.referenceProfile?.contentHash, contentHash);
+  assert.equal(result.referenceProfile?.projectionVersion, 1);
+  assert.equal(Object.keys(result.dailyConsumptionKwh || {}).length,
+    period.periodKeys.reduce((total, monthKey) => total + new Date(Date.UTC(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)), 0)).getUTCDate(), 0));
+  assert.ok(Object.values(result.dailyConsumptionKwh || {}).every(hours => hours.length === 24 && hours.every(value => value >= 0)));
+  assert.ok(result.warnings.some(warning => warning.includes(`Wybrany profil referencyjny ${bdewH25.name}`)));
+});
+
+test('selected profile replaces generated manual USE24 hours but keeps explicit manual monthly totals', () => {
+  const manualProfile = profile();
+  manualProfile.annualUsageKwh = 9_999;
+  manualProfile.months = Array(12).fill(100);
+  manualProfile.sources = Array(12).fill('manual');
+  manualProfile.exportSources = Array(12).fill('standard');
+  manualProfile.hourlyProfile = { exists: true, rows: 31 * 24 };
+  const manualRows: Array<[string, number, number?]> = january().map(([stamp]) => [stamp, 4, 0]);
+  const referenceProfile = { profile: bdewH25, contentHash: profileContentHash(bdewH25 as any) };
+  const analysisPeriod = resolveProjectAnalysisPeriod('2025-10', new Date('2026-10-30T12:00:00.000Z'));
+  const result = buildReEnergyUsageProfile({ profile: manualProfile, dashboard: dashboard(), hourly: manualRows,
+    linked: false, analysisPeriod, referenceProfile, referenceProfileSelectionRevision: 4, currentCRMAnnualKwh: 3600.001 });
+  const januaryWeight = buildReferenceProfileProjection(bdewH25, Array.from({ length: 31 }, (_, index) => `2026-01-${String(index + 1).padStart(2, '0')}`))
+    .days.reduce((total, day) => total + day.hours.reduce((sum, value) => sum + value, 0), 0);
+  const expected = buildReferenceProfileProjection(bdewH25, ['2026-01-02']).days[0].hours.map(value => 100 * value / januaryWeight);
+  const actual = result.dailyConsumptionKwh!['2026-01-02'];
+
+  assert.ok(Math.abs(result.months.find(month => month.key === '2026-01')!.totalKwh - 100) < 1e-10);
+  assert.equal(result.annualKwh, 1200, 'the twelve explicit manual monthly totals remain authoritative');
+  assert.ok(expected.every((value, hour) => Math.abs(actual[hour] - value) < 1e-10),
+    'manual month totals use the selected hourly shape instead of the generated USE24 pattern');
+});
+
+test('a saved reset to default RE ignores stale linked annual metadata and keeps the exact CRM annual', () => {
+  const result = buildReEnergyUsageProfile({
+    profile: { ...profile(), annualUsageKwh: 99_999 },
+    dashboard: dashboard(),
+    linked: false,
+    analysisPeriod: resolveProjectAnalysisPeriod('2025-10', new Date('2026-10-30T12:00:00.000Z')),
+    referenceProfileSelectionRevision: 5,
+    currentCRMAnnualKwh: 3600.001,
+  });
+  assert.ok(Math.abs(result.annualKwh - 3600.001) < 1e-9);
+  assert.ok(result.warnings.some(warning => warning.includes('zresetowany')));
+  assert.equal(result.referenceProfile, undefined);
+});
+
 test('CRM PV 9.9 kWp zastępuje RE metadata 0, lokalizacja projektu i okres trafiają do pobrania PV', async t => {
   const pvUrls: string[] = [];
   const queries = linked(t, false, {
@@ -207,7 +297,7 @@ test('CRM PV 9.9 kWp zastępuje RE metadata 0, lokalizacja projektu i okres traf
     projectQuery: args => {
       assert.ok(args.select.offerWorkspace.select.input);
       assert.deepEqual(args.select.energyAudits, {
-        select: { existingPvKw: true, roofTiltDeg: true, roofOrientation: true }, take: 1,
+        select: { annualConsumptionKwh: true, existingPvKw: true, roofTiltDeg: true, roofOrientation: true }, take: 1,
       });
       assert.deepEqual(args.select.investmentSite, { select: { latitude: true, longitude: true } });
     },
@@ -347,7 +437,8 @@ test('unlinked project reads only its scoped annual declaration', async t => {
     return { dashboardStation: null, dashboardStationNumber: null };
   }) as typeof originalFind;
   prisma.energyAudit.findUnique = (async () => ({ annualConsumptionKwh: 3650 })) as unknown as typeof originalAudit;
-  prisma.$queryRaw = (async () => [{ analysisStartMonth: null }]) as typeof originalRaw;
+  prisma.$queryRaw = (async (strings: TemplateStringsArray) => Array.from(strings).join(' ').includes('ProjectReferenceLoadProfile')
+    ? [] : [{ analysisStartMonth: null }]) as typeof originalRaw;
   t.after(() => { prisma.project.findFirst = originalFind; prisma.energyAudit.findUnique = originalAudit; prisma.$queryRaw = originalRaw; });
   t.mock.method(globalThis, 'fetch', async () => { throw new Error('Unexpected RE request'); });
   const result = await readProjectReConsumptionProfile('project', { clientId: 'client' });

@@ -72,6 +72,7 @@ function lineInputFromItem(item: Record<string, any>, saleVatMode: Configuration
       operatingCostNet: 0,
       marginRate: 0,
       saleVatRate: 0,
+      unitSaleNet: undefined,
       includeVatSurplus: false,
     };
   }
@@ -85,6 +86,7 @@ function lineInputFromItem(item: Record<string, any>, saleVatMode: Configuration
     saleVatRate: resolveSaleVatRate(saleVatMode, Number(item.saleVatRate || 0)),
     operatingCostBasis: item.operatingCostBasis || (item.pricingMode === 'LEGACY' ? 'PER_LINE' : 'PER_UNIT'),
     includeVatSurplus: item.includeVatSurplus !== false,
+    unitSaleNet: item.unitSaleNet == null || item.unitSaleNet === '' ? undefined : Number(item.unitSaleNet),
     forcedSaleNet: item.forcedSaleNet == null || item.forcedSaleNet === '' ? undefined : Number(item.forcedSaleNet),
   } as Parameters<typeof calculateConfigurationLine>[0] & { operatingCostBasis?: string };
 }
@@ -158,11 +160,14 @@ async function resolveConfigurationItemPricing(
   return rawItems.map((item) => {
     const pricingMode = pricingModeForItem(item);
     const operatingCostBasis = operatingCostBasisForItem(item, pricingMode);
+    const existing = typeof item.id === 'string' ? existingById.get(item.id) : undefined;
+    const unitSaleNet = Object.prototype.hasOwnProperty.call(item, 'unitSaleNet')
+      ? optionalNumber(item.unitSaleNet) ?? null
+      : existing?.unitSaleNet ?? null;
     if (pricingMode !== 'CATALOG') {
-      return { ...item, pricingMode, operatingCostBasis, catalogPriceId: null };
+      return { ...item, unitSaleNet, pricingMode, operatingCostBasis, catalogPriceId: null };
     }
 
-    const existing = typeof item.id === 'string' ? existingById.get(item.id) : undefined;
     const canPreserveSavedPrice = existing
       && existing.productId === item.productId
       && existing.pricingMode === 'CATALOG'
@@ -184,6 +189,7 @@ async function resolveConfigurationItemPricing(
         operatingCostNet: existing.operatingCostNet,
         marginRate: existing.marginRate,
         saleVatRate,
+        unitSaleNet,
         pricingMode: 'CATALOG',
         operatingCostBasis: existing.operatingCostBasis,
         catalogPriceId: existing.catalogPriceId,
@@ -194,7 +200,13 @@ async function resolveConfigurationItemPricing(
     if (item._requireCurrentCatalogPrice === true && item.catalogPriceId && item.catalogPriceId !== costs.catalogPriceId) {
       throw new CatalogPriceChangedError(`Cena katalogowa pozycji „${item.description || 'bez nazwy'}” zmieniła się. Odśwież podgląd przed zapisem.`);
     }
-    return { ...item, ...costs, pricingMode: 'CATALOG', operatingCostBasis };
+    return {
+      ...item,
+      ...costs,
+      unitSaleNet: existing ? null : costs.unitSaleNet ?? null,
+      pricingMode: 'CATALOG',
+      operatingCostBasis,
+    };
   });
 }
 
@@ -214,6 +226,7 @@ function copiedItem(item: any, index: number) {
     role: item.role,
     supplyMode: item.supplyMode,
     unitPurchaseNet: Number(item.unitPurchaseNet),
+    unitSaleNet: item.unitSaleNet ?? null,
     purchaseVatRate: Number(item.purchaseVatRate),
     operatingCostNet: Number(item.operatingCostNet),
     marginRate: Number(item.marginRate),
@@ -243,6 +256,7 @@ function calculatedItemData(item: Record<string, any>, index: number, lineInput:
     role: (typeof item.role === 'string' ? item.role : 'OTHER') as any,
     supplyMode: (typeof item.supplyMode === 'string' ? item.supplyMode : 'ONREVOLT_SUPPLIED') as any,
     unitPurchaseNet: lineInput.unitPurchaseNet,
+    unitSaleNet: lineInput.unitSaleNet ?? null,
     purchaseVatRate: lineInput.purchaseVatRate,
     operatingCostNet: lineInput.operatingCostNet,
     marginRate: lineInput.marginRate,

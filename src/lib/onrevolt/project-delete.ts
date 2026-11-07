@@ -7,6 +7,10 @@ export const projectDeleteRelationLabels = {
   purchaseOrders: 'zamówienia', stockReservations: 'rezerwacje magazynowe', serviceTickets: 'zgłoszenia serwisowe',
 } as const;
 
+// Derived artifacts contain no source data and are removed by the FK cascade
+// only when the user explicitly deletes the otherwise empty project.
+export const projectDeleteCacheRelations = ['offerWorkspaceArtifacts'] as const;
+
 // Values seeded by the empty energy form are not evidence of a completed audit.
 const emptyAuditDefaults: Record<string, unknown> = {
   status: 'DRAFT', profileSource: 'ANNUAL_DECLARATION', phaseCount: 3,

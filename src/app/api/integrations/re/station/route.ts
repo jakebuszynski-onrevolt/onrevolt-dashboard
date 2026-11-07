@@ -41,6 +41,7 @@ import {
   isValidSolisPowerLimitPercent,
 } from 'lib/onrevolt/solis-inverter';
 import { isValidSolisSmartPortFanSettings } from 'lib/onrevolt/solis-fan';
+import { commitProjectStationLinkAndReplay } from 'lib/onrevolt/re-consumption-sync';
 
 export const runtime = 'nodejs';
 
@@ -204,20 +205,22 @@ export async function POST(req: NextRequest) {
     }
 
     const bindTariffs = await prepareClientTariffBinding(clientId, project.id, { token: station.stationHash, number: station.station }, access.user.id);
-    const updatedProject = await prisma.project.update({
-      where: { id: project.id },
-      data: {
-        dashboardStation: station.stationHash,
-        dashboardStationNumber: station.station,
-        weatherStationNumber: station.weatherStation,
-      },
+    const expected = {
+      dashboardStation: project.dashboardStation ?? null,
+      dashboardStationNumber: project.dashboardStationNumber ?? null,
+    };
+    const linked = await commitProjectStationLinkAndReplay({
+      clientId, projectId: project.id, actorId: access.user.id, expected,
+      station: { stationHash: station.stationHash, station: station.station, weatherStation: station.weatherStation },
     });
+    const updatedProject = linked.updatedProject;
 
     let tariffWarning: string | undefined;
     try { await bindTariffs(); } catch (error) { tariffWarning = `Stacja przypisana. Połącz profil w zakładce Taryfy: ${error instanceof Error ? error.message : String(error)}`; }
     return jsonResponse({
       ok: true,
       tariffWarning,
+      referenceProfileSync: linked.referenceProfileSync,
       data: {
         project: updatedProject,
         station: station.station,

@@ -9,17 +9,23 @@ import React, { useState } from 'react';
 import { MdAdd, MdArrowDropDown, MdArrowDropUp, MdAutoAwesome } from 'react-icons/md';
 import { configurationInvestmentScope } from 'lib/onrevolt/configuration-templates';
 import { selectOfferWorkspaceTemplate, setOfferWorkspacePvStrategy, type OfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
-import { priceOfferWorkspaceConfiguration } from 'lib/onrevolt/offer-workspace-pricing';
+import { priceOfferWorkspaceConfiguration, type OfferWorkspacePricingResult } from 'lib/onrevolt/offer-workspace-pricing';
+import { applyOfferWorkspaceConfigurationEdits } from 'lib/onrevolt/offer-workspace-configuration-edits';
 import type { OfferWorkspaceCalculation } from 'lib/onrevolt/offer-workspace-calculation-types';
 import OfferWorkspaceCalculationControls, { type OfferWorkspaceCalculationMode } from './OfferWorkspaceCalculationControls';
 import { offerWorkspaceCalculationPresentation } from './OfferWorkspaceScreens';
 import type { WorkspaceTemplate } from './OfferWorkspacePanel';
+import OfferWorkspaceItemEditor from './OfferWorkspaceItemEditor';
 
 type Props = {
   draft: OfferWorkspaceDraft;
   templates: WorkspaceTemplate[];
   clientType: string;
   disabled: boolean;
+  itemsEditable?: boolean;
+  onPricingPreview?: (pricing: OfferWorkspacePricingResult | null, active: boolean) => void;
+  pendingConfigurationEdits?: boolean;
+  pendingPricing?: OfferWorkspacePricingResult | null;
   calculationDisabled?: boolean;
   calculation: OfferWorkspaceCalculation | null;
   calculationLoading: boolean;
@@ -47,19 +53,9 @@ const knownAmount = (value: number | null | undefined) =>
 const sameTemplateIds = (left: string[] | null | undefined, right: string[]) =>
   left != null && left.length === right.length && right.every((id) => left.includes(id));
 
-function supplyModeLabel(mode: string) {
-  switch (mode) {
-    case 'ONREVOLT_SUPPLIED': return 'Dostarcza onRevolt';
-    case 'CLIENT_OWNED_USED': return 'Sprzęt klienta · poza wyceną';
-    case 'CLIENT_SUPPLIED_NEW': return 'Dostarcza klient · poza wyceną';
-    case 'SERVICE_ONLY': return 'Usługa';
-    case 'NOT_INCLUDED': return 'Nieujęte w cenie';
-    default: return 'Nieznany tryb dostawy';
-  }
-}
-
-export default function OfferWorkspaceConfiguration({ draft, templates, clientType, disabled, calculationDisabled = false, calculation, calculationLoading, calculationMode, calculationProgress, calculationIsStale, calculationError, onCalculate, onSelectRanking, onChange }: Props) {
+export default function OfferWorkspaceConfiguration({ draft, templates, clientType, disabled, itemsEditable = false, onPricingPreview, pendingConfigurationEdits = false, pendingPricing = null, calculationDisabled = false, calculation, calculationLoading, calculationMode, calculationProgress, calculationIsStale, calculationError, onCalculate, onSelectRanking, onChange }: Props) {
   const [pendingStorage, setPendingStorage] = useState(false);
+  const configurationControlsDisabled = disabled || pendingConfigurationEdits;
   const color = useColorModeValue('#2b3674', 'white');
   const muted = useColorModeValue('#8392b4', 'gray.400');
   const line = useColorModeValue('#e0e5f2', 'whiteAlpha.200');
@@ -89,19 +85,25 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
         : null,
     };
   });
-  const selected = templates.filter((item) => draft.selectedTemplateIds.includes(item.id));
-  const storage = storageTemplates.find((item) => draft.selectedTemplateIds.includes(item.id));
-  const pv = pvTemplates.find((item) => draft.selectedTemplateIds.includes(item.id));
+  let effectiveTemplates: WorkspaceTemplate[] = [];
+  let configurationEditError = '';
+  try { effectiveTemplates = applyOfferWorkspaceConfigurationEdits(templates, draft); }
+  catch (cause) { configurationEditError = cause instanceof Error ? cause.message : 'Nie można odczytać zmian konfiguracji.'; }
+  const selected = effectiveTemplates.filter((item) => draft.selectedTemplateIds.includes(item.id));
+  const storage = selected.find((item) => configurationInvestmentScope(item.kind) === 'BATTERY');
+  const pv = selected.find((item) => configurationInvestmentScope(item.kind) === 'PV');
+  const hasEdits = Boolean(draft.configurationEdits?.length);
   const storageEnabled = !!storage || pendingStorage;
   const pvEnabled = draft.pvStrategy === 'ADD_TEMPLATE';
   const totalPv = draft.existingPv.powerKw == null || (pvEnabled && pv?.powerKw == null)
     ? null : draft.existingPv.powerKw + (pvEnabled ? pv!.powerKw! : 0);
   const pricing = priceOfferWorkspaceConfiguration(selected, draft.saleVatMode, clientType);
-  const rows = pricing.lines;
+  const displayedPricing = pendingConfigurationEdits ? pendingPricing : pricing;
   const missingDataColor = useColorModeValue('orange.700', 'orange.300');
-  const currentCalculation = calculationIsStale ? null : calculation;
+  const currentCalculation = pendingConfigurationEdits || calculationIsStale ? null : calculation;
   const estimateCalculation = currentCalculation as CalculationEstimates | null;
-  const calculationMatchesSelected = sameTemplateIds(estimateCalculation?.evaluatedTemplateIds, draft.selectedTemplateIds);
+  const calculationMatchesSelected = sameTemplateIds(estimateCalculation?.evaluatedTemplateIds, draft.selectedTemplateIds)
+    && !(hasEdits && estimateCalculation?.recommendationSearch);
   const selectedCalculation = currentCalculation && calculationMatchesSelected ? currentCalculation : null;
   const selectionNeedsCalculation = Boolean(currentCalculation && !selectedCalculation);
   const result = selectedCalculation?.status === 'ready' ? selectedCalculation : null;
@@ -121,7 +123,7 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
   const baselineCost = knownAmount(currentCalculation?.baselineAnnualCostPln);
   const proposedCost = knownAmount(selectedCalculation?.proposedAnnualCostPln);
   const annualSavings = knownAmount(selectedCalculation?.annualSavingsPln);
-  const systemCost = pricing.systemCostBeforeFinancing;
+  const systemCost = displayedPricing?.systemCostBeforeFinancing ?? null;
   const partialBreakdown = selectedCalculation?.status === 'blocked'
     ? [
       { label: 'Sama zmiana taryfy', value: selectedCalculation.tariffOnlyAnnualSavingsPln },
@@ -149,7 +151,7 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
     .filter((name): name is string => Boolean(name)) || [];
   const estimatedWinnerName = estimatedWinnerRanking?.name || estimatedWinnerTemplates.join(' + ');
   const hasEstimatedWinner = Boolean(estimatedWinnerTemplateIds?.length && estimatedWinnerName);
-  const estimatedWinnerIsSelected = sameTemplateIds(estimatedWinnerTemplateIds, draft.selectedTemplateIds);
+  const estimatedWinnerIsSelected = !hasEdits && sameTemplateIds(estimatedWinnerTemplateIds, draft.selectedTemplateIds);
   const estimatedWinnerIsCalculated = estimatedWinnerIsSelected && Boolean(selectedCalculation);
   const estimatedWinnerPayback = knownAmount(estimatedWinnerRanking?.estimatedPaybackYears ?? estimateCalculation?.estimatedPaybackYears);
   const savingsPercent = result && baselineCost != null && baselineCost !== 0 && annualSavings != null
@@ -176,7 +178,8 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
       : !selectedCalculation ? 'Obliczenie dotyczy innej lub niepotwierdzonej konfiguracji'
         : finalCost == null ? selectedCalculation.status === 'blocked' ? 'Brak pełnego wyniku' : 'Brak danych do oszacowania'
           : selectedCalculation.status === 'blocked' ? 'Szacunek częściowy · bez rekomendacji' : 'Szacunek warunkowy';
-  const systemCostDetail = systemCost != null ? 'Cena katalogowa przed finansowaniem'
+  const systemCostDetail = pendingConfigurationEdits ? (systemCost == null ? 'Podgląd zmian wymaga pełnej wyceny' : 'Podgląd ceny po zmianach roboczych · przed finansowaniem')
+    : systemCost != null ? hasEdits ? 'Cena indywidualna przed finansowaniem' : 'Cena katalogowa przed finansowaniem'
     : selected.length ? draft.saleVatMode === 'REVIEW' ? 'Potwierdź VAT sprzedaży' : 'Niepełna wycena katalogowa'
       : 'Nie wybrano konfiguracji';
   const selectedStrictPayback = selectedCalculation?.status === 'ready' && selectedCalculation.recommendationEligible === true
@@ -184,7 +187,7 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
   const selectedEstimatedPayback = selectedStrictPayback == null
     ? knownAmount((selectedCalculation as CalculationEstimates | null)?.estimatedPaybackYears) : null;
   const selectedSummaryPayback = selectedStrictPayback ?? selectedEstimatedPayback;
-  const selectedPaybackDetail = selectedStrictPayback != null ? 'Wynik dla wariantu spełniającego kryteria rekomendacji'
+  const selectedPaybackDetail = selectedStrictPayback != null ? 'Prosty wskaźnik przy cenach pierwszego roku. Prognoza wieloletnia jest w Oszczędnościach.'
     : selectedEstimatedPayback != null ? 'Szacunek warunkowy · wymaga potwierdzenia'
       : selectionNeedsCalculation ? ''
         : calculationIsStale ? 'Obliczenie jest nieaktualne'
@@ -193,10 +196,20 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
             : 'Brak danych do oszacowania';
 
   function selectTemplate(scope: 'BATTERY' | 'PV', id: string) {
+    if (configurationControlsDisabled) return;
     onChange((current) => {
-      if (id) return selectOfferWorkspaceTemplate(current, templates, id, true);
-      return { ...current, selectedTemplateIds: current.selectedTemplateIds.filter((selectedId) =>
-        configurationInvestmentScope(templates.find((item) => item.id === selectedId)?.kind || '') !== scope) };
+      if (id) {
+        const selected = selectOfferWorkspaceTemplate(current, templates, id, true);
+        return selected.selectedTemplateIds.length === current.selectedTemplateIds.length
+          && selected.selectedTemplateIds.every((selectedId, index) => selectedId === current.selectedTemplateIds[index])
+          ? selected
+          : { ...selected, commercialPricing: undefined };
+      }
+      const selectedTemplateIds = current.selectedTemplateIds.filter((selectedId) =>
+        configurationInvestmentScope(templates.find((item) => item.id === selectedId)?.kind || '') !== scope);
+      return { ...current, selectedTemplateIds,
+        ...(current.configurationEdits ? { configurationEdits: current.configurationEdits.filter(edit => selectedTemplateIds.includes(edit.templateId)) } : {}),
+        commercialPricing: undefined };
     });
   }
 
@@ -221,8 +234,8 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
         <Input data-capacity-input aria-label={label} value={value == null ? '' : number(value)} placeholder="—" readOnly h="52px" pr="68px" fontSize="16px" fontWeight="700" bg={surface} />
         <Text position="absolute" right="34px" top="18px" fontSize="10px" color={muted}>{unit}</Text>
         <Flex position="absolute" right="4px" top="2px" bottom="2px" direction="column">
-          <Tooltip label={isPv ? 'Następny zestaw PV' : 'Następny magazyn'}><IconButton aria-label={isPv ? 'Następny zestaw PV' : 'Następny magazyn'} icon={<MdArrowDropUp />} variant="ghost" minW="24px" w="24px" h="24px" borderRadius="4px" color={muted} isDisabled={disabled || index >= available.length - 1} onClick={() => move(1)} /></Tooltip>
-          <Tooltip label={isPv ? 'Poprzedni zestaw PV' : 'Poprzedni magazyn'}><IconButton aria-label={isPv ? 'Poprzedni zestaw PV' : 'Poprzedni magazyn'} icon={<MdArrowDropDown />} variant="ghost" minW="24px" w="24px" h="24px" borderRadius="4px" color={muted} isDisabled={disabled || index <= 0} onClick={() => move(-1)} /></Tooltip>
+          <Tooltip label={isPv ? 'Następny zestaw PV' : 'Następny magazyn'}><IconButton aria-label={isPv ? 'Następny zestaw PV' : 'Następny magazyn'} icon={<MdArrowDropUp />} variant="ghost" minW="24px" w="24px" h="24px" borderRadius="4px" color={muted} isDisabled={configurationControlsDisabled || index >= available.length - 1} onClick={() => move(1)} /></Tooltip>
+          <Tooltip label={isPv ? 'Poprzedni zestaw PV' : 'Poprzedni magazyn'}><IconButton aria-label={isPv ? 'Poprzedni zestaw PV' : 'Poprzedni zestaw PV'} icon={<MdArrowDropDown />} variant="ghost" minW="24px" w="24px" h="24px" borderRadius="4px" color={muted} isDisabled={configurationControlsDisabled || index <= 0} onClick={() => move(-1)} /></Tooltip>
         </Flex>
       </Box>
       <Text mt="8px" color={muted} fontSize="10px">{isPv ? (pvEnabled ? 'Istniejąca PV + rozbudowa' : 'Istniejąca instalacja') : 'Pojemności zestawów katalogowych'}</Text>
@@ -249,8 +262,8 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
       <OfferWorkspaceCalculationControls
         draft={draft}
         clientType={clientType}
-        disabled={disabled}
-        calculationDisabled={calculationDisabled}
+        disabled={configurationControlsDisabled}
+        calculationDisabled={calculationDisabled || pendingConfigurationEdits}
         calculation={controlsCalculation}
         calculationLoading={calculationLoading}
         calculationMode={calculationMode}
@@ -265,9 +278,9 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
         <Box minW="0">
           <Text color={green} fontWeight="700">Wybrany najkrótszy szacunkowy zwrot</Text>
           <Text mt="3px" fontWeight="700" overflowWrap="anywhere">{estimatedWinnerName}</Text>
-          <Text mt="2px" color={muted} fontSize="10px">Szacunkowy czas zwrotu: {estimatedWinnerPayback == null ? '—' : <Tooltip label={`Dokładny szacunek: ${number(estimatedWinnerPayback)} lat`}><Text as="span" title={`Dokładny szacunek: ${number(estimatedWinnerPayback)} lat`} textDecoration="underline dotted">{number(Math.floor(estimatedWinnerPayback))} lat</Text></Tooltip>}. Kwalifikowalność i zgodność techniczna wymagają potwierdzenia.</Text>
+          <Text mt="2px" color={muted} fontSize="10px">Szacunkowy czas zwrotu: {estimatedWinnerPayback == null ? '—' : <Tooltip label={`Dokładny szacunek: ${number(estimatedWinnerPayback)} lat`}><Text as="span" title={`Dokładny szacunek: ${number(estimatedWinnerPayback)} lat`} textDecoration="underline dotted">{number(Math.round(estimatedWinnerPayback * 10) / 10)} lat</Text></Tooltip>}. Kwalifikowalność i zgodność techniczna wymagają potwierdzenia.</Text>
         </Box>
-        <Button size="sm" variant={estimatedWinnerIsCalculated ? 'solid' : 'outline'} colorScheme="green" isDisabled={disabled || estimatedWinnerIsCalculated} onClick={() => onSelectRanking(estimatedWinnerTemplateIds)}>
+        <Button size="sm" variant={estimatedWinnerIsCalculated ? 'solid' : 'outline'} colorScheme="green" isDisabled={configurationControlsDisabled || estimatedWinnerIsCalculated} onClick={() => onSelectRanking(estimatedWinnerTemplateIds)}>
           {estimatedWinnerIsCalculated ? 'Wybrany wariant' : estimatedWinnerIsSelected ? 'Oblicz zwycięski wariant' : 'Wybierz zwycięski wariant'}
         </Button>
       </Flex> : null}
@@ -310,8 +323,8 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
       <Grid templateColumns={{ base: 'repeat(2, minmax(0, 1fr))', xl: '1fr 1fr 2.08fr' }} gap="16px">
         <Box bg={tile} borderRadius="14px" p="16px" minH="174px">
           <Text fontSize="11px" minH="36px" color={muted}>{selectedEstimatedPayback != null ? 'Szacunkowy czas zwrotu' : 'Zwrot z dodatkowego sprzętu'}</Text>
-          {selectedEstimatedPayback != null ? <Tooltip label={`Dokładny szacunek: ${number(selectedEstimatedPayback)} lat`}><Text as="span" title={`Dokładny szacunek: ${number(selectedEstimatedPayback)} lat`} aria-label={`Czas zwrotu z dodatkowego sprzętu: ${number(Math.floor(selectedEstimatedPayback))} lat`} fontSize="27px" fontWeight="700" mt="6px" mb="9px" display="inline-block" textDecoration="underline dotted">{number(Math.floor(selectedEstimatedPayback))} <Text as="span" fontSize="18px" fontWeight="400">lat</Text></Text></Tooltip>
-            : <Text fontSize="27px" fontWeight="700" mt="6px" mb="9px" aria-label={`Czas zwrotu z dodatkowego sprzętu: ${selectedSummaryPayback == null ? 'nie obliczono' : `${number(Math.floor(selectedSummaryPayback))} lat`}`}>{selectedSummaryPayback == null ? '—' : number(Math.floor(selectedSummaryPayback))} <Text as="span" fontSize="18px" fontWeight="400">lat</Text></Text>}
+          {selectedEstimatedPayback != null ? <Tooltip label={`Dokładny szacunek: ${number(selectedEstimatedPayback)} lat`}><Text as="span" title={`Dokładny szacunek: ${number(selectedEstimatedPayback)} lat`} aria-label={`Czas zwrotu z dodatkowego sprzętu: ${number(Math.round(selectedEstimatedPayback * 10) / 10)} lat`} fontSize="27px" fontWeight="700" mt="6px" mb="9px" display="inline-block" textDecoration="underline dotted">{number(Math.round(selectedEstimatedPayback * 10) / 10)} <Text as="span" fontSize="18px" fontWeight="400">lat</Text></Text></Tooltip>
+            : <Text fontSize="27px" fontWeight="700" mt="6px" mb="9px" aria-label={`Czas zwrotu z dodatkowego sprzętu: ${selectedSummaryPayback == null ? 'nie obliczono' : `${number(Math.round(selectedSummaryPayback * 10) / 10)} lat`}`}>{selectedSummaryPayback == null ? '—' : number(Math.round(selectedSummaryPayback * 10) / 10)} <Text as="span" fontSize="18px" fontWeight="400">lat</Text></Text>}
           <Text fontSize="10px" color={muted}>{selectedPaybackDetail}</Text>
         </Box>
         <Box bg={tile} borderRadius="14px" p="16px" minH="174px">
@@ -321,7 +334,7 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
             : `Koszt systemu przed finansowaniem: ${money(systemCost)} zł`}>
             {systemCost == null ? '—' : money(systemCost)} <Text as="span" fontSize="18px">zł</Text>
           </Text>
-          <Text fontSize="10px" color={muted}>{systemCost != null ? 'Przed finansowaniem · cena katalogowa' : selected.length ? 'Wymaga pełnej wyceny i potwierdzonego VAT' : 'Po wybraniu zestawu katalogowego'}</Text>
+          <Text fontSize="10px" color={muted}>{pendingConfigurationEdits ? systemCost != null ? 'Podgląd zmian · przed finansowaniem' : 'Podgląd zmian wymaga pełnej wyceny' : systemCost != null ? hasEdits ? 'Przed finansowaniem · cena indywidualna' : 'Przed finansowaniem · cena katalogowa' : selected.length ? 'Wymaga pełnej wyceny i potwierdzonego VAT' : 'Po wybraniu zestawu katalogowego'}</Text>
         </Box>
         <Box bg={tile} borderRadius="14px" p="16px" minW="0" gridColumn={{ base: '1 / -1', xl: 'auto' }}>
           <Text color={muted} fontSize="11px">Konfiguracja</Text>
@@ -340,11 +353,11 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
             const estimate = grant ? grantEstimate : taxReliefEstimate;
             const amount = estimate.amount;
             return <Box key={kind} minW="0">
-              <Checkbox colorScheme="purple" isChecked={checked} isDisabled={disabled} onChange={(event) => {
+              <Checkbox colorScheme="purple" isChecked={checked} isDisabled={configurationControlsDisabled} onChange={(event) => {
                 const value = event.target.checked;
                 onChange((current) => ({ ...current, financing: { ...current.financing, [grant ? 'considerGrant' : 'considerTaxRelief']: value } }));
               }}>{label}</Checkbox>
-              <FormControl mt="28px" isDisabled={disabled || !checked}>
+              <FormControl mt="28px" isDisabled={configurationControlsDisabled || !checked}>
                 <FormLabel fontSize="11px">{label}</FormLabel>
                 <Flex gap="18px" align="center">
                   <Select aria-label={`${label} — program`} value={kind} onChange={() => undefined} minW="0"><option value={kind}>{grant ? 'Przydomowe Magazyny Energii' : 'Ulga termomodernizacyjna'}</option></Select>
@@ -370,7 +383,9 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
     <Box as="section" aria-labelledby="offer-configuration-title" {...section} mt="18px">
       <Text as="h2" id="offer-configuration-title" fontSize="20px" fontWeight="700">Dobierz konfigurację</Text>
       <Text color={muted} mt="4px">Zestawy katalogowe</Text>
-      <FormControl mt="18px" maxW="420px" isDisabled={disabled}>
+      {configurationEditError ? <Box role="alert" color="red.700" bg="red.50" p="12px" mt="12px"><Text>{configurationEditError} Własne zmiany pozostają w szkicu. Wybierz inną konfigurację lub ponownie wczytaj jej pozycje.</Text><Button size="sm" mt="8px" isDisabled={configurationControlsDisabled || !itemsEditable} onClick={() => onChange(current => ({ ...current, configurationEdits: [] }))}>Wczytaj pozycje konfiguracji ponownie</Button></Box> : null}
+      {hasEdits ? <Text fontSize="sm" mt="10px" color={muted}>Rekomendacja porównuje gotowe konfiguracje. Wybranie wariantu z rankingu zastąpi własne zmiany pozycji.</Text> : null}
+      <FormControl mt="18px" maxW="420px" isDisabled={configurationControlsDisabled}>
         <FormLabel fontSize="11px">VAT od sprzedaży</FormLabel>
         <Select value={draft.saleVatMode} onChange={(event) => { const value = event.target.value as OfferWorkspaceDraft['saleVatMode']; onChange((current) => ({ ...current, saleVatMode: value })); }}>
           <option value="REVIEW">Do weryfikacji</option><option value="REDUCED_8">8% · stawka obniżona</option><option value="STANDARD_23">23% · stawka podstawowa</option><option value="MIXED">Według stawek pozycji</option>
@@ -400,7 +415,7 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
                     ? <Tooltip label={missingReason}><Text as="span" fontSize="10px">Nieustalona cena · {missingReason}</Text></Tooltip>
                     : `${money(candidatePricing.systemCostBeforeFinancing)} zł`}
                 </Td>
-                <Td><Button size="xs" variant="outline" isDisabled={disabled} aria-label={`Wybierz ${template.name}`} onClick={() => selectTemplate(scope, template.id)}>Wybierz</Button></Td>
+                <Td><Button size="xs" variant="outline" isDisabled={configurationControlsDisabled} aria-label={`Wybierz ${template.name}`} onClick={() => selectTemplate(scope, template.id)}>Wybierz</Button></Td>
               </Tr>;
             })}</Tbody>
           </Table>
@@ -415,13 +430,13 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
           const choice = isPv ? pv : storage;
           const enabled = isPv ? pvEnabled : storageEnabled;
           return <Box key={scope} minW="0">
-            <Checkbox isChecked={enabled} isDisabled={disabled || !choices.length} colorScheme="purple" onChange={(event) => {
+            <Checkbox isChecked={enabled} isDisabled={configurationControlsDisabled || !choices.length} colorScheme="purple" onChange={(event) => {
               const checked = event.target.checked;
               if (isPv) onChange((current) => setOfferWorkspacePvStrategy(current, templates, checked ? 'ADD_TEMPLATE' : 'KEEP_EXISTING'));
               else { setPendingStorage(checked); if (!checked) selectTemplate('BATTERY', ''); }
             }}>{isPv ? 'Instalacja fotowoltaiczna' : 'Magazyn energii'}</Checkbox>
             <Text mt="24px" mb="24px" pl="24px" color={muted}>{isPv ? 'Panele PV, konstrukcja, zabezpieczenia i montaż.' : 'Falownik, magazyn i wymagany osprzęt.'}</Text>
-            <FormControl isDisabled={disabled || !enabled || !choices.length}>
+            <FormControl isDisabled={configurationControlsDisabled || !enabled || !choices.length}>
               <FormLabel fontSize="11px">{isPv ? 'Konfiguracja instalacji fotowoltaicznej' : 'Konfiguracja magazynu'}</FormLabel>
               <Select value={choice?.id || ''} placeholder={choices.length ? 'Wybierz konfigurację' : 'Brak zestawów katalogowych'} onChange={(event) => selectTemplate(scope, event.target.value)} title={choice?.name}>
                 {choices.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -433,58 +448,36 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
         })}
       </Grid>
       <Flex mt="38px" mb="18px" justify="space-between" gap="12px" align="center" wrap="wrap">
-        <Box><Text as="h2" fontSize="20px" fontWeight="700">Wybrana konfiguracja</Text><Text color={muted} mt="4px">Podgląd</Text></Box>
-        <Tooltip label="Edycja pozycji kosztorysu nie jest jeszcze podłączona do nowego szkicu."><Box><Button variant="outline" size="sm" fontSize="12px" borderRadius="13px" isDisabled>Edytuj pozycje</Button></Box></Tooltip>
+        <Box><Text as="h2" fontSize="20px" fontWeight="700">Wybrana konfiguracja</Text><Text color={muted} mt="4px">{hasEdits ? 'Pozycje dostosowane do tej oferty' : 'Podgląd'}</Text></Box>
       </Flex>
-      <TableContainer maxW="100%">
-        <Table size="sm" variant="simple" minW="600px" sx={{ th: { fontSize: '10px', color: muted, fontWeight: 500, borderColor: line }, td: { fontSize: '12px', py: '18px', borderColor: line } }}>
-          <Thead><Tr><Th>Nr</Th><Th>Pozycja</Th><Th>Model</Th><Th isNumeric>Ilość</Th><Th isNumeric>Cena {pricing.saleAmountBasis === 'NET' ? 'netto' : 'brutto'} [zł]</Th></Tr></Thead>
-          <Tbody>{rows.length ? <>
-            {rows.map((item, index) => <Tr key={`${item.templateId}-${item.itemId}`}>
-              <Td>{index + 1}</Td>
-              <Td whiteSpace="normal" minW="140px">
-                <Text>{item.description || item.templateName}</Text>
-                <Flex wrap="wrap" gap="4px 8px" mt="5px" color={muted} fontSize="10px">
-                  <Text>{supplyModeLabel(item.supplyMode)}</Text>
-                  {item.isOptional ? <Text>Opcjonalna · wliczona w kalkulację</Text> : null}
-                  {item.requiresReview ? <Text color={missingDataColor}>Wymaga weryfikacji</Text> : null}
-                </Flex>
-              </Td>
-              <Td whiteSpace="normal" minW="120px">{item.productName || '—'}</Td>
-              <Td isNumeric>{item.quantity == null ? '—' : number(item.quantity)}</Td>
-              <Td isNumeric color={item.missingPriceReason || pricing.calculationError ? missingDataColor : color}>
-                {item.missingPriceReason ? <Tooltip label={item.missingPriceReason}><Text as="span">Brak danych</Text></Tooltip>
-                  : !item.includedInSale ? 'Poza wyceną'
-                    : item.saleAmount == null ? 'Niepełna wycena' : money(item.saleAmount)}
-              </Td>
-            </Tr>)}
+      {selected.length && !configurationEditError ? <OfferWorkspaceItemEditor draft={draft} templates={templates} clientType={clientType} disabled={disabled || !itemsEditable}
+        onPreview={onPricingPreview} onApply={configurationEdits => onChange(current => ({ ...current, configurationEdits }))} />
+        : <Text mt="12px" color={muted} fontSize="11px">{candidateTemplates.length ? 'Nie wybrano konfiguracji.' : 'Brak dostępnych zestawów katalogowych PV ani magazynów energii.'}</Text>}
+      {selected.length ? <TableContainer maxW="100%" mt="14px">
+        <Table size="sm" variant="simple" minW="420px" sx={{ th: { fontSize: '10px', color: muted, fontWeight: 500, borderColor: line }, td: { fontSize: '12px', py: '10px', borderColor: line } }}>
+          <Tbody>
             <Tr bg={tile} fontWeight="700" aria-label="Koszt systemu przed finansowaniem">
-              <Td colSpan={4} py="10px"><Text>Koszt systemu przed finansowaniem</Text><Text mt="2px" fontSize="10px" fontWeight="400" color={muted}>{systemCostDetail}</Text></Td>
-              <Td isNumeric py="10px">{systemCost == null ? '—' : money(systemCost)}</Td>
+              <Td><Text>Koszt systemu przed finansowaniem</Text><Text mt="2px" fontSize="10px" fontWeight="400" color={muted}>{systemCostDetail}</Text></Td>
+              <Td isNumeric>{systemCost == null ? '—' : `${money(systemCost)} zł`}</Td>
             </Tr>
             {[
               { key: 'grant', label: 'Dotacja · szacunek warunkowy', estimate: grantEstimate },
               { key: 'relief', label: 'Ulga termomodernizacyjna · szacunek warunkowy', estimate: taxReliefEstimate },
             ].map(({ key, label, estimate }) => <Tr key={key} aria-label={label}>
-              <Td colSpan={4} py="9px"><Text>{label}</Text><Text mt="2px" fontSize="10px" color={muted}>{estimate.detail}</Text></Td>
-              <Td isNumeric py="9px">{estimate.amount == null ? '—' : money(estimate.amount)}</Td>
+              <Td><Text>{label}</Text><Text mt="2px" fontSize="10px" color={muted}>{estimate.detail}</Text></Td>
+              <Td isNumeric>{estimate.amount == null ? '—' : `${money(estimate.amount)} zł`}</Td>
             </Tr>)}
             <Tr aria-label={selectedEstimatedPayback != null ? 'Szacunkowy czas zwrotu' : 'Czas zwrotu'}>
-              <Td colSpan={4} py="9px"><Text>{selectedEstimatedPayback != null ? 'Szacunkowy czas zwrotu sprzętu' : 'Czas zwrotu sprzętu'}</Text><Text mt="2px" fontSize="10px" color={muted}>{selectedPaybackDetail}</Text></Td>
-              <Td isNumeric py="9px">{selectedSummaryPayback == null ? '—' : <Tooltip label={selectedEstimatedPayback != null ? `Dokładny szacunek: ${number(selectedEstimatedPayback)} lat` : `${number(selectedSummaryPayback)} lat`}><Text as="span" title={selectedEstimatedPayback != null ? `Dokładny szacunek: ${number(selectedEstimatedPayback)} lat` : `${number(selectedSummaryPayback)} lat`} textDecoration={selectedEstimatedPayback != null ? 'underline dotted' : 'none'}>{number(Math.floor(selectedSummaryPayback))} lat</Text></Tooltip>}</Td>
+              <Td><Text>{selectedEstimatedPayback != null ? 'Szacunkowy czas zwrotu sprzętu' : 'Czas zwrotu sprzętu'}</Text><Text mt="2px" fontSize="10px" color={muted}>{selectedPaybackDetail}</Text></Td>
+              <Td isNumeric>{selectedSummaryPayback == null ? '—' : <Tooltip label={selectedEstimatedPayback != null ? `Dokładny szacunek: ${number(selectedEstimatedPayback)} lat` : `${number(selectedSummaryPayback)} lat`}><Text as="span" title={selectedEstimatedPayback != null ? `Dokładny szacunek: ${number(selectedEstimatedPayback)} lat` : `${number(selectedSummaryPayback)} lat`} textDecoration={selectedEstimatedPayback != null ? 'underline dotted' : 'none'}>{number(Math.round(selectedSummaryPayback * 10) / 10)} lat</Text></Tooltip>}</Td>
             </Tr>
             <Tr bg={greenSurface} color={green} fontWeight="700" aria-label="Koszt systemu po dofinansowaniach">
-              <Td colSpan={4} py="12px"><Text>Koszt systemu po dofinansowaniach</Text><Text mt="2px" fontSize="10px" fontWeight="400">{finalCostDetail}</Text></Td>
-              <Td isNumeric py="12px" fontSize="14px">{finalCost == null ? '—' : `${money(finalCost)} zł`}</Td>
+              <Td><Text>Koszt systemu po dofinansowaniach</Text><Text mt="2px" fontSize="10px" fontWeight="400">{finalCostDetail}</Text></Td>
+              <Td isNumeric fontSize="14px">{finalCost == null ? '—' : `${money(finalCost)} zł`}</Td>
             </Tr>
-          </> : <Tr><Td colSpan={5} color={muted}>{candidateTemplates.length ? 'Nie wybrano konfiguracji.' : 'Brak dostępnych zestawów katalogowych PV ani magazynów energii.'}</Td></Tr>}</Tbody>
+          </Tbody>
         </Table>
-      </TableContainer>
-      {pricing.missingRequiredData.length || pricing.missingOptionalData.length || pricing.calculationError ? <Box mt="12px" color={missingDataColor} fontSize="11px" role="status">
-        {pricing.missingRequiredData.length ? <Text>Brak danych w pozycjach wymaganych: {pricing.missingRequiredData.length}. Suma nie jest prezentowana.</Text> : null}
-        {pricing.missingOptionalData.length ? <Text>Brak danych w pozycjach opcjonalnych: {pricing.missingOptionalData.length}. Suma nie jest prezentowana.</Text> : null}
-        {pricing.calculationError ? <Text>Kalkulacja wymaga weryfikacji: {pricing.calculationError}</Text> : null}
-      </Box> : null}
+      </TableContainer> : null}
     </Box>
   </Box>;
 }

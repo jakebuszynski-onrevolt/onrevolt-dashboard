@@ -11,13 +11,16 @@ import {
   offerWorkspaceProjectWhere,
   readOfferWorkspaceMeasurement,
   resolveOfferWorkspaceStoragePath,
+  savedDraft,
   summarizeOfferMeasurementSeries,
 } from './offer-workspace-server';
 import { buildOfferWorkspaceDayProfiles } from './offer-workspace-chart-data';
 import type { OfferMeasurementSeries } from './offer-measurements';
 import { emptyOfferWorkspaceDraft } from './offer-workspace';
+import { resolveClientEnergyBatteryPresence } from './client-energy-pv-summary';
 import * as energyIntake from './energy-intake';
 import { resolveProjectAnalysisPeriod, type ProjectAnalysisPeriod } from './project-analysis-period';
+import { configurationEditsContainPricing } from './offer-workspace-configuration-edits';
 
 const serverPath = path.resolve(__dirname, 'offer-workspace-server.ts');
 const serverCode = ts.transpileModule(readFileSync(serverPath, 'utf8'), {
@@ -36,18 +39,25 @@ function transactionFixture(options: {
   canReadEnergy?: boolean;
   canReadPricing?: boolean;
   canManageOffers?: boolean;
+  missingEnergyAudit?: boolean;
   ppeNumber?: string | null;
   projectAccount?: boolean;
   clientAccount?: boolean;
   existingPvKw?: number | null;
   roofTiltDeg?: number | null;
   roofOrientation?: string | null;
+  existingBatteryKwh?: number | string | null;
   projectClientType?: string;
   clientType?: string;
   measurementFiles?: any[];
+  nonDownloadedMeasurementFiles?: Array<{ id: string; status: string }>;
+  siteAudit?: any;
   analysisPeriod?: ProjectAnalysisPeriod;
+  referenceProfile?: { key: string | null; revision: number; contentHash: string | null; profileName: string | null };
 } = {}) {
   const state = {
+    fileUnavailable: false,
+    fileBytes: Buffer.from('verified fixture bytes'),
     row: options.initialDraft ? structuredClone(options.initialDraft) : null as any,
     transactionCount: 0,
     updateCalls: [] as any[],
@@ -55,11 +65,17 @@ function transactionFixture(options: {
     tariffCalls: [] as any[],
     accountQueries: [] as any[],
     measurementQuery: null as any,
+    nonDownloadedMeasurementQuery: null as any,
+    siteAuditQuery: null as any,
     templateQuery: null as any,
     templateValidationQuery: null as any,
     draftReadCount: 0,
     seriesCalls: [] as any[],
+    artifactReads: [] as any[],
+    artifactWrites: [] as any[],
+    artifactData: null as any,
     rePrismaCalls: 0,
+    referenceProfileReads: 0,
   };
   const clone = (value: any) => value == null ? null : structuredClone(value);
   const project = {
@@ -85,14 +101,23 @@ function transactionFixture(options: {
       }];
       return [];
     } },
-    energyAudit: { findUnique: async () => ({
-      id: 'audit-1', annualConsumptionKwh: 1200, settlementSystem: 'NET_BILLING',
+    energyAudit: { findUnique: async () => options.missingEnergyAudit ? null : ({
+      id: 'audit-1', profileSource: 'ANNUAL_DECLARATION', annualConsumptionKwh: 1200, settlementSystem: 'NET_BILLING',
       existingPvKw: options.existingPvKw === undefined ? null : options.existingPvKw,
+      existingBatteryKwh: options.existingBatteryKwh === undefined ? null : options.existingBatteryKwh,
       roofTiltDeg: options.roofTiltDeg ?? null, roofOrientation: options.roofOrientation ?? null,
       connectionPowerKw: 16, roofShape: 'GABLE',
       updatedAt: new Date('2026-10-01T00:00:00.000Z'),
     }) },
-    energyMeasurementFile: { findMany: async (args: any) => { state.measurementQuery = args; return options.measurementFiles || []; } },
+    siteAudit: { findFirst: async (args: any) => { state.siteAuditQuery = args; return clone(options.siteAudit || null); } },
+    energyMeasurementFile: { findMany: async (args: any) => {
+      if (args.where.status === 'DOWNLOADED') { state.measurementQuery = args; return options.measurementFiles || []; }
+      if (args.where.status?.not === 'DOWNLOADED') {
+        state.nonDownloadedMeasurementQuery = args;
+        return options.nonDownloadedMeasurementFiles || [];
+      }
+      return [];
+    } },
     configurationTemplate: { findMany: async (args: any) => { state.templateQuery = args; return options.templates || []; } },
     offerWorkspace: { findUnique: findWorkspace },
     $transaction: async (callback: (tx: any) => Promise<any>) => {
@@ -128,12 +153,19 @@ function transactionFixture(options: {
   };
   const modules: Record<string, unknown> = {
     'node:crypto': { createHash },
-    'node:fs/promises': { readFile: async () => Buffer.alloc(0), realpath: async (value: string) => value, stat: async () => ({ isFile: () => true, size: 0 }) },
+    'node:fs/promises': { readFile: async () => {
+      if (state.fileUnavailable) throw new Error('Nie można odczytać pliku');
+      return state.fileBytes;
+    }, realpath: async (value: string) => value, stat: async () => ({ isFile: () => true, size: state.fileBytes.length }) },
     'node:path': path,
     '@prisma/client': { Prisma: { JsonNull: { __jsonNull: true } } },
     './project-analysis-period-server': { readProjectAnalysisPeriod: async (projectId: string) => ({
       projectId, storedStartMonth: options.analysisPeriod?.startMonth || null, period: analysisPeriod,
     }) },
+    './project-reference-profile': { readProjectReferenceProfileSelection: async () => {
+      state.referenceProfileReads += 1;
+      return options.referenceProfile || { key: null, revision: 0, contentHash: null, profileName: null };
+    } },
     './offer-measurements': { buildOfferMeasurementSeries: (files: unknown[], buildOptions: unknown) => {
       state.seriesCalls.push({ files, options: buildOptions });
       return { periods: [{ period: '2026-09', hasImport: false, hasExport: false, missingDirections: ['ACTIVE_IMPORT', 'ACTIVE_EXPORT'] }],
@@ -141,10 +173,27 @@ function transactionFixture(options: {
     } },
     './offer-workspace-chart-data': { buildOfferWorkspaceDayProfiles },
     './energy-intake': energyIntake,
+    './client-energy-pv-summary': { resolveClientEnergyBatteryPresence },
     './configuration-templates': { configurationInvestmentScope: (kind: string) => kind === 'MAGAZYN'
       ? 'BATTERY' : ['PV_DACH_PLASKI', 'PV_DACH_SKOSNY'].includes(kind) ? 'PV' : null },
-    './offer-workspace': { OFFER_WORKSPACE_SCHEMA_VERSION: 1, parseOfferWorkspaceDraft: (value: unknown) => value },
+    './offer-workspace-configuration-edits': {
+      applyOfferWorkspaceConfigurationEdits: (templates: any[]) => templates,
+      validateOfferWorkspaceConfigurationEdits: () => undefined,
+      configurationEditsContainPricing,
+    },
+    './offer-workspace': {
+      OFFER_WORKSPACE_SCHEMA_VERSION: 1,
+      parseOfferWorkspaceDraft: (value: unknown) => value,
+      offerWorkspaceDraftWithBatteryPresence: (draft: any, existingBatteryPresent: boolean | null) => ({ ...draft, existingBatteryPresent }),
+    },
     './prisma': { prisma },
+    './offer-workspace-artifacts': {
+      getOfferWorkspaceArtifact: async (identity: unknown) => { state.artifactReads.push(identity); return clone(state.artifactData); },
+      putOfferWorkspaceArtifact: async (identity: unknown, data: unknown) => {
+        state.artifactWrites.push(identity);
+        state.artifactData = clone(data);
+      },
+    },
     './re-stations': { rePrisma: () => { state.rePrismaCalls += 1; return { $queryRawUnsafe: async (...args: any[]) => {
       state.tariffCalls.push(args);
       return options.validTariff === false ? [] : [{ id: args[2] }];
@@ -156,7 +205,7 @@ function transactionFixture(options: {
   };
   const exports: any = {};
   vm.runInNewContext(serverCode, {
-    exports, Buffer, Date, Error, process: { env: {} },
+    exports, Buffer, Date, Error, process: { env: { ONREVOLT_UPLOAD_DIR: path.resolve('uploads-fixture') } },
     require: (name: string) => {
       if (!Object.hasOwn(modules, name)) throw new Error(`Unexpected server import: ${name}`);
       return modules[name];
@@ -275,7 +324,7 @@ test('podsumowanie dodaje profil pierwszego kompletnego dnia bez zmiany sum mies
   assert.equal(JSON.stringify(summary).includes('not-exposed'), false);
 });
 
-test('bez pricing.read nie pyta ani nie zwraca kosztów i marż, a rewizja pozostaje wspólna', async () => {
+test('bez pricing.read nie pyta ani nie zwraca kosztów i marż, a rewizja nie odtwarza wcześniejszych cen', async () => {
   const template = {
     id: 'template-1', familyKey: 'battery', name: 'Magazyn', version: 3, isActive: true,
     kind: 'MAGAZYN', clientType: 'B2C', roofType: null, goal: null, powerKw: null, capacityKwh: 10,
@@ -308,13 +357,24 @@ test('bez pricing.read nie pyta ani nie zwraca kosztów i marż, a rewizja pozos
   const withPricing = await pricedFixture.workspace();
   assert.ok(pricedFixture.state.templateQuery.include.items.include.product.include.prices.where.validFrom.lte instanceof Date);
   assert.equal(withPricing.templates[0].items[0].product?.prices[0].purchaseNet, 9000);
-  assert.equal(restricted.revision, withPricing.revision);
+  assert.notEqual(restricted.revision, withPricing.revision);
+  const changedPrice = structuredClone(template);
+  changedPrice.items[0].product.prices[0].purchaseNet = 9500;
+  assert.notEqual((await transactionFixture({ templates: [changedPrice], canReadPricing: true }).workspace()).revision, withPricing.revision);
+
+  const changedProductMetadata = structuredClone(template);
+  changedProductMetadata.items[0].product.name = 'Bateria po zmianie';
+  changedProductMetadata.items[0].product.availability = 'Niedostępny';
+  changedProductMetadata.items[0].product.powerCapacity = '12 kWh';
+  const changedMetadataWorkspace = await transactionFixture({ templates: [changedProductMetadata], canReadPricing: false }).workspace();
+  assert.notEqual(changedMetadataWorkspace.revision, restricted.revision);
 });
 
 test('pobiera miesięczne pliki ENEA w projekcie bez stacji RE i nie sumuje braku danych do zera', async () => {
   const fixture = transactionFixture({ canReadEnergy: true });
   const workspace = await fixture.workspace();
   assert.equal(workspace.ppeNumber, '590310600030743962');
+  assert.equal(workspace.input.energyProfileSource, 'ANNUAL_DECLARATION');
   assert.equal(workspace.measurements.totalsImportKwh, null);
   assert.equal(workspace.measurements.totalsExportKwh, null);
   assert.equal(workspace.measurements.intervalCount, 0);
@@ -329,7 +389,60 @@ test('pobiera miesięczne pliki ENEA w projekcie bez stacji RE i nie sumuje brak
   assert.ok(fixture.state.measurementQuery.where.AND[0].OR.length > 0);
   assert.deepEqual(Array.from(fixture.state.templateQuery.where.clientType.in), ['B2C', 'B2C_B2B']);
   assert.equal(fixture.state.seriesCalls.length, 1);
+  assert.equal(fixture.state.artifactReads.length, 1);
+  assert.equal(fixture.state.artifactWrites.length, 1);
+  assert.equal(fixture.state.artifactReads[0].kind, 'measurements');
+  assert.equal(fixture.state.artifactReads[0].key.energyPermission, true);
+  assert.equal(fixture.state.artifactReads[0].key.sourceRevision, workspace.revision);
   assert.equal(fixture.state.rePrismaCalls, 0);
+});
+
+test('wybrany profil trafia do workspace i zmienia rewizję, a odczyt respektuje energy.manage', async () => {
+  const selection = { key: 'bdew-2025-h25', revision: 3, contentHash: 'a'.repeat(64), profileName: 'Gospodarstwo domowe — BDEW H25' };
+  const selected = transactionFixture({ canReadEnergy: true, referenceProfile: selection });
+  const workspace = await selected.workspace();
+  assert.deepEqual(workspace.input.referenceProfile, selection);
+  assert.equal(selected.state.referenceProfileReads, 1);
+
+  const changed = await transactionFixture({ canReadEnergy: true, referenceProfile: { ...selection, revision: 4 } }).workspace();
+  assert.notEqual(changed.revision, workspace.revision, 'profile selection revision participates in source revision');
+
+  const restrictedFixture = transactionFixture({ canReadEnergy: false, referenceProfile: selection });
+  const restricted = await restrictedFixture.workspace();
+  assert.equal(restricted.input.referenceProfile, undefined);
+  assert.equal(restrictedFixture.state.referenceProfileReads, 0, 'unauthorized workspaces never query profile selection');
+});
+
+test('cache używa zweryfikowanych miesięcznych pomiarów i pomija ponowne parsowanie serii', async () => {
+  const fixture = transactionFixture({ canReadEnergy: true });
+  const first = await fixture.workspace();
+  const second = await fixture.workspace();
+  assert.equal(JSON.stringify(second.measurements), JSON.stringify(first.measurements));
+  assert.equal(fixture.state.seriesCalls.length, 1);
+  assert.equal(fixture.state.artifactReads.length, 2);
+  assert.equal(fixture.state.artifactWrites.length, 1);
+});
+
+test('brak odczytu XLSX ma inną rewizję niż pełne dane, także po odzyskaniu pliku', async () => {
+  const bytes = Buffer.from('verified fixture bytes');
+  const file = { id: 'file-1', clientId: 'client-1', projectId: 'project-1', accountId: 'account-1',
+    kind: 'ACTIVE_IMPORT', periodYear: 2026, periodMonth: 9, aggregation: '60 min',
+    storagePath: 'measurement.xlsx', fileName: 'measurement.xlsx',
+    document: { clientId: 'client-1', projectId: 'project-1', storagePath: 'measurement.xlsx', fileName: 'measurement.xlsx',
+      sizeBytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') } };
+  for (const startsUnavailable of [false, true]) {
+    const fixture = transactionFixture({ measurementFiles: [file] });
+    fixture.state.fileUnavailable = startsUnavailable;
+    const first = await fixture.workspace();
+    fixture.state.fileUnavailable = !startsUnavailable;
+    const second = await fixture.workspace();
+    assert.notEqual(first.revision, second.revision);
+    fixture.state.fileUnavailable = false;
+    const recovered = await fixture.workspace();
+    assert.equal(recovered.revision, startsUnavailable ? second.revision : first.revision);
+    assert.equal(fixture.state.artifactWrites.length, 1);
+    assert.equal(fixture.state.artifactReads.length, 2);
+  }
 });
 
 test('zmiana wybranego okresu trafia do rewizji źródeł obliczenia', async () => {
@@ -352,10 +465,38 @@ test('przekazuje kontakt i parametry pierwszej strony z CRM, bez domyślnych dan
   assert.equal(restricted.input.reportDetails.connectionPowerKw, null);
 });
 
+test('reportDetails używa ostatniej zapisanej wizji lokalnej bez domyślnych obliczeń mocy', async () => {
+  const siteAudit = {
+    id: 'site-audit-2', updatedAt: new Date('2026-10-15T10:00:00.000Z'),
+    formData: {
+      has_pv_now: 'yes', existing_pv_place: 'GROUND',
+      heating_source: 'Pompa ciepła', heating_params: '8 kW',
+      loads: [{ device: 'Ładowarka', params: '16A', power_kw: '11' }],
+      planned_demand: '',
+    },
+  };
+  const fixture = transactionFixture({ canReadEnergy: true, siteAudit });
+  const workspace = await fixture.workspace();
+  assert.equal(JSON.stringify(fixture.state.siteAuditQuery.orderBy), JSON.stringify([{ updatedAt: 'desc' }, { id: 'desc' }]));
+  assert.equal(workspace.input.reportDetails.pvInstallationPlace, 'Grunt');
+  assert.equal(workspace.input.reportDetails.highLoadDevices, 'Pompa ciepła 8 kW; Ładowarka, 16A, 11 kW');
+  assert.equal(workspace.input.reportDetails.plannedHighLoadDevices, null);
+
+  const changed = structuredClone(siteAudit);
+  changed.formData.loads[0].power_kw = '12';
+  const changedWorkspace = await transactionFixture({ canReadEnergy: true, siteAudit: changed }).workspace();
+  assert.notEqual(changedWorkspace.revision, workspace.revision);
+
+  const restricted = await transactionFixture({ canReadEnergy: false, siteAudit }).workspace();
+  assert.equal(restricted.input.reportDetails.highLoadDevices, null);
+  assert.notEqual(restricted.revision, workspace.revision);
+});
+
 test('nie pobiera PPE klienta bez projektu i akceptuje szablony wspólne B2C/B2B', async () => {
   const strictProjectScope = transactionFixture({ canReadEnergy: true, projectAccount: false, clientAccount: true });
   const workspace = await strictProjectScope.workspace();
   assert.equal(workspace.ppeNumber, null);
+  assert.equal(workspace.measurements.availability, 'NO_FILES');
   assert.equal(strictProjectScope.state.accountQueries.length, 1);
   assert.equal(strictProjectScope.state.accountQueries[0].projectId, 'project-1');
 
@@ -384,12 +525,32 @@ test('geometria istniejącej PV jest opisana jako pochodząca z danych dachu', a
   assert.ok(eastWestWorkspace.input.issues.some((issue: string) => issue.includes('E_W')));
 });
 
-test('rewizja źródeł nie zależy od redakcji sekcji energii', async () => {
+test('pojemność magazynu z danych energetycznych ustala stan i rewizję workspace', async () => {
+  const absent = await transactionFixture({ existingBatteryKwh: null }).workspace();
+  const zero = await transactionFixture({ existingBatteryKwh: 0 }).workspace();
+  const present = await transactionFixture({ existingBatteryKwh: 8.5 }).workspace();
+  const invalid = await transactionFixture({ existingBatteryKwh: -1 }).workspace();
+  const noAudit = await transactionFixture({ missingEnergyAudit: true }).workspace();
+
+  assert.equal(absent.input.existingBatteryKwh, null);
+  assert.equal(absent.input.existingBatteryPresent, false);
+  assert.equal(zero.input.existingBatteryPresent, false);
+  assert.equal(present.input.existingBatteryPresent, true);
+  assert.equal(present.input.existingBatteryKwh, 8.5);
+  assert.equal(invalid.input.existingBatteryPresent, null);
+  assert.ok(invalid.input.issues.some((issue: string) => issue.includes('Nieprawidłowa pojemność istniejącego magazynu')));
+  assert.equal(noAudit.input.existingBatteryPresent, false, 'an authorized workspace with no EnergyAudit has no confirmed battery');
+  assert.notEqual(absent.revision, present.revision, 'battery capacity is part of the workspace source revision');
+});
+
+test('rewizja zweryfikowanych źródeł nie jest używana bez odczytu energii', async () => {
   const withEnergyPermission = await transactionFixture({ canReadEnergy: true }).workspace();
-  const withoutEnergyPermission = await transactionFixture({ canReadEnergy: false }).workspace();
-  assert.equal(withEnergyPermission.revision, withoutEnergyPermission.revision);
+  const restrictedFixture = transactionFixture({ canReadEnergy: false });
+  const withoutEnergyPermission = await restrictedFixture.workspace();
+  assert.notEqual(withEnergyPermission.revision, withoutEnergyPermission.revision);
   assert.equal(withoutEnergyPermission.ppeNumber, null);
   assert.equal(withoutEnergyPermission.measurements.totalsImportKwh, null);
+  assert.equal(restrictedFixture.state.artifactReads.length, 0);
 });
 
 test('serwis nie odczytuje draftu ani nie zapisuje bez offers.manage i energy.manage', async () => {
@@ -412,12 +573,37 @@ test('serwis nie odczytuje draftu ani nie zapisuje bez offers.manage i energy.ma
   assert.equal(restricted.state.draftReadCount, 0);
 });
 
+test('saved draft redacts per-offer prices without pricing.read and refuses writes that could erase hidden edits', async () => {
+  const input = {
+    ...emptyOfferWorkspaceDraft(),
+    selectedTemplateIds: ['battery-1'],
+    configurationEdits: [{ templateId: 'battery-1', items: [{ itemId: 'manual-line', description: 'Dodatkowy koszt',
+      pricing: { unitPurchaseNet: 900, operatingCostNet: 80, marginRate: 0.2 } }],
+      addedItems: [{ id: 'added-service', description: 'Montaż', quantity: 1, role: 'LABOR', supplyMode: 'SERVICE_ONLY',
+        pricing: { unitPurchaseNet: 0, purchaseVatRate: 0, operatingCostNet: 100, operatingCostBasis: 'PER_LINE', marginRate: 0.1, saleVatRate: 0.23 } }] }],
+  };
+  const row = { revision: 1, sourceRevision: 'a'.repeat(64), updatedAt: new Date('2026-10-29T10:00:00.000Z'), input };
+  const restrictedDraft = savedDraft(row as any, false);
+  assert.equal(restrictedDraft.input.configurationEdits?.[0]?.items?.[0]?.pricing, undefined);
+  assert.equal(restrictedDraft.input.configurationEdits?.[0]?.addedItems, undefined);
+  const pricedDraft = savedDraft(row as any, true);
+  assert.equal(pricedDraft.input.configurationEdits?.[0]?.items?.[0]?.pricing?.unitPurchaseNet, 900);
+
+  const existing = { projectId: 'project-1', revision: 4, schemaVersion: 1, sourceRevision: 'old', input,
+    createdById: 'seller', updatedById: 'seller', createdAt: new Date('2026-10-28T10:00:00.000Z'),
+    updatedAt: new Date('2026-10-29T10:00:00.000Z') };
+  const fixture = transactionFixture({ initialDraft: existing, activeTemplateIds: ['battery-1'], canReadPricing: false });
+  await assert.rejects(() => fixture.save({ expectedRevision: 4 }), /pricing.read/);
+  assert.equal(fixture.state.updateCalls.length, 0);
+});
+
 test('brak PPE i przekroczenie limitu plików pozostają jawnie nieustalone', async () => {
   const missingPpe = transactionFixture({ canReadEnergy: true, ppeNumber: null });
   const withoutPpe = await missingPpe.workspace();
   assert.equal(withoutPpe.ppeNumber, null);
   assert.equal(withoutPpe.measurements.totalsImportKwh, null);
   assert.equal(withoutPpe.measurements.months.length, 12);
+  assert.equal(withoutPpe.measurements.availability, 'NO_FILES');
   assert.ok(withoutPpe.measurements.issues.some((issue: string) => issue.includes('numeru PPE')));
   assert.equal(missingPpe.state.seriesCalls.length, 0);
 
@@ -434,6 +620,15 @@ test('brak PPE i przekroczenie limitu plików pozostają jawnie nieustalone', as
   assert.equal(tooManyFiles.state.seriesCalls.length, 0);
 });
 
+test('rekord pliku ENEA poza statusem DOWNLOADED blokuje oznaczenie okresu jako bez plików', async () => {
+  const failedRecord = transactionFixture({ canReadEnergy: true, nonDownloadedMeasurementFiles: [{ id: 'file-failed', status: 'FAILED' }] });
+  const workspace = await failedRecord.workspace();
+  assert.equal(workspace.measurements.availability, 'FILES_PRESENT');
+  assert.equal(failedRecord.state.nonDownloadedMeasurementQuery.where.status.not, 'DOWNLOADED');
+  assert.ok(workspace.measurements.issues.some((issue: string) => issue.includes('poza statusem DOWNLOADED')));
+  assert.equal(failedRecord.state.seriesCalls.length, 1, 'the data loader still reports the empty downloaded set; availability carries the failed-record fact');
+});
+
 test('transakcja tworzy szkic rewizją 1 i zapisuje audyt atomowo', async () => {
   const fixture = transactionFixture();
   const saved = await fixture.save();
@@ -441,6 +636,26 @@ test('transakcja tworzy szkic rewizją 1 i zapisuje audyt atomowo', async () => 
   assert.equal(fixture.state.transactionCount, 1);
   assert.equal(fixture.state.updateCalls.length, 0);
   assert.equal(fixture.state.auditCalls[0].action, 'CREATE');
+});
+
+test('zapis normalizuje szkic na podstawie danych energetycznych bez zmiany starego wiersza przed zapisem', async () => {
+  const staleInput = emptyOfferWorkspaceDraft();
+  staleInput.existingBatteryPresent = true;
+  const fixture = transactionFixture({ initialDraft: {
+    projectId: 'project-1', revision: 4, schemaVersion: 1, sourceRevision: 'old', input: staleInput,
+    createdById: 'seller', updatedById: 'seller',
+    createdAt: new Date('2026-10-28T10:00:00.000Z'), updatedAt: new Date('2026-10-28T10:00:00.000Z'),
+  }, existingBatteryKwh: 0 });
+  const loaded = await fixture.workspace();
+  assert.equal(loaded.draft?.input.existingBatteryPresent, false);
+  assert.equal(fixture.state.row.input.existingBatteryPresent, true, 'GET does not rewrite the saved row');
+  assert.equal(fixture.state.updateCalls.length, 0);
+
+  staleInput.targetOperatorId = 7;
+  staleInput.targetTariffId = 42;
+  const saved = await fixture.save({ expectedRevision: 4, input: staleInput });
+  assert.equal(saved.input.existingBatteryPresent, false);
+  assert.equal(fixture.state.updateCalls[0].data.input.existingBatteryPresent, false);
 });
 
 test('aktualizacja używa updateMany po projectId i rewizji oraz zapisuje audyt w transakcji', async () => {

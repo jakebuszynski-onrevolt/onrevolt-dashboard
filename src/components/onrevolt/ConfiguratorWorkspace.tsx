@@ -156,6 +156,7 @@ type TemplateItemRow = {
   role: string;
   supplyMode: string;
   unitPurchaseNet?: string | number | null;
+  unitSaleNet?: string | number | null;
   purchaseVatRate?: string | number | null;
   operatingCostNet?: string | number | null;
   marginRate?: string | number | null;
@@ -226,6 +227,7 @@ type ConfigItemForm = {
   role: string;
   supplyMode: string;
   unitPurchaseNet: string;
+  unitSaleNet: string | null;
   purchaseVatRate: string;
   operatingCostNet: string;
   marginRate: string;
@@ -408,6 +410,7 @@ export function itemFromTemplate(item: TemplateItemRow, inheritItemSaleVat = tru
     role: item.role || roleFromProduct(item.product || undefined),
     supplyMode: item.supplyMode || 'ONREVOLT_SUPPLIED',
     unitPurchaseNet: formValue(costs.unitPurchaseNet),
+    unitSaleNet: item.unitSaleNet == null ? null : String(item.unitSaleNet),
     purchaseVatRate: rateToPercentFormValue(costs.purchaseVatRate),
     operatingCostNet: formValue(costs.operatingCostNet),
     marginRate: rateToPercentFormValue(costs.marginRate),
@@ -437,6 +440,7 @@ function itemFromConfiguration(item: ConfigurationRow['items'][number]): ConfigI
     role: item.role || roleFromProduct(item.product || undefined),
     supplyMode: item.supplyMode || 'ONREVOLT_SUPPLIED',
     unitPurchaseNet: formValue(item.unitPurchaseNet),
+    unitSaleNet: item.unitSaleNet == null ? null : String(item.unitSaleNet),
     purchaseVatRate: rateToPercentFormValue(item.purchaseVatRate),
     operatingCostNet: formValue(item.operatingCostNet),
     marginRate: rateToPercentFormValue(item.marginRate),
@@ -495,6 +499,7 @@ export function itemFromProduct(product?: ProductRow, position = 1, inheritItemS
     role,
     supplyMode: supplyModeFromRole(role),
     unitPurchaseNet: formValue(costs?.unitPurchaseNet),
+    unitSaleNet: null,
     purchaseVatRate: costs ? rateToPercentFormValue(costs.purchaseVatRate) : '',
     operatingCostNet: formValue(costs?.operatingCostNet),
     marginRate: costs ? rateToPercentFormValue(costs.marginRate) : '',
@@ -519,6 +524,7 @@ function pricedInput(item: ConfigItemForm, saleVatMode: ConfigurationVatMode) {
       operatingCostNet: 0,
       marginRate: 0,
       saleVatRate: 0,
+      unitSaleNet: undefined,
       operatingCostBasis: item.operatingCostBasis,
       includeVatSurplus: false,
     };
@@ -531,20 +537,38 @@ function pricedInput(item: ConfigItemForm, saleVatMode: ConfigurationVatMode) {
     operatingCostNet: asNumber(item.operatingCostNet),
     marginRate: percentFormValueToRate(item.marginRate),
     saleVatRate: resolveSaleVatRate(saleVatMode, percentFormValueToRate(item.saleVatRate)),
+    unitSaleNet: item.unitSaleNet == null || item.unitSaleNet.trim() === '' ? undefined : Number(item.unitSaleNet),
     operatingCostBasis: item.operatingCostBasis,
   } as Parameters<typeof calculateConfigurationLine>[0] & { operatingCostBasis?: string };
 }
 
-function itemToPayload(item: ConfigItemForm, saleVatMode: ConfigurationVatMode) {
+export function itemToPayload(item: ConfigItemForm, saleVatMode: ConfigurationVatMode) {
   return {
     ...item,
     purchaseVatRate: percentFormValueToRate(item.purchaseVatRate),
     marginRate: percentFormValueToRate(item.marginRate),
     saleVatRate: resolveSaleVatRate(saleVatMode, percentFormValueToRate(item.saleVatRate)),
+    unitSaleNet: item.unitSaleNet == null || item.unitSaleNet.trim() === '' ? null : Number(item.unitSaleNet),
     _requireCurrentCatalogPrice: item.requireCurrentCatalogPrice,
     _recalculateCatalogPrice: item.recalculateCatalogPrice,
     _previewCatalogSaleVat: item.previewCatalogSaleVat,
   };
+}
+
+export function applyConfigItemFieldEdit(item: ConfigItemForm, field: keyof ConfigItemForm, value: string | boolean) {
+  const updated = { ...item, [field]: value };
+  if (['unitPurchaseNet', 'purchaseVatRate', 'operatingCostNet', 'marginRate', 'saleVatRate'].includes(field)) {
+    return {
+      ...updated,
+      ...(field === 'marginRate' ? { unitSaleNet: null } : {}),
+      pricingMode: 'INDIVIDUAL' as const,
+      catalogPriceId: null,
+      requireCurrentCatalogPrice: false,
+      recalculateCatalogPrice: false,
+      previewCatalogSaleVat: false,
+    };
+  }
+  return updated;
 }
 
 export function isStaleCatalogPrice(item: Pick<ConfigItemForm, 'productId' | 'pricingMode' | 'catalogPriceId'>, products: ProductRow[]) {
@@ -1148,18 +1172,7 @@ export default function ConfiguratorWorkspace({
         return { ...item, operatingCostBasis };
       }
 
-      const updated = { ...item, [field]: value };
-      if (['unitPurchaseNet', 'purchaseVatRate', 'operatingCostNet', 'marginRate', 'saleVatRate'].includes(field)) {
-        return {
-          ...updated,
-          pricingMode: 'INDIVIDUAL',
-          catalogPriceId: null,
-          requireCurrentCatalogPrice: false,
-          recalculateCatalogPrice: false,
-          previewCatalogSaleVat: false,
-        };
-      }
-      return updated;
+      return applyConfigItemFieldEdit(item, field, value);
     }));
   }
 
@@ -1171,6 +1184,7 @@ export default function ConfiguratorWorkspace({
     setItems((current) => current.map((entry, itemIndex) => itemIndex === index ? {
       ...entry,
       unitPurchaseNet: catalogItem.unitPurchaseNet,
+      unitSaleNet: null,
       purchaseVatRate: catalogItem.purchaseVatRate,
       operatingCostNet: catalogItem.operatingCostNet,
       marginRate: catalogItem.marginRate,

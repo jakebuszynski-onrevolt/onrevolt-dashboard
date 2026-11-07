@@ -16,6 +16,54 @@ export class GoogleMapsConfigurationError extends Error {
   }
 }
 
+export class LocationMapValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LocationMapValidationError';
+  }
+}
+
+export class LocationMapTimeoutError extends Error {
+  constructor(operation: string, timeoutMs: number) {
+    super(`Przekroczono limit czasu (${Math.round(timeoutMs / 1000)} s) podczas ${operation}. Spróbuj ponownie później.`);
+    this.name = 'LocationMapTimeoutError';
+  }
+}
+
+export class LocationMapUpstreamError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LocationMapUpstreamError';
+  }
+}
+
+export class LocationMapGoogleStaticEogError extends LocationMapUpstreamError {
+  constructor() {
+    super('Google Static Maps nie udostępnia zdjęć satelitarnych dla tego konta lub regionu EOG. Google Maps i Satellites.pro korzystają z tego samego źródła zdjęć.');
+    this.name = 'LocationMapGoogleStaticEogError';
+  }
+}
+
+const GOOGLE_STATIC_EOG_UNAVAILABLE_BODY = 'Your request cannot be served because satellite and hybrid map types are not available for your account and region. Learn more here: https://developers.google.com/maps/comms/eea/maps-static.';
+
+function isTimeoutError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'TimeoutError' || error.name === 'AbortError') return true;
+  const cause = (error as Error & { cause?: unknown }).cause;
+  return cause instanceof Error && (cause.name === 'TimeoutError' || cause.name === 'AbortError');
+}
+
+function mapFetchError(error: unknown, operation: string, timeoutMs: number): Error {
+  if (error instanceof GoogleMapsConfigurationError
+    || error instanceof LocationMapValidationError
+    || error instanceof LocationMapTimeoutError
+    || error instanceof LocationMapUpstreamError) {
+    return error;
+  }
+  if (isTimeoutError(error)) return new LocationMapTimeoutError(operation, timeoutMs);
+  return new LocationMapUpstreamError(`Nie udało się połączyć z ${operation}. Sprawdź połączenie z usługą i spróbuj ponownie.`);
+}
+
 function apiKey() {
   const value = process.env.GOOGLE_MAPS_API_KEY?.trim();
   if (!value) throw new GoogleMapsConfigurationError();
@@ -25,7 +73,7 @@ function apiKey() {
 function coordinate(value: unknown, min: number, max: number, label: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
-    throw new Error(`Nieprawidłowa wartość pola ${label}`);
+    throw new LocationMapValidationError(`Nieprawidłowa wartość pola ${label}`);
   }
   return parsed;
 }
@@ -67,12 +115,27 @@ export function buildGoogleGeocodingUrl(query: string, key = apiKey()) {
 export async function searchGoogleAddresses(query: string) {
   const normalized = query.trim();
   if (normalized.length < 3) throw new Error('Wpisz co najmniej 3 znaki adresu');
-  const response = await fetch(buildGoogleGeocodingUrl(normalized), {
-    cache: 'no-store',
-    signal: AbortSignal.timeout(12_000),
-  });
-  if (!response.ok) throw new Error(`Nie udało się wyszukać adresu w Google Maps (HTTP ${response.status})`);
-  return normalizeGoogleGeocodingResponse(await response.json());
+  const timeoutMs = 30_000;
+  let response: Response;
+  try {
+    response = await fetch(buildGoogleGeocodingUrl(normalized), {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    throw mapFetchError(error, 'Google Maps Geocoding API', timeoutMs);
+  }
+  if (!response.ok) {
+    throw new LocationMapUpstreamError(`Nie udało się wyszukać adresu w Google Maps (HTTP ${response.status})`);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    throw mapFetchError(error, 'Google Maps Geocoding API', timeoutMs);
+  }
+  return normalizeGoogleGeocodingResponse(payload);
 }
 
 export function buildGoogleSatelliteUrl(
@@ -103,14 +166,24 @@ export async function fetchGoogleSatelliteImage(
   longitude: number,
   options: { zoom?: number } = {},
 ) {
-  const response = await fetch(buildGoogleSatelliteUrl(latitude, longitude, options), {
-    cache: 'no-store',
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!response.ok) throw new Error(`Nie udało się pobrać zdjęcia satelitarnego Google (HTTP ${response.status})`);
-  const contentType = response.headers.get('content-type')?.split(';')[0] || '';
-  if (!contentType.startsWith('image/')) {
-    throw new Error('Google Maps nie zwróciło obrazu satelitarnego. Sprawdź uprawnienia klucza API.');
+  const timeoutMs = 50_000;
+  try {
+    const response = await fetch(buildGoogleSatelliteUrl(latitude, longitude, options), {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      if (response.status === 403 && (await response.text()).trim() === GOOGLE_STATIC_EOG_UNAVAILABLE_BODY) {
+        throw new LocationMapGoogleStaticEogError();
+      }
+      throw new LocationMapUpstreamError(`Nie udało się pobrać zdjęcia satelitarnego Google (HTTP ${response.status})`);
+    }
+    const contentType = response.headers.get('content-type')?.split(';')[0] || '';
+    if (!contentType.startsWith('image/')) {
+      throw new LocationMapUpstreamError('Google Maps nie zwróciło obrazu satelitarnego. Sprawdź uprawnienia klucza API.');
+    }
+    return { bytes: Buffer.from(await response.arrayBuffer()), contentType };
+  } catch (error) {
+    throw mapFetchError(error, 'pobierania zdjęcia satelitarnego Google Maps', timeoutMs);
   }
-  return { bytes: Buffer.from(await response.arrayBuffer()), contentType };
 }

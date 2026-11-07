@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { NextRequest } from 'next/server';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { GET, POST } from '../../app/api/energy-audits/route';
 import { prisma } from './prisma';
 import { rePrisma } from './re-stations';
+import { profileContentHash } from '../../../scripts/profile-catalog/storage-core';
+import type { CatalogProfile } from './reference-profile-comparison';
 import type { ReConsumptionProfile } from './re-consumption-api';
 import { mergeReConsumptionDeclaration, shouldSyncReConsumptionDeclaration, syncProjectReConsumptionDeclaration } from './re-consumption-declaration';
 
@@ -17,6 +21,8 @@ function emptyProfile(): ReConsumptionProfile {
 }
 const sum = (values: number[]) => Math.round(values.reduce((total, value) => total + value, 0) * 1000) / 1000;
 const serviceInput = { clientId: 'client', projectId: 'project', auditId: 'audit', annualConsumptionKwh: 3650, actorId: 'staff' };
+const referenceCatalog = JSON.parse(readFileSync(join(process.cwd(), 'output', 'profile-catalog-20261106', 'catalog.json'), 'utf8')) as { profiles: CatalogProfile[] };
+const referenceProfile = referenceCatalog.profiles.find(profile => profile.key === 'bdew-2025-h25')!;
 
 test('merges only standard imports, retaining manual/XLSX values, source tags and exports', () => {
   const original = profile();
@@ -83,18 +89,39 @@ function fixture(t: TestContext) {
     profile: profile(), logs: [] as any[], calls: [] as Array<{ method: string; body?: any }>, events: [] as string[],
     updates: 0, creates: 0, sql: [] as string[], failGet: false, failAfterSave: false, failLog: '',
     foreignProject: false, foreignAudit: false, allowed: true,
+    referenceSelection: { key: null as string | null, revision: 0, contentHash: null as string | null, profileName: null as string | null },
+    referenceRow: null as any,
+    referenceWrites: [] as any[],
   };
   replace(t, prisma, '$transaction', async (callback: any) => {
     state.events.push('transaction');
     try { return await callback(prisma); } finally { state.events.push('commit'); }
   });
   replace(t, prisma, '$queryRaw', async (strings: TemplateStringsArray, ...values: any[]) => {
-    assert.match(strings.join('?'), /SELECT id FROM Project[\s\S]*FOR UPDATE/);
-    assert.equal(values[0], 'project');
-    if (values.length === 2) assert.equal(values[1], 'client');
-    state.events.push('lock');
-    return state.foreignProject ? [] : [{ id: 'project' }];
+    const sql = strings.join('?');
+    if (/SELECT id FROM Project[\s\S]*FOR UPDATE/.test(sql)) {
+      assert.equal(values[0], 'project');
+      if (values.length === 2) assert.equal(values[1], 'client');
+      state.events.push('lock');
+      return state.foreignProject ? [] : [{ id: 'project' }];
+    }
+    if (sql.includes('FROM ProjectReferenceLoadProfile')) {
+      return state.referenceSelection.revision > 0 ? [{ profileKey: state.referenceSelection.key,
+        revision: state.referenceSelection.revision, contentHash: state.referenceSelection.contentHash,
+        profileName: state.referenceSelection.profileName, projectionVersion: 1 }] : [];
+    }
+    if (sql.includes('FROM ReferenceLoadProfile')) {
+      const hash = profileContentHash(referenceProfile as any);
+      return [{ key: referenceProfile.key, sourceKey: referenceProfile.sourceKey, name: referenceProfile.name,
+        category: referenceProfile.category, kind: referenceProfile.kind, quantity: referenceProfile.quantity,
+        unit: referenceProfile.unit, timeBasis: referenceProfile.timeBasis, resolutionMinutes: referenceProfile.resolutionMinutes,
+        start: referenceProfile.start, end: referenceProfile.end, contentHash: hash, pointCount: referenceProfile.series.length,
+        seriesJson: JSON.stringify(referenceProfile.series), metadataJson: JSON.stringify(referenceProfile.metadata),
+        qualityJson: JSON.stringify(referenceProfile.quality) }];
+    }
+    throw new Error(`Unexpected CRM SQL ${sql}`);
   });
+  replace(t, prisma.project, 'findUnique', async () => ({ ...state.project }));
   replace(t, prisma.project, 'findUniqueOrThrow', async () => ({ ...state.project }));
   replace(t, prisma.project, 'findMany', async () => [{ ...state.project }]);
   replace(t, prisma.energyAudit, 'findUnique', async () => state.audit ? { ...state.audit,
@@ -120,14 +147,21 @@ function fixture(t: TestContext) {
   replace(t, prisma.staffSession, 'findFirst', async () => ({ id: 'session', lastSeenAt: new Date(),
     staffUser: { id: 'staff', active: true, systemRole: state.allowed ? 'ADMIN' : 'USER', companyRoles: [] } }));
   const db = rePrisma();
+  replace(t, db, '$transaction', async (callback: any) => callback(db));
   replace(t, db, '$queryRawUnsafe', async (sql: string) => {
     state.sql.push(sql);
     if (sql.startsWith('SHOW TABLES')) return [{}];
     if (sql.startsWith('SHOW COLUMNS')) return [{ Field: 'station' }, { Field: 'station_hash' }];
-    if (sql.includes('EnergyMeter_users')) return [{ station: '41', station_hash: 'token' }];
+    if (sql.includes('EnergyMeter_reference_load_profiles')) return state.referenceRow ? [{ ...state.referenceRow }] : [];
+    if (sql.includes('EnergyMeter_users')) return [{ station: '41', station_hash: 'token', weather_station: null }];
     throw new Error(`Unexpected SQL ${sql}`);
   });
-  replace(t, db, '$executeRawUnsafe', async () => { throw new Error('RE SQL writes are forbidden'); });
+  replace(t, db, '$executeRawUnsafe', async (sql: string, ...values: any[]) => {
+    if (!sql.includes('INSERT INTO `EnergyMeter_reference_load_profiles`')) throw new Error('Unexpected RE SQL write');
+    state.referenceWrites.push({ sql, values });
+    state.referenceRow = { station: values[0], projectId: values[1], profileKey: values[2], contentHash: values[3],
+      payloadJson: values[4], annualKwh: values[5], projectionVersion: values[6] };
+  });
   t.mock.method(globalThis, 'fetch', async (url: URL, init: RequestInit) => {
     assert.equal(url.origin, 'https://re.example.test');
     state.events.push(init.method);
@@ -169,6 +203,44 @@ test('route locks project, saves declaration and uses only existing profile HTTP
   assert.deepEqual(state.logs.map(log => log.action), ['UPDATE', 'RE_DECLARATION_REQUEST', 'RE_DECLARATION_SYNCED']);
   assert.deepEqual(state.events, ['transaction', 'lock', 'commit', 'transaction', 'lock', 'GET', 'POST', 'commit']);
   assert.ok(state.sql.every(sql => !/\b(INSERT|UPDATE|DELETE|ALTER)\b/.test(sql)));
+});
+
+test('annual declaration updates the selected RE reference profile without replacing its shape with monthly defaults', async t => {
+  const state = fixture(t);
+  state.referenceSelection = { key: referenceProfile.key, revision: 1,
+    contentHash: profileContentHash(referenceProfile as any), profileName: referenceProfile.name };
+  const response = await POST(request({ annualConsumptionKwh: 3650 }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.reDeclarationSync.status, 'synced');
+  assert.equal(body.reDeclarationSync.profileAnnualUsageKwh, 3650);
+  assert.equal(state.calls.length, 0);
+  assert.equal(state.referenceWrites.length, 1);
+  assert.equal(state.referenceRow.station, '41');
+  assert.equal(state.referenceRow.projectId, 'project');
+  assert.equal(state.referenceRow.profileKey, referenceProfile.key);
+  assert.equal(state.referenceRow.contentHash, state.referenceSelection.contentHash);
+  assert.equal(Number(state.referenceRow.annualKwh), 3650);
+  assert.equal(Number(state.referenceRow.projectionVersion), 1);
+});
+
+test('annual declaration updates an explicit default/reset overlay and keeps legacy standard-month synchronization', async t => {
+  const state = fixture(t);
+  state.referenceSelection = { key: null, revision: 2, contentHash: null, profileName: null };
+  const response = await POST(request({ annualConsumptionKwh: 3650 }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.reDeclarationSync.status, 'synced');
+  assert.equal(state.calls.length, 2);
+  assert.deepEqual(state.calls.map(call => call.method), ['GET', 'POST']);
+  assert.equal(state.referenceWrites.length, 1);
+  assert.equal(state.referenceRow.profileKey, null);
+  assert.equal(state.referenceRow.contentHash, null);
+  assert.equal(state.referenceRow.payloadJson, null);
+  assert.equal(Number(state.referenceRow.annualKwh), 3650);
+  assert.equal(state.profile.months[0], 310);
+  assert.equal(state.profile.sources[0], 'standard');
+  assert.equal(state.profile.exportSources[2], 'standard');
 });
 
 test('ordinary same-annual save preserves later RE changes and does not call RE', async t => {

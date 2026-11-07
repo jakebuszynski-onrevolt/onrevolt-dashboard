@@ -1,6 +1,7 @@
 import type { OfferWorkspaceEnergy } from './offer-workspace-energy';
 import type { OfferWorkspaceMeasurements } from './offer-workspace-server';
 import type { OfferBillingScenarioResult } from './offer-workspace-billing';
+import type { OfferWorkspaceRecommendationBatteryBounds } from './offer-workspace-recommendation-bounds';
 
 export type OfferWorkspaceRanking = {
   templateIds: string[];
@@ -16,6 +17,18 @@ export type OfferWorkspaceRanking = {
   reasons?: string[];
 };
 
+export type OfferWorkspaceRecommendationSearch = {
+  version: 1;
+  candidateSignature: string;
+  evaluatedCandidateIds: string[];
+  totalCandidates: number;
+  evaluatedCandidates: number;
+  batchNumber: number;
+  batchEvaluated: number;
+  hasMore: boolean;
+  phase: 'coarse' | 'refine' | 'complete';
+};
+
 export type OfferForecastFlow = {
   startUtc: string; endUtc: string;
   loadKwh: number; pvKwh: number; directKwh: number;
@@ -26,6 +39,17 @@ export type OfferForecastFlow = {
 
 export type OfferWorkspaceCalculation = {
   evaluatedTemplateIds?: string[];
+  recommendationSearch?: OfferWorkspaceRecommendationSearch;
+  recommendationBatteryBounds?: OfferWorkspaceRecommendationBatteryBounds & {
+    totalCandidatesBeforeFilter: number;
+    excludedCandidates: number;
+  };
+  recommendationPvBounds?: {
+    maximumBatteryKwhPerPvKwp: number;
+    pvBasis: 'existing_plus_added';
+    totalCandidatesBeforeFilter: number;
+    excludedCandidates: number;
+  };
   status: 'ready' | 'blocked';
   reasons: string[];
   warnings: string[];
@@ -46,6 +70,10 @@ export type OfferWorkspaceCalculation = {
   estimatedAnnualSavingsPln?: number[];
   estimatedAnnualTargetCostPln?: number[];
   estimatedAnnualTariffOnlyCostPln?: number[];
+  estimatedAnnualPriceGrowthRate?: number;
+  estimatedAnnualExportPriceGrowthRate?: number;
+  estimatedMonthlyTargetCostPln?: number[];
+  estimatedMonthlyTariffOnlyCostPln?: number[];
   estimateHorizonYears?: number;
   grantPln: number | null;
   taxReliefPln: number | null;
