@@ -382,8 +382,9 @@ export default function ReferenceProfileComparison({ annualKwh, projectId, onRef
   const dailySignature = JSON.stringify([baseSignature, month, dayType]);
   const filteredProfiles = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('pl-PL');
-    if (!catalog || !needle) return catalog?.profiles || [];
-    return catalog.profiles.filter((profile) => [
+    const usableProfiles = catalog?.profiles.filter((profile) => profile.eligible || profile.calculationEligible === true) || [];
+    if (!needle) return usableProfiles;
+    return usableProfiles.filter((profile) => [
       profile.name,
       profile.sourceKey,
       sourceLabel(profile.sourceKey),
