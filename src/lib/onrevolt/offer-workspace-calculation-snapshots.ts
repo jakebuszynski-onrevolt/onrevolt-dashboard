@@ -5,7 +5,7 @@ import type { OfferWorkspaceDraft } from './offer-workspace';
 import type { OfferWorkspaceCalculation } from './offer-workspace-calculation-types';
 import { prisma } from './prisma';
 
-export const OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION = 'offer-workspace-calculation-v13-commercial-annual';
+export const OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION = 'offer-workspace-calculation-v16-pme2-capacity';
 // A full year with the exact breakdown for three settlement scenarios exceeds 32 MiB.
 export const MAX_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES = 64 * 1024 * 1024;
 const COMPRESS_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES = 1024 * 1024;
@@ -74,6 +74,7 @@ export interface StoredOfferWorkspaceCalculationSnapshot {
 }
 
 export interface OfferWorkspaceCalculationSnapshotRepository {
+  findSavedForDrafts(input: { actorId: string; projectId: string; draftHashes: string[]; offset?: number }): Promise<StoredOfferWorkspaceCalculationSnapshot[]>;
   savePending(input: OfferWorkspaceCalculationSnapshotInput): Promise<void>;
   admitCompleted(input: {
     jobId: string;
@@ -261,6 +262,19 @@ function parseSnapshot(value: unknown): StoredOfferWorkspaceCalculationSnapshot 
 
 export class PrismaOfferWorkspaceCalculationSnapshotRepository implements OfferWorkspaceCalculationSnapshotRepository {
   constructor(private readonly database: CalculationSnapshotDatabase) {}
+
+  // Reading a saved offer is independent of today's prices and calculation engine.
+  // Freshness checks remain mandatory when reusing a result for a new calculation.
+  async findSavedForDrafts(input: { actorId: string; projectId: string; draftHashes: string[]; offset?: number }): Promise<StoredOfferWorkspaceCalculationSnapshot[]> {
+    if (!input.draftHashes.length) return [];
+    const rows = await this.database.offerWorkspaceCalculationSnapshot.findMany({
+      where: { actorId: input.actorId, projectId: input.projectId, draftHash: { in: input.draftHashes }, admission: { isNot: null } },
+      include: { admission: true }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 1, skip: input.offset ?? 0,
+    });
+    return rows.map(parseSnapshot).filter((row): row is StoredOfferWorkspaceCalculationSnapshot => row !== null
+      && row.actorId === input.actorId && row.projectId === input.projectId && input.draftHashes.includes(row.draftHash));
+  }
 
   async savePending(input: OfferWorkspaceCalculationSnapshotInput): Promise<void> {
     if (!Number.isFinite(timestamp(input.deadlineAt)) || Date.now() >= timestamp(input.deadlineAt)) {

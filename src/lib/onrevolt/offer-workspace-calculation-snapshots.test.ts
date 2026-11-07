@@ -107,6 +107,21 @@ function compressedResult(value: unknown, overrides: Record<string, unknown> = {
   };
 }
 
+test('saved result query restores compressed old-version results and rejects foreign or unadmitted rows', async () => {
+  const f = fixture({ rows: [
+    { ...row, result: compressedResult(result) },
+    { ...row, projectId: 'other-project' }, { ...row, actorId: 'other-actor' },
+    { ...row, draftHash: 'x'.repeat(64) }, { ...row, admission: null },
+  ] });
+  const repository = new f.exports.PrismaOfferWorkspaceCalculationSnapshotRepository(f.database);
+  const saved = await repository.findSavedForDrafts({ actorId: row.actorId, projectId: row.projectId, draftHashes: [row.draftHash] });
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].result.annualSavingsPln, 120);
+  assert.equal(saved[0].algorithmVersion, 'offer-workspace-calculation-v1');
+  const where = f.calls.find(call => call.operation === 'findMany')!.value.where;
+  for (const key of ['algorithmVersion', 'sourceRevision', 'pricesAsOf', 'sourceDependencyStamp']) assert.equal(key in where, false);
+});
+
 function readerForResult(storedResult: unknown) {
   const f = fixture();
   return new f.exports.PrismaOfferWorkspaceCalculationSnapshotRepository({
@@ -225,19 +240,19 @@ test('completed snapshots retain KEEP existing-PV range basis without an additiv
 test('nowe ograniczenia konfiguracji unieważniają starsze wyniki i mieszczą się w kolumnie algorithmVersion VarChar(64)', () => {
   const f = fixture();
   const version = f.exports.OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION as string;
-  assert.equal(version, 'offer-workspace-calculation-v13-commercial-annual');
+  assert.equal(version, 'offer-workspace-calculation-v16-pme2-capacity');
   assert.ok(version.length <= 64, `algorithmVersion has ${version.length} characters; the schema column allows 64`);
 });
 
-test('old v12 snapshots cannot satisfy the v13 commercial and annual-profile algorithm lookup', async () => {
-  const f = fixture({ findFirst: { ...row, algorithmVersion: 'offer-workspace-calculation-v12-growth5' } });
+test('old v15 snapshots cannot satisfy the v16 PME2 capacity algorithm lookup', async () => {
+  const f = fixture({ findFirst: { ...row, algorithmVersion: 'offer-workspace-calculation-v15-commercial-pv' } });
   const repository = new f.exports.PrismaOfferWorkspaceCalculationSnapshotRepository(f.database);
   const version = f.exports.OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION as string;
 
   const found = await repository.findCompletedByJob({ jobId: row.jobId, actorId: row.actorId, projectId: row.projectId, algorithmVersion: version });
 
   assert.equal(found, null);
-  assert.equal(f.calls[0].value.where.algorithmVersion, 'offer-workspace-calculation-v13-commercial-annual');
+  assert.equal(f.calls[0].value.where.algorithmVersion, 'offer-workspace-calculation-v16-pme2-capacity');
 });
 
 test('compressed large results round trip losslessly and legacy plain JSON remains readable', async () => {

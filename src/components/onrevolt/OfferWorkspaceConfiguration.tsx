@@ -8,6 +8,7 @@ import {
 import React, { useState } from 'react';
 import { MdAdd, MdArrowDropDown, MdArrowDropUp, MdAutoAwesome } from 'react-icons/md';
 import { configurationInvestmentScope } from 'lib/onrevolt/configuration-templates';
+import { automaticOfferCommercialBreakdown } from 'lib/onrevolt/offer-workspace-commercial-pricing';
 import { selectOfferWorkspaceTemplate, setOfferWorkspacePvStrategy, type OfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
 import { priceOfferWorkspaceConfiguration, type OfferWorkspacePricingResult } from 'lib/onrevolt/offer-workspace-pricing';
 import { applyOfferWorkspaceConfigurationEdits } from 'lib/onrevolt/offer-workspace-configuration-edits';
@@ -203,13 +204,13 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
         return selected.selectedTemplateIds.length === current.selectedTemplateIds.length
           && selected.selectedTemplateIds.every((selectedId, index) => selectedId === current.selectedTemplateIds[index])
           ? selected
-          : { ...selected, commercialPricing: undefined };
+          : { ...selected, commercialPricing: automaticOfferCommercialBreakdown() };
       }
       const selectedTemplateIds = current.selectedTemplateIds.filter((selectedId) =>
         configurationInvestmentScope(templates.find((item) => item.id === selectedId)?.kind || '') !== scope);
       return { ...current, selectedTemplateIds,
         ...(current.configurationEdits ? { configurationEdits: current.configurationEdits.filter(edit => selectedTemplateIds.includes(edit.templateId)) } : {}),
-        commercialPricing: undefined };
+        commercialPricing: automaticOfferCommercialBreakdown() };
     });
   }
 

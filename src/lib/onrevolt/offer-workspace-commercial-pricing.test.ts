@@ -3,6 +3,7 @@ import test from 'node:test';
 import { priceOfferWorkspaceConfiguration, type OfferWorkspacePricingTemplate } from './offer-workspace-pricing';
 import { calculateOfferWorkspaceFinancing } from './offer-workspace-financing';
 import {
+  automaticOfferCommercialBreakdown,
   calculateOfferCommercialPricing,
   parseOfferWorkspaceCommercialBreakdown,
   type OfferWorkspaceCommercialBreakdown,
@@ -261,4 +262,72 @@ test('the four-row storage basis excludes inverter, EMS and transport without fo
   });
   assert.equal(Math.round(financing.pme2.conditionalGross! * 100) / 100, 14941.24);
   assert.equal(financing.awardGuaranteed, false);
+});
+
+
+function pvTemplate(): OfferWorkspacePricingTemplate {
+  const base = selectedTemplate().items[0];
+  return { id: 'pv-new', name: 'Nowa PV', kind: 'PV_DACH_PLASKI', items: [
+    { ...base, id: 'modules', role: 'MAIN_EQUIPMENT', quantity: 12, unitPurchaseNet: 329, unitSaleNet: 500,
+      product: { name: 'Moduły', category: 'FOTOWOLTAIKA', prices: [] } },
+    { ...base, id: 'construction', role: 'LABOR', supplyMode: 'SERVICE_ONLY', unitPurchaseNet: 1200, unitSaleNet: 2000,
+      product: { name: 'Konstrukcja', category: 'FOTOWOLTAIKA', prices: [] } },
+    { ...base, id: 'cables', role: 'CABLING', unitPurchaseNet: 500, unitSaleNet: 1000,
+      product: { name: 'Przewody', category: 'OSPRZET_ELEKTRONIKA', prices: [] } },
+    { ...base, id: 'labor', role: 'LABOR', supplyMode: 'SERVICE_ONLY', unitPurchaseNet: 2000, unitSaleNet: 3000,
+      product: { name: 'Montaż', category: 'USLUGA_MONTAZOWA', prices: [] } },
+  ] };
+}
+
+test('pięć pozycji: tylko moduły po zakupie, reszta PV w magazynie bez zwiększania podstawy dotacji', () => {
+  const templates = [selectedTemplate(), pvTemplate()];
+  const pricing = priceOfferWorkspaceConfiguration(templates, 'REDUCED_8', 'B2C');
+  const before = structuredClone(templates);
+  const result = calculateOfferCommercialPricing(pricing, templates, automaticOfferCommercialBreakdown());
+  const storageOnly = calculateOfferCommercialPricing(priceOfferWorkspaceConfiguration([templates[0]], 'REDUCED_8', 'B2C'), [templates[0]], automaticOfferCommercialBreakdown());
+  assert.equal(result.rows.length, 5);
+  assert.equal(result.rows[4].group, 'PV_MODULES');
+  assert.equal(result.rows[4].amountNet, 3948);
+  assert.equal(result.rows[4].amountGross, 4263.84);
+  assert.equal(result.transferredPvSaleGross, 8696.16);
+  assert.equal(result.rows[0].amountGross, storageOnly.rows[0].amountGross + 8696.16);
+  assert.equal(result.batteryEligibleGross, storageOnly.batteryEligibleGross);
+  assert.equal(Math.round(result.rows.reduce((sum,row)=>sum+row.amountGross,0)*100), Math.round(pricing.totals!.saleGross*100));
+  assert.equal(Math.round(result.rows.reduce((sum,row)=>sum+row.amountNet,0)*100), Math.round(pricing.totals!.saleNet*100));
+  assert.deepEqual(templates, before);
+});
+
+test('automatyczny podział pozostaje po zmianie zestawu i przechodzi z pięciu do czterech pozycji', () => {
+  const policy = parseOfferWorkspaceCommercialBreakdown(JSON.parse(JSON.stringify(automaticOfferCommercialBreakdown())))!;
+  const templates = [selectedTemplate({ id: 'other-battery' }), pvTemplate()];
+  const first = calculateOfferCommercialPricing(priceOfferWorkspaceConfiguration(templates, 'REDUCED_8', 'B2C'), templates, policy);
+  const second = calculateOfferCommercialPricing(priceOfferWorkspaceConfiguration([templates[0]], 'REDUCED_8', 'B2C'), [templates[0]], policy);
+  assert.equal(first.rows.length, 5); assert.equal(second.rows.length, 4);
+  assert.deepEqual(policy.allocations, []);
+});
+
+test('B2B używa VAT 23% i uzgadnia sumy netto przy podziale pięciu pozycji', () => {
+  const templates = [selectedTemplate(), pvTemplate()];
+  const pricing = priceOfferWorkspaceConfiguration(templates, 'STANDARD_23', 'B2B');
+  const result = calculateOfferCommercialPricing(pricing, templates, automaticOfferCommercialBreakdown());
+  assert.equal(result.saleVatRate, 0.23);
+  assert.equal(result.rows[4].amountNet, 3948);
+  assert.equal(result.totalNet, pricing.totals!.saleNet);
+});
+
+test('jawna nazwa falownika bez produktu katalogowego jest rozpoznana tylko dla sprzętu głównego', () => {
+  const template = selectedTemplate();
+  template.items[1] = { ...template.items[1], role: 'MAIN_EQUIPMENT', description: 'Solis S6 12kW 3P Hybrid Inverter,', product: null };
+  const result = calculateOfferCommercialPricing(priceOfferWorkspaceConfiguration([template], 'REDUCED_8', 'B2C'), [template], automaticOfferCommercialBreakdown());
+  assert.equal(result.rows[1].amountGross, 7490.88);
+});
+
+
+test('sumowanie modułów zachowuje dokładny zakup netto mimo zaokrągleń VAT na pozycjach', () => {
+  const pv = pvTemplate();
+  pv.items = [100.01, 100.02].map((purchase, index) => ({ ...pv.items[0], id: `panel-${index}`, quantity: 1, unitPurchaseNet: purchase, unitSaleNet: 150 }));
+  const templates = [selectedTemplate(), pv];
+  const result = calculateOfferCommercialPricing(priceOfferWorkspaceConfiguration(templates, 'REDUCED_8', 'B2C'), templates, automaticOfferCommercialBreakdown());
+  assert.equal(result.rows[4].amountNet, 200.03);
+  assert.equal(result.rows[4].amountGross, 216.03);
 });

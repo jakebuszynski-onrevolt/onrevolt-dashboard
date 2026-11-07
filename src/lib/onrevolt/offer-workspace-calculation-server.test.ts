@@ -8,6 +8,7 @@ import { OfferMarketDataError, offerHourlyMarketPrices, offerMarketIntervalStart
 import * as dependencies from './offer-workspace-calculation-dependencies';
 import * as recommendationSearch from './offer-workspace-recommendation-search';
 import * as recommendationBounds from './offer-workspace-recommendation-bounds';
+import { PME2_RULES } from './offer-financing-v2';
 import { recommendationInputIssues } from './offer-workspace-recommendation-inputs';
 import { completeHistoryForSummary } from './client-energy-cost-summary-server';
 import { applyOfferWorkspaceConfigurationEdits, configurationEnergyQuantityFingerprint, hasRemovedCriticalConfigurationItem, validateOfferWorkspaceConfigurationEdits } from './offer-workspace-configuration-edits';
@@ -261,6 +262,7 @@ function fixture(options: {
     }) },
     './offer-workspace-recommendation-search': recommendationSearch,
     './offer-workspace-recommendation-bounds': recommendationBounds,
+    './offer-financing-v2': { PME2_RULES },
     './offer-workspace-recommendation-inputs': { recommendationInputIssues },
   };
   const exports: any = {};
@@ -299,6 +301,53 @@ function recommendationFixture(options: Parameters<typeof fixture>[0] = {}) {
   }
   return f;
 }
+
+test('PME2 filtruje rekomendację przy 10 kWh i dokładnie 2× PV; bez dotacji zachowuje mniejsze zestawy', async () => {
+  for (const considerGrant of [true, false]) {
+    const capacities = [9.99, 10, 16.07, 19.99, 20, 20.01];
+    const f = recommendationFixture({
+      candidates: capacities.map(capacity => ({ templateIds: [`battery-${capacity}`], totals: {}, missingPrices: [],
+        batteryCapacityKwh: capacity, totalPvKw: 10 })),
+    });
+    f.draft.financing.considerGrant = considerGrant;
+    const result = await f.calculate('recommend');
+    assert.equal(result.recommendationSearch?.totalCandidates, considerGrant ? 2 : 6);
+    assert.deepEqual(f.state.scenarioInputs.map(input => input.draft.selectedTemplateIds[0]).sort(),
+      (considerGrant ? [20, 20.01] : capacities).map(capacity => `battery-${capacity}`).sort());
+  }
+});
+
+test('PME2 stosuje minimum 10 kWh także przy małej PV i wyjaśnia brak dopasowania', async () => {
+  for (const capacity of [9.99, 10]) {
+    const f = recommendationFixture({ candidates: [{ templateIds: ['battery'], totals: {}, missingPrices: [],
+      batteryCapacityKwh: capacity, totalPvKw: 4 }] });
+    f.draft.existingPv.powerKw = 4;
+    f.draft.financing.considerGrant = true;
+    const result = await f.calculate('recommend');
+    if (capacity < 10) {
+      assert.equal(result.status, 'blocked');
+      assert.match(result.reasons.join(' '), /PME2: minimum 10 kWh.*2× łącznej mocy PV/);
+      assert.equal(f.state.scenarioInputs.length, 0);
+    } else assert.equal(result.recommendationSearch?.totalCandidates, 1);
+  }
+});
+
+test('PME2 przy rozbudowie liczy istniejące 4 kWp + nowe 6 kWp, a nie samą nową PV', async () => {
+  const f = recommendationFixture({
+    recommendationEnergyIntervals: fullYearRecommendationEnergy(1),
+    templates: [{ id: 'pv', name: 'PV 6 kWp', kind: 'PV_DACH_SKOSNY', powerKw: 6 }],
+    candidates: [12, 20].map(capacity => ({ templateIds: [`battery-${capacity}`, 'pv'], totals: {}, missingPrices: [],
+      batteryCapacityKwh: capacity, existingPvKw: 4, addedPvKw: 6, totalPvKw: 10 })),
+  });
+  f.draft.existingPv.powerKw = 4;
+  f.draft.pvStrategy = 'ADD_TEMPLATE';
+  f.draft.calculation.addedPvTiltDegrees = 30;
+  f.draft.calculation.addedPvAzimuthDegrees = 180;
+  f.draft.financing.considerGrant = true;
+  const result = await f.calculate('recommend');
+  assert.equal(result.recommendationSearch?.totalCandidates, 1);
+  assert.deepEqual(f.state.scenarioInputs.map(input => input.draft.selectedTemplateIds), [['battery-20', 'pv']]);
+});
 
 test('common recommendation input issues stop before energy, financial sources and candidate progress', async () => {
   const f = fixture();
@@ -360,7 +409,7 @@ test('a common target bill error stops recommendations before candidate counts a
 test('common bill probe isolates financing and keeps all candidate draft assumptions intact', async () => {
   const f = recommendationFixture({
     templates: [{ id: 'battery-a', name: 'Magazyn', kind: 'MAGAZYN' }],
-    candidates: [{ templateIds: ['battery-a'], totals: {}, missingPrices: [] }],
+    candidates: [{ templateIds: ['battery-a'], totals: {}, missingPrices: [], batteryCapacityKwh: 20, totalPvKw: 10 }],
     preflightScenario: input => {
       assert.equal(input.draft.financing.considerGrant, false);
       assert.equal(input.draft.financing.considerTaxRelief, false);

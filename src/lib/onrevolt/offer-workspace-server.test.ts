@@ -13,16 +13,26 @@ import {
   resolveOfferWorkspaceStoragePath,
   savedDraft,
   summarizeOfferMeasurementSeries,
+  createServerOfferWorkspacePricingSnapshot,
 } from './offer-workspace-server';
 import { buildOfferWorkspaceDayProfiles } from './offer-workspace-chart-data';
 import type { OfferMeasurementSeries } from './offer-measurements';
 import { emptyOfferWorkspaceDraft } from './offer-workspace';
+import { automaticOfferCommercialBreakdown } from './offer-workspace-commercial-pricing';
 import { resolveClientEnergyBatteryPresence } from './client-energy-pv-summary';
+import { projectGeneralTariff } from './client-tariffs';
 import * as energyIntake from './energy-intake';
 import { resolveProjectAnalysisPeriod, type ProjectAnalysisPeriod } from './project-analysis-period';
 import { configurationEditsContainPricing } from './offer-workspace-configuration-edits';
 
 const serverPath = path.resolve(__dirname, 'offer-workspace-server.ts');
+test('automatyczny podział pozwala zapisać szkic przed wyborem urządzeń', () => {
+  const draft = emptyOfferWorkspaceDraft();
+  draft.commercialPricing = automaticOfferCommercialBreakdown();
+  assert.doesNotThrow(() => createServerOfferWorkspacePricingSnapshot(draft, [], 'B2C'));
+  draft.commercialPricing = { schemaVersion: 1, allocations: [], batteryInstallationScopeConfirmed: true };
+  assert.throws(() => createServerOfferWorkspacePricingSnapshot(draft, [], 'B2C'));
+});
 const serverCode = ts.transpileModule(readFileSync(serverPath, 'utf8'), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true },
   fileName: serverPath,
@@ -42,6 +52,10 @@ function transactionFixture(options: {
   missingEnergyAudit?: boolean;
   ppeNumber?: string | null;
   projectAccount?: boolean;
+  accountOperator?: string;
+  reOperator?: string;
+  oldEneaAccount?: boolean;
+  profileSource?: string;
   clientAccount?: boolean;
   existingPvKw?: number | null;
   roofTiltDeg?: number | null;
@@ -79,7 +93,7 @@ function transactionFixture(options: {
   };
   const clone = (value: any) => value == null ? null : structuredClone(value);
   const project = {
-    id: 'project-1', clientId: 'client-1', title: 'Projekt', clientType: options.projectClientType || 'B2C', locationAddress: null,
+    dashboardStationNumber: options.reOperator ? '123' : null, id: 'project-1', clientId: 'client-1', title: 'Projekt', clientType: options.projectClientType || 'B2C', locationAddress: null,
     updatedAt: new Date('2026-10-01T00:00:00.000Z'),
     client: { displayName: 'Klient', clientType: options.clientType || 'B2C', updatedAt: new Date('2026-10-01T00:00:00.000Z'), contacts: [{ email: 'klient@example.invalid', phone: '123456789' }] },
     investmentSite: null,
@@ -93,16 +107,16 @@ function transactionFixture(options: {
     energyPortalAccount: { findMany: async ({ where }: any) => {
       state.accountQueries.push(where);
       if (where.projectId === 'project-1' && options.projectAccount !== false) return [{
-        id: 'account-1', ppeNumber: options.ppeNumber === undefined ? '590310600030743962' : options.ppeNumber,
+        id: 'account-1', operator: options.accountOperator || 'ENEA', ppeNumber: options.ppeNumber === undefined ? '590310600030743962' : options.ppeNumber,
         projectId: 'project-1', tariff: null, updatedAt: new Date('2026-10-01T00:00:00.000Z'),
-      }];
+      }, ...(options.oldEneaAccount ? [{ id: 'old-enea', operator: 'ENEA', projectId: 'project-1', ppeNumber: 'old', tariff: 'G11', updatedAt: new Date('2025-01-01') }] : [])];
       if (where.projectId === null && options.clientAccount) return [{
         id: 'client-account', ppeNumber: 'client-ppe', projectId: null, tariff: null, updatedAt: new Date('2026-10-01T00:00:00.000Z'),
       }];
       return [];
     } },
     energyAudit: { findUnique: async () => options.missingEnergyAudit ? null : ({
-      id: 'audit-1', profileSource: 'ANNUAL_DECLARATION', annualConsumptionKwh: 1200, settlementSystem: 'NET_BILLING',
+      id: 'audit-1', profileSource: options.profileSource || 'ANNUAL_DECLARATION', annualConsumptionKwh: 1200, settlementSystem: 'NET_BILLING',
       existingPvKw: options.existingPvKw === undefined ? null : options.existingPvKw,
       existingBatteryKwh: options.existingBatteryKwh === undefined ? null : options.existingBatteryKwh,
       roofTiltDeg: options.roofTiltDeg ?? null, roofOrientation: options.roofOrientation ?? null,
@@ -187,6 +201,8 @@ function transactionFixture(options: {
       offerWorkspaceDraftWithBatteryPresence: (draft: any, existingBatteryPresent: boolean | null) => ({ ...draft, existingBatteryPresent }),
     },
     './prisma': { prisma },
+    './client-tariffs': { projectGeneralTariff },
+    './client-tariffs-server': { readProjectGeneralTariffs: async (scope: any) => ({ generalTariff: options.reOperator ? { operator: options.reOperator, code: 'G11', osdId: 7 } : scope.generalTariff }) },
     './offer-workspace-artifacts': {
       getOfferWorkspaceArtifact: async (identity: unknown) => { state.artifactReads.push(identity); return clone(state.artifactData); },
       putOfferWorkspaceArtifact: async (identity: unknown, data: unknown) => {
@@ -194,7 +210,8 @@ function transactionFixture(options: {
         state.artifactData = clone(data);
       },
     },
-    './re-stations': { rePrisma: () => { state.rePrismaCalls += 1; return { $queryRawUnsafe: async (...args: any[]) => {
+    './re-stations': { resolveReStation: async () => ({ station: '123' }), rePrisma: () => { state.rePrismaCalls += 1; return { $queryRawUnsafe: async (...args: any[]) => {
+      if (String(args[0]).startsWith('SELECT slug FROM osd')) return [{ slug: options.reOperator?.toLowerCase() }];
       state.tariffCalls.push(args);
       return options.validTariff === false ? [] : [{ id: args[2] }];
     } }; } },
@@ -732,4 +749,23 @@ test('wybrane zestawy muszą mieć unikalny scope PV/magazyn zgodny ze strategi�
   validPair.selectedTemplateIds = ['pv-1', 'battery-1'];
   await pvAndBattery.save({ input: validPair });
   assert.equal(pvAndBattery.state.auditCalls.length, 1);
+});
+
+
+test('PGE z deklaracją roczną nie wymaga konta ENEA; import operatora opisuje PGE', async () => {
+  const annual = await transactionFixture({ canReadEnergy: true, accountOperator: 'PGE', existingPvKw: 0 }).workspace();
+  assert.equal(annual.measurements.availability, 'NO_FILES');
+  assert.deepEqual(Array.from(annual.measurements.issues), []);
+  const operator = await transactionFixture({ canReadEnergy: true, accountOperator: 'PGE', profileSource: 'OPERATOR' }).workspace();
+  assert.ok(operator.measurements.issues.some((issue: string) => issue.includes('operatora PGE')));
+  assert.ok(!operator.measurements.issues.some((issue: string) => issue.includes('ENEA')));
+});
+
+
+test('wybór operatora z katalogu taryf RE wyklucza stare konto innego operatora', async () => {
+  const fixture = transactionFixture({ canReadEnergy: true, accountOperator: 'PGE', reOperator: 'PGE', oldEneaAccount: true });
+  const workspace = await fixture.workspace();
+  assert.equal(workspace.measurements.availability, 'NO_FILES');
+  assert.equal(fixture.state.measurementQuery, null);
+  assert.deepEqual(Array.from(workspace.measurements.issues), []);
 });

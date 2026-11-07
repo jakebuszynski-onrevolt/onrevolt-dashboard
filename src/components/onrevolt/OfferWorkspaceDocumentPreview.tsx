@@ -216,10 +216,13 @@ export default function OfferWorkspaceDocumentPreview({ workspace, draft, templa
         const body = await response.json();
         throw new Error(body.error || 'Nie udało się pobrać PDF.');
       }
+      const encodedFilename = response.headers.get('Content-Disposition')?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+      if (!encodedFilename) throw new Error('Brak nazwy pliku PDF w odpowiedzi serwera.');
+      const filename = decodeURIComponent(encodedFilename);
       const url = URL.createObjectURL(await response.blob());
       const link = window.document.createElement('a');
       link.href = url;
-      link.download = `oferta-robocza-${workspace.projectId}.pdf`;
+      link.download = filename;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 30000);
     } catch (error) { setError(error instanceof Error ? error.message : 'Nie udało się pobrać PDF.'); }

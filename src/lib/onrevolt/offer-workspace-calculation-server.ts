@@ -22,6 +22,7 @@ import { offerCalculationDependencyHash, offerCalculationPeriodHours } from './o
 import { completeHistoryForSummary } from './client-energy-cost-summary-server';
 import { OFFER_RECOMMENDATION_BATCH_LIMIT, OFFER_RECOMMENDATION_COARSE_LIMIT, planOfferWorkspaceRecommendationSearch } from './offer-workspace-recommendation-search';
 import { recommendationInputIssues } from './offer-workspace-recommendation-inputs';
+import { PME2_RULES } from './offer-financing-v2';
 import {
   calculateOfferWorkspaceExistingPvBatteryBounds,
   calculateOfferWorkspaceRecommendationBatteryBounds,
@@ -441,7 +442,12 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
     totalCandidatesBeforeFilter: pvFilter.totalCandidatesBeforeFilter,
     excludedCandidates: pvFilter.excludedCandidates,
   } : undefined;
-  const candidates = pvFilter ? pvFilter.candidates : batteryFilter.candidates;
+  const sizeCandidates = pvFilter ? pvFilter.candidates : batteryFilter.candidates;
+  const requiresPme2Capacity = workspace.clientType === 'B2C' && draft.financing.considerGrant;
+  const candidates = requiresPme2Capacity ? sizeCandidates.filter(candidate =>
+    candidate.batteryCapacityKwh >= PME2_RULES.minimumBatteryCapacityKwh
+    && candidate.totalPvKw > 0
+    && candidate.batteryCapacityKwh >= PME2_RULES.minimumBatteryToPvRatio * candidate.totalPvKw) : sizeCandidates;
   if (!unfilteredCandidates.length) {
     if (hasContinuation) throw new Error('Nie można kontynuować rekomendacji: katalog nie zawiera już wariantów do oceny.');
     const rejectedReasons = enumeration.rejectedReasonList.flatMap(item => item.reasons);
@@ -462,12 +468,20 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
     result.recommendationPvBounds = recommendationPvBounds;
     return attachSourceIdentity(result);
   }
-  if (!candidates.length) {
+  if (!sizeCandidates.length) {
     if (hasContinuation) throw new Error('Nie można kontynuować rekomendacji: nie pozostały warianty spełniające limit PV.');
     if (!recommendationPvBounds) throw new Error('Nie można kontynuować rekomendacji: brak PV do filtrowania.');
     const ratio = OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP.toLocaleString('pl-PL', { maximumFractionDigits: 1 });
     const pvBasis = 'łącznej mocy PV (istniejąca + dodawana)';
     const result = blockedOfferCalculation([`Brak gotowych konfiguracji spełniających limit PV po filtrze zużycia: maksymalnie ${ratio} kWh magazynu na 1 kWp ${pvBasis}.`]);
+    result.recommendationBatteryBounds = recommendationBatteryBounds;
+    result.recommendationPvBounds = recommendationPvBounds;
+    return attachSourceIdentity(result);
+  }
+  if (!candidates.length) {
+    const reason = `Brak konfiguracji spełniających warunki pojemności PME2: minimum ${PME2_RULES.minimumBatteryCapacityKwh} kWh i co najmniej ${PME2_RULES.minimumBatteryToPvRatio}× łącznej mocy PV (istniejąca + dodawana). Wyłącz uwzględnianie dotacji, aby porównać również mniejsze magazyny.`;
+    if (hasContinuation) throw new Error(`Nie można kontynuować rekomendacji: ${reason}`);
+    const result = blockedOfferCalculation([reason]);
     result.recommendationBatteryBounds = recommendationBatteryBounds;
     result.recommendationPvBounds = recommendationPvBounds;
     return attachSourceIdentity(result);

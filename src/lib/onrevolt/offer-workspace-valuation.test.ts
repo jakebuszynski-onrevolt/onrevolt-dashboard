@@ -258,3 +258,13 @@ test('8,760 measured hourly intervals aggregate without repeated tariff-history 
   assert.equal(result.current.totals.importKwh, 876);
   assert.equal(result.current.totals.importValuePln, 657);
 });
+
+
+test('zerowy eksport bez PV nie wymaga systemu prosumenckiego ani ceny RCE', () => {
+  const input = baseInput([interval('2025-01-01T00:00:00Z', '2025-01-01T01:00:00+01:00', 1)], [{ period: '2025-01', importKwh: 1, exportKwh: 0 }]);
+  input.current.settlement = null;
+  const result = calculateOfferWorkspaceValuation(input);
+  assert.equal(result.current.totals.exportValuePln, 0);
+  assert.ok(!result.current.issues.some(issue => /systemu rozliczeń eksportu|RCE/.test(issue)));
+  assert.ok(result.current.totals.importValuePln! > 0);
+});

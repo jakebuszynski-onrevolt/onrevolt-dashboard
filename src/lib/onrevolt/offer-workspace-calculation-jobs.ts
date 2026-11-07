@@ -21,6 +21,7 @@ export interface OfferWorkspaceCalculationJobView {
   data?: OfferWorkspaceCalculation;
   error?: string;
   sourceRevision: string;
+  savedAt?: string;
 }
 
 export interface OfferWorkspaceCalculationJobRequest {
@@ -464,6 +465,32 @@ export class OfferWorkspaceCalculationJobStore {
     return null;
   }
 
+  async findSavedJobForDraft(input: Pick<CompletedOfferCalculationLookup, 'actorId' | 'projectId' | 'draft'> & {
+    mode: OfferWorkspaceCalculationMode;
+  }): Promise<OfferWorkspaceCalculationJobView | null> {
+    const selectedHash = offerWorkspaceCalculationDraftHash(input.draft, 'selected');
+    const recommendHash = offerWorkspaceCalculationDraftHash(input.draft, 'recommend');
+    const hashes = input.mode === 'recommend' ? [recommendHash]
+      : [selectedHash, ...(!hasConfigurationEdits(input.draft) && input.draft.commercialPricing?.schemaVersion !== 1 ? [recommendHash] : [])];
+    for (const draftHash of hashes) {
+      for (let offset = 0; offset < 10; offset++) {
+        const [snapshot] = await this.snapshots.findSavedForDrafts({ actorId: input.actorId, projectId: input.projectId, draftHashes: [draftHash], offset });
+        if (!snapshot) break;
+        if (snapshot.actorId !== input.actorId || snapshot.projectId !== input.projectId || snapshot.draftHash !== draftHash) continue;
+        const selected = snapshot.mode === 'selected' && input.mode === 'selected' && draftHash === selectedHash;
+        const recommendation = snapshot.mode === 'recommend' && draftHash === recommendHash
+          && (input.mode === 'recommend' || sameIds(snapshot.result.recommendedTemplateIds, input.draft.selectedTemplateIds)
+            || (sameIds(snapshot.result.estimatedRecommendedTemplateIds, input.draft.selectedTemplateIds)
+              && sameIds(snapshot.result.evaluatedTemplateIds, input.draft.selectedTemplateIds)));
+        if ((!selected && !recommendation) || (snapshot.result.status !== 'ready'
+          && !(input.mode === 'recommend' && recommendationSearchMetadata(snapshot.result)?.hasMore))) continue;
+        return { id: snapshot.jobId, status: 'completed', completed: snapshot.completed, total: snapshot.total,
+          sourceRevision: snapshot.sourceRevision, data: snapshot.result, savedAt: new Date(snapshot.admittedAt).toISOString() };
+      }
+    }
+    return null;
+  }
+
   async findCompletedJobForDraft(input: CompletedOfferCalculationLookup & {
     mode: OfferWorkspaceCalculationMode;
     pricesAsOf: string;
@@ -662,4 +689,8 @@ export function findCompletedOfferCalculationPersistent(
   input: CompletedOfferCalculationLookup & { pricesAsOf: string; sourceDependencyStamp: string | null },
 ): Promise<OfferWorkspaceCalculation | null> {
   return offerWorkspaceCalculationJobs.findCompletedOfferCalculationPersistent(input);
+}
+
+export async function findSavedOfferCalculation(input: Pick<CompletedOfferCalculationLookup, 'actorId' | 'projectId' | 'draft'>): Promise<OfferWorkspaceCalculation | null> {
+  return (await offerWorkspaceCalculationJobs.findSavedJobForDraft({ ...input, mode: 'selected' }))?.data ?? null;
 }

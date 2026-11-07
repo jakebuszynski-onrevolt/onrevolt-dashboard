@@ -17,7 +17,7 @@ test('general tariff summary shows the saved operator and tariff without inventi
 });
 
 test('general tariff selection matches the saved account shown in energy data', () => {
-  assert.deepEqual(projectGeneralTariff([{ operator: 'PGE', tariff: 'G11' }, { operator: 'ENEA', tariff: 'C11' }]), { operator: 'ENEA', code: 'C11' });
+  assert.deepEqual(projectGeneralTariff([{ operator: 'PGE', tariff: 'G11' }, { operator: 'ENEA', tariff: 'C11' }]), { operator: 'PGE', code: 'G11' });
   assert.deepEqual(projectGeneralTariff([{ operator: 'PGE', tariff: 'G12w' }, { operator: 'PGE', tariff: 'G11' }]), { operator: 'PGE', code: 'G12w' });
 });
 test('tariff intervals display an inclusive end without changing the exclusive contract', () => {

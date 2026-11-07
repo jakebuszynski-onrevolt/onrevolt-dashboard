@@ -128,6 +128,11 @@ function fixture(options: {
       OfferWorkspaceCalculationCapacityError,
       OfferWorkspaceCalculationConflictError,
       offerWorkspaceCalculationJobs: {
+        findSavedJobForDraft: async (input: any) => {
+          calls.push({ operation: 'saved-lookup', value: input });
+          return options.cached ? { ...job, status: 'completed', data: options.cachedRecommendation ? previousRecommendation : calculation,
+            savedAt: '2026-10-29T10:00:00.000Z' } : null;
+        },
         findRecommendationContinuationForDraft: async (input: any) => {
           calls.push({ operation: 'continuation-lookup', value: input });
           return options.continuationSource ? { jobId: 'job-parent', result: previousRecommendation } : null;
@@ -279,9 +284,9 @@ test('POST returns 409 without exposing a running job when its active draft diff
   assert.equal('job' in body, false);
 });
 
-test('recommendation rejects shared missing inputs before cache, continuation, market sources or enqueue', async () => {
+test('new recommendations reject missing inputs before cache, continuation, market sources or enqueue', async () => {
   const incompleteDraft = { ...draft, saleVatMode: 'REVIEW', pvStrategy: 'ADD_TEMPLATE', targetSettlement: 'NET_METERING' };
-  for (const requestOptions of [{}, { cacheOnly: true }, { continueFromJobId: 'job-parent' }]) {
+  for (const requestOptions of [{}, { continueFromJobId: 'job-parent' }]) {
     const state = fixture({ cached: true, continuationSource: true });
     const response = await state.exports.POST(state.request('POST', JSON.stringify({
       draft: incompleteDraft, mode: 'recommend', sourceRevision, ...requestOptions,
@@ -295,7 +300,7 @@ test('recommendation rejects shared missing inputs before cache, continuation, m
   }
 });
 
-test('selected lookup rejects an invalid historical ranking but preserves ordinary diagnostic cache and execution', async () => {
+test('saved results survive changed recommendation requirements; new calculations still enforce them', async () => {
   const incompleteDraft = { ...draft, saleVatMode: 'REVIEW' };
   for (const cachedRecommendation of [true, false]) {
     const state = fixture({ cached: true, cachedRecommendation });
@@ -304,8 +309,8 @@ test('selected lookup rejects an invalid historical ranking but preserves ordina
     })), state.context);
     const body = await response.json();
     assert.equal(response.status, 200);
-    assert.equal(body.cached, !cachedRecommendation);
-    assert.equal(body.job === null, cachedRecommendation);
+    assert.equal(body.cached, true);
+    assert.ok(body.job.data);
     assert.equal(state.calls.some(call => call.operation === 'enqueue'), false);
   }
   const state = fixture({ cached: true, cachedRecommendation: true });
@@ -404,7 +409,11 @@ test('POST reuses a persisted result without enqueueing and cache-only misses do
     assert.equal(body.job.status, 'completed');
     assert.deepEqual(body.job.data, calculation);
     assert.equal(state.calls.some(call => call.operation === 'enqueue'), false);
-    assert.equal(state.calls.find(call => call.operation === 'draft-lookup')?.value.sourceDependencyStamp, calculation.sourceDependencyStamp);
+    if (cacheOnly) {
+      assert.equal(body.job.savedAt, '2026-10-29T10:00:00.000Z');
+      assert.equal(state.calls.some(call => call.operation === 'saved-lookup'), true);
+      assert.equal(state.calls.some(call => call.operation === 'dependency-stamp'), false, 'reading saved results does not depend on current tariff availability');
+    } else assert.equal(state.calls.find(call => call.operation === 'draft-lookup')?.value.sourceDependencyStamp, calculation.sourceDependencyStamp);
   }
   const missing = fixture();
   const response = await missing.exports.POST(missing.request('POST', JSON.stringify({ draft, mode: 'selected', sourceRevision, cacheOnly: true })), missing.context);

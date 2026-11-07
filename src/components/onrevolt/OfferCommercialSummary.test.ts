@@ -86,7 +86,7 @@ test('przypisanie magazynu nie używa nazw ani podobnych nazw kategorii', () => 
   assert.equal(offerCommercialDefaultGroup({ role: 'OTHER' }, { product: { category: 'UNKNOWN' } }), 'STORAGE_INSTALLATION');
   assert.equal(offerCommercialDefaultGroup({ role: 'OTHER' }, { product: { category: 'INVERTER' } }), 'INVERTER');
   assert.equal(offerCommercialDefaultGroup({ role: 'LOGISTICS' }, { product: { category: null } }), 'TRANSPORT');
-  assert.match(componentSource, /Pozostałe pozycje dotyczą zakupu i montażu magazynu/u);
-  assert.match(componentSource, /Wartość przesunięta z falownika do magazynu energii/u);
-  assert.match(componentSource, /Wróć do szczegółowego kosztorysu/u);
+  assert.match(componentSource, /4 pozycje bez nowej PV, 5 z modułami PV/u);
+  assert.match(componentSource, /nie zwiększa podstawy dotacji/u);
+  assert.doesNotMatch(componentSource, /Wróć do szczegółowego kosztorysu/u);
 });

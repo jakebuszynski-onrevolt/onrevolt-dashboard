@@ -9,6 +9,7 @@ export const OFFER_WORKSPACE_COMMERCIAL_GROUPS = [
   'INVERTER',
   'EMS',
   'TRANSPORT',
+  'PV_MODULES',
 ] as const;
 
 export type OfferWorkspaceCommercialGroup = typeof OFFER_WORKSPACE_COMMERCIAL_GROUPS[number];
@@ -20,7 +21,7 @@ export type OfferWorkspaceCommercialBreakdownAllocation = {
 };
 
 export type OfferWorkspaceCommercialBreakdown = {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   allocations: OfferWorkspaceCommercialBreakdownAllocation[];
   batteryInstallationScopeConfirmed: true;
 };
@@ -41,13 +42,14 @@ export type OfferWorkspaceCommercialPricingRow = {
 };
 
 export type OfferWorkspaceCommercialPricingResult = {
-  clientType: 'B2C';
-  saleVatRate: 0.08;
+  clientType: 'B2C' | 'B2B';
+  saleVatRate: number;
   rows: OfferWorkspaceCommercialPricingRow[];
   totalGross: number;
   totalNet: number;
   batteryEligibleGross: number;
   transferredInverterSaleGross: number;
+  transferredPvSaleGross: number;
 };
 
 const groupLabels: Record<OfferWorkspaceCommercialGroup, string> = {
@@ -55,6 +57,7 @@ const groupLabels: Record<OfferWorkspaceCommercialGroup, string> = {
   INVERTER: 'Falownik',
   EMS: 'EMS',
   TRANSPORT: 'Transport',
+  PV_MODULES: 'Moduły fotowoltaiczne',
 };
 
 const inverterCategories = new Set(['FALOWNIK', 'INWERTER', 'INVERTER']);
@@ -84,7 +87,7 @@ export function parseOfferWorkspaceCommercialBreakdown(
   if (value === null || value === undefined) return null;
   if (!isRecord(value)) throw new TypeError('Podział ceny komercyjnej musi być obiektem.');
   assertExactKeys(value, ['schemaVersion', 'allocations', 'batteryInstallationScopeConfirmed'], 'Podział ceny komercyjnej');
-  if (value.schemaVersion !== 1) throw new TypeError('Nieobsługiwana wersja podziału ceny komercyjnej.');
+  if (value.schemaVersion !== 1 && value.schemaVersion !== 2) throw new TypeError('Nieobsługiwana wersja podziału ceny komercyjnej.');
   if (value.batteryInstallationScopeConfirmed !== true) {
     throw new TypeError('Zakres montażu magazynu musi być jawnie potwierdzony.');
   }
@@ -115,10 +118,14 @@ export function parseOfferWorkspaceCommercialBreakdown(
   });
 
   return {
-    schemaVersion: 1,
+    schemaVersion: value.schemaVersion,
     allocations,
     batteryInstallationScopeConfirmed: true,
   };
+}
+
+export function automaticOfferCommercialBreakdown(): OfferWorkspaceCommercialBreakdown {
+  return { schemaVersion: 2, allocations: [], batteryInstallationScopeConfirmed: true };
 }
 
 function normalized(value: string | null | undefined): string {
@@ -137,15 +144,20 @@ function money(cents: number): number {
   return cents / 100;
 }
 
-function normalizedItemGroup(
+export function normalizedItemGroup(
   line: OfferWorkspacePricingLine,
   item: OfferWorkspacePricingTemplate['items'][number],
+  templateKind?: string,
+  automatic = false,
 ): OfferWorkspaceCommercialGroup {
   const category = normalized(item.product?.category ?? null);
   const role = normalized(line.role);
   const constraints = new Set<OfferWorkspaceCommercialGroup>();
 
-  if (inverterCategories.has(category)) constraints.add('INVERTER');
+  const namedInverter = automatic && !category && role === 'MAIN_EQUIPMENT'
+    && /\b(falownik|inwerter|inverter)\b/i.test(line.description || '');
+  if (inverterCategories.has(category) || namedInverter) constraints.add('INVERTER');
+  if (automatic && templateKind?.startsWith('PV_') && role === 'MAIN_EQUIPMENT' && category === 'FOTOWOLTAIKA') constraints.add('PV_MODULES');
   if (emsCategories.has(category) || role === 'MONITORING') constraints.add('EMS');
   if (role === 'LOGISTICS') constraints.add('TRANSPORT');
 
@@ -171,7 +183,9 @@ export function calculateOfferCommercialPricing(
 ): OfferWorkspaceCommercialPricingResult {
   const parsedBreakdown = parseOfferWorkspaceCommercialBreakdown(breakdown);
   if (!parsedBreakdown) throw new Error('Podział ceny komercyjnej wymaga jawnych przypisań pozycji.');
-  if (pricing.clientType !== 'B2C' || pricing.saleAmountBasis !== 'GROSS') {
+  const automatic = parsedBreakdown.schemaVersion === 2;
+  if (automatic && parsedBreakdown.allocations.length) throw new Error('Automatyczny podział nie przechowuje przypisań poprzedniego zestawu.');
+  if (!automatic && (pricing.clientType !== 'B2C' || pricing.saleAmountBasis !== 'GROSS')) {
     throw new Error('Podział komercyjny jest obecnie dostępny wyłącznie dla klienta B2C.');
   }
   if (pricing.totals === null || pricing.calculationError || pricing.missingRequiredData.length > 0
@@ -214,6 +228,12 @@ export function calculateOfferCommercialPricing(
   let emsGrossCents = 0;
   let transportGrossCents = 0;
   let batteryFound = false;
+  let pvPurchaseGrossCents = 0;
+  let pvTransferredGrossCents = 0;
+  let commonVatRate: number | null = null;
+  const sourceNetByGroup = new Map<OfferWorkspaceCommercialGroup, number>();
+  const hasPv = templates.some(template => template.kind?.startsWith('PV_'));
+  const activeGroups = OFFER_WORKSPACE_COMMERCIAL_GROUPS.filter(group => group !== 'PV_MODULES' || hasPv);
 
   for (const line of includedLines) {
     const key = referenceKey(line.templateId, line.itemId);
@@ -221,26 +241,28 @@ export function calculateOfferCommercialPricing(
     const template = templatesById.get(line.templateId);
     const item = itemsByReference.get(key);
     if (!template || !item) throw new Error(`Brak źródłowej pozycji ${line.templateId}/${line.itemId} w wybranych szablonach.`);
-    if (template.kind !== 'MAGAZYN') {
+    if (template.kind !== 'MAGAZYN' && !(automatic && template.kind?.startsWith('PV_'))) {
       throw new Error(`Pozycja ${line.templateId}/${line.itemId} nie pochodzi z wybranego szablonu MAGAZYN.`);
     }
     if (!line.calculation || !line.resolvedCosts || line.saleVatRate === null || line.saleAmount === null) {
       throw new Error(`Brak aktualnej ceny dla pozycji ${line.templateId}/${line.itemId}.`);
     }
-    if (line.saleVatRate !== 0.08) {
+    if ((!automatic && line.saleVatRate !== 0.08) || ![0.08, 0.23].includes(line.saleVatRate)) {
       throw new Error(`Pozycja ${line.templateId}/${line.itemId} musi mieć VAT sprzedaży 8%.`);
     }
+    if (commonVatRate !== null && commonVatRate !== line.saleVatRate) throw new Error('Podział grup wymaga jednej stawki VAT sprzedaży.');
+    commonVatRate = line.saleVatRate;
     const lineGrossCents = roundCents(line.calculation.saleGross, `Cena brutto pozycji ${line.templateId}/${line.itemId}`);
     const lineNetCents = roundCents(line.calculation.saleNet, `Cena netto pozycji ${line.templateId}/${line.itemId}`);
     const lineSaleAmountCents = roundCents(line.saleAmount, `Cena sprzedaży pozycji ${line.templateId}/${line.itemId}`);
-    assertEqualCents(lineSaleAmountCents, lineGrossCents, `Cena sprzedaży pozycji ${line.templateId}/${line.itemId}`);
+    assertEqualCents(lineSaleAmountCents, pricing.saleAmountBasis === 'NET' ? lineNetCents : lineGrossCents, `Cena sprzedaży pozycji ${line.templateId}/${line.itemId}`);
     includedGrossCents += lineGrossCents;
     includedNetCents += lineNetCents;
 
-    const group = normalizedItemGroup(line, item);
+    const group = normalizedItemGroup(line, item, template.kind, automatic);
     const assignment = parsedBreakdown.allocations.find((allocation) => allocation.templateId === line.templateId && allocation.itemId === line.itemId);
-    if (!assignment) throw new Error(`Brak przypisania pozycji ${line.templateId}/${line.itemId} do grupy komercyjnej.`);
-    if (assignment.group !== group) {
+    if (!automatic && !assignment) throw new Error(`Brak przypisania pozycji ${line.templateId}/${line.itemId} do grupy komercyjnej.`);
+    if (!automatic && assignment!.group !== group) {
       throw new Error(`Pozycja ${line.templateId}/${line.itemId} musi należeć do grupy ${group}.`);
     }
 
@@ -250,6 +272,9 @@ export function calculateOfferCommercialPricing(
       itemId: line.itemId,
       description: line.description,
     };
+    const netCents = group === 'INVERTER' || group === 'PV_MODULES'
+      ? roundCents(line.calculation.purchaseNet, 'Zakup netto pozycji') : lineNetCents;
+    sourceNetByGroup.set(group, (sourceNetByGroup.get(group) || 0) + netCents);
     const groupSources = sourceReferencesByGroup.get(group)!;
     groupSources.push(sourceReference);
 
@@ -260,11 +285,16 @@ export function calculateOfferCommercialPricing(
       );
       inverterPurchaseGrossCents += grossAtEightPercentCents;
       originalInverterGrossCents += lineGrossCents;
+    } else if (group === 'PV_MODULES') {
+      const purchaseCents = Math.round((line.calculation.purchaseNet * (1 + line.saleVatRate) + Number.EPSILON) * 100);
+      pvPurchaseGrossCents += purchaseCents;
+      pvTransferredGrossCents += lineGrossCents - purchaseCents;
     } else if (group === 'EMS') {
       emsGrossCents += lineGrossCents;
     } else if (group === 'TRANSPORT') {
       transportGrossCents += lineGrossCents;
     }
+    if (group === 'STORAGE_INSTALLATION' && template.kind?.startsWith('PV_')) pvTransferredGrossCents += lineGrossCents;
     if (group === 'STORAGE_INSTALLATION' && batteryCategories.has(normalized(item.product?.category ?? null))) {
       batteryFound = true;
     }
@@ -282,12 +312,12 @@ export function calculateOfferCommercialPricing(
   }
 
   const allocationReferences = new Set(allocationsByReference.keys());
-  if (allocationReferences.size !== includedReferences.size
-    || [...includedReferences].some((key) => !allocationReferences.has(key))) {
+  if (!automatic && (allocationReferences.size !== includedReferences.size
+    || [...includedReferences].some((key) => !allocationReferences.has(key)))) {
     throw new Error('Każda aktualna pozycja uwzględniona w cenie musi mieć dokładnie jedno przypisanie.');
   }
   if (!batteryFound) throw new Error('Grupa magazynu musi zawierać produkt magazynu energii MAGAZYN_ENERGII albo BATTERY.');
-  for (const group of OFFER_WORKSPACE_COMMERCIAL_GROUPS) {
+  for (const group of activeGroups) {
     if (sourceReferencesByGroup.get(group)!.length === 0) {
       throw new Error(`Brak aktualnych pozycji w wymaganej grupie ${group}.`);
     }
@@ -300,9 +330,10 @@ export function calculateOfferCommercialPricing(
   const inverterGroupGrossCents = inverterPurchaseGrossCents;
   const transferredInverterGrossCents = originalInverterGrossCents - inverterGroupGrossCents;
   if (transferredInverterGrossCents < 0) {
-    throw new Error('Cena sprzedaży falownika nie pokrywa jego efektywnej ceny zakupu brutto przy VAT 8%.');
+    throw new Error('Cena sprzedaży falownika nie pokrywa jego efektywnej ceny zakupu brutto przy wybranym VAT sprzedaży.');
   }
-  const storageGrossCents = totalGrossCents - inverterGroupGrossCents - emsGrossCents - transportGrossCents;
+  if (pvTransferredGrossCents < 0) throw new Error('Cena sprzedaży PV nie pokrywa ceny zakupu modułów.');
+  const storageGrossCents = totalGrossCents - inverterGroupGrossCents - emsGrossCents - transportGrossCents - pvPurchaseGrossCents;
   if (storageGrossCents < 0) throw new Error('Podział grup przekracza łączną cenę brutto.');
 
   const grossByGroup = new Map<OfferWorkspaceCommercialGroup, number>([
@@ -310,12 +341,14 @@ export function calculateOfferCommercialPricing(
     ['INVERTER', inverterGroupGrossCents],
     ['EMS', emsGrossCents],
     ['TRANSPORT', transportGrossCents],
+    ['PV_MODULES', pvPurchaseGrossCents],
   ]);
 
   const netByGroup = new Map<OfferWorkspaceCommercialGroup, number>();
   let assignedNetCents = 0;
-  for (const group of ['INVERTER', 'EMS', 'TRANSPORT'] as const) {
-    const amountNetCents = Math.round((grossByGroup.get(group)! / 1.08) + Number.EPSILON);
+  for (const group of activeGroups.filter(group => group !== 'STORAGE_INSTALLATION')) {
+    const amountNetCents = automatic ? sourceNetByGroup.get(group)!
+      : Math.round((grossByGroup.get(group)! / (1 + commonVatRate!)) + Number.EPSILON);
     netByGroup.set(group, amountNetCents);
     assignedNetCents += amountNetCents;
   }
@@ -323,7 +356,7 @@ export function calculateOfferCommercialPricing(
   if (storageNetCents < 0) throw new Error('Podział ceny netto przekracza łączną cenę netto.');
   netByGroup.set('STORAGE_INSTALLATION', storageNetCents);
 
-  const rows = OFFER_WORKSPACE_COMMERCIAL_GROUPS.map((group): OfferWorkspaceCommercialPricingRow => ({
+  const rows = activeGroups.map((group): OfferWorkspaceCommercialPricingRow => ({
     group,
     label: groupLabels[group],
     amountGross: money(grossByGroup.get(group)!),
@@ -332,12 +365,13 @@ export function calculateOfferCommercialPricing(
   }));
 
   return {
-    clientType: 'B2C',
-    saleVatRate: 0.08,
+    clientType: pricing.clientType,
+    saleVatRate: commonVatRate!,
     rows,
     totalGross: money(totalGrossCents),
     totalNet: money(totalNetCents),
-    batteryEligibleGross: money(storageGrossCents),
+    batteryEligibleGross: money(Math.max(0, storageGrossCents - pvTransferredGrossCents)),
     transferredInverterSaleGross: money(transferredInverterGrossCents),
+    transferredPvSaleGross: money(pvTransferredGrossCents),
   };
 }

@@ -227,3 +227,15 @@ test('odrzuca sprzeczną kwotę zwrotu przy zadeklarowanym braku dotacji', () =>
     thermomodernization: { ...completeTax, grantScope: 'none', grantReimbursementGross: 1 },
   }), /musi wynosić 0/);
 });
+
+
+test('PME2 granice pojemności: 10 kWh oraz 2× PV; niespełnienie daje zero dotacji', () => {
+  for (const [batteryCapacityKwh, pvPowerKwp, eligible] of [
+    [9.99, 4, false], [10, 5, true], [19.99, 10, false], [20, 10, true], [16.07, 10, false], [16.07, 8.035, true],
+  ] as const) {
+    const result = calculateOfferWorkspaceFinancing({ ...base, batteryCapacityKwh, pvPowerKwp,
+      pme2: { ...completePme2, storageCostExcludingEmsAndInverterGross: 20000 } });
+    assert.equal(result.pme2.status, eligible ? 'confirmed' : 'ineligible');
+    assert.equal(result.pme2.conditionalGross, eligible ? 6000 : 0);
+  }
+});

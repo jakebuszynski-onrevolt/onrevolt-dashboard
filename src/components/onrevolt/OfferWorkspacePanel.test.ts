@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  initialDraft,
   isCurrentOfferWorkspaceCalculationRequest,
   offerWorkspaceCalculationRestoreOrder,
   beginOfferWorkspaceCalculationState,
@@ -29,7 +30,8 @@ test('edycja kosztorysu unieważnia wybrany wynik i nie przywraca katalogowej re
   assert.deepEqual(offerWorkspaceCalculationRestoreOrder(edited), ['selected']);
   const selectedRanking = offerWorkspaceDraftWithRanking(edited, [{ id: 'battery', kind: 'MAGAZYN' }], ['battery']);
   assert.deepEqual(selectedRanking.configurationEdits, []);
-  assert.equal(selectedRanking.commercialPricing, undefined);
+  assert.equal(selectedRanking.commercialPricing?.schemaVersion, 2);
+  assert.deepEqual(selectedRanking.commercialPricing?.allocations, []);
 });
 
 test('identyczny lokalny szkic nie blokuje otwarcia po zmianie wersji serwera', () => {
@@ -278,4 +280,28 @@ test('wybór rankingu aktualizuje zestawy bez zmiany innych założeń szkicu', 
   assert.equal(next.calculation, draft.calculation);
   assert.equal(next.description, draft.description);
   assert.notEqual(offerWorkspaceCalculationInputKey(next), offerWorkspaceCalculationInputKey(draft));
+});
+
+
+test('starszy szkic uzupełnia znane rozliczenie tylko dla istniejącej PV', () => {
+  const draft = emptyOfferWorkspaceDraft();
+  draft.targetSettlement = 'NET_BILLING';
+  draft.existingPv.powerKw = 5;
+  const workspace = { input: { settlementMode: 'net-metering', existingPv: { powerKw: 5 }, existingBatteryPresent: false }, draft: { input: draft } } as any;
+  assert.equal(initialDraft(workspace, null).currentSettlement, 'NET_METERING');
+  assert.equal(initialDraft(workspace, null).targetSettlement, 'NET_BILLING');
+  draft.currentSettlement = 'NET_BILLING';
+  assert.equal(initialDraft(workspace, null).currentSettlement, 'NET_BILLING');
+  draft.existingPv.powerKw = 0;
+  assert.equal(initialDraft(workspace, null).currentSettlement, null);
+  assert.equal(initialDraft(workspace, null).targetSettlement, 'NET_BILLING');
+});
+
+
+test('stary cache bez podziału nie wyłącza automatycznych czterech lub pięciu pozycji', () => {
+  const original = emptyOfferWorkspaceDraft();
+  const server = { ...original, commercialPricing: { schemaVersion: 2 as const, allocations: [], batteryInstallationScopeConfirmed: true as const } };
+  const restored = resolveCachedOfferDraft(server, 'source', 2, { expectedRevision: 2, input: { ...original, description: { before: 'Zachowaj tekst', after: '' } } });
+  assert.equal(restored.input.commercialPricing?.schemaVersion, 2);
+  assert.equal(restored.input.description.before, 'Zachowaj tekst');
 });

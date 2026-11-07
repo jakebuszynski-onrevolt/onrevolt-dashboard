@@ -127,6 +127,7 @@ test('unknown opening balance is estimated at zero without changing the saved dr
 
 test('unknown current net-metering balance estimates the baseline and preserves target comparison', async () => {
   const input = fixture();
+  input.draft.existingPv.powerKw = 5;
   input.draft.currentSettlement = 'NET_METERING';
   input.draft.targetSettlement = 'NET_BILLING';
   input.draft.calculation!.initialCreditKwh = null;
@@ -193,6 +194,7 @@ test('VAT review keeps target-tariff and hardware estimates but does not invent 
 
 test('dated opening deposit is used once in both comparable scenarios', async () => {
   const input = fixture();
+  input.draft.existingPv.powerKw = 5;
   const empty = await calculateOfferWorkspaceScenario(input);
   input.draft.calculation!.initialDepositPln = 100;
   input.draft.calculation!.initialDepositLots = [{ amountPln: 100, creditedMonth: '2025-12', expiresMonth: '2026-12', refundCapPln: 0 }];
@@ -222,6 +224,7 @@ test('opening balances cannot be imported from a later month or already expired'
 
 test('net-metering accepts dated credit and an explicit multi-month cycle anchor', async () => {
   const input = fixture();
+  input.draft.existingPv.powerKw = 5;
   input.draft.currentSettlement = 'NET_METERING';
   input.draft.targetSettlement = 'NET_METERING';
   input.draft.calculation!.billingCycleMonths = 6;
@@ -328,4 +331,20 @@ test('accepted reconstructed PV allows a separate estimate without promoting str
   assert.ok(result.estimatedPaybackYears! > 0);
   assert.equal(result.recommendationEligible, false);
   assert.equal(result.paybackYears, null);
+});
+
+
+test('brak PV rozlicza pełny import bez wymagania systemu prosumenckiego ani kredytu', async () => {
+  const input = fixture();
+  input.draft.currentSettlement = null;
+  input.draft.calculation!.initialCreditKwh = null;
+  input.draft.calculation!.initialCreditLots = [{ kwh: 100, creditedMonth: '2025-12', expiresMonth: '2026-12' }];
+  const result = await calculateOfferWorkspaceScenario(input);
+  assert.equal(result.status, 'ready', result.reasons.join('; '));
+  assert.ok(Math.abs(result.baselineAnnualCostPln! - (8760 * 0.6 + 372) * 1.23) < 0.01);
+  assert.equal(result.baselineBill!.totals.creditUsedKwh, 0);
+  assert.ok(!result.warnings.some(w => /opust|net-meteringu/.test(w)));
+  input.draft.currentSettlement = 'NET_METERING';
+  const stale = await calculateOfferWorkspaceScenario(input);
+  assert.equal(stale.baselineAnnualCostPln, result.baselineAnnualCostPln);
 });

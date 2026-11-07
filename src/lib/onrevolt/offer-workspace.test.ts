@@ -15,7 +15,7 @@ test('a different selected configuration clears its old commercial row assignmen
     allocations: [{ templateId: 'bank-1', itemId: 'item', group: 'STORAGE_INSTALLATION' }] };
   const templates = [{ id: 'bank-1', kind: 'MAGAZYN' }, { id: 'bank-2', kind: 'MAGAZYN' }];
   assert.equal(selectOfferWorkspaceTemplate(draft, templates, 'bank-1', true).commercialPricing, draft.commercialPricing);
-  assert.equal(selectOfferWorkspaceTemplate(draft, templates, 'bank-2', true).commercialPricing, undefined);
+  assert.equal(selectOfferWorkspaceTemplate(draft, templates, 'bank-2', true).commercialPricing?.schemaVersion, 2);
   assert.ok(draft.commercialPricing);
 });
 

@@ -133,6 +133,22 @@ test('four commercial rows survive draft parsing, change the snapshot and reconc
   assert.equal(textById(page, '#b2c_kosztorys_pozycja_5_strona_10'), '');
   assert.equal(textById(page, '#b2c_koszt_systemu_strona_10'), '60 000,00');
   assert.deepEqual(data.templates, detailsBefore);
+  const pv = { ...data.templates[0], id: 'pv-kit', kind: 'PV_DACH_PLASKI', name: 'PV 5,7 kWp', powerKw: 5.7,
+    items: [
+      { ...data.templates[0].items[0], id: 'modules', quantity: 12, unitSaleNet: 500, unitPurchaseNet: 329,
+        product: { ...base.product!, id: 'modules', name: 'Moduł 475 W', category: 'FOTOWOLTAIKA', prices: [] } },
+      { ...data.templates[0].items[0], id: 'mount', role: 'LABOR', quantity: 1, unitSaleNet: 1000, unitPurchaseNet: 500,
+        product: { ...base.product!, id: 'mount', name: 'Montaż', category: 'USLUGA_MONTAZOWA', prices: [] } },
+    ] };
+  data.templates.push(pv);
+  const grouped = parseOfferWorkspaceDraft({ ...parsed, selectedTemplateIds: ['battery-kit', 'pv-kit'],
+    commercialPricing: { schemaVersion: 2, allocations: [], batteryInstallationScopeConfirmed: true } });
+  const fiveRows = renderOfferWorkspaceDocument(data, grouped, { templateKey: OFFER_TEMPLATE_V4_KEY });
+  const fivePage = parseSvg(fiveRows.pages[9].svg);
+  assert.equal(textById(fivePage, '#b2c_kosztorys_pozycja_5_strona_10'), 'Moduły fotowoltaiczne');
+  assert.equal(textById(fivePage, '#b2c_kosztorys_wartosc_brutto_5_strona_10'), '4 263,84');
+  assert.equal(textById(fivePage, '#b2c_kosztorys_pozycja_6_strona_10'), '');
+  assert.equal(textById(fivePage, '#b2c_koszt_systemu_strona_10'), '67 560,00');
 });
 
 test('annual-model document labels grid flows as estimates and keeps their model provenance', () => {

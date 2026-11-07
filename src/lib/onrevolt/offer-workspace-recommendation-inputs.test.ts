@@ -89,3 +89,17 @@ test('brak rozliczenia wskazuje właściwe pole, bez odsyłania do edycji obecne
   assert.equal(bothMissing.length, 1);
   assert.match(bothMissing[0].message, /obecny sposób rozliczeń, docelowy sposób rozliczeń/);
 });
+
+
+test('bez PV obecne rozliczenie prosumenckie nie jest wymagane, docelowe pozostaje wymagane', () => {
+  const draft = emptyOfferWorkspaceDraft();
+  draft.existingPv.powerKw = 0;
+  draft.saleVatMode = 'STANDARD_23';
+  draft.targetSettlement = 'NET_BILLING';
+  assert.deepEqual(recommendationInputIssues(draft), []);
+  draft.existingPv.powerKw = null;
+  assert.ok(recommendationInputIssues(draft).some(issue => issue.code === 'SETTLEMENT_REQUIRED'));
+  draft.existingPv.powerKw = 0;
+  draft.targetSettlement = null;
+  assert.match(recommendationInputIssues(draft)[0].message, /docelowy sposób/);
+});

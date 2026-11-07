@@ -157,6 +157,14 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       return noStore({ ok: false, error: 'Dane projektu zmieniły się. Odśwież kreator przed obliczeniami.' }, { status: 409 });
     }
     draft = offerWorkspaceDraftWithBatteryPresence(draft, workspace.input.existingBatteryPresent ?? null);
+    if (body.cacheOnly === true) {
+      const saved = await offerWorkspaceCalculationJobs.findSavedJobForDraft({
+        actorId: String(access.user.id), projectId, draft, mode: body.mode,
+      });
+      return noStore(saved
+        ? { ok: true, job: { ...publicJob(saved), savedAt: saved.savedAt }, cached: true }
+        : { ok: true, job: null, cached: false });
+    }
     try {
       validateOfferWorkspaceConfigurationEdits(workspace.templates, draft);
     } catch (error) {
@@ -190,7 +198,6 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       });
       const invalidRecommendation = cached?.data?.recommendationSearch && recommendationInputIssues(draft).length > 0;
       if (cached && !invalidRecommendation) return noStore({ ok: true, job: publicJob(cached), cached: true });
-      if (body.cacheOnly === true) return noStore({ ok: true, job: null, cached: false });
     }
 
     const queued = offerWorkspaceCalculationJobs.enqueue({

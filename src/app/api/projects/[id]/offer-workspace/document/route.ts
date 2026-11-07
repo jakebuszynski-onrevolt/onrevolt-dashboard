@@ -14,7 +14,7 @@ import { loadOfferDocumentTariffLabels } from 'lib/onrevolt/offer-workspace-docu
 import { calculateOfferWorkspaceEnergy, getOfferWorkspaceEnergySourceRevision } from 'lib/onrevolt/offer-workspace-energy-server';
 import { overlayOfferWorkspaceMeasurements } from 'lib/onrevolt/offer-workspace-energy';
 import { getOfferPvSourceRevision } from 'lib/onrevolt/offer-pv-source-revision';
-import { findCompletedOfferCalculationPersistent } from 'lib/onrevolt/offer-workspace-calculation-jobs';
+import { findSavedOfferCalculation } from 'lib/onrevolt/offer-workspace-calculation-jobs';
 import { loadOfferCalculationDependencyStamp } from 'lib/onrevolt/offer-workspace-calculation-server';
 import { tariffToday } from 'lib/onrevolt/client-tariffs';
 import type { OfferMeasurementSeries } from 'lib/onrevolt/offer-measurements';
@@ -123,8 +123,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     const pricesAsOf = tariffToday();
     const sourceDependencyStamp = await currentDependencyStamp(workspace, draft);
     verifyEnergySource();
-    const calculation = await findCompletedOfferCalculationPersistent({
-      actorId: String(access.user.id), projectId: id, sourceRevision: workspace.revision, draft, pricesAsOf, sourceDependencyStamp,
+    const calculation = await findSavedOfferCalculation({
+      actorId: String(access.user.id), projectId: id, draft,
     });
     let tariffLabels;
     let tariffLabelIssue = '';
@@ -165,8 +165,13 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       const bytes = storedPdf ? Buffer.from(storedPdf.base64, 'base64') : await generateSvgPagesPdf(document.pages.map(page => page.svg));
       verifyEnergySource();
       if (!storedPdf) await putOfferWorkspaceArtifact(pdfArtifact, { base64: bytes.toString('base64') });
+      const clientName = workspace.clientName.normalize('NFC').trim()
+        .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').replace(/\s+/g, '-');
+      const filename = `oferta-robocza-${clientName}_${pricesAsOf.split('-').reverse().join('_')}.pdf`;
+      const asciiFilename = filename.replace(/[^\x20-\x7e]/g, '_');
+      const encodedFilename = encodeURIComponent(filename).replace(/['()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
       return new Response(new Uint8Array(bytes), { headers: {
-        'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="oferta-robocza-${id}.pdf"`,
+        'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`,
         'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
       } });
     }

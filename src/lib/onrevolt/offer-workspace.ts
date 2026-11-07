@@ -1,7 +1,7 @@
 import { configurationInvestmentScope } from './configuration-templates';
 import type { OfferWorkspacePricingResult, OfferWorkspacePricingTemplate } from './offer-workspace-pricing';
 import { parseOfferWorkspaceConfigurationEdits, type OfferWorkspaceConfigurationEdit } from './offer-workspace-configuration-edits';
-import { parseOfferWorkspaceCommercialBreakdown, type OfferWorkspaceCommercialBreakdown } from './offer-workspace-commercial-pricing';
+import { automaticOfferCommercialBreakdown, parseOfferWorkspaceCommercialBreakdown, type OfferWorkspaceCommercialBreakdown } from './offer-workspace-commercial-pricing';
 
 export const OFFER_WORKSPACE_SCHEMA_VERSION = 1;
 export const DEFAULT_OFFER_BILLING_CYCLE_MONTHS = 2;
@@ -281,7 +281,7 @@ export function selectOfferWorkspaceTemplate(
   return {
     ...draft,
     selectedTemplateIds,
-    ...(selectionChanged && draft.commercialPricing ? { commercialPricing: undefined } : {}),
+    ...(selectionChanged ? { commercialPricing: automaticOfferCommercialBreakdown() } : {}),
     ...(draft.configurationEdits ? { configurationEdits: draft.configurationEdits.filter((edit) => selectedTemplateIds.includes(edit.templateId)) } : {}),
     pvStrategy: checked && scope === 'PV' ? 'ADD_TEMPLATE' : draft.pvStrategy,
   };
@@ -298,7 +298,7 @@ export function setOfferWorkspacePvStrategy(
   return {
     ...draft, pvStrategy,
     selectedTemplateIds,
-    ...(selectedTemplateIds.length !== draft.selectedTemplateIds.length && draft.commercialPricing ? { commercialPricing: undefined } : {}),
+    ...(selectedTemplateIds.length !== draft.selectedTemplateIds.length ? { commercialPricing: automaticOfferCommercialBreakdown() } : {}),
     ...(draft.configurationEdits ? { configurationEdits: draft.configurationEdits.filter((edit) => selectedTemplateIds.includes(edit.templateId)) } : {}),
   };
 }

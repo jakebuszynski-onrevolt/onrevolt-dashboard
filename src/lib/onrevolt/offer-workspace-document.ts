@@ -1107,7 +1107,9 @@ function selectedProductRows(workspace: OfferWorkspaceDocumentData, draft: Offer
       return { ...sources[0], itemId: `commercial-${group.group}`, description: group.label,
         productName: null, model: models.length ? models.join('; ') : null,
         quantity: 1, includedInSale: true, resolvedCosts: null, calculation: null,
-        saleAmount: group.amountGross, unitSaleAmount: group.amountGross, lineSaleAmount: group.amountGross,
+        saleAmount: pricing.saleAmountBasis === 'NET' ? group.amountNet : group.amountGross,
+        unitSaleAmount: pricing.saleAmountBasis === 'NET' ? group.amountNet : group.amountGross,
+        lineSaleAmount: pricing.saleAmountBasis === 'NET' ? group.amountNet : group.amountGross,
         saleVatRate: commercial.saleVatRate, missingPriceReason: null,
         workspaceRemoved: false, workspaceAdded: false, workspaceChanged: false };
     });

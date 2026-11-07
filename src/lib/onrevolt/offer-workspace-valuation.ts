@@ -424,6 +424,7 @@ function valueExport(
   if (scenario.settlement === 'NET_METERING') {
     return { value: null, reasons: kwh != null && kwh > 0 ? ['NET_METERING: eksport nie ma przypisanej pieniężnej ceny sprzedaży.'] : [] };
   }
+  if (kwh === 0) return { value: 0, reasons: [] };
   if (scenario.settlement !== 'NET_BILLING') return { value: null, reasons: ['Nie wybrano jawnego systemu rozliczeń eksportu.'] };
   if (kwh === null) return { value: null, reasons: ['Brak pomiaru eksportu.'] };
   if (kwh < 0 || !Number.isFinite(kwh)) return { value: null, reasons: ['Nieprawidłowa energia eksportu.'] };
@@ -496,7 +497,7 @@ function scenarioValuation(
     let exportValuePln: number | null = scenario.settlement === 'NET_METERING'
       ? null : month.exportKwh === 0 ? 0 : month.exportKwh == null ? null : 0;
     let importComplete = month.importKwh != null;
-    let exportComplete = month.exportKwh != null && scenario.settlement === 'NET_BILLING';
+    let exportComplete = month.exportKwh != null && (scenario.settlement === 'NET_BILLING' || month.exportKwh === 0);
     const measuredImport = rows.filter((row) => row.import != null).reduce((sum, row) => sum + row.import!.valueKwh, 0);
     const measuredExport = rows.filter((row) => row.export != null).reduce((sum, row) => sum + row.export!.valueKwh, 0);
     if (month.importKwh != null && rows.some((row) => row.import == null)) {

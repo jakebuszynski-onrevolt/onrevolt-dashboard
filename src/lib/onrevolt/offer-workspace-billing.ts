@@ -76,6 +76,9 @@ export type NetBillingPolicy = {
   fixedChargeTreatment: 'ALWAYS_BILLED';
 };
 
+export type GridImportPolicy = { mode: 'GRID_IMPORT' };
+type BillingPolicy = NetMeteringPolicy | NetBillingPolicy | GridImportPolicy;
+
 export type OfferWorkspaceBillingInput = {
   context: OfferBillingContext;
   /** Applies to tariff-engine costs; export deposit prices are supplied as completed account values. */
@@ -86,7 +89,7 @@ export type OfferWorkspaceBillingInput = {
 
 export type OfferWorkspaceBillingScenarioInput = {
   tariffHistory: ClientTariffHistory;
-  settlement: NetMeteringPolicy | NetBillingPolicy;
+  settlement: BillingPolicy;
   intervals: OfferBillingIntervalInput[];
 };
 
@@ -94,7 +97,7 @@ export type OfferBillingRateRequest = {
   tariffHistory: ClientTariffHistory;
   context: OfferBillingContext;
   vatBasis: 'NET' | 'GROSS';
-  settlement: NetMeteringPolicy | NetBillingPolicy;
+  settlement: BillingPolicy;
   interval: OfferBillingIntervalInput;
 };
 
@@ -154,7 +157,7 @@ export type OfferWorkspaceGridPricingResult = {
 
 export type OfferWorkspaceScenarioResult = {
   status: 'ready';
-  settlement: NetMeteringPolicy['mode'] | NetBillingPolicy['mode'];
+  settlement: BillingPolicy['mode'];
   vatBasis: 'NET' | 'GROSS';
   period: { startUtc: string; endUtc: string };
   warnings: string[];
@@ -1076,11 +1079,11 @@ function attachDistributionComponents(
   intervals: PreparedInterval[],
   rates: RateEntry[],
   results: OfferBillingIntervalResult[],
-  settlement: NetMeteringPolicy | NetBillingPolicy,
+  settlement: BillingPolicy,
 ): void {
   intervals.forEach((interval, index) => {
     const result = results[index];
-    const billedDistributionKwh = settlement.mode === 'NET_BILLING'
+    const billedDistributionKwh = settlement.mode !== 'NET_METERING'
       ? result.billedImportKwh
       : settlement.coverage === 'ENERGY_AND_VARIABLE_DISTRIBUTION'
         ? Math.max(0, interval.importKwh - result.coveredKwh)
@@ -1391,13 +1394,33 @@ function runNetMetering(
   return finishScenario(results);
 }
 
+function runGridImport(intervals: PreparedInterval[], rates: RateEntry[]): OfferBillingScenarioResult {
+  if (intervals.some(interval => interval.exportKwh !== 0)) {
+    throw new Error('Rozliczenie zakupu z sieci bez PV wymaga zerowego eksportu.');
+  }
+  const results = intervals.map(emptyInterval);
+  allocateFixed(intervals, rates, results);
+  intervals.forEach((interval, index) => {
+    const result = results[index];
+    result.billedImportKwh = interval.importKwh;
+    result.billedExportKwh = 0;
+    result.energyCostPln = interval.importKwh * rates[index].energy;
+    result.distributionCostPln = interval.importKwh * rates[index].distribution;
+    result.totalCostPln += result.energyCostPln + result.distributionCostPln;
+    result.cashDuePln += result.energyCostPln + result.distributionCostPln;
+  });
+  attachDistributionComponents(intervals, rates, results, { mode: 'GRID_IMPORT' });
+  return finishScenario(results);
+}
+
 function validateSettlement(
-  policy: NetMeteringPolicy | NetBillingPolicy,
+  policy: BillingPolicy,
   context: OfferBillingContext,
 ): ValidatedExportPricePeriod[] | null {
-  if (!policy || !['NET_METERING', 'NET_BILLING'].includes(policy.mode)) {
-    throw new Error('Tryb rozliczenia musi być jawnie NET_METERING albo NET_BILLING.');
+  if (!policy || !['NET_METERING', 'NET_BILLING', 'GRID_IMPORT'].includes(policy.mode)) {
+    throw new Error('Nieznany tryb rozliczenia energii.');
   }
+  if (policy.mode === 'GRID_IMPORT') return null;
   if (policy.mode === 'NET_METERING') {
     validateMeteringPolicy(policy, context.billingCycleMonths);
     return null;
@@ -1413,11 +1436,12 @@ function billScenario(
   const exportPeriods = validateSettlement(input.settlement, input.context);
   const intervals = prepareIntervals(input.intervals, label);
   const rates = prepareRates(intervals, input.tariffHistory, input.context, input.vatBasis);
-  const result = input.settlement.mode === 'NET_METERING'
+  const result = input.settlement.mode === 'GRID_IMPORT' ? runGridImport(intervals, rates)
+    : input.settlement.mode === 'NET_METERING'
     ? runNetMetering(input.settlement, intervals, rates, input.context.billingCycleMonths)
     : runNetBilling(input.settlement, intervals, rates, exportPeriods || [], input.vatBasis);
   result.intervalTariffs = buildIntervalTariffs(intervals, rates);
-  const warnings = input.settlement.mode === 'NET_METERING'
+  const warnings = input.settlement.mode === 'GRID_IMPORT' ? [] : input.settlement.mode === 'NET_METERING'
     ? ['Wynik net-meteringu jest modelem rozliczenia cyklu, nie dokładnym odtworzeniem faktury: eksporty z całego jawnego cyklu są przeliczane współczynnikiem i mogą pokryć wcześniejszy import w tym samym cyklu; eksport z kolejnego, już odrębnego cyklu nie koryguje wstecz poprzedniego rachunku.',
       ...(input.context.billingCycleMonths > 1
         ? ['Salda miesięczne wewnątrz wielomiesięcznego cyklu pozostają null do jego zamknięcia; koszty są alokacją wyniku cyklu, nie miesięcznym odczytem faktury.']

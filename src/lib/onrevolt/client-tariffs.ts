@@ -34,6 +34,7 @@ export type ClientTariffPayload = {
   fixed: Array<Record<string, any>>; variable: Array<Record<string, any>>;
   pricing: { tariffStorage: { priceBasis: 'net'; vatRate: number; validFrom: string; fixed: TariffCatalogRow[]; variable: TariffCatalogRow[] } };
   catalogRevision?: number;
+  catalogSelection?: { validFrom: string; validUntil: string | null; estimated: boolean };
 };
 export type ClientTariffHistory = {
   strict: true; revision: number; byDate: Record<string, ClientTariffPayload | string | null>;
@@ -56,7 +57,7 @@ export type ClientTariffData = {
 export const tariffToday = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
 
 export function projectGeneralTariff(accounts: Array<{ operator?: string | null; tariff?: string | null }>) {
-  const account = accounts.find(item => item.operator === 'ENEA') || accounts[0];
+  const account = accounts[0];
   if (!account) return null;
   const operator = account.operator?.trim() || '';
   const code = account.tariff?.trim() || '';

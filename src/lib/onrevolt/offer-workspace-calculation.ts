@@ -7,7 +7,7 @@ import {
 import type { OfferWorkspace } from './offer-workspace-server';
 import type { OfferWorkspaceEnergy } from './offer-workspace-energy';
 import type { OfferWorkspaceCalculation, OfferForecastFlow } from './offer-workspace-calculation-types';
-import { billOfferWorkspaceScenario, resolveOfferBillingRateSeries, type NetBillingPolicy, type NetMeteringPolicy } from './offer-workspace-billing';
+import { billOfferWorkspaceScenario, resolveOfferBillingRateSeries, type NetBillingPolicy, type NetMeteringPolicy, type GridImportPolicy } from './offer-workspace-billing';
 import { priceOfferWorkspaceConfiguration } from './offer-workspace-pricing';
 import { calculateOfferWorkspaceFinancing } from './offer-workspace-financing';
 import { calculateOfferCommercialPricing, type OfferWorkspaceCommercialPricingResult } from './offer-workspace-commercial-pricing';
@@ -87,7 +87,7 @@ export async function calculateOfferWorkspaceScenario(input: OfferCalculationInp
     result.recommendationReasons!.push(assumption);
   }
   for (const mode of ['NET_METERING', 'NET_BILLING'] as const) {
-    if (draft.currentSettlement !== mode && draft.targetSettlement !== mode) continue;
+    if ((draft.existingPv.powerKw === 0 || draft.currentSettlement !== mode) && draft.targetSettlement !== mode) continue;
     const credit = mode === 'NET_METERING';
     const balanceKey = credit ? 'initialCreditKwh' : 'initialDepositPln';
     const lots = credit ? settings.initialCreditLots : settings.initialDepositLots;
@@ -133,7 +133,7 @@ export async function calculateOfferWorkspaceScenario(input: OfferCalculationInp
     || workspace.measurements.months.some(month => month.importKwh === null || (draft.existingPv.powerKw !== 0 && month.exportKwh === null))) {
     reasons.push('Porównanie roczne wymaga 12 pełnych miesięcy pomiarów.');
   }
-  if (draft.currentSettlement === null || draft.targetSettlement === null) reasons.push('Wybierz obecny i proponowany system rozliczeń.');
+  if ((draft.existingPv.powerKw !== 0 && draft.currentSettlement === null) || draft.targetSettlement === null) reasons.push('Wybierz obecny i proponowany system rozliczeń.');
   if (!billingCycleMonths) incomplete.push('Uzupełnij cykl rozliczeniowy w założeniach obliczeń.');
   const connectionPower = workspace.input.reportDetails?.connectionPowerKw;
   if (!connectionPower) reasons.push('Uzupełnij moc przyłączeniową w danych energetycznych.');
@@ -151,7 +151,7 @@ export async function calculateOfferWorkspaceScenario(input: OfferCalculationInp
   if (hasRemovedCriticalConfigurationItem(workspace.templates, draft)) {
     reasons.push('Usunięto główne urządzenie zestawu. Pełnej kalkulacji nie można wykonać; wybierz inną konfigurację z kompletem wymaganych urządzeń.');
   }
-  if (draft.currentSettlement === 'NET_METERING' || draft.targetSettlement === 'NET_METERING') {
+  if ((draft.existingPv.powerKw !== 0 && draft.currentSettlement === 'NET_METERING') || draft.targetSettlement === 'NET_METERING') {
     if (settings.initialCreditKwh === null) {
       const sides = [draft.currentSettlement === 'NET_METERING' ? 'obecnego' : null,
         draft.targetSettlement === 'NET_METERING' ? 'docelowego' : null].filter(Boolean).join(' i ');
@@ -161,7 +161,7 @@ export async function calculateOfferWorkspaceScenario(input: OfferCalculationInp
       reasons.push('Dodatni zapas opustu wymaga datowanych transz, których suma odpowiada saldu początkowemu.');
     }
   }
-  if (draft.currentSettlement === 'NET_BILLING' || draft.targetSettlement === 'NET_BILLING') {
+  if ((draft.existingPv.powerKw !== 0 && draft.currentSettlement === 'NET_BILLING') || draft.targetSettlement === 'NET_BILLING') {
     if (settings.initialDepositPln === null) {
       const sides = [draft.currentSettlement === 'NET_BILLING' ? 'obecnego' : null,
         draft.targetSettlement === 'NET_BILLING' ? 'docelowego' : null].filter(Boolean).join(' i ');
@@ -174,8 +174,8 @@ export async function calculateOfferWorkspaceScenario(input: OfferCalculationInp
   if (rows?.length) {
     const startMonth = offerLocalTime(rows[0].startUtc).slice(0, 7);
     const openingLots = [
-      ...(draft.currentSettlement === 'NET_METERING' || draft.targetSettlement === 'NET_METERING' ? settings.initialCreditLots || [] : []),
-      ...(draft.currentSettlement === 'NET_BILLING' || draft.targetSettlement === 'NET_BILLING' ? settings.initialDepositLots || [] : []),
+      ...((draft.existingPv.powerKw !== 0 && draft.currentSettlement === 'NET_METERING') || draft.targetSettlement === 'NET_METERING' ? settings.initialCreditLots || [] : []),
+      ...((draft.existingPv.powerKw !== 0 && draft.currentSettlement === 'NET_BILLING') || draft.targetSettlement === 'NET_BILLING' ? settings.initialDepositLots || [] : []),
     ];
     if (openingLots.some(lot => lot.creditedMonth > startMonth)) reasons.push(`Saldo początkowe musi być dostępne na początku danych (${startMonth}), nie w późniejszym miesiącu.`);
     if (openingLots.some(lot => lot.expiresMonth <= startMonth)) reasons.push(`Saldo początkowe zawiera transzę wygasłą przed początkiem danych (${startMonth}).`);
@@ -203,7 +203,8 @@ export async function calculateOfferWorkspaceScenario(input: OfferCalculationInp
         if (price === undefined) throw new Error(`Brak ceny eksportu dla ${row.startUtc}.`);
         return { startUtc: row.startUtc, endUtc: row.endUtc, depositCreditPricePlnPerKwh: price, refundCapPricePlnPerKwh: price / 1.23 }; }) };
   };
-  const currentPolicy = policy(draft.currentSettlement!, draft.existingPv.powerKw!);
+  const currentPolicy: GridImportPolicy | NetMeteringPolicy | NetBillingPolicy | null = draft.existingPv.powerKw === 0
+    ? { mode: 'GRID_IMPORT' } : policy(draft.currentSettlement!, draft.existingPv.powerKw!);
   const targetPolicy = policy(draft.targetSettlement!, totalPv);
   const baselineIntervals = intervals.map(row => ({ startUtc: row.startUtc, endUtc: row.endUtc, importKwh: row.importKwh!, exportKwh: row.exportKwh!, marketPriceNetPlnPerKwh: input.rdnPricesNet.get(row.startUtc) }));
   if (currentPolicy) {

@@ -411,6 +411,11 @@ export async function calculateClientEnergyCostSummaryOnServer(input: {
   const marketStart = hours[0] || period.fromUtc;
   const marketEnd = hours.length ? new Date(Date.parse(hours.at(-1)!) + 3_600_000).toISOString() : period.untilUtc;
   const dailyTariffs = dates.map(date => historyTariff(tariffHistory, date)).filter((row): row is ClientTariffPayload => Boolean(row));
+  const estimatedTariffs = dailyTariffs.filter(row => row.catalogSelection?.estimated);
+  if (estimatedTariffs.length) {
+    const sourceDates = [...new Set(estimatedTariffs.map(row => row.catalogSelection!.validFrom))].sort();
+    assumptions.push(`Szacunek cen taryfy dla ${estimatedTariffs.length} dni: użyto dostępnego cennika z datą obowiązywania od ${sourceDates.join(', ')} poza jego zapisanym okresem. Dobór: ostatni wcześniejszy cennik, a gdy go brak — najwcześniejszy nowszy.`);
+  }
   const rdnNeeded = dailyTariffs.some(row => (row as ClientTariffPayload & { sell_method?: string }).sell_method === 'rdn');
   const rceNeeded = settlement === 'NET_BILLING' && intervals.some(row => (row.export?.valueKwh || 0) > 0);
   let rdnPrices = new Map<string, number>();

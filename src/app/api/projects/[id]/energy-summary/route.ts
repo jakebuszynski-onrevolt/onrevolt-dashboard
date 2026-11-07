@@ -243,7 +243,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         }
         : pvSummary ? pvSummary(null, months) : undefined;
       return {
-        period, months, days: [], issues: [measurementIssue, ...annualModel.issues], annualModel,
+        period, months, days: [], issues: [...annualModel.issues], annualModel,
         ...(pv ? { pv } : {}), cost,
       };
     }
@@ -261,7 +261,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       const measurementIssue = operators.length
         ? `Import pomiarów godzinowych dla operatora ${operators.join(', ')} nie jest jeszcze obsługiwany.`
         : 'Nie znaleziono konta operatora energii przypisanego do projektu.';
-      const modeled = projectAccounts.length === 0 ? await annualFallback(measurementIssue, months) : null;
+      const modeled = await annualFallback(measurementIssue, months);
       if (modeled) return jsonResponse({ ok: true, data: modeled }, { headers: { 'Cache-Control': 'private, no-store' } });
       return jsonResponse({ ok: true, data: {
         period, months, days: [],

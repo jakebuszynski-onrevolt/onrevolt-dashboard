@@ -82,7 +82,10 @@ if (in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     check($repo->history($saved,'2026-01-01','2026-01-03')['issues'] === [], 'Covered dates resolve');
     $packed = T::packHistory($repo->history($saved,'2026-01-01','2026-01-03'));
     check(count($packed['tariffs']) === 1 && $packed['byDate']['2026-01-01'] === $packed['byDate']['2026-01-02'], 'Repeated dates transmit one shared tariff snapshot');
-    check(count($repo->history($saved,'2025-12-31','2026-01-01')['issues']) === 1, 'Historical missing rates are not replaced with current rates');
+    $early = $repo->history($saved,'2025-12-31','2026-01-02');
+    check($early['issues'] === [] && $early['byDate']['2025-12-31']['catalogSelection']['estimated'], 'Earliest future rates are explicitly estimated');
+    check(!$early['byDate']['2026-01-01']['catalogSelection']['estimated'], 'Valid-date rate is not marked estimated');
+    check(count(T::packHistory($early)['tariffs']) === 2, 'Packing preserves estimated versus valid-date provenance');
     $changed = $payload; $changed['variable'][0]['price'] = 2.46; $changed['pricing']['tariffStorage']['variable'][0]['net'] = 2;
     $db->beginTransaction(); C::record($db, $changed, '2026-02-01', 'fixture'); $db->commit();
     check($repo->resolve($saved,'2026-01-31')['variable'][0]['price'] === 1.23, 'Older catalog price preserved');
@@ -90,7 +93,7 @@ if (in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     $db->beginTransaction(); C::record($db, $payload, '2026-02-01', 'correction'); $db->commit();
     check((int)$db->query('SELECT COUNT(*) FROM pricing_catalog_revision')->fetchColumn() === 3, 'Catalog correction retains prior snapshot');
     check($repo->resolve($saved,'2026-02-01')['variable'][0]['price'] === 1.23, 'Correction resolves unambiguously');
-    check(!$repo->completeness($saved, $saved['periods'][0], '2025-12-01')['ok'], 'Missing early prices do not show a complete period');
+    check($repo->completeness($saved, $saved['periods'][0], '2025-12-01')['ok'], 'Approved nearest prices allow calculation before first catalog date');
     check($repo->completeness($saved, $saved['periods'][0], '2026-01-01')['ok'], 'All dated catalog revisions within a period are checked');
     $scope2 = ['projectId'=>'new','clientId'=>'client','ppe'=>'456','station'=>null];
     $evidence = ['validFrom'=>'2026-01-01','validUntil'=>'2026-02-01','tariffCode'=>'G11','certain'=>true,'source'=>'ENEA_CONSUMPTION_RANGE'];
@@ -155,3 +158,11 @@ if (in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     check($repo->evidence($transition['id']) === [], 'Precise transition resolves the earlier monthly warning');
 } else { throw new RuntimeException('Testy repozytorium wymagają rozszerzenia PDO SQLite.'); }
 echo "OK: $tests assertions\n";
+$old = ['id'=>1,'valid_from'=>'2010-01-01','valid_until'=>'2011-01-01'];
+$new = ['id'=>2,'valid_from'=>'2026-02-01','valid_until'=>null];
+check(T::catalogVersion([$new,$old], '2025-11-01')['id'] === 1, 'Old past tariff wins without age limit');
+check(T::catalogVersion([$new], '2025-11-01')['id'] === 2, 'Earliest future tariff used when no past exists');
+check(T::catalogVersion([$old,$new], '2026-02-01')['id'] === 2, 'Exact date uses new tariff');
+check(T::catalogVersion([], '2025-11-01') === null, 'Empty catalog remains missing');
+rejects(fn()=>T::catalogVersion([$new,$new], '2026-03-01'), 'Overlapping catalogs still rejected');
+echo "Date selection tests OK\n";

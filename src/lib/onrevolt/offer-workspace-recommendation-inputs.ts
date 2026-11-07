@@ -20,7 +20,7 @@ export function recommendationInputIssues(draft: OfferWorkspaceDraft): OfferWork
   }
 
   const missingSettlements = [
-    draft.currentSettlement == null ? 'obecny sposób rozliczeń' : null,
+    draft.existingPv.powerKw !== 0 && draft.currentSettlement == null ? 'obecny sposób rozliczeń' : null,
     draft.targetSettlement == null ? 'docelowy sposób rozliczeń' : null,
   ].filter((value): value is string => value !== null);
   if (missingSettlements.length) {

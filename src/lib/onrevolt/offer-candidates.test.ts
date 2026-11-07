@@ -150,13 +150,13 @@ test('dodanie PV tworzy tylko kompatybilne pary bateria-PV klient/dach', () => {
   ]);
   assert.ok(result.candidates.every((candidate) => candidate.addedPvKw === 6 && candidate.totalPvKw === 15.9));
   assert.ok(result.candidates.every((candidate) => candidate.pvGeometryReviewRequired && candidate.addedPvGeometry === null));
-  assert.ok(result.rejectedReasonList.some((entry) => entry.templateIds[0] === 'template-pv-flat' && /dachu SLOPED/.test(entry.reasons.join(' '))));
+  assert.ok(!result.rejectedReasonList.some((entry) => entry.templateIds.includes('template-pv-flat')));
   assert.ok(result.rejectedReasonList.some((entry) => entry.templateIds[0] === 'template-battery-b2b' && /klienta B2C/.test(entry.reasons.join(' '))));
 });
 
 test('nowy klient bez PV może dostać kandydat add-PV z geometrią dodawaną osobno', () => {
   const templates = [
-    batteryTemplate(16, { requiresExistingPv: false }),
+    batteryTemplate(16),
     pvTemplate(),
   ];
   const input: OfferCandidateEnumerationInput = {
@@ -184,10 +184,10 @@ test('nowy klient bez PV może dostać kandydat add-PV z geometrią dodawaną os
   assert.equal(unresolvedGeometry.requiresReview, true);
 });
 
-test('flagi szablonu wymagające istniejącego PV odrzucają klienta bez instalacji', () => {
+test('szablon rozbudowy PV nadal wymaga instalacji klienta, nawet w parze z magazynem', () => {
   const result = enumerateOfferCandidates({
     ...baseInput,
-    approvedConfigurationTemplates: [batteryTemplate(16), pvTemplate()],
+    approvedConfigurationTemplates: [batteryTemplate(16), pvTemplate('extension', { requiresExistingPv: true })],
     roofType: 'SLOPED',
     pvStrategy: 'ADD_TEMPLATE',
     existingPv: { powerKw: 0, tiltDegrees: null, azimuthDegrees: null },
@@ -350,4 +350,23 @@ test('wymaga dodatniej istniejącej mocy w trybie fixed i skończonych danych we
   assert.throws(() => enumerateOfferCandidates({ ...baseInput, existingPv: { ...baseInput.existingPv, tiltDegrees: 91 } }), /nachylenie/i);
   assert.throws(() => enumerateOfferCandidates({ ...baseInput, saleVatMode: undefined as never }), /Tryb VAT/);
   assert.throws(() => enumerateOfferCandidates({ ...baseInput, saleVatMode: 'EXPLICIT_VAT' as never }), /Tryb VAT/);
+});
+
+
+test('nowa PV na płaskim dachu z magazynem pomija dachy skośne i nie wymaga starej PV', () => {
+  const result = enumerateOfferCandidates({ ...baseInput, roofType: 'FLAT', pvStrategy: 'ADD_TEMPLATE',
+    existingPv: { powerKw: 0, tiltDegrees: null, azimuthDegrees: null },
+    addedPvGeometry: { tiltDegrees: 15, azimuthDegrees: 180 }, existingPvCompatibilityEvidence: 'no' });
+  assert.equal(result.candidates.length, 3);
+  assert.ok(result.candidates.every(c => c.templateIds[1] === 'template-pv-flat' && c.existingPvKw === 0 && c.totalPvKw === 8));
+  assert.ok(!result.rejectedReasonList.some(r => r.templateIds.includes('template-pv-sloped')));
+  assert.ok(!result.candidates.some(c => c.reviewReasons.some(r => /istniejąc/.test(r))));
+});
+
+test('brak szablonu na właściwy dach nie dopuszcza zestawu na inny dach', () => {
+  const result = enumerateOfferCandidates({ ...baseInput, approvedConfigurationTemplates: [batteryTemplate(16), pvTemplate()],
+    roofType: 'FLAT', pvStrategy: 'ADD_TEMPLATE' });
+  assert.equal(result.candidates.length, 0);
+  assert.ok(result.rejectedReasonList.some(r => r.reasons.some(reason => /Brak aktywnego.*szablonu PV/.test(reason))));
+  assert.ok(!result.rejectedReasonList.some(r => r.templateIds.includes('template-pv-sloped')));
 });

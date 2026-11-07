@@ -276,6 +276,9 @@ function snapshotRepository(options: {
       return rows.find((row) => row.admittedAt && row.jobId === query.jobId && row.actorId === query.actorId
         && row.projectId === query.projectId && row.algorithmVersion === query.algorithmVersion) || null;
     },
+    findSavedForDrafts: async (query: any) => rows.filter(row => row.admittedAt
+      && row.actorId === query.actorId && row.projectId === query.projectId && query.draftHashes.includes(row.draftHash))
+      .slice(query.offset ?? 0, (query.offset ?? 0) + 1),
     findCompletedForDrafts: async (query: any) => {
       queries.push(query);
       return rows.filter((row) => row.admittedAt && row.actorId === query.actorId && row.projectId === query.projectId
@@ -342,6 +345,44 @@ function prismaSnapshotRepository(options: {
 function createStore(options: OfferWorkspaceCalculationJobStoreOptions = {}) {
   return new OfferWorkspaceCalculationJobStore({ ...options, snapshotRepository: options.snapshotRepository || snapshotRepository() });
 }
+
+test('saved offer A survives visiting B, restart, a new date and an engine/source update without recalculation', async () => {
+  const repository = snapshotRepository();
+  let runs = 0;
+  const a = request({ draft: { ...emptyOfferWorkspaceDraft(), selectedTemplateIds: ['battery-a'] } });
+  const b = request({ projectId: 'project-b', draft: { ...emptyOfferWorkspaceDraft(), selectedTemplateIds: ['battery-b'] } });
+  const store = createStore({ snapshotRepository: repository });
+  store.enqueue(a, async () => { runs++; return result({ annualSavingsPln: 1234, grantPln: 16000 }); });
+  await settle();
+  store.enqueue(b, async () => { runs++; return result({ annualSavingsPln: 999 }); });
+  await settle();
+  for (const row of repository.rows) row.algorithmVersion = 'previous-engine';
+  const restarted = createStore({ snapshotRepository: repository });
+  const lookupA = { ...a, sourceRevision: 'new-source', pricesAsOf: '2030-01-01', sourceDependencyStamp: 'e'.repeat(64) };
+  assert.equal(await restarted.findCompletedJobForDraft(lookupA), null, 'new calculations still require fresh inputs');
+  for (const input of [lookupA, b, lookupA]) {
+    const saved = await restarted.findSavedJobForDraft(input);
+    assert.equal(saved?.data?.annualSavingsPln, input.projectId === a.projectId ? 1234 : 999);
+    assert.ok(saved?.savedAt);
+  }
+  assert.equal((await restarted.findSavedJobForDraft(lookupA))?.data?.grantPln, 16000);
+  for (const change of [{ actorId: 'other' }, { projectId: 'other' },
+    { draft: { ...a.draft, selectedTemplateIds: ['different'] } },
+    { draft: { ...a.draft, financing: { ...a.draft.financing, considerGrant: !a.draft.financing.considerGrant } } },
+  ]) assert.equal(await restarted.findSavedJobForDraft({ ...lookupA, ...change }), null);
+  assert.equal(runs, 2, 'restoring offers never invokes calculation');
+});
+
+test('saved catalogue recommendation cannot replace a manually priced offer', async () => {
+  const repository = snapshotRepository();
+  const draft = { ...emptyOfferWorkspaceDraft(), selectedTemplateIds: ['battery-a'] };
+  const store = createStore({ snapshotRepository: repository });
+  store.enqueue(request({ draft, mode: 'recommend' }), async () => result({ recommendedTemplateIds: ['battery-a'] }));
+  await settle();
+  assert.ok(await store.findSavedJobForDraft(request({ draft })));
+  const manual = { ...draft, commercialPricing: { schemaVersion: 1 as const, batteryInstallationScopeConfirmed: true as const, allocations: [] } };
+  assert.equal(await store.findSavedJobForDraft(request({ draft: manual })), null);
+});
 
 test('deduplicates identical running work and limits concurrent executions globally per store', () => {
   const store = createStore({ maxRunning: 2, createId: (() => { let id = 0; return () => `job-${++id}`; })() });

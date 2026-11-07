@@ -21,12 +21,14 @@ import {
 } from './offer-workspace-configuration-edits';
 import { prisma } from './prisma';
 import { getOfferWorkspaceArtifact, putOfferWorkspaceArtifact } from './offer-workspace-artifacts';
-import { rePrisma } from './re-stations';
+import { rePrisma, resolveReStation } from './re-stations';
 import { hasStaffPermission } from './staff-server';
 import { readProjectAnalysisPeriod } from './project-analysis-period-server';
 import { buildingTypeLabel, terrainTypeLabel, roofShapeLabel, connectionTypeLabel, heatSourceLabel, heatSourceDetailLabel, energySupplierLabel } from './energy-intake';
 import { resolveClientEnergyBatteryPresence } from './client-energy-pv-summary';
 import { readProjectReferenceProfileSelection, type ProjectReferenceProfileSelection } from './project-reference-profile';
+import { readProjectGeneralTariffs } from './client-tariffs-server';
+import { projectGeneralTariff } from './client-tariffs';
 
 const maxOfferWorkspaceMeasurementFiles = 24;
 
@@ -376,13 +378,32 @@ export function serializeTemplate(template: any, includePricing: boolean): Offer
   };
 }
 
-async function scopedPpeAccounts(projectId: string, clientId: string, includePpe: boolean) {
+async function scopedPpeAccounts(projectId: string, clientId: string, includePpe: boolean, stationRef?: string | null) {
   const select = includePpe
     ? { id: true, ppeNumber: true, projectId: true, tariff: true, updatedAt: true } as const
     : { id: true, projectId: true, updatedAt: true } as const;
-  const candidates = await prisma.energyPortalAccount.findMany({
-    where: { projectId, clientId, operator: 'ENEA' }, select, orderBy: { updatedAt: 'desc' },
+  const projectAccounts = await prisma.energyPortalAccount.findMany({
+    where: { projectId, clientId }, select: { ...select, operator: true }, orderBy: { updatedAt: 'desc' },
   });
+  const station = includePpe && stationRef ? await resolveReStation(stationRef) : null;
+  if (includePpe && stationRef && !station) throw new Error('Przypisana stacja RE nie istnieje. Popraw powiązanie w EMS.');
+  const selection = includePpe ? (await readProjectGeneralTariffs({ projectId, clientId, ppe: null,
+    station: station?.station || null, generalTariff: projectGeneralTariff(projectAccounts),
+  })).generalTariff : null;
+  let operatorKey = selection?.operator?.trim().toLowerCase() || null;
+  if (selection?.osdId != null) {
+    const operators = await rePrisma().$queryRawUnsafe<Array<{ slug: string }>>('SELECT slug FROM osd WHERE id = ? LIMIT 1', selection.osdId);
+    if (!operators[0]?.slug) throw new Error('Wybrany operator nie istnieje w katalogu taryf RE.');
+    operatorKey = operators[0].slug.toLowerCase();
+  }
+  const selectedAccounts = operatorKey
+    ? projectAccounts.filter(account => account.operator.toLowerCase() === operatorKey) : projectAccounts;
+  const operatorNames = new Set(selectedAccounts.map(account => account.operator));
+  if (operatorNames.size > 1) return { accounts: [], sourceAccounts: [], ppeNumber: null,
+    issue: 'Projekt ma konta różnych operatorów; wybierz aktualnego operatora w taryfach.' };
+  const operatorName = selection?.operator || selectedAccounts[0]?.operator || null;
+  // The current file parser supports ENEA; selecting an operator is independent of parser support.
+  const candidates = selectedAccounts.filter(account => account.operator === 'ENEA');
   const ppes = includePpe
     ? Array.from(new Set(candidates.map((account) => textOrNull('ppeNumber' in account ? account.ppeNumber : null)).filter((ppe): ppe is string => Boolean(ppe))))
     : [];
@@ -400,7 +421,9 @@ async function scopedPpeAccounts(projectId: string, clientId: string, includePpe
     sourceAccounts: candidates,
     ppeNumber,
     issue: !candidates.length
-      ? (includePpe ? 'Nie znaleziono konta ENEA przypisanego do projektu.' : null)
+      ? (includePpe ? operatorName && (operatorKey || selectedAccounts[0]?.operator.toLowerCase()) !== 'enea'
+        ? `Import pomiarów godzinowych dla operatora ${operatorName} nie jest jeszcze obsługiwany.`
+        : 'Nie znaleziono konta operatora przypisanego do projektu.' : null)
       : ppeNumber ? null : 'Konto ENEA nie ma zapisanego numeru PPE.',
   };
 }
@@ -567,7 +590,9 @@ export function createServerOfferWorkspacePricingSnapshot(
     input.saleVatMode,
     clientType,
   );
-  if (input.commercialPricing) {
+  // Automatic grouping is a policy, so an unfinished draft may save before all
+  // groups exist. Calculation and document generation validate the final layout.
+  if (input.commercialPricing?.schemaVersion === 1) {
     const { calculateOfferCommercialPricing } = require('./offer-workspace-commercial-pricing') as typeof import('./offer-workspace-commercial-pricing');
     try { calculateOfferCommercialPricing(pricing, effectiveTemplates.filter(template => selected.has(template.id)), input.commercialPricing); }
     catch (error) { throw new OfferWorkspaceConflictError(error instanceof Error ? error.message : 'Nieprawidłowy podział kosztorysu oferty.'); }
@@ -605,6 +630,7 @@ export async function loadProjectOfferWorkspace(
     where: offerWorkspaceProjectWhere(projectId, user),
     select: {
       id: true, clientId: true, title: true, clientType: true, locationAddress: true, updatedAt: true,
+      dashboardStation: true, dashboardStationNumber: true,
       client: { select: { displayName: true, clientType: true, updatedAt: true,
         contacts: { select: { email: true, phone: true, updatedAt: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1 },
       } },
@@ -626,7 +652,7 @@ export async function loadProjectOfferWorkspace(
       terrainType: true, buildingType: true, roofShape: true, connectionType: true,
       connectionPowerKw: true, heatingSource: true, heatingSourceDetail: true, energySupplier: true,
     } }) : Promise.resolve(null),
-    scopedPpeAccounts(projectId, project.clientId, canReadEnergy),
+    scopedPpeAccounts(projectId, project.clientId, canReadEnergy, project.dashboardStationNumber || project.dashboardStation),
     prisma.configurationTemplate.findMany({
       where: { isActive: true, clientType: { in: templateClientTypes } },
       include: canReadPricing ? templateInclude(now) : templateMetadataInclude(now),
@@ -654,7 +680,7 @@ export async function loadProjectOfferWorkspace(
   if (!canReadEnergy) inputIssues.push('Brak uprawnienia energy.manage do odczytu danych energetycznych.');
   else if (!energyAudit) inputIssues.push('Brak audytu energetycznego projektu.');
   if (canReadEnergy && energyAudit && energyAudit.annualConsumptionKwh == null) inputIssues.push('Brak zapisanej rocznej deklaracji zużycia.');
-  if (canReadEnergy && energyAudit && !textOrNull(energyAudit.settlementSystem)) inputIssues.push('Brak zapisanego systemu rozliczeń.');
+  if (canReadEnergy && energyAudit && (energyAudit.existingPvKw == null || Number(energyAudit.existingPvKw) !== 0) && !textOrNull(energyAudit.settlementSystem)) inputIssues.push('Brak zapisanego systemu rozliczeń.');
   if (canReadEnergy && energyAudit?.existingPvKw == null) inputIssues.push('Brak potwierdzonej mocy istniejącej PV; nie przyjęto wartości domyślnej.');
   const existingBatteryPresent = canReadEnergy
     ? resolveClientEnergyBatteryPresence(energyAudit?.existingBatteryKwh)
@@ -714,8 +740,8 @@ export async function loadProjectOfferWorkspace(
   };
 
   const measurementIssues: string[] = [];
-  if (!canReadEnergy) measurementIssues.push('Brak uprawnienia energy.manage do odczytu pomiarów ENEA.');
-  else if (ppe.issue) measurementIssues.push(ppe.issue);
+  if (!canReadEnergy) measurementIssues.push('Brak uprawnienia energy.manage do odczytu pomiarów operatora.');
+  else if (ppe.issue && !(energyAudit?.profileSource === 'ANNUAL_DECLARATION' && !ppe.sourceAccounts.length)) measurementIssues.push(ppe.issue);
 
   let measurementFiles: Array<{
     id: string; clientId: string; projectId: string | null; accountId: string; kind: OfferMeasurementKind;
@@ -769,6 +795,7 @@ export async function loadProjectOfferWorkspace(
   }
 
   const source = {
+    algorithmVersion: 'offer-workspace-v2-operator-grid-import',
     energyVisible: canReadEnergy,
     pricingVisible: canReadPricing,
     pricing: canReadPricing ? templates.map(template => serializeTemplate(template, true)) : null,

@@ -371,6 +371,7 @@ export function enumerateOfferCandidates(
   const pvTemplates = input.pvStrategy === 'ADD_TEMPLATE'
     ? templates
       .filter((template) => template.kind === 'PV_DACH_PLASKI' || template.kind === 'PV_DACH_SKOSNY')
+      .filter((template) => input.roofType === 'UNKNOWN' || template.kind === roofKindFor(input.roofType))
       .sort((left, right) => left.id.localeCompare(right.id))
     : [];
   const validBatteries = batteryTemplates.filter((template) => {
@@ -416,7 +417,11 @@ export function enumerateOfferCandidates(
       seenCandidateKeys.add(key);
 
       const reasons: string[] = [];
-      if (orderedTemplates.some((template) => template.requiresExistingPv) && input.existingPv.powerKw === 0) {
+      // A storage bundle can use the new PV supplied in this same candidate.
+      // A PV extension template still requires the customer's existing installation.
+      const missingRequiredPv = input.existingPv.powerKw === 0 && orderedTemplates.some((template) =>
+        template.requiresExistingPv && !(template === battery && pvTemplate !== null));
+      if (missingRequiredPv) {
         reject(rejectedReasonList, templateIds, ['Szablon wymaga istniejącej instalacji PV, której klient nie posiada.']);
         continue;
       }

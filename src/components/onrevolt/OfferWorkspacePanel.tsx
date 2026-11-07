@@ -39,6 +39,7 @@ import { priceOfferWorkspaceConfiguration, type OfferWorkspacePricingResult } fr
 import { applyOfferWorkspaceConfigurationEdits } from 'lib/onrevolt/offer-workspace-configuration-edits';
 import { usePublishOfferMargin } from 'contexts/OfferMarginStore';
 import type { OfferWorkspaceCalculation } from 'lib/onrevolt/offer-workspace-calculation-types';
+import { automaticOfferCommercialBreakdown } from 'lib/onrevolt/offer-workspace-commercial-pricing';
 import { recommendationInputIssues } from 'lib/onrevolt/offer-workspace-recommendation-inputs';
 import { tariffToday, type ClientTariffData, type ClientTariffPayload } from 'lib/onrevolt/client-tariffs';
 import { offerTariffCatalogKey, resolveCurrentOfferTariff, type OfferTariffRateState } from 'lib/onrevolt/offer-workspace-tariffs';
@@ -184,6 +185,7 @@ export function resolveCachedOfferDraft(
   const input = offerWorkspaceDraftWithBatteryPresence(
     parseOfferWorkspaceDraft(cached.input), serverDraft.existingBatteryPresent ?? null,
   );
+  if (!input.commercialPricing && serverDraft.commercialPricing?.schemaVersion === 2) input.commercialPricing = automaticOfferCommercialBreakdown();
   const content = ({ step: _step, ...value }: OfferWorkspaceDraft) => JSON.stringify(value);
   if (content(input) === content(serverDraft)) {
     return { input: { ...serverDraft, step: input.step }, dirty: false, expectedRevision: serverRevision, conflict: null as DraftConflict };
@@ -224,9 +226,11 @@ type OfferWorkspaceCalculationJob = {
   error?: string;
   stale?: boolean;
   blockedReasons?: string[];
+  savedAt?: string;
 };
 
 export type OfferWorkspaceCalculationPanelState = {
+  savedAt?: string;
   key: string;
   projectId: string;
   data: OfferWorkspaceCalculation | null;
@@ -250,6 +254,7 @@ export function beginOfferWorkspaceCalculationState(
   return {
     ...current,
     key, projectId,
+    savedAt: undefined,
     data: continuing ? current.data : null,
     jobId: continuing ? current.jobId : null,
     loading: true,
@@ -280,11 +285,11 @@ export function staleOfferWorkspaceCalculationState(
   current: OfferWorkspaceCalculationPanelState,
   key: string,
 ): OfferWorkspaceCalculationPanelState {
-  return { ...current, key, data: null, jobId: null, error: '' };
+  return { ...current, key, data: null, jobId: null, error: '', savedAt: undefined };
 }
 
 export function offerWorkspaceCalculationRestoreOrder(draft: OfferWorkspaceDraft): Array<'selected' | 'recommend'> {
-  if (draft.commercialPricing) return ['selected'];
+  if (draft.commercialPricing?.schemaVersion === 1) return ['selected'];
   if (draft.configurationEdits?.length) return ['selected'];
   const order: Array<'selected' | 'recommend'> = draft.selectedTemplateIds.length
     ? ['selected', 'recommend']
@@ -356,14 +361,16 @@ function currentTariffLabel(data: TariffData | null) {
   return { label: 'Nie wybrano taryfy', source: 'Brak potwierdzonych danych' };
 }
 
-function initialDraft(workspace: WorkspaceData, tariffs: TariffData | null): OfferWorkspaceDraft {
-  const actualSettlement = parseSettlement(workspace.input.settlementMode);
+export function initialDraft(workspace: WorkspaceData, tariffs: TariffData | null): OfferWorkspaceDraft {
+  const actualSettlement = workspace.input.existingPv?.powerKw === 0 ? null : parseSettlement(workspace.input.settlementMode);
   if (workspace.draft) {
+    const savedDraft = parseOfferWorkspaceDraft(workspace.draft.input);
     return offerWorkspaceDraftWithBatteryPresence(
-      parseOfferWorkspaceDraft(workspace.draft.input), workspace.input.existingBatteryPresent ?? null,
+      { ...savedDraft, commercialPricing: savedDraft.commercialPricing ?? automaticOfferCommercialBreakdown(), currentSettlement: savedDraft.existingPv.powerKw === 0 ? null : savedDraft.currentSettlement ?? actualSettlement }, workspace.input.existingBatteryPresent ?? null,
     );
   }
   const input = emptyOfferWorkspaceDraft();
+  input.commercialPricing = automaticOfferCommercialBreakdown();
   input.existingBatteryPresent = workspace.input.existingBatteryPresent ?? null;
   input.existingPv = {
     powerKw: workspace.input.existingPv?.powerKw ?? null,
@@ -449,7 +456,7 @@ export function offerWorkspaceDraftWithRanking(
     ...draft,
     selectedTemplateIds: [...templateIds],
     ...(draft.configurationEdits ? { configurationEdits: [] } : {}),
-    commercialPricing: undefined,
+    commercialPricing: automaticOfferCommercialBreakdown(),
     pvStrategy: hasPv ? 'ADD_TEMPLATE' : 'KEEP_EXISTING',
   };
 }
@@ -570,7 +577,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
   const storageKey = offerWorkspaceStorageKey(actorId, projectId);
   const energyKey = workspace && draft ? JSON.stringify({ projectId, sourceRevision: workspace.revision, existingPv: draft.existingPv, existingBatteryPresent: workspace.input.existingBatteryPresent ?? null, pvReconstructionAccepted: draft.calculation?.pvReconstructionAccepted === true }) : '';
   const valuationKey = workspace && draft ? JSON.stringify({ projectId, sourceRevision: workspace.revision,
-    currentSettlement: parseSettlement(workspace.input.settlementMode), targetSettlement: draft.targetSettlement,
+    currentSettlement: draft.existingPv.powerKw === 0 ? null : parseSettlement(workspace.input.settlementMode), targetSettlement: draft.targetSettlement,
     targetOperatorId: draft.targetOperatorId, targetTariffId: draft.targetTariffId, pricesAsOf: tariffRateDate }) : '';
   const calculationKey = workspace && draft
     ? JSON.stringify([projectId, workspace.revision, tariffRateDate, offerWorkspaceCalculationInputKey(draft)])
@@ -642,7 +649,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
           if (!isCurrentOfferWorkspaceCalculationRequest(controller.signal, key, calculationKeyRef.current, requestId, calculationRequestId.current)) return;
           if (job.status !== 'completed' || !job.data || job.stale) return;
           setCalculationState(current => current.loading ? current : {
-            key, projectId, data: job.data!, jobId: job.id, loading: false, mode: null, error: '', completed: job.completed, total: job.total,
+            key, projectId, data: job.data!, jobId: job.id, loading: false, mode: null, error: '', completed: job.completed, total: job.total, savedAt: job.savedAt,
           });
           return;
         }
@@ -729,7 +736,8 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
 
       const serverDraft = initialDraft(data, tariffData);
       let nextDraft = serverDraft;
-      let nextDirty = false;
+      const upgradedCommercialLayout = Boolean(data.draft && !data.draft.input.commercialPricing);
+      let nextDirty = upgradedCommercialLayout;
       let nextConflict: DraftConflict = null;
       let nextExpectedRevision = data.draft?.revision || 0;
       try {
@@ -740,7 +748,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
             configurationEdits: serverDraft.configurationEdits } };
           const resolved = resolveCachedOfferDraft(serverDraft, data.revision, data.draft?.revision || 0, cached);
           nextDraft = resolved.input;
-          nextDirty = resolved.dirty;
+          nextDirty = resolved.dirty || upgradedCommercialLayout;
           nextExpectedRevision = resolved.expectedRevision;
           nextConflict = resolved.conflict;
           if (!nextDirty && storageKey) window.sessionStorage.removeItem(storageKey);
@@ -1202,6 +1210,9 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
     {!canEdit ? <Alert status="info" borderRadius="0"><AlertIcon /><AlertDescription fontSize="sm">Masz dostęp do podglądu. Edycja i zapis wymagają uprawnienia do zarządzania ofertami.</AlertDescription></Alert> : null}
     {canEdit && !actorId ? <Alert status="warning" borderRadius="0"><AlertIcon /><AlertDescription fontSize="sm">Brak identyfikatora zalogowanego użytkownika. Lokalna kopia robocza jest wyłączona; zapis na serwerze działa normalnie.</AlertDescription></Alert> : null}
 
+    {calculationState.key === calculationKey && calculationState.data && calculationState.savedAt ? <Text fontSize="sm" color={muted} mb="12px">
+      Zapisany wynik z {new Date(calculationState.savedAt).toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' })}. Aktualizacja obliczeń nastąpi po kliknięciu „Oblicz wybrany wariant” lub „Rekomenduj konfigurację”.
+    </Text> : null}
     <Grid templateColumns={{ base: 'minmax(0, 1fr)', lg: '180px minmax(0, 1fr)', xl: '200px minmax(0, 1fr)' }} gap="24px" minH="520px" alignItems="start">
       <Box minW="0" pt={{ base: '0', lg: '12px' }} position={{ lg: 'sticky' }} top="20px">
         <Text fontSize="15px" fontWeight="700" mb={{ base: '8px', lg: '20px' }}>Etapy ofertowania</Text>

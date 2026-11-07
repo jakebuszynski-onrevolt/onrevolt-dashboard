@@ -215,16 +215,36 @@ final class ClientTariffs
         return $project === false ? null : $this->profile($project);
     }
 
+    public static function catalogVersion(array $rows, string $date): ?array
+    {
+        self::date($date);
+        $active = array_values(array_filter($rows, fn($v) => $v['valid_from'] <= $date && ($v['valid_until'] === null || $v['valid_until'] > $date)));
+        if (count($active) > 1) throw new RuntimeException('Nakładające się wersje katalogu.');
+        if ($active) return $active[0];
+        if (!$rows) return null;
+        usort($rows, fn($a, $b) => strcmp($a['valid_from'], $b['valid_from']));
+        $past = array_values(array_filter($rows, fn($v) => $v['valid_from'] <= $date));
+        $chosen = $past ? $past[count($past) - 1] : $rows[0];
+        if (count(array_filter($rows, fn($v) => $v['valid_from'] === $chosen['valid_from'])) !== 1) throw new RuntimeException('Niejednoznaczne wersje katalogu.');
+        return $chosen;
+    }
+
+    private static function selectionMetadata(array $version, string $date): array
+    {
+        return ['validFrom' => $version['valid_from'], 'validUntil' => $version['valid_until'],
+            'estimated' => $date < $version['valid_from'] || ($version['valid_until'] !== null && $date >= $version['valid_until'])];
+    }
+
     public function catalog(int $osd, int $tariff, string $date): ?array
     {
         self::date($date);
-        $q = $this->pdo->prepare('SELECT * FROM pricing_catalog_revision WHERE osd_id=? AND tariff_id=? AND superseded=0 AND valid_from<=? AND (valid_until IS NULL OR valid_until>?) ORDER BY valid_from DESC LIMIT 2');
-        $q->execute([$osd, $tariff, $date, $date]);
-        $rows = $q->fetchAll(PDO::FETCH_ASSOC);
-        if (count($rows) > 1) throw new RuntimeException('Nakładające się wersje katalogu.');
-        if (!$rows) return null;
-        $data = json_decode($rows[0]['payload_json'], true, 512, JSON_THROW_ON_ERROR);
-        $data['catalogRevision'] = (int)$rows[0]['id'];
+        $q = $this->pdo->prepare('SELECT * FROM pricing_catalog_revision WHERE osd_id=? AND tariff_id=? AND superseded=0 ORDER BY valid_from');
+        $q->execute([$osd, $tariff]);
+        $version = self::catalogVersion($q->fetchAll(PDO::FETCH_ASSOC), $date);
+        if (!$version) return null;
+        $data = json_decode($version['payload_json'], true, 512, JSON_THROW_ON_ERROR);
+        $data['catalogRevision'] = (int)$version['id'];
+        $data['catalogSelection'] = self::selectionMetadata($version, $date);
         return CapacityCharge::attach($data, $date);
     }
 
@@ -275,8 +295,8 @@ final class ClientTariffs
         $ids = array_values(array_unique(array_column($profile['periods'], 'tariffId')));
         $versions = [];
         if ($ids) {
-            $q = $this->pdo->prepare('SELECT * FROM pricing_catalog_revision WHERE superseded=0 AND tariff_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ') AND valid_from<? AND (valid_until IS NULL OR valid_until>?)');
-            $q->execute([...$ids, $until, $from]);
+            $q = $this->pdo->prepare('SELECT * FROM pricing_catalog_revision WHERE superseded=0 AND tariff_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')');
+            $q->execute($ids);
             $versions = $q->fetchAll(PDO::FETCH_ASSOC);
         }
         $evidence = $this->evidence($profile['id']);
@@ -288,13 +308,15 @@ final class ClientTariffs
                 $periods = array_values(array_filter($profile['periods'], fn($p) => ($p['validFrom'] === null || $p['validFrom'] <= $key) && ($p['validUntil'] === null || $p['validUntil'] > $key)));
                 if (count($periods) !== 1) throw new RuntimeException('Wymaga uzupełnienia: brak jednoznacznej taryfy dla ' . $key);
                 $p = $periods[0];
-                $candidates = array_values(array_filter($versions, fn($v) => (int)$v['tariff_id'] === $p['tariffId'] && (int)$v['osd_id'] === $p['osdId'] && $v['valid_from'] <= $key && ($v['valid_until'] === null || $v['valid_until'] > $key)));
-                if (count($candidates) !== 1) throw new RuntimeException('Wymaga uzupełnienia: brak jednoznacznych cen dla ' . $key);
-                $v = $candidates[0];
-                $cacheKey = $p['id'] . ':' . $v['id'] . ':' . substr($key, 0, 4);
+                $candidates = array_values(array_filter($versions, fn($v) => (int)$v['tariff_id'] === $p['tariffId'] && (int)$v['osd_id'] === $p['osdId']));
+                $v = self::catalogVersion($candidates, $key);
+                if (!$v) throw new RuntimeException('Wymaga uzupełnienia: brak jednoznacznych cen dla ' . $key);
+                $selection = self::selectionMetadata($v, $key);
+                $cacheKey = $p['id'] . ':' . $v['id'] . ':' . substr($key, 0, 4) . ':' . (int)$selection['estimated'];
                 if (!isset($resolved[$cacheKey])) {
                     $payload = json_decode($v['payload_json'], true, 512, JSON_THROW_ON_ERROR);
                     $payload['catalogRevision'] = (int)$v['id'];
+                    $payload['catalogSelection'] = $selection;
                     $resolved[$cacheKey] = CapacityCharge::attach(self::apply($payload, $p), $key);
                 }
                 $out['byDate'][$key] = $resolved[$cacheKey];
@@ -310,7 +332,7 @@ final class ClientTariffs
         foreach ($history['byDate'] as &$tariff) {
             if ($tariff === null) continue;
             $capacityYear = $tariff['capacity_charge']['year'] ?? 'base';
-            $key = $tariff['clientPeriodId'] . ':' . $tariff['catalogRevision'] . ':' . $capacityYear;
+            $key = $tariff['clientPeriodId'] . ':' . $tariff['catalogRevision'] . ':' . $capacityYear . ':' . (int)($tariff['catalogSelection']['estimated'] ?? false);
             $tariffs[$key] = $tariff;
             $tariff = $key;
         }

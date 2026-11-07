@@ -54,7 +54,7 @@ function fixture(options: {
         calls.push({ operation: 'load', value: { id, user } });
         if (options.notFound) throw new OfferWorkspaceNotFoundError('Nie znaleziono projektu');
         if (options.conflict) return { revision: 'c'.repeat(64) };
-        return { revision: 'a'.repeat(64), input: { location: { latitude: 52, longitude: 17 }, existingBatteryPresent: true, existingBatteryKwh: 8.5 } };
+        return { revision: 'a'.repeat(64), clientName: 'Łukasz Żółć', input: { location: { latitude: 52, longitude: 17 }, existingBatteryPresent: true, existingBatteryKwh: 8.5 } };
       },
     },
     'lib/onrevolt/offer-workspace': {
@@ -107,10 +107,9 @@ function fixture(options: {
     },
     'lib/onrevolt/client-tariffs': { tariffToday: () => '2026-10-29' },
     'lib/onrevolt/offer-workspace-calculation-jobs': {
-      findCompletedOfferCalculationPersistent: async (input: unknown) => {
+      findSavedOfferCalculation: async (input: unknown) => {
         calls.push({ operation: 'calculation', value: input });
-        return (input as { sourceDependencyStamp: string | null }).sourceDependencyStamp == null
-          ? null : options.calculation ?? null;
+        return options.calculation ?? null;
       },
     },
     'lib/onrevolt/offer-pdf': {
@@ -264,11 +263,13 @@ test('PDF is rendered from ten authoritative SVG pages, never browser-supplied p
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'application/pdf');
   assert.match(response.headers.get('content-disposition')!, /oferta-robocza/);
+  const encodedFilename = response.headers.get('content-disposition')!.match(/filename\*=UTF-8''([^;]+)/)![1];
+  assert.equal(decodeURIComponent(encodedFilename), 'oferta-robocza-Łukasz-Żółć_29_10_2026.pdf');
   assert.equal(state.calls.find(call => call.operation === 'pdf')?.value, 10);
   assert.equal((state.calls.find(call => call.operation === 'pdf') as any)?.pages[0], '<svg data-map="embedded"/>');
 });
 
-test('document uses only completed server calculation scoped to actor, project and source revision', async () => {
+test('document uses the saved server calculation scoped to actor, project and exact draft', async () => {
   const calculation = { status: 'ready', annualSavingsPln: 123 };
   const state = fixture({ calculation });
   const draft = { schemaVersion: 1 };
@@ -277,8 +278,7 @@ test('document uses only completed server calculation scoped to actor, project a
   });
   assert.equal(response.status, 200);
   assert.deepEqual(JSON.parse(JSON.stringify(state.calls.find(call => call.operation === 'calculation')!.value)), {
-    actorId: 'seller', projectId: 'project-1', sourceRevision: 'a'.repeat(64), draft: { ...draft, existingBatteryPresent: true },
-    pricesAsOf: '2026-10-29', sourceDependencyStamp: dependencyStamp,
+    actorId: 'seller', projectId: 'project-1', draft: { ...draft, existingBatteryPresent: true },
   });
   assert.equal(state.calls.find(call => call.operation === 'render')!.value.workspace.calculation, calculation);
 });
@@ -292,7 +292,7 @@ test('PDF refuses stale source and model failure instead of hiding missing calcu
   assert.equal(failed.calls.some(call => call.operation === 'pdf'), false);
 });
 
-test('PDF rejects dependency changes during rendering and null stamps never restore persisted financials', async () => {
+test('PDF detects data changes during rendering but saved financial results survive unavailable current tariff stamps', async () => {
   const changed = fixture({ dependencyStamps: [dependencyStamp, 'e'.repeat(64)] });
   const changedResponse = await changed.exports.POST(changed.request({
     draft: {}, format: 'pdf-draft', sourceRevision: 'a'.repeat(64),
@@ -305,8 +305,7 @@ test('PDF rejects dependency changes during rendering and null stamps never rest
     params: Promise.resolve({ id: 'project-1' }),
   });
   assert.equal(incompleteResponse.status, 200);
-  assert.equal(incomplete.calls.find(call => call.operation === 'calculation')?.value.sourceDependencyStamp, null);
-  assert.equal(incomplete.calls.find(call => call.operation === 'render')?.value.workspace.calculation, undefined);
+  assert.equal(incomplete.calls.find(call => call.operation === 'render')?.value.workspace.calculation.annualSavingsPln, 999);
 });
 
 test('dependency database failures return an error instead of rendering without a calculation', async () => {

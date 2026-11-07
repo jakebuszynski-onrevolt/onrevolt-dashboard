@@ -401,11 +401,14 @@ test('energy-summary uses the selected period in queries, validation and respons
     'removing a test offer draft cannot make the energy-data battery status unknown');
 
   state.accounts = [{ id: 'pge-account', ppeNumber: '590310600030743962', operator: 'PGE' }];
+  Object.assign(state.project.energyAudits[0], {profileSource: 'ANNUAL_DECLARATION', annualConsumptionKwh: 10000, existingPvKw: 0, existingBatteryKwh: 0});
   state.measurementQuery = null;
   const pgeResponse = await exports.GET({}, { params: Promise.resolve({ id: 'project-1' }) });
   const pgeBody = await pgeResponse.json();
   assert.equal(pgeResponse.status, 200);
-  assert.deepEqual(pgeBody.data.issues, ['Import pomiarów godzinowych dla operatora PGE nie jest jeszcze obsługiwany.']);
+  assert.ok(!pgeBody.data.issues.some((issue: string) => issue.includes('Import pomiarów')));
+  assert.equal(pgeBody.data.annualModel.source, 'MODELLED');
+  assert.ok(Math.abs(pgeBody.data.annualModel.months.reduce((sum: number, month: any) => sum + month.loadKwh, 0) - 10000) < 1e-6);
   assert.equal(state.measurementQuery, null, 'PGE files must not be passed to the ENEA-only parser');
   assert.ok(pgeBody.data.cost, 'lack of a supported measurement import must not skip tariff pricing');
   assert.ok(pgeBody.data.months.every((month: any) => month.importKwh === null && month.exportKwh === null));
