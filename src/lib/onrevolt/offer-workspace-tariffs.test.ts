@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { offerTariffCatalogKey, resolveCurrentOfferTariff } from './offer-workspace-tariffs';
+import { offerTariffCatalogKey, resolveCurrentOfferTariff, resolveOfferGeneralTariff } from './offer-workspace-tariffs';
 import type { ClientTariffPayload, ClientTariffPeriod } from './client-tariffs';
 
 const period = (patch: Partial<ClientTariffPeriod> = {}): ClientTariffPeriod => ({
@@ -14,6 +14,18 @@ const period = (patch: Partial<ClientTariffPeriod> = {}): ClientTariffPeriod => 
   schedule: null,
   note: '',
   ...patch,
+});
+
+test('taryfa CRM bez identyfikatorów jest dopasowana po operatorze i kodzie, nie po taryfie scenariusza', () => {
+  const catalog = [
+    { id: 1, name: 'ENEA', slug: 'enea', tariffs: [{ id: 10, code: 'G11', name: 'G11' }] },
+    { id: 2, name: 'PGE', slug: 'pge', tariffs: [{ id: 20, code: 'G11', name: 'G11' }] },
+  ];
+  assert.deepEqual(resolveOfferGeneralTariff({ operator: 'enea', code: ' G11 ' }, catalog), { operator: 'enea', code: ' G11 ', osdId: 1, tariffId: 10 });
+  assert.equal(resolveOfferGeneralTariff({ operator: 'PGE', code: 'G11' }, catalog)?.tariffId, 20);
+  assert.equal(resolveOfferGeneralTariff({ operator: '', code: 'G11' }, catalog), null);
+  assert.equal(resolveOfferGeneralTariff({ operator: 'ENEA', code: 'nieznana' }, catalog), null);
+  assert.equal(resolveOfferGeneralTariff({ operator: 'ENEA', code: 'G11' }, [...catalog, catalog[0]]), null);
 });
 
 test('bieżące stawki pochodzą wyłącznie z okresu historycznego obowiązującego w podanej dacie', () => {

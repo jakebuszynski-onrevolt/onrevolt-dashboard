@@ -1,4 +1,18 @@
-import type { ClientTariffPayload, ClientTariffPeriod } from './client-tariffs';
+import type { ClientTariffData, ClientTariffPayload, ClientTariffPeriod, GeneralTariffSelection } from './client-tariffs';
+
+export function resolveOfferGeneralTariff(selection: GeneralTariffSelection | null | undefined, catalog: ClientTariffData['catalog']): GeneralTariffSelection | null {
+  if (!selection) return null;
+  if (selection.osdId && selection.tariffId) return selection;
+  const normalized = (value: string) => value.trim().toLocaleUpperCase('pl-PL');
+  const operators = catalog.filter(operator => selection.osdId
+    ? operator.id === selection.osdId
+    : normalized(operator.name) === normalized(selection.operator) || normalized(operator.slug) === normalized(selection.operator));
+  if (operators.length !== 1) return null;
+  const tariffs = operators[0].tariffs.filter(tariff => selection.tariffId
+    ? tariff.id === selection.tariffId : normalized(tariff.code) === normalized(selection.code));
+  if (tariffs.length !== 1) return null;
+  return { ...selection, osdId: operators[0].id, tariffId: tariffs[0].id };
+}
 
 export type OfferTariffRateState =
   | { status: 'loading' }

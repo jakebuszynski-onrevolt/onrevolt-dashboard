@@ -123,16 +123,27 @@ export function offerSystemExpandedPanels(currentRates: OfferTariffRateState, ta
   return currentRates.status === 'ready' && targetRates.status === 'ready' ? [0] : [0, 1];
 }
 
+export function offerSystemIssues(workspace: WorkspaceData, draft: OfferWorkspaceDraft): string[] {
+  const annualModel = workspace.energy?.modelledMeasurements?.provenance.kind === 'annual-consumption';
+  const measurementIssues = annualModel ? workspace.measurements.issues.filter(issue => ![
+    'Konto ENEA nie ma zapisanego numeru PPE.', 'Nie znaleziono konta ENEA przypisanego do projektu.',
+    'Brak pobranych miesięcznych plików ENEA w okresie ', 'Model rocznego zużycia:',
+    'Import pomiarów godzinowych dla operatora ',
+  ].some(prefix => issue.startsWith(prefix))) : workspace.measurements.issues;
+  const issues = [...workspace.input.issues.filter(issue =>
+    !(draft.existingPv.powerKw != null && issue.startsWith('Brak potwierdzonej mocy istniejącej PV'))
+    && !(workspace.energy?.totals.loadKwh != null && issue.startsWith('Brak zapisanej rocznej deklaracji zużycia'))),
+    ...measurementIssues, ...(workspace.energy?.issues || []), ...(workspace.energyError ? [workspace.energyError] : []),
+    ...(workspace.draft && workspace.draft.sourceRevision !== workspace.revision ? ['Dane projektu lub katalogu zmieniły się od zapisu szkicu. Obliczenia zachowują ręczne założenia PV ze szkicu; sprawdź je przed kolejnym zapisem.'] : [])];
+  return [...new Set(issues)];
+}
+
 export function OfferSystemScreen(props: SharedProps & { tariffError: string }) {
   const { workspace, draft, tariffs, disabled, onChange, currentTariffRates, targetTariffRates } = props;
   const c = useOfferColors();
   const [expanded, setExpanded] = useState<number[] | null>(null);
   const operator = tariffs?.catalog.find((item) => item.id === draft.targetOperatorId);
-  const issues = [...workspace.input.issues.filter(issue =>
-    !(draft.existingPv.powerKw != null && issue.startsWith('Brak potwierdzonej mocy istniejącej PV'))
-    && !(workspace.energy?.totals.loadKwh != null && issue.startsWith('Brak zapisanej rocznej deklaracji zużycia'))),
-    ...workspace.measurements.issues, ...(workspace.energy?.issues || []), ...(workspace.energyError ? [workspace.energyError] : []),
-    ...(workspace.draft && workspace.draft.sourceRevision !== workspace.revision ? ['Dane projektu lub katalogu zmieniły się od zapisu szkicu. Obliczenia zachowują ręczne założenia PV ze szkicu; sprawdź je przed kolejnym zapisem.'] : [])];
+  const issues = offerSystemIssues(workspace, draft);
   const selectedIsDifferent = draft.existingPv.powerKw !== 0 && draft.currentSettlement !== props.actualSettlement;
   return <OfferScreen>
     <Section title="Stan aktualny" hideHeading>

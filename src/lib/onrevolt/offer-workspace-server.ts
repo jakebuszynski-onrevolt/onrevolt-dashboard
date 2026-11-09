@@ -45,6 +45,7 @@ export type OfferWorkspaceInput = {
     plannedHighLoadDevices?: string | null;
   };
   existingPv: { powerKw: number | null; tiltDegrees: number | null; azimuthDegrees: number | null } | null;
+  roofGeometry?: { tiltDegrees: number | null; azimuthDegrees: number | null };
   existingBatteryKwh?: number | null;
   existingBatteryPresent?: boolean | null;
   location: OfferWorkspaceLocation | null;
@@ -594,7 +595,7 @@ export function createServerOfferWorkspacePricingSnapshot(
   // groups exist. Calculation and document generation validate the final layout.
   if (input.commercialPricing?.schemaVersion === 1) {
     const { calculateOfferCommercialPricing } = require('./offer-workspace-commercial-pricing') as typeof import('./offer-workspace-commercial-pricing');
-    try { calculateOfferCommercialPricing(pricing, effectiveTemplates.filter(template => selected.has(template.id)), input.commercialPricing); }
+    try { calculateOfferCommercialPricing(pricing, effectiveTemplates.filter(template => selected.has(template.id)), input.commercialPricing, input.targetSettlement); }
     catch (error) { throw new OfferWorkspaceConflictError(error instanceof Error ? error.message : 'Nieprawidłowy podział kosztorysu oferty.'); }
   }
   return createPricingSnapshotFromResult(input, clientType, pricing, effectiveTemplates.filter((template) => selected.has(template.id)));
@@ -709,6 +710,10 @@ export async function loadProjectOfferWorkspace(
     powerKw: finiteOrNull(energyAudit.existingPvKw), tiltDegrees: roofTiltDegrees, azimuthDegrees: roofAzimuth,
   } : null;
   const input: OfferWorkspaceInput = {
+    roofGeometry: {
+      tiltDegrees: canReadEnergy ? finiteOrNull(energyAudit?.roofTiltDeg) : null,
+      azimuthDegrees: canReadEnergy ? roofAzimuthDegrees(energyAudit?.roofOrientation) : null,
+    },
     reportDetails: {
       email: textOrNull(project.client.contacts?.[0]?.email),
       phone: textOrNull(project.client.contacts?.[0]?.phone),

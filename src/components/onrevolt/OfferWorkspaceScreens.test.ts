@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { offerSavingsFinancialRows, offerSystemExpandedPanels, offerWorkspaceCalculationPresentation } from './OfferWorkspaceScreens';
+import { offerSavingsFinancialRows, offerSystemExpandedPanels, offerWorkspaceCalculationPresentation, offerSystemIssues } from './OfferWorkspaceScreens';
+import { emptyOfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
 import type { OfferBillingMonthResult } from 'lib/onrevolt/offer-workspace-billing';
 import type { OfferWorkspaceCalculation } from 'lib/onrevolt/offer-workspace-calculation-types';
 import type { OfferTariffRateState } from 'lib/onrevolt/offer-workspace-tariffs';
@@ -11,6 +12,19 @@ const readyRates: OfferTariffRateState = { status: 'ready', tariff: {} as Extrac
 const loadingRates: OfferTariffRateState = { status: 'loading' };
 const unavailableRates: OfferTariffRateState = { status: 'unavailable', message: 'Brak taryfy.' };
 const screensSource = readFileSync(path.resolve(__dirname, 'OfferWorkspaceScreens.tsx'), 'utf8');
+
+test('gotowy model rocznej deklaracji pokazuje jedną informację zamiast ostrzeżeń o brakujących pomiarach', () => {
+  const note = 'Zużycie jest szacowane z jawnej rocznej deklaracji według profilu referencyjnego Household. Import, oddanie, autokonsumpcja i produkcja PV są modelowane; nie są pomiarami.';
+  const measurementIssues = ['Konto ENEA nie ma zapisanego numeru PPE.', 'Brak pobranych miesięcznych plików ENEA w okresie 2025-06–2026-05.',
+    'Model rocznego zużycia: Roczne zużycie · profil referencyjny Household. To profil szacunkowy, nie dane pomiarowe.'];
+  const workspace = { input: { issues: [] }, measurements: { issues: measurementIssues },
+    energy: { issues: [note], modelledMeasurements: { provenance: { kind: 'annual-consumption' } } } } as any;
+  assert.deepEqual(offerSystemIssues(workspace, emptyOfferWorkspaceDraft()), [note]);
+  workspace.measurements.issues.push('Plik pomiarowy jest uszkodzony.');
+  assert.deepEqual(offerSystemIssues(workspace, emptyOfferWorkspaceDraft()), ['Plik pomiarowy jest uszkodzony.', note]);
+  workspace.energy = null;
+  assert.deepEqual(offerSystemIssues(workspace, emptyOfferWorkspaceDraft()), measurementIssues, 'brak modelu nie ukrywa braków pomiarów');
+});
 
 test('status magazynu jest tylko do odczytu i odsyła do Danych energetycznych', () => {
   assert.match(screensSource, /Istniejący magazyn energii · Dane energetyczne/u);

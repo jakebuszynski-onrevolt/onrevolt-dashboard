@@ -4,10 +4,12 @@ Ilustracje od użytkownika (2026-11-05):
 - `powerbrick-plus.png`: niezmieniony `C:\Users\Arczi\Desktop\Magazyn3.png`, zastępujący 2026-11-06 wcześniejszy `Magazyn.png`. Obraz nie zawiera nadrukowanych wymiarów; renderer SVG składa trzy strzałki oraz etykiety dla jednego modułu (435 × 235 × 850 mm), a podpis podaje także liczbę oferowanych sztuk.
 - `stack-source.png`: zachowany oryginał `C:\Users\Arczi\Desktop\Magazyn (1).png`.
 - `stack-dimensions-blank.png`: kopia przygotowana imagegen z usuniętymi napisami „XX cm”; tekst wymiarów składa renderer SVG.
-- `stack314.png`: niezmieniony oryginał `C:\Users\Arczi\Desktop\Dynes_314.png`, otrzymany 2026-11-06. Zdjęcie jest poglądowe; renderer SVG rysuje wymiary wyliczone z konfiguracji STACK314.
+- `stack314.png`: niezmieniony oryginał `C:\Users\Arczi\Desktop\dynes 314_przy oknie.png`, wskazany 2026-11-08. Zdjęcie jest poglądowe; renderer SVG rysuje wymiary wyliczone z konfiguracji STACK314.
 - `cabinet-bf100.png`: niezmieniony oryginał `C:\Users\Arczi\Desktop\magazyn cabinet.png`, otrzymany 2026-11-06. Zdjęcie jest poglądowe i nie stanowi potwierdzenia, że przedstawia dokładny model BF100; renderer SVG rysuje strzałki i etykiety wymiarów jednej szafy.
 
 Zdjęcia są poglądowe. Liczba modułów i wymiary wynikają z pozycji wybranego zestawu, nie z liczby modułów widocznych na ilustracji. Użytkownik zatwierdził podział STACK100/PRO: 12 → 8+4, 14 → 8+6, 16 → 8+8. Przy dwóch BDU każda kolumna ma własną podstawę i BDU; przy jednym BDU druga używa zestawu rozszerzającego.
+
+Zdjęcie Cabinet potwierdzono ponownie 2026-11-08. Jest wybierane także dla SKU C100E oraz nazwy zawierającej „Cabinet”. W takich przypadkach nie przypisujemy wymiarów C100 do innego modelu.
 
 Źródła wymiarów (mm):
 - PowerBrick Plus: [karta Dyness 2025-12-10](https://dyness.com/Public/Uploads/uploadfile/files/20251226/DynessPowerBrickPlusDatasheetEN20251210.pdf), 435 × 235 × 850 mm na moduł (podane na strzałkach i w podpisie ilustracji).

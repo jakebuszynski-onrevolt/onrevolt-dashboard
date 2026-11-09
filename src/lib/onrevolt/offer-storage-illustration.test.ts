@@ -51,3 +51,19 @@ test('cabinet quantity does not multiply one-cabinet dimensions or select an ima
   ]), ['storage'])!;
   assert.equal(mixed.dataUrl, null);
 });
+
+
+test('Cabinet C100E i nazwa Cabinet wybierają zdjęcie bez zgadywania wymiarów; 314Ah nie oznacza STACK314', () => {
+  for (const sku of ['ES-Dyness-BF100-C100E-EU', 'OTHER-CABINET']) {
+    const templates = template([[sku, 1]]);
+    templates[0].name = 'Solis S6 20kW + BF100 Battery Cabinet C100E';
+    Object.assign(templates[0].items[0].product!, { name: 'Battery Cabinet, 314Ah, 100kWh', category: 'MAGAZYN_ENERGII' });
+    const result = resolveOfferStorageIllustration(templates, ['storage'])!;
+    assert.equal(result.family, 'Cabinet');
+    assert.equal(result.dimensions, null);
+    assert.equal(result.missingReason, null);
+    assert.equal(result.dataUrl, 'data:image/png;base64,' + readFileSync('assets/offer-storage/cabinet-bf100.png').toString('base64'));
+  }
+  const mixed = template([['ES-Dyness-BF100-C100E-EU', 1], ['ES-Dyness-STACK314-16.04kWh-EU', 3]]);
+  assert.equal(resolveOfferStorageIllustration(mixed, ['storage'])?.dataUrl, null);
+});

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   initialDraft,
+  offerDraftWithDefaultVat,
+  offerDraftWithClientPvGeometry,
   isCurrentOfferWorkspaceCalculationRequest,
   offerWorkspaceCalculationRestoreOrder,
   beginOfferWorkspaceCalculationState,
@@ -19,6 +21,44 @@ import {
   staleOfferWorkspaceCalculationState,
 } from './OfferWorkspacePanel';
 import { defaultOfferCalculationAssumptions, emptyOfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
+
+test('dodatkowa PV korzysta z geometrii klienta; własne wartości, w tym zero, pozostają zachowane', () => {
+  const draft = { ...emptyOfferWorkspaceDraft(), pvStrategy: 'ADD_TEMPLATE' as const };
+  const roofGeometry = { tiltDegrees: 15, azimuthDegrees: 200 };
+  const initialized = offerDraftWithClientPvGeometry(draft, roofGeometry);
+  assert.equal(initialized.calculation?.addedPvTiltDegrees, 15);
+  assert.equal(initialized.calculation?.addedPvAzimuthDegrees, 200);
+  const manual = { ...initialized, calculation: { ...initialized.calculation!, addedPvTiltDegrees: 0, addedPvAzimuthDegrees: 90 } };
+  assert.equal(offerDraftWithClientPvGeometry(manual, { tiltDegrees: 40, azimuthDegrees: 180 }), manual);
+  const partial = { ...manual, calculation: { ...manual.calculation, addedPvAzimuthDegrees: null } };
+  assert.equal(offerDraftWithClientPvGeometry(partial, roofGeometry).calculation?.addedPvTiltDegrees, 0);
+  assert.equal(offerDraftWithClientPvGeometry(partial, roofGeometry).calculation?.addedPvAzimuthDegrees, 200);
+  assert.equal(offerDraftWithClientPvGeometry(draft, undefined), draft);
+  assert.equal(offerDraftWithClientPvGeometry(draft, { tiltDegrees: null, azimuthDegrees: null }), draft);
+  const batteryOnly = emptyOfferWorkspaceDraft();
+  assert.equal(offerDraftWithClientPvGeometry(batteryOnly, roofGeometry), batteryOnly, 'otwarcie oferty bez dodatkowej PV nie zmienia jej założeń ani tożsamości wyniku');
+  const workspace = { clientType: 'B2C', input: { roofGeometry, existingBatteryPresent: false }, draft: { input: draft } } as any;
+  assert.equal(initialDraft(workspace, null).calculation?.addedPvTiltDegrees, 15);
+  assert.equal(initialDraft(workspace, null).calculation?.addedPvAzimuthDegrees, 200);
+  const existingPv = { ...draft.existingPv, tiltDegrees: 15, azimuthDegrees: 200 };
+  const clientPv = offerDraftWithClientPvGeometry({ ...draft, existingPv }, { tiltDegrees: null, azimuthDegrees: 180 });
+  assert.equal(clientPv.calculation?.addedPvTiltDegrees, 15);
+  assert.equal(clientPv.calculation?.addedPvAzimuthDegrees, 200, 'dokładny zapis parametrów PV ma pierwszeństwo przed ogólnym kierunkiem dachu');
+});
+
+test('nieustalony VAT przyjmuje uzgodnioną stawkę B2C/B2B; jawne stawki pozostają bez zmian', () => {
+  const draft = emptyOfferWorkspaceDraft();
+  for (const [clientType, vat] of [['B2C', 'REDUCED_8'], ['B2B', 'STANDARD_23'], ['UNKNOWN', 'REVIEW']]) {
+    const workspace = { clientType, input: { existingBatteryPresent: false } } as any;
+    assert.equal(initialDraft(workspace, null).saleVatMode, vat);
+    assert.equal(initialDraft({ ...workspace, draft: { input: draft } }, null).saleVatMode, vat);
+    assert.equal(offerDraftWithDefaultVat(draft, clientType).saleVatMode, vat);
+  }
+  for (const saleVatMode of ['REDUCED_8', 'STANDARD_23', 'MIXED'] as const) {
+    for (const clientType of ['B2C', 'B2B']) assert.equal(offerDraftWithDefaultVat({ ...draft, saleVatMode }, clientType).saleVatMode, saleVatMode);
+  }
+  assert.equal(draft.saleVatMode, 'REVIEW', 'odczyt nie zmienia zapisanego obiektu');
+});
 
 test('edycja kosztorysu unieważnia wybrany wynik i nie przywraca katalogowej rekomendacji', () => {
   const draft = { ...emptyOfferWorkspaceDraft(), selectedTemplateIds: ['battery'],

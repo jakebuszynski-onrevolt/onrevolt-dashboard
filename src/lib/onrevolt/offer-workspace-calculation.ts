@@ -116,7 +116,7 @@ export async function calculateOfferWorkspaceScenario(input: OfferCalculationInp
   const incomplete: string[] = [];
   let commercialPricing: OfferWorkspaceCommercialPricingResult | null = null;
   if (draft.commercialPricing) {
-    try { commercialPricing = calculateOfferCommercialPricing(pricing, selected, draft.commercialPricing); }
+    try { commercialPricing = calculateOfferCommercialPricing(pricing, selected, draft.commercialPricing, draft.targetSettlement); }
     catch (error) { reasons.push(error instanceof Error ? error.message : 'Nieprawidłowy podział kosztorysu oferty.'); }
   }
   if (selected.filter(template => configurationInvestmentScope(template.kind) === 'BATTERY').length > 1

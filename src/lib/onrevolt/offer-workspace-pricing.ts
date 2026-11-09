@@ -36,6 +36,7 @@ export type OfferWorkspacePricingTemplate = {
   id: string;
   name: string;
   kind?: string;
+  capacityKwh?: number | null;
   items: OfferWorkspacePricingItem[];
 };
 

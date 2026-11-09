@@ -331,3 +331,48 @@ test('sumowanie modułów zachowuje dokładny zakup netto mimo zaokrągleń VAT 
   assert.equal(result.rows[4].amountNet, 200.03);
   assert.equal(result.rows[4].amountGross, 216.03);
 });
+
+
+test('B2C: pełny limit z własnej ceny magazynu zachowuje sprzedaż falownika i modułów', () => {
+  const storage = selectedTemplate({ capacityKwh: 100 });
+  storage.items[0].unitSaleNet = 60000;
+  const templates = [storage, pvTemplate()];
+  const pricing = priceOfferWorkspaceConfiguration(templates, 'REDUCED_8', 'B2C');
+  const result = calculateOfferCommercialPricing(pricing, templates, automaticOfferCommercialBreakdown(), 'NET_BILLING');
+  assert.equal(result.preservedEquipmentSalePrices, true);
+  assert.equal(result.rows[1].amountGross, 8000);
+  assert.equal(result.rows[1].amountNet, saleNets.inverter);
+  assert.equal(result.rows[4].amountGross, 6480);
+  assert.equal(result.rows[4].amountNet, 6000);
+  assert.equal(result.batteryEligibleGross, 64800);
+  assert.equal(result.transferredInverterSaleGross, 0);
+  assert.equal(result.transferredPvSaleGross, 6480); // only construction, cables and labour
+  assert.equal(result.rows[0].amountGross, 71280);
+  assert.equal(Math.round(result.rows.reduce((sum, row) => sum + row.amountGross, 0) * 100), Math.round(pricing.totals!.saleGross * 100));
+  assert.equal(Math.round(result.rows.reduce((sum, row) => sum + row.amountNet, 0) * 100), Math.round(pricing.totals!.saleNet * 100));
+  const b2b = calculateOfferCommercialPricing(priceOfferWorkspaceConfiguration(templates, 'STANDARD_23', 'B2B'), templates, automaticOfferCommercialBreakdown(), 'NET_BILLING');
+  assert.equal(b2b.preservedEquipmentSalePrices, false);
+});
+
+test('limit uwzględnia pojemność i rozliczenie; PV nie zastępuje brakującej podstawy magazynu', () => {
+  const templates = [selectedTemplate({ capacityKwh: 100 }), pvTemplate()];
+  const pricing = priceOfferWorkspaceConfiguration(templates, 'REDUCED_8', 'B2C');
+  const calculate = (settlement?: string) => calculateOfferCommercialPricing(pricing, templates, automaticOfferCommercialBreakdown(), settlement);
+  assert.equal(calculate('NET_BILLING').preservedEquipmentSalePrices, false);
+  assert.equal(calculate('NET_METERING').preservedEquipmentSalePrices, true);
+  assert.equal(calculate().preservedEquipmentSalePrices, false);
+  templates[0].capacityKwh = 10;
+  assert.equal(calculate('NET_BILLING').preservedEquipmentSalePrices, true);
+  templates[0].capacityKwh = 9;
+  assert.equal(calculate('NET_BILLING').preservedEquipmentSalePrices, false);
+});
+
+test('próg pełnych 16000 zł: 53333,33 zł nie wystarcza, 53333,34 zł wystarcza', () => {
+  for (const [gross, expected] of [[53333.33, false], [53333.34, true]] as const) {
+    const storage = selectedTemplate({ capacityKwh: 100 });
+    storage.items[0].unitSaleNet = gross / 1.08;
+    const pricing = priceOfferWorkspaceConfiguration([storage], 'REDUCED_8', 'B2C');
+    const result = calculateOfferCommercialPricing(pricing, [storage], automaticOfferCommercialBreakdown(), 'NET_BILLING');
+    assert.equal(result.preservedEquipmentSalePrices, expected);
+  }
+});

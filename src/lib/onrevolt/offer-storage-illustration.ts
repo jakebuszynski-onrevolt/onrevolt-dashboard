@@ -31,8 +31,8 @@ function missing(reason: string): OfferStorageIllustration {
   return { family: null, dataUrl: null, caption: '', dimensions: null, missingReason: reason };
 }
 
-/** The exact module SKUs select the illustration; capacity/name approximations
- * must never substitute another battery family. Dimensions: see asset SOURCES.md. */
+/** Exact SKUs determine dimensions. Cabinet names also select the user-approved
+ * cabinet photo, without borrowing dimensions from another model. */
 export function resolveOfferStorageIllustration(
   templates: OfferWorkspaceTemplate[], selectedTemplateIds: string[],
 ): OfferStorageIllustration | null {
@@ -41,6 +41,17 @@ export function resolveOfferStorageIllustration(
   if (selected.length !== 1) return missing('Wybierz jeden zestaw magazynu do ilustracji.');
   const items = selected[0].items;
   const matching = families.filter(family => items.some(item => item.product?.sku === family.module));
+  const namedCabinet = /\bcabinet\b/i.test(selected[0].name ?? '') || items.some(item =>
+    item.product?.sku === 'ES-Dyness-BF100-C100E-EU'
+    || (['MAGAZYN_ENERGII', 'BATTERY'].includes(item.product?.category ?? '')
+      && /\bcabinet\b/i.test(`${item.product?.name ?? ''} ${item.description ?? ''}`)));
+  if (namedCabinet && matching.length === 0) {
+    return { family: 'Cabinet', dataUrl: image('cabinet-bf100.png'), dimensions: null,
+      caption: 'Ilustracja poglądowa · Cabinet', missingReason: null };
+  }
+  if (namedCabinet && matching.some(model => model.family !== 'BF100 (cabinet)')) {
+    return missing('Nazwa Cabinet jest sprzeczna z modelem modułów magazynu w zestawie.');
+  }
   if (matching.length !== 1) return missing('Brak przypisanej ilustracji dla modelu magazynu w wybranym zestawie.');
   const model = matching[0];
   const quantity = (sku: string | null) => sku == null ? 0

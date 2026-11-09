@@ -1,3 +1,4 @@
+import { PME2_RULES } from './offer-financing-v2';
 import type {
   OfferWorkspacePricingLine,
   OfferWorkspacePricingResult,
@@ -50,6 +51,7 @@ export type OfferWorkspaceCommercialPricingResult = {
   batteryEligibleGross: number;
   transferredInverterSaleGross: number;
   transferredPvSaleGross: number;
+  preservedEquipmentSalePrices: boolean;
 };
 
 const groupLabels: Record<OfferWorkspaceCommercialGroup, string> = {
@@ -180,6 +182,7 @@ export function calculateOfferCommercialPricing(
   pricing: OfferWorkspacePricingResult,
   templates: OfferWorkspacePricingTemplate[],
   breakdown: OfferWorkspaceCommercialBreakdown | null | undefined,
+  targetSettlement?: string | null,
 ): OfferWorkspaceCommercialPricingResult {
   const parsedBreakdown = parseOfferWorkspaceCommercialBreakdown(breakdown);
   if (!parsedBreakdown) throw new Error('Podział ceny komercyjnej wymaga jawnych przypisań pozycji.');
@@ -229,9 +232,11 @@ export function calculateOfferCommercialPricing(
   let transportGrossCents = 0;
   let batteryFound = false;
   let pvPurchaseGrossCents = 0;
+  let originalPvGrossCents = 0;
   let pvTransferredGrossCents = 0;
   let commonVatRate: number | null = null;
   const sourceNetByGroup = new Map<OfferWorkspaceCommercialGroup, number>();
+  const originalNetByGroup = new Map<OfferWorkspaceCommercialGroup, number>();
   const hasPv = templates.some(template => template.kind?.startsWith('PV_'));
   const activeGroups = OFFER_WORKSPACE_COMMERCIAL_GROUPS.filter(group => group !== 'PV_MODULES' || hasPv);
 
@@ -275,6 +280,7 @@ export function calculateOfferCommercialPricing(
     const netCents = group === 'INVERTER' || group === 'PV_MODULES'
       ? roundCents(line.calculation.purchaseNet, 'Zakup netto pozycji') : lineNetCents;
     sourceNetByGroup.set(group, (sourceNetByGroup.get(group) || 0) + netCents);
+    originalNetByGroup.set(group, (originalNetByGroup.get(group) || 0) + lineNetCents);
     const groupSources = sourceReferencesByGroup.get(group)!;
     groupSources.push(sourceReference);
 
@@ -288,6 +294,7 @@ export function calculateOfferCommercialPricing(
     } else if (group === 'PV_MODULES') {
       const purchaseCents = Math.round((line.calculation.purchaseNet * (1 + line.saleVatRate) + Number.EPSILON) * 100);
       pvPurchaseGrossCents += purchaseCents;
+      originalPvGrossCents += lineGrossCents;
       pvTransferredGrossCents += lineGrossCents - purchaseCents;
     } else if (group === 'EMS') {
       emsGrossCents += lineGrossCents;
@@ -327,13 +334,27 @@ export function calculateOfferCommercialPricing(
   const totalNetCents = roundCents(pricing.totals.saleNet, 'Łączna cena netto');
   assertEqualCents(includedGrossCents, totalGrossCents, 'Łączna cena brutto');
   assertEqualCents(includedNetCents, totalNetCents, 'Łączna cena netto');
-  const inverterGroupGrossCents = inverterPurchaseGrossCents;
+  // Check the storage's own eligible price before moving any equipment margin.
+  // PV construction/labour remain outside the grant basis even when shown in storage.
+  const storageTemplates = templates.filter(template => template.kind === 'MAGAZYN');
+  const capacity = storageTemplates.length === 1 ? storageTemplates[0].capacityKwh : null;
+  const settlementCap = targetSettlement === 'NET_BILLING' ? PME2_RULES.maximumNetBillingGrantGross
+    : targetSettlement === 'NET_METERING' ? PME2_RULES.maximumNetMeteringGrantGross : null;
+  const ownStorageGrossCents = totalGrossCents - originalInverterGrossCents - emsGrossCents
+    - transportGrossCents - pvPurchaseGrossCents - pvTransferredGrossCents;
+  const preservedEquipmentSalePrices = pricing.clientType === 'B2C'
+    && capacity != null && Number.isFinite(capacity) && capacity >= PME2_RULES.minimumBatteryCapacityKwh
+    && settlementCap != null
+    && ownStorageGrossCents * PME2_RULES.grantRate >= Math.min(settlementCap, capacity * PME2_RULES.grantPerKwhGross) * 100;
+  const inverterGroupGrossCents = preservedEquipmentSalePrices ? originalInverterGrossCents : inverterPurchaseGrossCents;
+  const pvGroupGrossCents = preservedEquipmentSalePrices ? originalPvGrossCents : pvPurchaseGrossCents;
+  if (preservedEquipmentSalePrices) pvTransferredGrossCents -= originalPvGrossCents - pvPurchaseGrossCents;
   const transferredInverterGrossCents = originalInverterGrossCents - inverterGroupGrossCents;
   if (transferredInverterGrossCents < 0) {
     throw new Error('Cena sprzedaży falownika nie pokrywa jego efektywnej ceny zakupu brutto przy wybranym VAT sprzedaży.');
   }
   if (pvTransferredGrossCents < 0) throw new Error('Cena sprzedaży PV nie pokrywa ceny zakupu modułów.');
-  const storageGrossCents = totalGrossCents - inverterGroupGrossCents - emsGrossCents - transportGrossCents - pvPurchaseGrossCents;
+  const storageGrossCents = totalGrossCents - inverterGroupGrossCents - emsGrossCents - transportGrossCents - pvGroupGrossCents;
   if (storageGrossCents < 0) throw new Error('Podział grup przekracza łączną cenę brutto.');
 
   const grossByGroup = new Map<OfferWorkspaceCommercialGroup, number>([
@@ -341,13 +362,14 @@ export function calculateOfferCommercialPricing(
     ['INVERTER', inverterGroupGrossCents],
     ['EMS', emsGrossCents],
     ['TRANSPORT', transportGrossCents],
-    ['PV_MODULES', pvPurchaseGrossCents],
+    ['PV_MODULES', pvGroupGrossCents],
   ]);
 
   const netByGroup = new Map<OfferWorkspaceCommercialGroup, number>();
   let assignedNetCents = 0;
   for (const group of activeGroups.filter(group => group !== 'STORAGE_INSTALLATION')) {
-    const amountNetCents = automatic ? sourceNetByGroup.get(group)!
+    const amountNetCents = preservedEquipmentSalePrices ? originalNetByGroup.get(group)!
+      : automatic ? sourceNetByGroup.get(group)!
       : Math.round((grossByGroup.get(group)! / (1 + commonVatRate!)) + Number.EPSILON);
     netByGroup.set(group, amountNetCents);
     assignedNetCents += amountNetCents;
@@ -373,5 +395,6 @@ export function calculateOfferCommercialPricing(
     batteryEligibleGross: money(Math.max(0, storageGrossCents - pvTransferredGrossCents)),
     transferredInverterSaleGross: money(transferredInverterGrossCents),
     transferredPvSaleGross: money(pvTransferredGrossCents),
+    preservedEquipmentSalePrices,
   };
 }

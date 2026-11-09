@@ -42,7 +42,7 @@ import type { OfferWorkspaceCalculation } from 'lib/onrevolt/offer-workspace-cal
 import { automaticOfferCommercialBreakdown } from 'lib/onrevolt/offer-workspace-commercial-pricing';
 import { recommendationInputIssues } from 'lib/onrevolt/offer-workspace-recommendation-inputs';
 import { tariffToday, type ClientTariffData, type ClientTariffPayload } from 'lib/onrevolt/client-tariffs';
-import { offerTariffCatalogKey, resolveCurrentOfferTariff, type OfferTariffRateState } from 'lib/onrevolt/offer-workspace-tariffs';
+import { offerTariffCatalogKey, resolveCurrentOfferTariff, resolveOfferGeneralTariff, type OfferTariffRateState } from 'lib/onrevolt/offer-workspace-tariffs';
 import OfferWorkspaceConfiguration from './OfferWorkspaceConfiguration';
 import type { OfferWorkspaceCalculationMode } from './OfferWorkspaceCalculationControls';
 import type { OfferWorkspaceEnergy } from 'lib/onrevolt/offer-workspace-energy';
@@ -150,6 +150,7 @@ export type WorkspaceData = {
       heatingSource: string | null; heatingDetails: string | null; supplier: string | null;
     };
     existingPv: { powerKw: number | null; tiltDegrees: number | null; azimuthDegrees: number | null } | null;
+    roofGeometry?: { tiltDegrees: number | null; azimuthDegrees: number | null };
     existingBatteryKwh: number | null;
     existingBatteryPresent: boolean | null;
     location: { address: string | null; latitude: number | null; longitude: number | null } | null;
@@ -361,10 +362,25 @@ function currentTariffLabel(data: TariffData | null) {
   return { label: 'Nie wybrano taryfy', source: 'Brak potwierdzonych danych' };
 }
 
+export function offerDraftWithDefaultVat(draft: OfferWorkspaceDraft, clientType: string): OfferWorkspaceDraft {
+  if (draft.saleVatMode !== 'REVIEW') return draft;
+  const saleVatMode = clientType === 'B2C' ? 'REDUCED_8' : clientType === 'B2B' ? 'STANDARD_23' : 'REVIEW';
+  return saleVatMode === draft.saleVatMode ? draft : { ...draft, saleVatMode };
+}
+
+export function offerDraftWithClientPvGeometry(draft: OfferWorkspaceDraft, geometry: WorkspaceData['input']['roofGeometry']): OfferWorkspaceDraft {
+  if (draft.pvStrategy !== 'ADD_TEMPLATE') return draft;
+  const calculation = draft.calculation ?? defaultOfferCalculationAssumptions();
+  const addedPvTiltDegrees = calculation.addedPvTiltDegrees ?? draft.existingPv.tiltDegrees ?? geometry?.tiltDegrees ?? null;
+  const addedPvAzimuthDegrees = calculation.addedPvAzimuthDegrees ?? draft.existingPv.azimuthDegrees ?? geometry?.azimuthDegrees ?? null;
+  if (addedPvTiltDegrees === calculation.addedPvTiltDegrees && addedPvAzimuthDegrees === calculation.addedPvAzimuthDegrees) return draft;
+  return { ...draft, calculation: { ...calculation, addedPvTiltDegrees, addedPvAzimuthDegrees } };
+}
+
 export function initialDraft(workspace: WorkspaceData, tariffs: TariffData | null): OfferWorkspaceDraft {
   const actualSettlement = workspace.input.existingPv?.powerKw === 0 ? null : parseSettlement(workspace.input.settlementMode);
   if (workspace.draft) {
-    const savedDraft = parseOfferWorkspaceDraft(workspace.draft.input);
+    const savedDraft = offerDraftWithClientPvGeometry(offerDraftWithDefaultVat(parseOfferWorkspaceDraft(workspace.draft.input), workspace.clientType), workspace.input.roofGeometry);
     return offerWorkspaceDraftWithBatteryPresence(
       { ...savedDraft, commercialPricing: savedDraft.commercialPricing ?? automaticOfferCommercialBreakdown(), currentSettlement: savedDraft.existingPv.powerKw === 0 ? null : savedDraft.currentSettlement ?? actualSettlement }, workspace.input.existingBatteryPresent ?? null,
     );
@@ -386,7 +402,7 @@ export function initialDraft(workspace: WorkspaceData, tariffs: TariffData | nul
     input.targetOperatorId = targetOsdId;
     input.targetTariffId = targetTariffId;
   }
-  return input;
+  return offerDraftWithClientPvGeometry(offerDraftWithDefaultVat(input, workspace.clientType), workspace.input.roofGeometry);
 }
 
 export function resolveDraftAfterSave<T>(
@@ -554,7 +570,7 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
     tariffs?.profile ? { periods: tariffs.profile.periods, resolved: tariffs.resolved } : null,
     tariffRateDate,
   ), [tariffs, tariffRateDate]);
-  const currentGeneralTariff = !currentRateResolution.hasHistory ? tariffs?.generalTariff : null;
+  const currentGeneralTariff = !currentRateResolution.hasHistory ? resolveOfferGeneralTariff(tariffs?.generalTariff, tariffs?.catalog || []) : null;
   const currentCatalogKey = offerTariffCatalogKey(currentGeneralTariff?.osdId, currentGeneralTariff?.tariffId, tariffRateDate);
   const targetCatalogKey = offerTariffCatalogKey(draft?.targetOperatorId, draft?.targetTariffId, tariffRateDate);
   const catalogLoadState: OfferTariffRateState = !tariffsLoaded
@@ -736,19 +752,22 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
 
       const serverDraft = initialDraft(data, tariffData);
       let nextDraft = serverDraft;
-      const upgradedCommercialLayout = Boolean(data.draft && !data.draft.input.commercialPricing);
-      let nextDirty = upgradedCommercialLayout;
+      const upgradedDraftDefaults = Boolean(data.draft && (!data.draft.input.commercialPricing || data.draft.input.saleVatMode !== serverDraft.saleVatMode
+        || (data.draft.input.calculation?.addedPvTiltDegrees ?? null) !== (serverDraft.calculation?.addedPvTiltDegrees ?? null)
+        || (data.draft.input.calculation?.addedPvAzimuthDegrees ?? null) !== (serverDraft.calculation?.addedPvAzimuthDegrees ?? null)));
+      let nextDirty = upgradedDraftDefaults;
       let nextConflict: DraftConflict = null;
       let nextExpectedRevision = data.draft?.revision || 0;
       try {
         const cachedText = !ignoreLocalCache && storageKey ? window.sessionStorage.getItem(storageKey) : null;
         if (refreshLocalDraft || cachedText) {
           let cached = refreshLocalDraft || JSON.parse(cachedText!) as LocalDraftCache;
+          cached = { ...cached, input: offerDraftWithClientPvGeometry(offerDraftWithDefaultVat(parseOfferWorkspaceDraft(cached.input), data.clientType), data.input.roofGeometry) };
           if (data.canEditConfigurationItems !== true) cached = { ...cached, input: { ...cached.input,
             configurationEdits: serverDraft.configurationEdits } };
           const resolved = resolveCachedOfferDraft(serverDraft, data.revision, data.draft?.revision || 0, cached);
           nextDraft = resolved.input;
-          nextDirty = resolved.dirty || upgradedCommercialLayout;
+          nextDirty = resolved.dirty || upgradedDraftDefaults;
           nextExpectedRevision = resolved.expectedRevision;
           nextConflict = resolved.conflict;
           if (!nextDirty && storageKey) window.sessionStorage.removeItem(storageKey);
@@ -832,13 +851,15 @@ export default function OfferWorkspacePanel({ projectId, actorId, onBack, canEdi
     editSequence.current += 1;
     setDraft((current) => {
       if (!current) return current;
-      const next = typeof update === 'function' ? update(current) : { ...current, ...update };
+      const changed = typeof update === 'function' ? update(current) : { ...current, ...update };
+      const next = changed.pvStrategy !== current.pvStrategy
+        ? offerDraftWithClientPvGeometry(changed, workspace?.input.roofGeometry) : changed;
       latestDraft.current = next;
       return next;
     });
     setDirty(true);
     setStatus('Niezapisane zmiany');
-  }, [canEdit, conflict]);
+  }, [canEdit, conflict, workspace?.input.roofGeometry]);
 
   async function calculateOffer(mode: OfferWorkspaceCalculationMode, continueRecommendation?: true) {
     const continueFromJobId = continueRecommendation ? calculationState.jobId ?? undefined : undefined;

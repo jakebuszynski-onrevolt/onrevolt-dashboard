@@ -88,11 +88,12 @@ function commercialResult(
   pricing: OfferWorkspacePricingResult | null,
   templates: CommercialTemplate[],
   breakdown: OfferWorkspaceCommercialBreakdown | null,
+  targetSettlement: OfferWorkspaceDraft['targetSettlement'],
 ): { result: OfferWorkspaceCommercialPricingResult | null; error: string } {
   if (!breakdown) return { result: null, error: '' };
   if (!pricing) return { result: null, error: 'Nie można odczytać aktualnej wyceny konfiguracji.' };
   try {
-    return { result: calculateOfferCommercialPricing(pricing, templates, breakdown), error: '' };
+    return { result: calculateOfferCommercialPricing(pricing, templates, breakdown, targetSettlement), error: '' };
   } catch (cause) {
     return {
       result: null,
@@ -112,7 +113,7 @@ export default function OfferCommercialSummary({ workspace, draft }: Props) {
       const templates = selectedCommercialTemplates(workspace, draft);
       if (!templates.length) return { result: null, error: '' };
       const pricing = priceOfferWorkspaceConfiguration(templates, draft.saleVatMode, workspace.clientType);
-      return commercialResult(pricing, templates, draft.commercialPricing ?? automaticOfferCommercialBreakdown());
+      return commercialResult(pricing, templates, draft.commercialPricing ?? automaticOfferCommercialBreakdown(), draft.targetSettlement);
     } catch (cause) {
       return { result: null, error: cause instanceof Error ? cause.message : 'Nie można przygotować podziału ceny.' };
     }
@@ -129,7 +130,9 @@ export default function OfferCommercialSummary({ workspace, draft }: Props) {
           <Text fontSize="9px" color="gray.600">{workspace.clientType === 'B2B' ? 'netto' : `brutto · netto ${formatMoney(row.amountNet)}`}</Text>
         </Box>)}
       </Grid>
-      <Text mt="10px" fontSize="11px">Falownik i moduły PV są wycenione po kosztach zakupu. Pozostała część ceny jest ujęta w pozycji magazynu. Łączna cena oferty pozostaje bez zmian.</Text>
+      <Text mt="10px" fontSize="11px">{state.result.preservedEquipmentSalePrices
+        ? 'Cena magazynu wystarcza do osiągnięcia limitu kwotowego dotacji B2C. Falownik i moduły PV zachowują ceny sprzedaży. Łączna cena oferty pozostaje bez zmian.'
+        : 'Falownik i moduły PV są wycenione po kosztach zakupu. Pozostała część ceny jest ujęta w pozycji magazynu. Łączna cena oferty pozostaje bez zmian.'}</Text>
       {state.result.transferredPvSaleGross > 0 ? <Text mt="6px" fontSize="11px">Z kosztorysu PV do pozycji magazynu przeniesiono {formatMoney(state.result.transferredPvSaleGross)} brutto. Ta kwota nie zwiększa podstawy dotacji na magazyn.</Text> : null}
     </> : null}
   </Box>;

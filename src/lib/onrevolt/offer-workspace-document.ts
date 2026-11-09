@@ -1098,7 +1098,7 @@ function selectedProductRows(workspace: OfferWorkspaceDocumentData, draft: Offer
       || left.index - right.index)
     .map(({ row }) => row);
   if (draft.commercialPricing) {
-    const commercial = calculateOfferCommercialPricing(pricing, selectedTemplates, draft.commercialPricing);
+    const commercial = calculateOfferCommercialPricing(pricing, selectedTemplates, draft.commercialPricing, draft.targetSettlement);
     const commercialRows: Page10ProductRow[] = commercial.rows.map((group) => {
       const sources = group.sourceReferences.map(ref => rows.find(row => row.templateId === ref.templateId && row.itemId === ref.itemId)!);
       const models = sources.filter(row => group.group !== 'STORAGE_INSTALLATION'
@@ -3130,14 +3130,14 @@ function appendStorageIllustration(
       appendDimensionArrow('depth', illustration.dimensions.depthMm,
         'M 225 318 L 235 306', ['M 225 318 L 226 311 L 231 315 Z', 'M 235 306 L 229 309 L 234 313 Z'], 234, 326);
     } else if (illustration.family === 'STACK314') {
-      // Original Dynes_314.png (1448 × 1086), contained in the shared illustration frame.
+      // User photo dynes 314_przy oknie.png (1672 × 941), contained in the shared frame.
       appendDimensionArrow('width', illustration.dimensions.widthMm,
-        'M 260 316 L 326 316', ['M 260 316 L 266 313 L 266 319 Z', 'M 326 316 L 320 313 L 320 319 Z'], 293, 328);
+        'M 258 316 L 331 316', ['M 258 316 L 264 313 L 264 319 Z', 'M 331 316 L 325 313 L 325 319 Z'], 294, 328);
       appendDimensionArrow('height', illustration.dimensions.heightMm,
-        'M 249 119 L 249 305', ['M 249 119 L 246 125 L 252 125 Z', 'M 249 305 L 246 299 L 252 299 Z'],
+        'M 249 114 L 249 311', ['M 249 114 L 246 120 L 252 120 Z', 'M 249 311 L 246 305 L 252 305 Z'],
         238, 214, 'rotate(-90 238 214)');
       appendDimensionArrow('depth', illustration.dimensions.depthMm,
-        'M 329 315 L 349 309', ['M 329 315 L 334 310 L 336 316 Z', 'M 349 309 L 342 308 L 344 314 Z'], 365, 321);
+        'M 335 316 L 354 310', ['M 335 316 L 340 311 L 342 317 Z', 'M 354 310 L 347 309 L 349 315 Z'], 369, 321);
     } else {
       // Original magazyn cabinet.png (1696 × 1272); dimensions describe one BF100 cabinet.
       appendDimensionArrow('width', illustration.dimensions.widthMm,

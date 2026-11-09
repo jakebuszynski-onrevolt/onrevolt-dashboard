@@ -542,6 +542,18 @@ test('geometria istniejącej PV jest opisana jako pochodząca z danych dachu', a
   assert.ok(eastWestWorkspace.input.issues.some((issue: string) => issue.includes('E_W')));
 });
 
+test('geometria dachu dla nowej PV jest dostępna również u klienta bez istniejących paneli', async () => {
+  const workspace = await transactionFixture({ canReadEnergy: true, existingPvKw: 0, roofTiltDeg: 30, roofOrientation: 'S' }).workspace();
+  assert.equal(workspace.input.roofGeometry.tiltDegrees, 30);
+  assert.equal(workspace.input.roofGeometry.azimuthDegrees, 180);
+  assert.equal(workspace.input.existingPv.tiltDegrees, null);
+  const split = await transactionFixture({ canReadEnergy: true, existingPvKw: 0, roofTiltDeg: 30, roofOrientation: 'E_W' }).workspace();
+  assert.equal(split.input.roofGeometry.azimuthDegrees, null, 'dwie połacie nie wyznaczają pojedynczego azymutu');
+  const hidden = await transactionFixture({ canReadEnergy: false, roofTiltDeg: 30, roofOrientation: 'S' }).workspace();
+  assert.equal(hidden.input.roofGeometry.tiltDegrees, null);
+  assert.equal(hidden.input.roofGeometry.azimuthDegrees, null);
+});
+
 test('pojemność magazynu z danych energetycznych ustala stan i rewizję workspace', async () => {
   const absent = await transactionFixture({ existingBatteryKwh: null }).workspace();
   const zero = await transactionFixture({ existingBatteryKwh: 0 }).workspace();
