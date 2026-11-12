@@ -17,6 +17,7 @@ import { priceOfferWorkspaceConfiguration, type OfferWorkspacePricingResult } fr
 import type { WorkspaceTemplate } from './OfferWorkspacePanel';
 
 export type EditorRow = {
+  discount?: boolean;
   id: string;
   pricingItemId: string;
   description: string;
@@ -68,17 +69,17 @@ type Props = {
   onPreview?: (pricing: OfferWorkspacePricingResult | null, active: boolean) => void;
 };
 
-const tryNumeric = (value: string) => {
-  const normalized = value.trim().replace(/[\s\u00a0]/g, '').replace(',', '.');
+const tryNumeric = (value: string, signed = false) => {
+  const normalized = value.trim().replace(/[\s\u00a0]/g, '').replace(',', '.').replace('\u2212', '-');
   if (!normalized) return null;
-  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null;
+  if (!(signed ? /^-?\d+(?:\.\d+)?$/ : /^\d+(?:\.\d+)?$/).test(normalized)) return null;
   const result = Number(normalized);
   if (!Number.isFinite(result)) return null;
   return result;
 };
-const numeric = (value: string, label = 'wartość') => {
-  const parsed = tryNumeric(value);
-  if (parsed === null && value.trim()) throw new Error(`Wpisz poprawną, nieujemną liczbę w polu „${label}”.`);
+const numeric = (value: string, label = 'wartość', signed = false) => {
+  const parsed = tryNumeric(value, signed);
+  if (parsed === null && value.trim()) throw new Error(`Wpisz poprawną${signed ? '' : ', nieujemną'} liczbę w polu „${label}”.`);
   return parsed;
 };
 
@@ -87,7 +88,7 @@ const inputAmountText = (value: number | null) => value == null || !Number.isFin
   : new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false }).format(value);
 
 function sameDisplayedAmount(value: string, baseline: number | null) {
-  const parsed = tryNumeric(value);
+  const parsed = tryNumeric(value, true);
   if (parsed === null) return baseline === null && !value.trim();
   if (baseline === null) return false;
   const displayed = Number(inputAmountText(baseline).replace(',', '.'));
@@ -124,7 +125,7 @@ function unitSaleAmount(
   const vatRate = itemVatRate(item, draft.saleVatMode);
   const unitSaleNet = configurationItemEditablePricing(item).unitSaleNet;
   if (unitSaleNet !== null) {
-    try { return offerWorkspaceSaleNetToAmount(unitSaleNet, basis, vatRate); }
+    try { return offerWorkspaceSaleNetToAmount(unitSaleNet, basis, vatRate, Boolean((item as { workspaceDiscount?: boolean }).workspaceDiscount)); }
     catch { return null; }
   }
   try {
@@ -165,6 +166,7 @@ function rowFromItem(
   const currentSaleAmount = unitSaleAmount(template, item, draft, clientType);
   return {
     id,
+    discount: Boolean((item as { workspaceDiscount?: boolean }).workspaceDiscount),
     pricingItemId: item.id,
     description: item.description || '',
     quantity: String(item.quantity),
@@ -333,7 +335,7 @@ export function buildOfferWorkspaceItemEdits(
       const description = row.description.trim();
       const quantity = numeric(row.quantity);
       if (!description || quantity == null || quantity <= 0) throw new Error('Dodana pozycja wymaga opisu i ilości większej od zera.');
-      const saleAmount = numeric(row.unitSaleAmount);
+      const saleAmount = numeric(row.unitSaleAmount, 'cena sprzedaży', row.discount);
       if (saleAmount == null) throw new Error(`Uzupełnij cenę jednostkową dodanej pozycji „${description}”.`);
       const unitPurchaseNet = numeric(row.unitPurchaseNet);
       const purchaseVat = numeric(row.purchaseVatRate);
@@ -351,7 +353,7 @@ export function buildOfferWorkspaceItemEdits(
       const quantityChanged = Boolean(saved && quantity !== Number(saved.quantity));
       const saleVatChanged = row.saleVatRate !== inputPercent(row.baselineSaleVatRate);
       const saleAmountNeedsRepricing = !priceUnchanged || (basis === 'GROSS' && saleVatChanged);
-      const unitSaleNet = saleAmountNeedsRepricing || !saved ? offerWorkspaceSaleAmountToNet(saleAmount, basis, saleVatValue)
+      const unitSaleNet = saleAmountNeedsRepricing || !saved ? offerWorkspaceSaleAmountToNet(saleAmount, basis, saleVatValue, row.discount)
         : saved.pricing.unitSaleNet;
       const pinnedUnitPrice = priceUnchanged && quantityChanged && saved?.pricing.unitSaleNet == null
         ? offerWorkspaceSaleAmountToNet(saleAmount, basis, saleVatValue) : null;
@@ -373,6 +375,7 @@ export function buildOfferWorkspaceItemEdits(
       if (!saved && saleVatValue !== null) pricing.saleVatRate = saleVatValue;
       return {
         ...(saved || {}),
+        ...(row.discount ? { kind: 'DISCOUNT' as const } : {}),
         id: row.id,
         description,
         quantity,
@@ -481,12 +484,12 @@ export default function OfferWorkspaceItemEditor({ draft, templates, clientType,
     });
     setError('');
   }
-  function addRow(templateId: string) {
+  function addRow(templateId: string, discount = false) {
     updateGroup(templateId, group => ({ ...group, rows: [...group.rows, {
-      id: `custom-${globalThis.crypto.randomUUID()}`, pricingItemId: '', description: '', quantity: '1', unitSaleAmount: '',
+      id: `custom-${globalThis.crypto.randomUUID()}`, pricingItemId: '', description: discount ? 'Upust' : '', quantity: '1', unitSaleAmount: '', discount,
       baselineDescription: '', baselineQuantity: 1, baselineSaleAmount: null, baselineUnitSaleNet: null, salePriceEdited: false, baselineRemoved: false,
-      added: true, persistedAdded: false, removed: false, role: 'ACCESSORY', supplyMode: 'ONREVOLT_SUPPLIED', model: '', core: false,
-      unitPurchaseNet: '', purchaseVatRate: '', operatingCostNet: '', operatingCostBasis: 'PER_UNIT',
+      added: true, persistedAdded: false, removed: false, role: discount ? 'OTHER' : 'ACCESSORY', supplyMode: discount ? 'SERVICE_ONLY' : 'ONREVOLT_SUPPLIED', model: '', core: false,
+      unitPurchaseNet: discount ? '0' : '', purchaseVatRate: discount ? '0' : '', operatingCostNet: discount ? '0' : '', operatingCostBasis: 'PER_UNIT',
       saleVatRate: inputPercent(fixedVat(draft.saleVatMode)), marginRate: null, unitSaleNet: null,
       baselineUnitPurchaseNet: null, baselinePurchaseVatRate: null, baselineOperatingCostNet: null,
       baselineOperatingCostBasis: 'PER_UNIT', baselineSaleVatRate: fixedVat(draft.saleVatMode), baselineMarginRate: null,
@@ -546,7 +549,7 @@ export default function OfferWorkspaceItemEditor({ draft, templates, clientType,
                         : changed ? <Text mt="3px" color="orange.700" fontSize="10px" fontWeight="600">Zmieniona w tej ofercie</Text> : null}
                   </Td>
                   <Td whiteSpace="normal">{row.model || '—'}{row.core ? <Text color={muted} fontSize="10px">Model główny · tylko do odczytu</Text> : row.added ? <Text color={muted} fontSize="10px">Nowa pozycja</Text> : null}</Td>
-                  <Td isNumeric><Input size="sm" w="76px" textAlign="right" inputMode="decimal" value={row.quantity} aria-label={`Ilość pozycji ${index + 1} — ${template.name}`} onChange={event => updateRow(group.templateId, row.id, 'quantity', event.target.value)} isDisabled={disabled || row.removed} /></Td>
+                  <Td isNumeric><Input size="sm" w="76px" textAlign="right" inputMode="decimal" value={row.quantity} aria-label={`Ilość pozycji ${index + 1} — ${template.name}`} onChange={event => updateRow(group.templateId, row.id, 'quantity', event.target.value)} isDisabled={disabled || row.removed || row.discount} /></Td>
                   <Td isNumeric>
                     {excludedFromSale ? <Text fontSize="11px" color={muted}>Poza wyceną</Text> : <Input size="sm" w="132px" textAlign="right" inputMode="decimal" value={row.unitSaleAmount} aria-label={`Cena jednostkowa ${priceBasis} pozycji ${index + 1} — ${template.name}`} onChange={event => updateRow(group.templateId, row.id, 'unitSaleAmount', event.target.value)} isDisabled={disabled || row.removed || vatUnavailable} />}
                     {!excludedFromSale && vatUnavailable ? <Text fontSize="9px" color={muted}>Brak jawnej stawki VAT pozycji</Text> : null}
@@ -559,7 +562,8 @@ export default function OfferWorkspaceItemEditor({ draft, templates, clientType,
                       ? updateGroup(group.templateId, current => ({ ...current, rows: current.rows.filter(item => item.id !== row.id) }))
                       : updateRow(group.templateId, row.id, 'removed', !row.removed)}>{row.removed ? 'Przywróć' : 'Usuń'}</Button></Td>
                 </Tr>
-                {row.added && !row.removed ? <Tr bg={background}>
+                {row.discount && !row.removed && draft.saleVatMode === 'MIXED' ? <Tr bg={background}><Td /><Td colSpan={6}><FormControl isDisabled={disabled}><FormLabel fontSize="11px">VAT upustu</FormLabel><Select size="sm" maxW="180px" value={row.saleVatRate} onChange={event => updateRow(group.templateId, row.id, 'saleVatRate', event.target.value)}><option value="">Wybierz VAT</option><option value="8">8%</option><option value="23">23%</option></Select></FormControl></Td></Tr> : null}
+                {row.added && !row.removed && !row.discount ? <Tr bg={background}>
                   <Td /><Td colSpan={6}>
                     <Text fontSize="10px" color={muted} mb="6px">Koszty wymagane dla nowej pozycji · bez domyślnych wartości</Text>
                     <Grid templateColumns={{ base: '1fr 1fr', lg: 'repeat(5, minmax(110px, 1fr))' }} gap="8px" alignItems="end">
@@ -585,7 +589,9 @@ export default function OfferWorkspaceItemEditor({ draft, templates, clientType,
           </Grid>
           <Checkbox mt="8px" fontSize="sm" isDisabled={disabled} isChecked={group.technicalConfirmed} onChange={event => updateGroup(group.templateId, current => ({ ...current, technicalConfirmed: event.target.checked }))}>Potwierdzam parametry techniczne dla zmienionej ilości głównych urządzeń</Checkbox>
         </Box> : null}
-        <Button mt="8px" size="sm" variant="outline" isDisabled={disabled} onClick={() => addRow(group.templateId)}>Dodaj pozycję dodatkową</Button>
+        <Flex gap="8px" mt="8px"><Button size="sm" variant="outline" isDisabled={disabled} onClick={() => addRow(group.templateId)}>Dodaj pozycję dodatkową</Button>
+          <Button size="sm" variant="outline" isDisabled={disabled} onClick={() => addRow(group.templateId, true)}>Dodaj upust</Button></Flex>
+        <Text fontSize="11px" color={muted} mt="6px">Upust wpisz ze znakiem minus, np. −5000 zł ({priceBasis}). Obniża cenę i marżę oferty; koszty zakupu pozostają bez zmian.</Text>
       </Box>;
     })}
     {previewState.pending ? <Box mt="12px" p="10px" bg="purple.50" borderRadius="8px" role="status">

@@ -1,10 +1,18 @@
 import { NextRequest } from 'next/server';
 import path from 'path';
 import { unlink } from 'fs/promises';
-import { badRequest, jsonResponse, optionalString, parseDate, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
+import { badRequest, forbidden, jsonResponse, optionalString, parseDate, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
-import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
+import {
+  authorizeSiteVisitRequest,
+  authorizeStaffRequest,
+  isSiteVisitOnlyUser,
+  StaffAuthorizationError,
+  staffAuthorizationResponse,
+} from 'lib/onrevolt/staff-server';
+import { requireSiteVisitProject } from 'lib/onrevolt/site-visit-access';
+import { invoiceImportField } from 'lib/onrevolt/invoice-recognition/consumption';
 
 export async function GET(req: NextRequest) {
   const access = await authorizeStaffRequest(req);
@@ -104,8 +112,8 @@ export async function PATCH(req: NextRequest) {
             consumption: recognitionConsumption
               ? {
                   ...recognitionConsumption,
-                  totalAfterBalancingKwh: body.energyConsumptionKwh === undefined
-                    ? recognitionConsumption.totalAfterBalancingKwh
+                  [invoiceImportField(recognitionConsumption)]: body.energyConsumptionKwh === undefined
+                    ? recognitionConsumption[invoiceImportField(recognitionConsumption)]
                     : body.energyConsumptionKwh === '' ? undefined : Number(body.energyConsumptionKwh),
                 }
               : recognitionFields.consumption,
@@ -150,23 +158,91 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const access = await authorizeStaffRequest(req, 'documents.manage');
+  const access = await authorizeSiteVisitRequest(req, 'documents.manage');
   if (!access.ok) return access.response;
   try {
     const body = await readJsonObject(req);
     const id = requireString(body, 'id');
-    const existing = await prisma.document.findUnique({ where: { id } });
+    const scopedDocument = await prisma.document.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        type: true,
+        clientId: true,
+        siteAuditId: true,
+        siteAudit: { select: { projectId: true } },
+      },
+    });
+    if (!scopedDocument) return badRequest('Nie znaleziono dokumentu');
+    const restricted = isSiteVisitOnlyUser(access.user);
+    if (restricted) {
+      if (!scopedDocument.siteAuditId || !scopedDocument.siteAudit?.projectId
+        || !['INNE', 'ZDJECIE_MONTAZU'].includes(scopedDocument.type)) {
+        return forbidden('Można usunąć tylko załącznik wizji lokalnej');
+      }
+      await requireSiteVisitProject(access.user, scopedDocument.siteAudit.projectId);
+    }
+
+    const existing = await prisma.document.findUnique({
+      where: { id },
+      ...(restricted ? { include: { siteAudit: { select: { projectId: true } } } } : {}),
+    });
     if (!existing) return badRequest('Nie znaleziono dokumentu');
+    if (restricted) {
+      const linkedDocument = existing as unknown as {
+        type: string;
+        siteAuditId: string | null;
+        siteAudit: { projectId: string } | null;
+      };
+      if (linkedDocument.siteAuditId !== scopedDocument.siteAuditId
+        || linkedDocument.siteAudit?.projectId !== scopedDocument.siteAudit?.projectId
+        || !['INNE', 'ZDJECIE_MONTAZU'].includes(linkedDocument.type)) {
+        return forbidden('Brak dostępu do załącznika wizji lokalnej');
+      }
+      await requireSiteVisitProject(access.user, linkedDocument.siteAudit!.projectId);
+    }
     const uploadDir = process.env.ONREVOLT_UPLOAD_DIR?.trim();
     if (!uploadDir) return badRequest('Brak katalogu dokumentów');
     const root = path.resolve(uploadDir);
     const target = path.resolve(root, existing.storagePath);
     if (!target.startsWith(`${root}${path.sep}`)) return badRequest('Nieprawidłowa ścieżka dokumentu');
-    await prisma.document.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      if (restricted && scopedDocument.siteAudit?.projectId) {
+        await requireSiteVisitProject(access.user, scopedDocument.siteAudit.projectId, tx);
+        const currentDocument = await tx.document.findUnique({
+          where: { id },
+          select: {
+            type: true,
+            siteAuditId: true,
+            siteAudit: { select: { projectId: true } },
+          },
+        });
+        if (!currentDocument
+          || currentDocument.siteAuditId !== scopedDocument.siteAuditId
+          || currentDocument.siteAudit?.projectId !== scopedDocument.siteAudit.projectId
+          || !['INNE', 'ZDJECIE_MONTAZU'].includes(currentDocument.type)) {
+          throw new StaffAuthorizationError(403, 'Brak dostępu do załącznika wizji lokalnej');
+        }
+        const deleted = await tx.document.deleteMany({
+          where: {
+            id,
+            siteAuditId: scopedDocument.siteAuditId,
+            type: { in: ['INNE', 'ZDJECIE_MONTAZU'] },
+          },
+        });
+        if (deleted.count !== 1) {
+          throw new StaffAuthorizationError(403, 'Brak dostępu do załącznika wizji lokalnej');
+        }
+      } else {
+        await tx.document.delete({ where: { id } });
+      }
+    });
     await unlink(target).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; });
     await writeAuditLog({ actorId: access.user.id, clientId: existing.clientId, entityType: 'Document', entityId: id, action: 'DELETE', before: existing });
     return jsonResponse({ ok: true, data: { id } });
   } catch (error) {
+    const authorizationResponse = staffAuthorizationResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return serverError('Nie udało się usunąć dokumentu', error);
   }
 }

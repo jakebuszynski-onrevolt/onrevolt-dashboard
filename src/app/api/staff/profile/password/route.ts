@@ -5,7 +5,7 @@ import { hashPassword, verifyPassword } from 'lib/onrevolt/staff';
 import { authorizeStaffRequest, getCurrentStaffUser, serializeStaffUser, staffUserInclude } from 'lib/onrevolt/staff-server';
 
 export async function POST(req: NextRequest) {
-  const access = await authorizeStaffRequest(req);
+  const access = await authorizeStaffRequest(req, 'profile.self');
   if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);

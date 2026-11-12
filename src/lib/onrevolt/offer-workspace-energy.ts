@@ -215,7 +215,8 @@ function hourlyIntervals(intervals: OfferMeasurementInterval[]): OfferMeasuremen
     }
     const direction = (key: 'import' | 'export') => sorted.some(row => row[key] == null) ? null : {
       valueKwh: sorted.reduce((total, row) => total + row[key]!.valueKwh, 0),
-      source: sorted.some(row => row[key]!.source === 'estimated') ? 'estimated' as const : 'measured' as const,
+      source: sorted.some(row => row[key]!.source === 'modelled') ? 'modelled' as const
+        : sorted.some(row => row[key]!.source === 'estimated') ? 'estimated' as const : 'measured' as const,
       fileIds: [...new Set(sorted.flatMap(row => row[key]!.fileIds))],
     };
     return { ...sorted[0], startUtc: new Date(hour).toISOString(), endUtc: new Date(hour + 3_600_000).toISOString(), import: direction('import'), export: direction('export') };
@@ -302,6 +303,8 @@ export function buildOfferWorkspaceEnergy(input: {
       pvKwh: month.importKwh != null || month.exportKwh != null ? values.pvKwh : null };
   });
   const issues: string[] = [];
+  const modelledHours = intervals.filter(row => row.import?.source === 'modelled' || row.export?.source === 'modelled');
+  if (modelledHours.length) issues.push(`Uzupełnienie luk — Model CRM: ${modelledHours.length} godz. z ${intervals.length}. Zachowano dostępne pomiary; brakujące godziny są szacunkiem, nie danymi operatora.`);
   const estimatedHours = intervals.filter(row => row.import?.source === 'estimated' || row.export?.source === 'estimated');
   if (estimatedHours.length) issues.push(`Symulacja uwzględnia wartości szacowane przez operatora: ${estimatedHours.length} godz. (pierwsza: ${estimatedHours[0].localStart.slice(0, 16).replace('T', ' ')}). Nie są to brakujące pomiary ani wartości dopisane przez CRM.`);
   if (!canReconstruct) issues.push(input.existingBatteryPresent == null
@@ -310,7 +313,8 @@ export function buildOfferWorkspaceEnergy(input: {
   if (modelBelowExportKwh > 0.01) issues.push(`W części interwałów oddanie ENEA przewyższa model PV (łącznie ${modelBelowExportKwh.toFixed(1)} kWh). RE przyjmuje tam zerową autokonsumpcję; produkcja i zużycie są szacunkiem, nie odczytem falownika.`);
   if (input.acceptMeasuredExportReconstruction) issues.push('Zaakceptowany model prognozy: produkcja PV = zmierzony eksport + modelowana autokonsumpcja; zużycie = zmierzony import + modelowana autokonsumpcja. To szacunek, nie pomiar produkcji PV.');
   return {
-    quality: input.noPv ? 'MEASURED_IMPORT' : 'MODELLED', source: input.source, model: input.model,
+    quality: input.noPv && !modelledHours.length ? 'MEASURED_IMPORT' : 'MODELLED',
+    source: modelledHours.length ? `${input.source} · uzupełnienie luk Model CRM` : input.source, model: input.model,
     months, totals: aggregate(months), modelBelowExportKwh, issues,
     intervals: rows.map(({ date: _date, hour: _hour, period: _period, ...row }) => row),
     dayProfiles: input.dayProfiles.map(day => ({ date: day.date,

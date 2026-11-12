@@ -23,7 +23,7 @@ function sanitizeFileName(fileName: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const access = await authorizeStaffRequest(req);
+  const access = await authorizeStaffRequest(req, 'profile.self');
   if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);

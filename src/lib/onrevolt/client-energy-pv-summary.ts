@@ -3,6 +3,7 @@ import { buildOfferWorkspaceEnergy } from './offer-workspace-energy';
 import type { OfferMeasurementSeries } from './offer-measurements';
 
 export type ClientEnergyPvSummary = {
+  loadKwh: number | null;
   productionKwh: number | null;
   selfConsumptionKwh: number | null;
   coveredMonths: number;
@@ -106,6 +107,7 @@ export function buildClientEnergyPvSummary(input: {
   }
 
   let selfConsumptionKwh: number | null = null;
+  let loadKwh: number | null = null;
   let coveredMonths = 0;
   let coveredHours = 0;
   if (modelHours && input.measurementSeries?.intervals.length) {
@@ -121,6 +123,12 @@ export function buildClientEnergyPvSummary(input: {
         model: 'Profil godzinowy',
       });
       issues.push(...energy.issues);
+      const completeLoad = energy.intervals?.length === totalHours
+        && energy.intervals.every((row, index) => Date.parse(row.startUtc) === Date.parse(input.fromUtc) + index * 3_600_000
+          && row.loadKwh != null && Number.isFinite(row.loadKwh));
+      if (input.existingBatteryPresent === false && completeLoad && energy.totals.loadKwh != null) {
+        loadKwh = energy.totals.loadKwh;
+      }
 
       const allowedMonths = new Set(input.periodKeys);
       const exportMonths = new Set(input.measurementSeries.periods
@@ -179,6 +187,7 @@ export function buildClientEnergyPvSummary(input: {
         : `Autokonsumpcja to suma godzinowych max(model PV − oddanie ENEA, 0) dla ${coveredHours}/${totalHours} zmierzonych godzin; brakujące godziny pominięto.`;
 
   return {
+    loadKwh,
     productionKwh,
     selfConsumptionKwh,
     coveredMonths,

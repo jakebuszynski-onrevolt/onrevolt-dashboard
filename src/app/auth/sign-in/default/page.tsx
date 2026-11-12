@@ -75,7 +75,10 @@ function SignIn() {
           });
           const payload = await response.json();
           if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
-          router.push('/admin/dashboard');
+          const nextPath = payload.data?.siteVisitsOnly
+              ? payload.data?.passwordResetRequired ? '/admin/profile' : '/admin/clients'
+              : '/admin/dashboard';
+          router.push(nextPath);
       } catch (e) {
           setError(e instanceof Error ? e.message : String(e));
       } finally {

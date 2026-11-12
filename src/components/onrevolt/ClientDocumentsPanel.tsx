@@ -30,6 +30,7 @@ import {
 import Card from 'components/card/Card';
 import DocumentImagePreviewModal from 'components/onrevolt/DocumentImagePreviewModal';
 import type { InvoiceRecognitionResult } from 'lib/onrevolt/invoice-recognition';
+import { invoiceImportField, invoiceImportKwh } from 'lib/onrevolt/invoice-recognition/consumption';
 import { ChangeEvent, DragEvent, useMemo, useRef, useState } from 'react';
 import {
   MdDeleteOutline,
@@ -382,9 +383,9 @@ function ClientInvoicesPanel({
     setInvoicePpeNumber(fields.ppeNumber || '');
     setInvoiceTariff(fields.tariff || '');
     setEnergyConsumptionKwh(
-      fields.consumption.totalAfterBalancingKwh == null
+      invoiceImportKwh(fields.consumption) == null
         ? ''
-        : String(fields.consumption.totalAfterBalancingKwh),
+        : String(invoiceImportKwh(fields.consumption)),
     );
     setAssignmentMismatchConfirmed(false);
     setReplaceExistingConfirmed(false);
@@ -463,7 +464,7 @@ function ClientInvoicesPanel({
           tariff: invoiceTariff,
           consumption: {
             ...recognition.fields.consumption,
-            totalAfterBalancingKwh: Number(energyConsumptionKwh),
+            [invoiceImportField(recognition.fields.consumption)]: Number(energyConsumptionKwh),
           },
         },
       };
@@ -708,7 +709,7 @@ function ClientInvoicesPanel({
                 <Input value={invoiceTariff} onChange={(event) => setInvoiceTariff(event.target.value)} />
               </FormControl>
               <FormControl>
-                <FormLabel>Zużycie po bilansowaniu</FormLabel>
+                <FormLabel>{invoiceImportField(recognition.fields.consumption) === 'meteredImportKwh' ? 'Zużycie z licznika' : 'Zużycie po bilansowaniu'}</FormLabel>
                 <Input type="number" min="0" step="0.001" value={energyConsumptionKwh} onChange={(event) => setEnergyConsumptionKwh(event.target.value)} />
               </FormControl>
             </SimpleGrid>
@@ -785,6 +786,14 @@ function ClientInvoicesPanel({
                   </Badge>
                 ))}
               </Flex>
+            ) : null}
+
+            {recognition.fields.consumption.billedAfterDiscountKwh != null ? (
+              <Text mt="14px" fontSize="sm">
+                Pobór z sieci po bilansowaniu godzinowym: {kwh(recognition.fields.consumption.totalAfterBalancingKwh)}.
+                {' '}Oddanie: {kwh(recognition.fields.consumption.exportedAfterBalancingKwh)}.
+                {' '}Do rozliczenia po opuście {recognition.fields.consumption.netMeteringFactor?.toLocaleString('pl-PL')}: {kwh(recognition.fields.consumption.billedAfterDiscountKwh)}.
+              </Text>
             ) : null}
 
             <SimpleGrid columns={{ base: 1, md: 2 }} gap="12px" mt="18px">
@@ -960,7 +969,7 @@ function DocumentsList({
                   if (!values.length || values.some((value) => value == null)) return null;
                   return values.reduce((total, value) => total + Number(value), 0);
                 };
-                const purchasedEnergy = consumption?.totalBeforeBalancingKwh
+                const purchasedEnergy = consumption?.meteredImportKwh ?? consumption?.totalBeforeBalancingKwh
                   ?? totalFromMonths('consumptionBeforeBalancingKwh');
                 const exportedEnergy = consumption?.exportedAfterBalancingKwh
                   ?? totalFromMonths('exportedAfterBalancingKwh');
@@ -1097,7 +1106,7 @@ function DocumentsList({
                           <Input value={editing.invoiceTariff || ''} onChange={(event) => setEditing({ ...editing, invoiceTariff: event.target.value })} />
                         </FormControl>
                         <FormControl>
-                          <FormLabel>Zużycie po bilansowaniu</FormLabel>
+                          <FormLabel>{invoiceImportField(recognition?.fields?.consumption) === 'meteredImportKwh' ? 'Zużycie z licznika' : 'Zużycie po bilansowaniu'}</FormLabel>
                           <Input type="number" value={editing.energyConsumptionKwh} onChange={(event) => setEditing({ ...editing, energyConsumptionKwh: event.target.value })} />
                         </FormControl>
                       </>

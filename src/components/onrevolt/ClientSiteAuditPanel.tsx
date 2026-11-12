@@ -797,6 +797,7 @@ export default function ClientSiteAuditPanel({
               update={update}
               updateClientType={updateClientType}
               staffUsers={staffUsers}
+              selectedAuditor={selectedAudit?.auditor}
               pvConfigurations={pvConfigurations}
               batteryConfigurations={batteryConfigurations}
               textColor={textColor}
@@ -994,7 +995,7 @@ function TextField({
   );
 }
 
-function StepOne({ data, update, updateClientType, staffUsers, pvConfigurations, batteryConfigurations, textColor, mutedColor, borderColor, panelBg, softBg }: any) {
+function StepOne({ data, update, updateClientType, staffUsers, selectedAuditor, pvConfigurations, batteryConfigurations, textColor, mutedColor, borderColor, panelBg, softBg }: any) {
   const colors = { textColor, mutedColor, borderColor, panelBg, softBg };
   const audience = siteAuditAudience(data.client_type);
   return (
@@ -1006,6 +1007,11 @@ function StepOne({ data, update, updateClientType, staffUsers, pvConfigurations,
             <FormLabel>Audytor</FormLabel>
             <Select value={data.auditor_id || ''} onChange={(event) => update('auditor_id', event.target.value)}>
               <option value="">Wybierz audytora</option>
+                {data.auditor_id && !staffUsers.some((user: any) => user.id === data.auditor_id) ? (
+                  <option value={data.auditor_id}>
+                    {selectedAuditor?.id === data.auditor_id ? selectedAuditor.name : `Dotychczasowy audytor (${data.auditor_id})`}
+                  </option>
+                ) : null}
               {staffUsers.map((user: any) => <option key={user.id} value={user.id}>{user.name}</option>)}
             </Select>
           </FormControl>

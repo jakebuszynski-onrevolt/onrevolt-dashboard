@@ -24,6 +24,8 @@ import { projectGeneralTariff } from './client-tariffs';
 import * as energyIntake from './energy-intake';
 import { resolveProjectAnalysisPeriod, type ProjectAnalysisPeriod } from './project-analysis-period';
 import { configurationEditsContainPricing } from './offer-workspace-configuration-edits';
+import * as measurementMonthReuse from './offer-measurement-month-reuse';
+import * as projectPvSettings from './project-pv-settings';
 
 const serverPath = path.resolve(__dirname, 'offer-workspace-server.ts');
 test('automatyczny podział pozwala zapisać szkic przed wyborem urządzeń', () => {
@@ -90,6 +92,8 @@ function transactionFixture(options: {
     artifactData: null as any,
     rePrismaCalls: 0,
     referenceProfileReads: 0,
+    completionCalls: [] as any[],
+    completionRevision: null as unknown,
   };
   const clone = (value: any) => value == null ? null : structuredClone(value);
   const project = {
@@ -166,6 +170,12 @@ function transactionFixture(options: {
     },
   };
   const modules: Record<string, unknown> = {
+    './offer-measurement-month-reuse': measurementMonthReuse,
+    './project-pv-settings': projectPvSettings,
+    './offer-measurement-completion-server': { completeProjectOfferMeasurements: async (input: any) => {
+      state.completionCalls.push(input);
+      return { series: input.series, issues: [], revisionKey: state.completionRevision };
+    } },
     'node:crypto': { createHash },
     'node:fs/promises': { readFile: async () => {
       if (state.fileUnavailable) throw new Error('Nie można odczytać pliku');
@@ -470,6 +480,39 @@ test('zmiana wybranego okresu trafia do rewizji źródeł obliczenia', async () 
   }).workspace();
   assert.notEqual(current.revision, previousRange.revision);
   assert.equal(previousRange.period.startMonth, '2025-09');
+});
+
+test('pobiera kwiecień z innego roku, a pojawienie się właściwych pomiarów zastępuje go i zmienia rewizję', async () => {
+  const bytes = Buffer.from('verified fixture bytes');
+  const historical = { id: 'april-2026', clientId: 'client-1', projectId: 'project-1', accountId: 'account-1',
+    kind: 'ACTIVE_IMPORT', periodYear: 2026, periodMonth: 4, aggregation: '60 min', storagePath: 'april.xlsx', fileName: 'april.xlsx',
+    document: { clientId: 'client-1', projectId: 'project-1', storagePath: 'april.xlsx', fileName: 'april.xlsx',
+      sizeBytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') } };
+  const files = [historical];
+  const f = transactionFixture({ measurementFiles: files,
+    analysisPeriod: resolveProjectAnalysisPeriod('2025-04', new Date('2026-11-09T12:00:00Z')) });
+  const estimated = await f.workspace();
+  assert.equal(f.state.seriesCalls[0].files[0].expectedPeriod, '2026-04');
+  assert.equal(f.state.seriesCalls[0].files[0].targetPeriod, '2025-04');
+  files.push({ ...historical, id: 'april-2025', periodYear: 2025 });
+  f.state.artifactData = null;
+  const real = await f.workspace();
+  assert.notEqual(estimated.revision, real.revision);
+  assert.equal(f.state.seriesCalls[1].files.length, 1);
+  assert.equal(f.state.seriesCalls[1].files[0].id, 'april-2025');
+  assert.equal(f.state.seriesCalls[1].files[0].targetPeriod, '2025-04');
+});
+
+test('rewizja profilu i faktur uzupełnienia zmienia źródło oferty; uszkodzone lub oczekujące źródła nie są modelowane', async () => {
+  const f = transactionFixture({ profileSource: 'OPERATOR_HOURLY' });
+  f.state.completionRevision = { invoice: 'a', profile: 'p1' };
+  const first = await f.workspace();
+  f.state.completionRevision = { invoice: 'b', profile: 'p1' };
+  const second = await f.workspace();
+  assert.notEqual(first.revision, second.revision);
+  const pending = transactionFixture({ profileSource: 'OPERATOR_HOURLY', nonDownloadedMeasurementFiles: [{ id: 'pending', status: 'PENDING' }] });
+  await pending.workspace();
+  assert.equal(pending.state.completionCalls.length, 0);
 });
 
 test('przekazuje kontakt i parametry pierwszej strony z CRM, bez domyślnych danych obiektu', async () => {

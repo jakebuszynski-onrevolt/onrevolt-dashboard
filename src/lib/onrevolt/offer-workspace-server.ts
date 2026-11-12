@@ -20,6 +20,9 @@ import {
   validateOfferWorkspaceConfigurationEdits,
 } from './offer-workspace-configuration-edits';
 import { prisma } from './prisma';
+import { selectOfferMeasurementFilesForPeriod } from './offer-measurement-month-reuse';
+import { completeProjectOfferMeasurements } from './offer-measurement-completion-server';
+import { projectPvSettingsFromSources } from './project-pv-settings';
 import { getOfferWorkspaceArtifact, putOfferWorkspaceArtifact } from './offer-workspace-artifacts';
 import { rePrisma, resolveReStation } from './re-stations';
 import { hasStaffPermission } from './staff-server';
@@ -273,6 +276,8 @@ export function summarizeOfferMeasurementSeries(
   issues: string[] = [],
   expectedPeriods: string[] = series.periods.map(({ period }) => period),
 ): OfferWorkspaceMeasurements {
+  issues = [...issues, ...Array.from(new Set(series.files.filter(file => file.sourcePeriod)
+    .map(file => `${file.period}: szacunek na podstawie pomiarów klienta z ${file.sourcePeriod} (${file.kind === 'ACTIVE_IMPORT' ? 'pobór' : 'oddanie'}). Dopasowano kalendarz; zachowano miesięczną sumę energii.`)))];
   const monthly = new Map(expectedPeriods.map((period) => [period, {
     importKwh: 0, hasImport: false, exportKwh: 0, hasExport: false,
   }]));
@@ -749,7 +754,7 @@ export async function loadProjectOfferWorkspace(
   else if (ppe.issue && !(energyAudit?.profileSource === 'ANNUAL_DECLARATION' && !ppe.sourceAccounts.length)) measurementIssues.push(ppe.issue);
 
   let measurementFiles: Array<{
-    id: string; clientId: string; projectId: string | null; accountId: string; kind: OfferMeasurementKind;
+    id: string; clientId: string; projectId: string | null; accountId: string; kind: OfferMeasurementKind; targetPeriod?: string;
     periodYear: number; periodMonth: number; aggregation: string; storagePath: string | null; fileName: string | null;
     updatedAt: Date; document: OfferWorkspaceStoredMeasurement['document'] & { id?: string; updatedAt?: Date };
   }> = [];
@@ -759,7 +764,7 @@ export async function loadProjectOfferWorkspace(
       const [periodYear, periodMonth] = period.split('-').map(Number);
       return { periodYear, periodMonth };
     });
-    measurementFiles = await prisma.energyMeasurementFile.findMany({
+    measurementFiles = selectOfferMeasurementFilesForPeriod(await prisma.energyMeasurementFile.findMany({
       where: {
         accountId: { in: ppe.sourceAccounts.map((account) => account.id) },
         clientId: project.clientId,
@@ -767,7 +772,6 @@ export async function loadProjectOfferWorkspace(
         status: 'DOWNLOADED',
         kind: { in: ['ACTIVE_IMPORT', 'ACTIVE_EXPORT'] },
         AND: [
-          { OR: periodWhere },
           { OR: [{ projectId }, { projectId: null }] },
         ],
       },
@@ -777,8 +781,8 @@ export async function loadProjectOfferWorkspace(
         document: { select: { id: true, clientId: true, projectId: true, storagePath: true, fileName: true, sizeBytes: true, sha256: true, updatedAt: true } },
       },
       orderBy: [{ periodYear: 'asc' }, { periodMonth: 'asc' }, { kind: 'asc' }, { id: 'asc' }],
-    });
-    if (!measurementFiles.length) {
+    }), periodKeys);
+    {
       nonDownloadedMeasurementFiles = await prisma.energyMeasurementFile.findMany({
         where: {
           accountId: { in: ppe.sourceAccounts.map((account) => account.id) },
@@ -800,7 +804,7 @@ export async function loadProjectOfferWorkspace(
   }
 
   const source = {
-    algorithmVersion: 'offer-workspace-v2-operator-grid-import',
+    algorithmVersion: 'offer-workspace-v3-month-reuse',
     energyVisible: canReadEnergy,
     pricingVisible: canReadPricing,
     pricing: canReadPricing ? templates.map(template => serializeTemplate(template, true)) : null,
@@ -819,7 +823,7 @@ export async function loadProjectOfferWorkspace(
     ppeAccounts: ppe.sourceAccounts.map((account) => ({ id: account.id, projectId: account.projectId, updatedAt: account.updatedAt })),
     measurementFiles: measurementFiles.map((file) => ({
       id: file.id, clientId: file.clientId, projectId: file.projectId, accountId: file.accountId, kind: file.kind,
-      periodYear: file.periodYear, periodMonth: file.periodMonth, aggregation: file.aggregation,
+      periodYear: file.periodYear, periodMonth: file.periodMonth, aggregation: file.aggregation, targetPeriod: file.targetPeriod,
       storagePath: file.storagePath, fileName: file.fileName, updatedAt: file.updatedAt,
       document: file.document && {
         id: file.document.id, clientId: file.document.clientId, projectId: file.document.projectId,
@@ -832,13 +836,16 @@ export async function loadProjectOfferWorkspace(
   };
   let revision = sourceRevision(source);
 
+  let loadedSeries: OfferMeasurementSeries | null = null;
+  let measurementSourcesValid = !ppe.issue?.includes('kilka numerów PPE') && nonDownloadedMeasurementFiles.length === 0;
   let measurements: OfferWorkspaceMeasurements = {
     periods: [], months: emptyOfferMeasurementMonths(periodKeys), totalsImportKwh: null, totalsExportKwh: null,
     intervalCount: null, missingDirections: [], issues: measurementIssues,
   };
   if (canReadEnergy && ppe.ppeNumber) {
-    const inputs: Array<{ id: string; expectedPeriod: string; expectedKind: OfferMeasurementKind; bytes: Buffer; projectId: string }> = [];
+    const inputs: Array<{ id: string; expectedPeriod: string; targetPeriod?: string; expectedKind: OfferMeasurementKind; bytes: Buffer; projectId: string }> = [];
     if (measurementFiles.length > maxOfferWorkspaceMeasurementFiles) {
+      measurementSourcesValid = false;
       measurementIssues.push(`Znaleziono więcej niż ${maxOfferWorkspaceMeasurementFiles} miesięcznych plików ENEA; pomiary nie zostały wczytane.`);
       measurements = { periods: [], months: emptyOfferMeasurementMonths(periodKeys), totalsImportKwh: null, totalsExportKwh: null, intervalCount: null, missingDirections: [], issues: measurementIssues };
     } else {
@@ -863,13 +870,14 @@ export async function loadProjectOfferWorkspace(
         }
         try {
           const bytes = await readOfferWorkspaceMeasurement(file);
-          inputs.push({ id: file.id, expectedPeriod: period, expectedKind: file.kind, bytes, projectId });
+          inputs.push({ id: file.id, expectedPeriod: period, targetPeriod: file.targetPeriod, expectedKind: file.kind, bytes, projectId });
         } catch (error) {
           measurementIssues.push(`Plik ${file.id}: ${error instanceof Error ? error.message : String(error)}`);
           cacheEligible = false;
         }
       }
       if (!measurementFiles.length) measurementIssues.push(`Brak pobranych miesięcznych plików ENEA w okresie ${period.startMonth}–${period.endMonth}.`);
+      measurementSourcesValid = measurementSourcesValid && cacheEligible;
       // Availability and verified bytes are part of the identity consumed by
       // energy, financial and document caches as well as the parsed-file cache.
       revision = sourceRevision({ source, verifiedMeasurements: inputs.map(input => ({
@@ -879,7 +887,7 @@ export async function loadProjectOfferWorkspace(
         projectId,
         kind: 'measurements',
         key: {
-          algorithmVersion: 'offer-workspace-measurements-v1',
+          algorithmVersion: 'offer-workspace-measurements-v2-month-reuse',
           sourceRevision: revision,
           energyPermission: canReadEnergy,
           ppeNumber: ppe.ppeNumber,
@@ -894,8 +902,9 @@ export async function loadProjectOfferWorkspace(
         const cached = cachedOfferWorkspaceMeasurements(cachedValue, revision);
         measurements = cached.measurements;
         try {
-          onMeasurementSeries?.(cached.series);
+          loadedSeries = cached.series;
         } catch (error) {
+          measurementSourcesValid = false;
           measurementIssues.push(error instanceof Error ? error.message : String(error));
           measurements = { periods: [], months: emptyOfferMeasurementMonths(periodKeys), totalsImportKwh: null, totalsExportKwh: null, intervalCount: null, missingDirections: [], issues: measurementIssues };
           revision = sourceRevision({ sourceRevision: revision, measurementIssues });
@@ -911,9 +920,10 @@ export async function loadProjectOfferWorkspace(
             ...(energyAudit?.existingPvKw == null ? {} : { hasExistingPv: Number(energyAudit.existingPvKw) > 0 }),
           });
           measurements = summarizeOfferMeasurementSeries(series, measurementIssues, periodKeys);
-          onMeasurementSeries?.(series);
+          loadedSeries = series;
           calculationSucceeded = true;
         } catch (error) {
+          measurementSourcesValid = false;
           measurementIssues.push(error instanceof Error ? error.message : String(error));
           measurements = { periods: [], months: emptyOfferMeasurementMonths(periodKeys), totalsImportKwh: null, totalsExportKwh: null, intervalCount: null, missingDirections: [], issues: measurementIssues };
           revision = sourceRevision({ sourceRevision: revision, measurementIssues });
@@ -935,6 +945,33 @@ export async function loadProjectOfferWorkspace(
 
   measurements.availability = !canReadEnergy ? 'UNKNOWN'
     : measurementFiles.length || nonDownloadedMeasurementFiles.length ? 'FILES_PRESENT' : 'NO_FILES';
+
+  if (canReadEnergy && measurementSourcesValid && (!measurementFiles.length || loadedSeries)) {
+    const pvSettings = projectPvSettingsFromSources({ draftExists: Boolean(draft), draftInput: draft?.input, energyAudit });
+    const completion = await completeProjectOfferMeasurements({
+      projectId, clientId: project.clientId, clientType: offerWorkspaceEffectiveClientType(project.clientType, project.client.clientType),
+      period, series: loadedSeries, ppeNumber: ppe.ppeNumber,
+      heatingSource: energyAudit?.heatingSource ?? null, heatingSourceDetail: energyAudit?.heatingSourceDetail ?? null,
+      existingBatteryPresent, pv: { ...pvSettings, latitude, longitude }, selectedProfile: referenceProfile,
+      sourceRevision: revision,
+    });
+    if (completion.revisionKey !== null) revision = sourceRevision({ sourceRevision: revision, completion: completion.revisionKey });
+    if (completion.series && completion.series !== loadedSeries) {
+      loadedSeries = completion.series;
+      measurements = { ...summarizeOfferMeasurementSeries(loadedSeries, [...measurementIssues, ...completion.issues], periodKeys), availability: 'FILES_PRESENT' };
+    } else {
+      measurements.issues = [...measurements.issues, ...completion.issues];
+      if (!loadedSeries?.intervals.length && completion.revisionKey !== null) measurements.availability = 'FILES_PRESENT';
+    }
+  }
+  if (loadedSeries) {
+    try { onMeasurementSeries?.(loadedSeries); }
+    catch (error) {
+      measurementIssues.push(error instanceof Error ? error.message : String(error));
+      measurements = { periods: [], months: emptyOfferMeasurementMonths(periodKeys), totalsImportKwh: null, totalsExportKwh: null, intervalCount: null, missingDirections: [], issues: measurementIssues, availability: 'FILES_PRESENT' };
+      revision = sourceRevision({ sourceRevision: revision, measurementIssues });
+    }
+  }
 
   const serializedTemplates = templates.map((template) => serializeTemplate(template, canReadPricing));
   return {

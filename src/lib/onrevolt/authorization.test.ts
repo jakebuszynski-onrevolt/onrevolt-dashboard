@@ -37,3 +37,15 @@ test('tylko administrator systemowy może usuwać zadania', () => {
   assert.equal(isAdminUser(user('MODERATOR')), false);
   assert.equal(isAdminUser(user('USER', ['SPRZEDAWCA'])), false);
 });
+
+test('wizja lokalna nie dziedziczy dostępu do CRM, cen ani innych modułów', () => {
+  for (const roles of [['WIZJA_LOKALNA'], ['WIZJA_LOKALNA', 'SPRZEDAWCA']]) {
+    const inspector = user('USER', roles);
+    assert.deepEqual([...getStaffPermissions(inspector)].sort(), ['profile.self', 'site-visits.access']);
+    for (const permission of ['crm.read', 'crm.write', 'pricing.read', 'offers.manage', 'documents.manage', 'site-audits.manage', 'users.manage'] as const) {
+      assert.equal(hasStaffPermission(inspector, permission), false);
+    }
+  }
+  assert.equal(hasStaffPermission(user('ADMIN', ['WIZJA_LOKALNA']), 'users.manage'), true);
+  assert.equal(hasStaffPermission(user('USER', ['SPRZEDAWCA']), 'crm.read'), true);
+});

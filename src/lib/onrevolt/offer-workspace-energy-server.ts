@@ -7,6 +7,8 @@ import { getOfferWorkspaceArtifact, putOfferWorkspaceArtifact } from './offer-wo
 import { buildAnnualProfileOfferWorkspaceEnergy, buildOfferWorkspaceEnergy, type OfferWorkspaceEnergy } from './offer-workspace-energy';
 import { buildAnnualOfferConsumptionProfile } from './offer-workspace-annual-profile';
 import { resolveSelectedReferenceProfile } from './project-reference-profile';
+import { refreshCompletedOfferMeasurements } from './offer-measurement-completion-server';
+import { summarizeOfferMeasurementSeries } from './offer-workspace-server';
 
 const OFFER_WORKSPACE_ENERGY_CACHE_VERSION = 3;
 const energySourceRevisions = new WeakMap<OfferWorkspaceEnergy, string | null>();
@@ -60,6 +62,20 @@ export async function calculateOfferWorkspaceEnergy(
   draft: OfferWorkspaceDraft,
   series: OfferMeasurementSeries | null,
 ): Promise<OfferWorkspaceEnergy> {
+  if (series) {
+    const refreshed = await refreshCompletedOfferMeasurements(series, {
+      ...draft.existingPv,
+      latitude: workspace.input.location?.latitude ?? null,
+      longitude: workspace.input.location?.longitude ?? null,
+    });
+    if (refreshed !== series) {
+      series = refreshed;
+      workspace = { ...workspace, measurements: {
+        ...summarizeOfferMeasurementSeries(series, workspace.measurements.issues, workspace.period.periodKeys),
+        availability: 'FILES_PRESENT',
+      } };
+    }
+  }
   if (!series?.intervals.length) {
     const hasMeasurementData = (workspace.measurements.intervalCount ?? 0) > 0
       || workspace.measurements.months.some(month => month.importKwh !== null || month.exportKwh !== null)

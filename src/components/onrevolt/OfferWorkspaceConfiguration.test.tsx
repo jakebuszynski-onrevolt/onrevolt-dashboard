@@ -323,3 +323,13 @@ test('odznaczone finansowanie ma kwotę zero, gdy wynik dotyczy zaznaczonego zes
   assert.match(markup, /Nie uwzględniono · 0 zł/);
   assert.match(markup, /aria-label="Koszt systemu po dofinansowaniach"/);
 });
+
+test('finansowanie pokazuje stawki ulgi bez pytania o dochód na start', () => {
+  const draft = emptyOfferWorkspaceDraft();
+  draft.financing.considerTaxRelief = true;
+  const html = renderConfiguration({ draft });
+  assert.match(html, /aria-label="Stawka podatku dla ulgi"/);
+  assert.match(html, /aria-pressed="true"[^>]*>12%/);
+  assert.match(html, /Ulga szacunkowa 12%/);
+  assert.doesNotMatch(html, /aria-label="Podstawa opodatkowania/);
+});

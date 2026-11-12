@@ -144,6 +144,8 @@ test('four-decimal catalog normalization does not accept a genuinely different p
 
 test('settled net-metering export does not claim the cost is before export settlement', async () => {
   const tariffHistory: ClientTariffHistory = { strict: true, revision: 1, byDate: {}, tariffs: {}, issues: [] };
+  let netMeteringPolicy: any = null;
+  let factorInput: any = null;
   const start = Date.UTC(2026, 0, 1);
   const intervals = Array.from({ length: 24 }, (_, hour) => ({
     localStart: `2026-01-01T${String(hour).padStart(2, '0')}:00:00`,
@@ -157,7 +159,7 @@ test('settled net-metering export does not claim the cost is before export settl
     project: {
       id: 'project-1', clientId: 'client-1', clientType: 'B2C',
       offerWorkspace: { input: { calculation: { billingCycleMonths: 1 } } },
-      energyAudits: [{ annualConsumptionKwh: 1000, settlementSystem: 'net-metering', existingPvKw: 5, connectionPowerKw: 10 }],
+      energyAudits: [{ annualConsumptionKwh: 1000, settlementSystem: 'net-metering', existingPvKw: 13, connectionPowerKw: 10 }],
     },
     period: { startMonth: '2026-01', endMonth: '2026-01', endDate: '2026-01-31',
       fromUtc: '2026-01-01T00:00:00.000Z', untilUtc: '2026-01-02T00:00:00.000Z', periodKeys: ['2026-01'] },
@@ -168,22 +170,114 @@ test('settled net-metering export does not claim the cost is before export settl
     months: [{ period: '2026-01', importKwh: 24, exportKwh: 12, importAvailable: true, exportAvailable: true }],
   }, {
     invoiceBillingCycleForPeriod: async () => ({ cycleMonths: 1, startMonth: null, crossingCount: 0 }),
+    invoiceNetMeteringFactorForPeriod: async (input: any) => {
+      factorInput = input;
+      return { status: 'selected', factor: 0.8, sourceRevision: 'a'.repeat(64), invoicePeriods: ['2025-04-01–2026-03-31'] };
+    },
     currentScenario: async () => ({ tariffHistory, issues: [] }),
     hourlyMarketPrices: async () => ({ prices: new Map(), issue: null }),
     completeHistoryForSummary: async ({ history }) => ({ history, assumptions: [], issues: [] }),
     priceOfferWorkspaceGrid: () => ({ status: 'ready', vatBasis: 'GROSS', energyPln: 100, distributionPln: 20,
       fixedPln: 10, exportValuePln: null, pricedHours: 24, totalHours: 24, tariffLabels: ['ENEA G11'], issues: [] }),
-    billOfferWorkspaceScenario: () => ({ status: 'ready', settlement: 'NET_METERING', vatBasis: 'GROSS',
+    billOfferWorkspaceScenario: (input: any) => { netMeteringPolicy = input.settlement; return ({ status: 'ready', settlement: 'NET_METERING', vatBasis: 'GROSS',
       period: { startUtc: '2026-01-01T00:00:00.000Z', endUtc: '2026-01-02T00:00:00.000Z' }, warnings: [],
-      result: { totals: { cashDuePln: 95 } } } as any),
+      result: { totals: { cashDuePln: 95 } } } as any); },
   } as any);
 
   assert.equal(summary.settled, true);
   assert.equal(summary.totalPln, 95);
+  assert.equal(netMeteringPolicy.netMeteringRatio, 0.8, 'the confirmed invoice factor takes precedence over 13 kWp => 0.7');
+  assert.equal(netMeteringPolicy.hourlyNettingMode, 'SAME_HOUR_NET_EXCHANGE');
+  assert.equal(netMeteringPolicy.variableFeeOpustBasis, 'OZE_CHP_PRE_OPUST');
+  assert.deepEqual(factorInput, {
+    projectId: 'project-1', clientId: 'client-1', ppeNumber: 'ppe',
+    period: { startMonth: '2026-01', endMonth: '2026-01', endDate: '2026-01-31',
+      fromUtc: '2026-01-01T00:00:00.000Z', untilUtc: '2026-01-02T00:00:00.000Z', periodKeys: ['2026-01'] },
+  });
+  assert.ok(summary.assumptions.some(assumption => assumption.includes('potwierdzonej faktury ENEA')));
   assert.ok(!summary.assumptions.some(assumption => assumption.includes('przed rozliczeniem oddania')));
   assert.ok(summary.assumptions.includes(
     'Liczba interwałów z danymi oznaczonymi w plikach OSD jako szacowane (import lub eksport): 2. Wynik należy traktować jako szacunek.',
   ));
+});
+
+test('conflicting confirmed invoice factors block the NET_METERING settlement', async () => {
+  const tariffHistory: ClientTariffHistory = { strict: true, revision: 1, byDate: {}, tariffs: {}, issues: [] };
+  let billCalls = 0;
+  const start = Date.UTC(2026, 0, 1);
+  const intervals = Array.from({ length: 24 }, (_, hour) => ({
+    localStart: `2026-01-01T${String(hour).padStart(2, '0')}:00:00`,
+    localEnd: `2026-01-01T${String(hour + 1).padStart(2, '0')}:00:00`,
+    startUtc: new Date(start + hour * 3_600_000).toISOString(),
+    endUtc: new Date(start + (hour + 1) * 3_600_000).toISOString(), occurrence: 0,
+    import: { valueKwh: 1, source: 'measured' as const, fileIds: ['import'] },
+    export: { valueKwh: 0.5, source: 'measured' as const, fileIds: ['export'] },
+  }));
+  const summary = await calculateClientEnergyCostSummaryOnServer({
+    project: {
+      id: 'project-1', clientId: 'client-1', clientType: 'B2C',
+      offerWorkspace: { input: { calculation: { billingCycleMonths: 1 } } },
+      energyAudits: [{ annualConsumptionKwh: 1000, settlementSystem: 'NET_METERING', existingPvKw: 13, connectionPowerKw: 10 }],
+    },
+    period: { startMonth: '2026-01', endMonth: '2026-01', endDate: '2026-01-31',
+      fromUtc: '2026-01-01T00:00:00.000Z', untilUtc: '2026-01-02T00:00:00.000Z', periodKeys: ['2026-01'] },
+    series: { ppeNumber: 'ppe', periods: [{ period: '2026-01', hasImport: true, hasExport: true, missingDirections: [] }],
+      missingMonths: [], missingDirections: [], intervals, files: [] },
+    months: [{ period: '2026-01', importKwh: 24, exportKwh: 12, importAvailable: true, exportAvailable: true }],
+  }, {
+    invoiceBillingCycleForPeriod: async () => ({ cycleMonths: 1, startMonth: null, crossingCount: 0 }),
+    invoiceNetMeteringFactorForPeriod: async () => ({ status: 'ambiguous', factor: null, sourceRevision: 'b'.repeat(64), factors: [0.7, 0.8], invoicePeriods: [] }),
+    currentScenario: async () => ({ tariffHistory, issues: [] }),
+    hourlyMarketPrices: async () => ({ prices: new Map(), issue: null }),
+    completeHistoryForSummary: async ({ history }: any) => ({ history, assumptions: [], issues: [] }),
+    priceOfferWorkspaceGrid: () => ({ status: 'ready', vatBasis: 'GROSS', energyPln: 100, distributionPln: 20,
+      fixedPln: 10, exportValuePln: null, pricedHours: 24, totalHours: 24, tariffLabels: ['ENEA G11'], issues: [] }),
+    billOfferWorkspaceScenario: () => { billCalls += 1; throw new Error('must not use either conflicting factor'); },
+  } as any);
+
+  assert.equal(billCalls, 0);
+  assert.equal(summary.settled, false);
+  assert.ok(summary.issues.some(issue => issue.includes('Niejednoznaczny współczynnik opustu')));
+});
+
+test('confirmed invoice factor can determine net-metering ratio when existing PV power is unknown', async () => {
+  const tariffHistory: ClientTariffHistory = { strict: true, revision: 1, byDate: {}, tariffs: {}, issues: [] };
+  let netMeteringPolicy: any = null;
+  const start = Date.UTC(2026, 0, 1);
+  const intervals = Array.from({ length: 24 }, (_, hour) => ({
+    localStart: `2026-01-01T${String(hour).padStart(2, '0')}:00:00`,
+    localEnd: `2026-01-01T${String(hour + 1).padStart(2, '0')}:00:00`,
+    startUtc: new Date(start + hour * 3_600_000).toISOString(),
+    endUtc: new Date(start + (hour + 1) * 3_600_000).toISOString(), occurrence: 0,
+    import: { valueKwh: 1, source: 'measured' as const, fileIds: ['import'] },
+    export: { valueKwh: 0.5, source: 'measured' as const, fileIds: ['export'] },
+  }));
+  const summary = await calculateClientEnergyCostSummaryOnServer({
+    project: {
+      id: 'project-1', clientId: 'client-1', clientType: 'B2C',
+      offerWorkspace: { input: { calculation: { billingCycleMonths: 1 } } },
+      energyAudits: [{ annualConsumptionKwh: 1000, settlementSystem: 'NET_METERING', existingPvKw: null, connectionPowerKw: 10 }],
+    },
+    period: { startMonth: '2026-01', endMonth: '2026-01', endDate: '2026-01-31',
+      fromUtc: '2026-01-01T00:00:00.000Z', untilUtc: '2026-01-02T00:00:00.000Z', periodKeys: ['2026-01'] },
+    series: { ppeNumber: 'ppe', periods: [{ period: '2026-01', hasImport: true, hasExport: true, missingDirections: [] }],
+      missingMonths: [], missingDirections: [], intervals, files: [] },
+    months: [{ period: '2026-01', importKwh: 24, exportKwh: 12, importAvailable: true, exportAvailable: true }],
+  }, {
+    invoiceBillingCycleForPeriod: async () => ({ cycleMonths: 1, startMonth: null, crossingCount: 0 }),
+    invoiceNetMeteringFactorForPeriod: async () => ({ status: 'selected', factor: 0.8, sourceRevision: 'c'.repeat(64), invoicePeriods: ['2025-04-01–2026-03-31'] }),
+    currentScenario: async () => ({ tariffHistory, issues: [] }),
+    hourlyMarketPrices: async () => ({ prices: new Map(), issue: null }),
+    completeHistoryForSummary: async ({ history }: any) => ({ history, assumptions: [], issues: [] }),
+    priceOfferWorkspaceGrid: () => ({ status: 'ready', vatBasis: 'GROSS', energyPln: 100, distributionPln: 20,
+      fixedPln: 10, exportValuePln: null, pricedHours: 24, totalHours: 24, tariffLabels: ['ENEA G11'], issues: [] }),
+    billOfferWorkspaceScenario: (input: any) => { netMeteringPolicy = input.settlement; return ({ status: 'ready', settlement: 'NET_METERING', vatBasis: 'GROSS',
+      period: { startUtc: '2026-01-01T00:00:00.000Z', endUtc: '2026-01-02T00:00:00.000Z' }, warnings: [],
+      result: { totals: { cashDuePln: 95 } } } as any); },
+  } as any);
+
+  assert.equal(summary.settled, true);
+  assert.equal(netMeteringPolicy.netMeteringRatio, 0.8);
 });
 
 async function calculateForBillingCycle(input: {

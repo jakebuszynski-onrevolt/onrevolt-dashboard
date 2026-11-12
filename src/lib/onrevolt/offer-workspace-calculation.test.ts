@@ -146,6 +146,51 @@ test('unknown current net-metering balance estimates the baseline and preserves 
   assert.equal(input.draft.calculation!.initialCreditKwh, null);
 });
 
+test('confirmed invoice factor changes only the existing NET_METERING baseline', async () => {
+  const buildInput = (): OfferCalculationInput => {
+    const input = fixture();
+    input.draft.existingPv.powerKw = 13;
+    input.draft.currentSettlement = 'NET_METERING';
+    input.draft.targetSettlement = 'NET_BILLING';
+    input.draft.calculation!.initialCreditKwh = 0;
+    input.draft.calculation!.initialDepositPln = 0;
+    const exportHour = input.energy.intervals![12];
+    exportHour.loadKwh = 0;
+    exportHour.pvKwh = 1;
+    exportHour.importKwh = 0;
+    exportHour.exportKwh = 1;
+    return input;
+  };
+  const powerDerivedInput = buildInput();
+  const powerDerived = await calculateOfferWorkspaceScenario(powerDerivedInput);
+  const invoiceInput = buildInput();
+  invoiceInput.baselineNetMeteringFactor = {
+    status: 'selected', factor: 0.8, sourceRevision: 'a'.repeat(64), invoicePeriods: ['2025-04-01–2026-03-31'],
+  };
+  const invoiceBased = await calculateOfferWorkspaceScenario(invoiceInput);
+
+  assert.equal(powerDerived.status, 'ready', powerDerived.reasons.join('; '));
+  assert.equal(invoiceBased.status, 'ready', invoiceBased.reasons.join('; '));
+  assert.equal(powerDerived.baselineBill?.totals.creditAddedKwh, 0.7);
+  assert.equal(invoiceBased.baselineBill?.totals.creditAddedKwh, 0.8);
+  assert.equal(invoiceBased.proposedAnnualCostPln, powerDerived.proposedAnnualCostPln,
+    'the new proposed NET_BILLING policy does not use the invoice net-metering factor');
+  assert.equal(invoiceBased.tariffOnlyAnnualCostPln, powerDerived.tariffOnlyAnnualCostPln);
+});
+
+test('ambiguous invoice factor blocks the baseline comparison instead of choosing power ratio', async () => {
+  const input = fixture();
+  input.draft.existingPv.powerKw = 13;
+  input.draft.currentSettlement = 'NET_METERING';
+  input.draft.targetSettlement = 'NET_BILLING';
+  input.baselineNetMeteringFactorIssue = 'Niejednoznaczny współczynnik opustu na potwierdzonych fakturach dla PPE (0.7, 0.8); nie można porównać rachunku bazowego.';
+
+  const result = await calculateOfferWorkspaceScenario(input);
+
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.reasons.includes(input.baselineNetMeteringFactorIssue));
+});
+
 test('missing balance with existing lots is never silently replaced by zero', async () => {
   const input = fixture();
   input.draft.calculation!.initialDepositPln = null;
@@ -277,7 +322,8 @@ test('model deficit remains a visible provisional estimate and cannot become a r
   assert.notEqual(result.annualSavingsPln, null);
   assert.equal(result.recommendationEligible, false);
   assert.equal(result.paybackYears, null);
-  assert.equal(result.estimatedPaybackYears, undefined);
+  assert.ok(result.estimatedPaybackYears! > 0);
+  assert.ok(result.warnings.some(w => w.includes('Rozbieżność modelu PV')));
 });
 
 test('accepted tax estimate uses 12 percent after grant and is not certified economics', async () => {
@@ -306,16 +352,17 @@ test('accepted tax estimate uses 12 percent after grant and is not certified eco
   assert.ok(result.warnings.some(warning => warning.includes('wystarczający dochód')));
 });
 
-test('tax estimate caps deduction at 53000 and cannot be applied without acceptance', async () => {
+test('tax estimate caps deduction at 53000 and detailed mode still requires data', async () => {
   const input = fixture();
   addPvTemplate(input);
   input.workspace.templates[0].items[0].unitPurchaseNet = 100000;
   input.draft.financing = { considerGrant: false, considerTaxRelief: true };
+  input.draft.calculation!.taxDetailedCalculation = true;
   const unaccepted = await calculateOfferWorkspaceScenario(input);
   assert.equal(unaccepted.taxReliefPln, null);
   assert.equal(unaccepted.costAfterFinancingPln, null);
   assert.equal(unaccepted.estimatedPaybackYears, undefined);
-  input.draft.calculation!.taxEstimateAccepted = true;
+  input.draft.calculation!.taxDetailedCalculation = false;
   const accepted = await calculateOfferWorkspaceScenario(input);
   assert.equal(accepted.taxReliefPln, 6360);
   assert.equal(accepted.costAfterFinancingPln, 116640);
@@ -347,4 +394,62 @@ test('brak PV rozlicza pełny import bez wymagania systemu prosumenckiego ani kr
   input.draft.currentSettlement = 'NET_METERING';
   const stale = await calculateOfferWorkspaceScenario(input);
   assert.equal(stale.baselineAnnualCostPln, result.baselineAnnualCostPln);
+});
+
+test('upust zmniejsza koszt inwestycji i czas zwrotu bez zmiany oszczędności energetycznych', async () => {
+  const input = fixture(); addPvTemplate(input);
+  const before = await calculateOfferWorkspaceScenario(input);
+  input.draft.configurationEdits = [{ templateId: input.draft.selectedTemplateIds[0], addedItems: [{ id: 'discount', kind: 'DISCOUNT',
+    description: 'Upust', quantity: 1, role: 'OTHER', supplyMode: 'SERVICE_ONLY', pricing: { unitSaleNet: -500 / 1.23,
+      unitPurchaseNet: 0, purchaseVatRate: 0, operatingCostNet: 0, operatingCostBasis: 'PER_UNIT', saleVatRate: 0.23 } }] }];
+  const after = await calculateOfferWorkspaceScenario(input);
+  assert.equal(after.status, 'ready', after.reasons.join('; '));
+  assert.equal(after.systemCostPln, before.systemCostPln! - 500);
+  assert.equal(after.hardwareAnnualSavingsPln, before.hardwareAnnualSavingsPln);
+  assert.ok(after.paybackYears! < before.paybackYears!);
+});
+
+for (const rate of [null, 12, 19, 32, 0]) {
+  test('stawka ulgi w szacunku: ' + String(rate), async () => {
+    const input = fixture();
+    addPvTemplate(input);
+    input.draft.financing = { considerGrant: false, considerTaxRelief: true };
+    input.draft.calculation!.taxEstimateAccepted = true;
+    input.draft.calculation!.taxRatePercent = rate;
+    const result = await calculateOfferWorkspaceScenario(input);
+    assert.equal(result.taxReliefPln, Math.round(1230 * (rate ?? 12)) / 100);
+    assert.equal(input.draft.calculation!.taxRatePercent, rate);
+    assert.ok(result.warnings.some(warning => warning.includes('Szacunkowa ulga: ' + (rate ?? 12) + '%')));
+  });
+}
+
+test('brak stawki stosuje 12% także przy uzupełnionych danych podatkowych', async () => {
+  const input = fixture();
+  addPvTemplate(input);
+  input.draft.financing = { considerGrant: false, considerTaxRelief: true };
+  Object.assign(input.draft.calculation!, { taxRatePercent: null, taxRemainingLimitPln: 53000, taxEligibleCostPln: 1230, taxBasePln: 100000 });
+  const result = await calculateOfferWorkspaceScenario(input);
+  assert.ok(Math.abs(result.taxReliefPln! - 147.6) < 0.000001);
+  assert.ok(result.warnings.some(warning => warning.includes('domyślnie 12%')));
+});
+
+test('ulga domyślnie daje kwotę i szacunkowy zwrot bez dodatkowej zgody lub danych', async () => {
+  const input = fixture(); addPvTemplate(input);
+  input.draft.financing = { considerGrant: false, considerTaxRelief: true };
+  const before = JSON.stringify(input.draft);
+  const result = await calculateOfferWorkspaceScenario(input);
+  assert.equal(result.taxReliefPln, 147.6);
+  assert.ok(result.estimatedPaybackYears! > 0);
+  assert.equal(JSON.stringify(input.draft), before);
+  assert.ok(!result.warnings.some(w => w.includes('Uzupełnij stawkę podatku')));
+});
+
+test('szacunkowa ulga respektuje znane ograniczenia, także zero', async () => {
+  for (const field of ['taxBasePln', 'taxRemainingLimitPln', 'taxEligibleCostPln'] as const) {
+    const input = fixture(); addPvTemplate(input);
+    input.draft.financing = { considerGrant: false, considerTaxRelief: true };
+    input.draft.calculation![field] = 0;
+    const result = await calculateOfferWorkspaceScenario(input);
+    assert.equal(result.taxReliefPln, 0, field);
+  }
 });

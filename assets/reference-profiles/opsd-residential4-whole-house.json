@@ -1,0 +1,4675 @@
+{
+  "key": "opsd_20200415_de_kn_residential4_household_heat_pump",
+  "sourceKey": "opsd_household_data_2020_04_15",
+  "name": "Dom z pompą ciepła — bez ładowania auta (OPSD 4)",
+  "category": "household_whole_house",
+  "kind": "DERIVED_SEASONAL_PATTERN",
+  "quantity": "whole_building_energy_consumption",
+  "unit": "kWh",
+  "timeBasis": "EUROPE_BERLIN_MONTH_DAYTYPE_HOUR",
+  "resolutionMinutes": 60,
+  "start": null,
+  "end": null,
+  "series": [
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 0,
+      "slot": 0,
+      "value": 1.0912999999999784,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.7905999999999949,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.769399999999996,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.8462999999999965,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.7884000000000014,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.7490000000000236,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.8366999999999735,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.9145000000000436,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.9383999999999901,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 9,
+      "slot": 9,
+      "value": 1.005099999999959,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 10,
+      "slot": 10,
+      "value": 1.031111111111108,
+      "samples": 9
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 11,
+      "slot": 11,
+      "value": 1.3778888888889216,
+      "samples": 9
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 12,
+      "slot": 12,
+      "value": 1.552000000000041,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.9160999999999859,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 14,
+      "slot": 14,
+      "value": 1.0808999999999798,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.8377000000000123,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.9574999999999392,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 17,
+      "slot": 17,
+      "value": 1.053999999999911,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 18,
+      "slot": 18,
+      "value": 1.4039000000000386,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 19,
+      "slot": 19,
+      "value": 1.0756000000000085,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 20,
+      "slot": 20,
+      "value": 1.1447999999999865,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 21,
+      "slot": 21,
+      "value": 1.105399999999986,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 22,
+      "slot": 22,
+      "value": 1.0006000000000312,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "weekend",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.8926000000000158,
+      "samples": 10
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.950157894736848,
+      "samples": 19
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.9011500000000069,
+      "samples": 20
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 2,
+      "slot": 2,
+      "value": 1.0170499999999834,
+      "samples": 20
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.9117142857142946,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.9086190476190539,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.8790952380952712,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.984095238095192,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 7,
+      "slot": 7,
+      "value": 1.3848095238095517,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 8,
+      "slot": 8,
+      "value": 1.2075714285713857,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.8969047619047853,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.9940476190476583,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 11,
+      "slot": 11,
+      "value": 1.0972857142857146,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 12,
+      "slot": 12,
+      "value": 1.313857142857173,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 13,
+      "slot": 13,
+      "value": 1.190523809523788,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 14,
+      "slot": 14,
+      "value": 1.0429999999999753,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 15,
+      "slot": 15,
+      "value": 1.005699999999986,
+      "samples": 20
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.8447500000000148,
+      "samples": 20
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 17,
+      "slot": 17,
+      "value": 1.0214210526316079,
+      "samples": 19
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.9140999999999877,
+      "samples": 20
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 19,
+      "slot": 19,
+      "value": 1.3965238095238122,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 20,
+      "slot": 20,
+      "value": 1.106476190476186,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.9563333333333319,
+      "samples": 21
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.9817499999999952,
+      "samples": 20
+    },
+    {
+      "month": 1,
+      "dayType": "workday",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.9134210526315829,
+      "samples": 19
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.9048750000000751,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.7166249999998513,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.7760000000000673,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.8824999999999932,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.7372500000000457,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.7027499999999804,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.8139999999999645,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 7,
+      "slot": 7,
+      "value": 1.0847500000000423,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.9022499999999454,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.6825000000000045,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.8281249999999929,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 11,
+      "slot": 11,
+      "value": 1.3289999999999722,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 12,
+      "slot": 12,
+      "value": 1.070500000000095,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 13,
+      "slot": 13,
+      "value": 1.0894999999999584,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.7139999999999773,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.6758750000000404,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.6802499999999938,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 17,
+      "slot": 17,
+      "value": 1.0223750000000535,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.8791249999999025,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.9132500000000761,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.9743749999998883,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.9070000000000746,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.8661250000000038,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "weekend",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.9347500000000011,
+      "samples": 8
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.7801428571428698,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.7121904761904932,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.7483333333333294,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.8034285714285748,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.7464761904761872,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.7495714285714279,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.9230476190476089,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 7,
+      "slot": 7,
+      "value": 1.3287619047619046,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 8,
+      "slot": 8,
+      "value": 1.1043809523809907,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.8643809523810059,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.8879523809523264,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 11,
+      "slot": 11,
+      "value": 1.0054285714285593,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 12,
+      "slot": 12,
+      "value": 1.213142857142903,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 13,
+      "slot": 13,
+      "value": 1.0105238095237528,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.9405238095238544,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.8293333333333386,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.7321904761904372,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.7818095238095079,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 18,
+      "slot": 18,
+      "value": 1.0477142857143267,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 19,
+      "slot": 19,
+      "value": 1.017999999999995,
+      "samples": 20
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.9111499999999865,
+      "samples": 20
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 21,
+      "slot": 21,
+      "value": 1.0473499999999831,
+      "samples": 20
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 22,
+      "slot": 22,
+      "value": 1.0101428571428879,
+      "samples": 21
+    },
+    {
+      "month": 2,
+      "dayType": "workday",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.7902380952380532,
+      "samples": 21
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.5836250000000973,
+      "samples": 8
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.5765000000000668,
+      "samples": 8
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.6132857142856665,
+      "samples": 7
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.5948750000000018,
+      "samples": 8
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.5871250000000146,
+      "samples": 8
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.5928749999998786,
+      "samples": 8
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.5948750000000587,
+      "samples": 8
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.5997500000000855,
+      "samples": 8
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.6041428571427981,
+      "samples": 7
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 9,
+      "slot": 9,
+      "value": 1.0838571428571737,
+      "samples": 7
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.9115000000000038,
+      "samples": 8
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 11,
+      "slot": 11,
+      "value": 1.0855000000000175,
+      "samples": 8
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 12,
+      "slot": 12,
+      "value": 1.2219999999999231,
+      "samples": 8
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 13,
+      "slot": 13,
+      "value": 1.2680000000000362,
+      "samples": 8
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.841875000000087,
+      "samples": 8
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.7651428571427102,
+      "samples": 7
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.7022857142857382,
+      "samples": 7
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.8694285714287194,
+      "samples": 7
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.8814999999998463,
+      "samples": 6
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.7632857142858224,
+      "samples": 7
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 20,
+      "slot": 20,
+      "value": 1.0175714285713622,
+      "samples": 7
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 21,
+      "slot": 21,
+      "value": 1.0040000000000353,
+      "samples": 7
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.7548571428571579,
+      "samples": 7
+    },
+    {
+      "month": 3,
+      "dayType": "weekend",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.6552857142855828,
+      "samples": 7
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.6584000000000969,
+      "samples": 20
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.6790909090908083,
+      "samples": 22
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.7188181818182163,
+      "samples": 22
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.6695500000000039,
+      "samples": 20
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.6743333333333361,
+      "samples": 21
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.670652173912992,
+      "samples": 23
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.7040454545454871,
+      "samples": 22
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.7968888888890054,
+      "samples": 18
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 8,
+      "slot": 8,
+      "value": 1.0347777777777007,
+      "samples": 18
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.8221499999999651,
+      "samples": 20
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.7340000000000118,
+      "samples": 20
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.6968499999999664,
+      "samples": 20
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 12,
+      "slot": 12,
+      "value": 1.0527000000000242,
+      "samples": 20
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.7284090909091105,
+      "samples": 22
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.7268260869565755,
+      "samples": 23
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.6967619047617724,
+      "samples": 21
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.6440476190476504,
+      "samples": 21
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.7808095238094801,
+      "samples": 21
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.8420000000000186,
+      "samples": 20
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.747368421052637,
+      "samples": 19
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.8102352941176404,
+      "samples": 17
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.8554705882352477,
+      "samples": 17
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.9018095238095503,
+      "samples": 21
+    },
+    {
+      "month": 3,
+      "dayType": "workday",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.689857142857125,
+      "samples": 21
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.1750000000000682,
+      "samples": 4
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.3810000000000855,
+      "samples": 2
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.6300000000001091,
+      "samples": 1
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.4175000000000182,
+      "samples": 2
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.49149999999985994,
+      "samples": 2
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.1562500000001137,
+      "samples": 4
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.17149999999980992,
+      "samples": 4
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.14900000000034197,
+      "samples": 1
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.514999999999759,
+      "samples": 2
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.4548000000002503,
+      "samples": 5
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.5037499999999682,
+      "samples": 4
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.44999999999998863,
+      "samples": 3
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.5443333333329482,
+      "samples": 3
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.6868000000001075,
+      "samples": 5
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.502999999999895,
+      "samples": 5
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.4775000000000489,
+      "samples": 4
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.6110000000004447,
+      "samples": 3
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.5867499999999666,
+      "samples": 4
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.261499999999927,
+      "samples": 4
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.45400000000017826,
+      "samples": 5
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.6021999999999934,
+      "samples": 5
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.538799999999992,
+      "samples": 5
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.7053333333334043,
+      "samples": 6
+    },
+    {
+      "month": 4,
+      "dayType": "weekend",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.4011428571428561,
+      "samples": 7
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.3687333333332996,
+      "samples": 15
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.3078461538461852,
+      "samples": 13
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.3248823529411846,
+      "samples": 17
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.33906666666665236,
+      "samples": 15
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.3650714285714522,
+      "samples": 14
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.3802727272727266,
+      "samples": 11
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.4280833333333855,
+      "samples": 12
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.428999999999841,
+      "samples": 12
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.462500000000026,
+      "samples": 14
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.38478571428571434,
+      "samples": 14
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.3090000000000422,
+      "samples": 14
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.36199999999999694,
+      "samples": 13
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.5544666666665611,
+      "samples": 15
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.5081666666665067,
+      "samples": 12
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.2480000000001231,
+      "samples": 6
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.5741428571430041,
+      "samples": 7
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.3062999999999363,
+      "samples": 10
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.335909090909111,
+      "samples": 11
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.3955999999999941,
+      "samples": 15
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.36160000000007436,
+      "samples": 15
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.4059090909089388,
+      "samples": 11
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.47966666666661695,
+      "samples": 12
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.4840714285714642,
+      "samples": 14
+    },
+    {
+      "month": 4,
+      "dayType": "workday",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.43693749999997067,
+      "samples": 16
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.24125000000003638,
+      "samples": 8
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.21312499999993406,
+      "samples": 8
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.17342857142862808,
+      "samples": 7
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.18085714285721874,
+      "samples": 7
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.16799999999989268,
+      "samples": 8
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.1742000000002008,
+      "samples": 5
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.2896666666664866,
+      "samples": 6
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.3126666666667764,
+      "samples": 6
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.2688333333333806,
+      "samples": 6
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.31799999999978873,
+      "samples": 7
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.3230000000001577,
+      "samples": 7
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.24533333333325422,
+      "samples": 6
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.5648333333332971,
+      "samples": 6
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.31671428571454335,
+      "samples": 7
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.5052857142857354,
+      "samples": 7
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.2464999999998554,
+      "samples": 6
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.24033333333312612,
+      "samples": 6
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.5898333333335017,
+      "samples": 6
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.22316666666673277,
+      "samples": 6
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.5486666666667664,
+      "samples": 6
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.3509999999999828,
+      "samples": 7
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.33071428571422856,
+      "samples": 7
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.35542857142861195,
+      "samples": 7
+    },
+    {
+      "month": 5,
+      "dayType": "weekend",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.3463750000000232,
+      "samples": 8
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.23526666666663612,
+      "samples": 15
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.1967333333333348,
+      "samples": 15
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.1814117647058725,
+      "samples": 17
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.17106249999994816,
+      "samples": 16
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.17035714285715844,
+      "samples": 14
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.1736666666667285,
+      "samples": 12
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.24761538461514368,
+      "samples": 13
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.4008666666665704,
+      "samples": 15
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.412187500000158,
+      "samples": 16
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.2068333333332172,
+      "samples": 12
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.210916666666814,
+      "samples": 12
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.20653846153815125,
+      "samples": 13
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.45976923076934256,
+      "samples": 13
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.4825714285715484,
+      "samples": 14
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.34168749999988535,
+      "samples": 16
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.22821052631574826,
+      "samples": 19
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.25431578947379757,
+      "samples": 19
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.2887647058823725,
+      "samples": 17
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.3017368421052245,
+      "samples": 19
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.2793888888890087,
+      "samples": 18
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.26544444444453397,
+      "samples": 18
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.3642222222221487,
+      "samples": 18
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.3288888888888677,
+      "samples": 18
+    },
+    {
+      "month": 5,
+      "dayType": "workday",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.2795000000000982,
+      "samples": 16
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.27174999999999727,
+      "samples": 4
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.21940000000004148,
+      "samples": 5
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.19799999999993037,
+      "samples": 7
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.20080000000007203,
+      "samples": 5
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.2106666666665357,
+      "samples": 3
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.18325000000038472,
+      "samples": 4
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.21085714285678542,
+      "samples": 7
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.3231666666667176,
+      "samples": 6
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.44499999999986056,
+      "samples": 6
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.4547500000003595,
+      "samples": 4
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.1937499999998522,
+      "samples": 4
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.4523999999999887,
+      "samples": 5
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.25424999999981424,
+      "samples": 4
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.20466666666698075,
+      "samples": 3
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.25475000000008663,
+      "samples": 4
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.29174999999992224,
+      "samples": 4
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.3309999999996762,
+      "samples": 3
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.4861999999997579,
+      "samples": 5
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.48699999999978444,
+      "samples": 5
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.3335000000004982,
+      "samples": 4
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.32779999999979736,
+      "samples": 5
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.29200000000000725,
+      "samples": 5
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.3259999999999309,
+      "samples": 5
+    },
+    {
+      "month": 6,
+      "dayType": "weekend",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.4216666666667758,
+      "samples": 6
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.20933333333334758,
+      "samples": 12
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.18177777777777415,
+      "samples": 9
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.1834615384614678,
+      "samples": 13
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.17854545454554227,
+      "samples": 11
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.18454545454539006,
+      "samples": 11
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.16145454545465493,
+      "samples": 11
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.267636363636236,
+      "samples": 11
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.26930000000011206,
+      "samples": 10
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.3393636363634662,
+      "samples": 11
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.2501428571429512,
+      "samples": 14
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.2336923076923435,
+      "samples": 13
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.29161538461546743,
+      "samples": 13
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.5311538461537566,
+      "samples": 13
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.3740909090905895,
+      "samples": 11
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.22260000000025001,
+      "samples": 10
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.283727272727209,
+      "samples": 11
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.285272727272689,
+      "samples": 11
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.3228461538461103,
+      "samples": 13
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.2879000000002179,
+      "samples": 10
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.3124999999998437,
+      "samples": 8
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.27109090909090644,
+      "samples": 11
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.28887500000001864,
+      "samples": 8
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.35890000000003963,
+      "samples": 10
+    },
+    {
+      "month": 6,
+      "dayType": "workday",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.3198000000000093,
+      "samples": 15
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.28366666666655266,
+      "samples": 6
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.22166666666680612,
+      "samples": 6
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.22600000000001805,
+      "samples": 6
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.19119999999988976,
+      "samples": 5
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.21149999999988722,
+      "samples": 2
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.18200000000024374,
+      "samples": 3
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.18683333333384175,
+      "samples": 6
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.1926666666665824,
+      "samples": 3
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.2103333333334755,
+      "samples": 3
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.22449999999989245,
+      "samples": 4
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.37528571428556134,
+      "samples": 7
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.33242857142891225,
+      "samples": 7
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.3268333333332028,
+      "samples": 6
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.5458571428569517,
+      "samples": 7
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.4076666666665258,
+      "samples": 9
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.3742222222223038,
+      "samples": 9
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.5045000000000528,
+      "samples": 10
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.4311111111110222,
+      "samples": 9
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.3096666666667084,
+      "samples": 9
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.23924999999992735,
+      "samples": 8
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.27457142857136724,
+      "samples": 7
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.286833333333296,
+      "samples": 6
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.3576000000000022,
+      "samples": 5
+    },
+    {
+      "month": 7,
+      "dayType": "weekend",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.30100000000000665,
+      "samples": 6
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.23746153846164256,
+      "samples": 13
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.2012000000000171,
+      "samples": 10
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.1995000000000573,
+      "samples": 10
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.1814444444443729,
+      "samples": 9
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.17866666666670503,
+      "samples": 12
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.193666666666584,
+      "samples": 9
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.2368571428573237,
+      "samples": 7
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.374499999999955,
+      "samples": 8
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.20874999999982435,
+      "samples": 8
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.2869999999999696,
+      "samples": 7
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.3592500000000882,
+      "samples": 8
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.39655555555521005,
+      "samples": 9
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.4110000000000923,
+      "samples": 10
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.4323000000001798,
+      "samples": 10
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.32299999999980417,
+      "samples": 13
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.2698333333333254,
+      "samples": 18
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.2597777777777487,
+      "samples": 18
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.33700000000000174,
+      "samples": 18
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.320578947368601,
+      "samples": 19
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.28178571428542554,
+      "samples": 14
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.260909090909205,
+      "samples": 11
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.3569999999999993,
+      "samples": 8
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.317222222222199,
+      "samples": 9
+    },
+    {
+      "month": 7,
+      "dayType": "workday",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.3115833333333171,
+      "samples": 12
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.18833333333327573,
+      "samples": 6
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.20340000000001054,
+      "samples": 5
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.17783333333341034,
+      "samples": 6
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.1774999999998954,
+      "samples": 4
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.18216666666675488,
+      "samples": 6
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.1737142857142057,
+      "samples": 7
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.18850000000027953,
+      "samples": 6
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.1767999999996391,
+      "samples": 5
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.20759999999954742,
+      "samples": 5
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.18960000000024593,
+      "samples": 5
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.41674999999978013,
+      "samples": 4
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.2527500000003329,
+      "samples": 4
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.3037499999999511,
+      "samples": 4
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.35516666666692726,
+      "samples": 6
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.2365714285714213,
+      "samples": 7
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.28212500000013563,
+      "samples": 8
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.21650000000002478,
+      "samples": 8
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.23587500000007822,
+      "samples": 8
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.19616666666604488,
+      "samples": 6
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.4009999999998627,
+      "samples": 5
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.21820000000043366,
+      "samples": 5
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.37175000000002,
+      "samples": 4
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.20325000000002547,
+      "samples": 4
+    },
+    {
+      "month": 8,
+      "dayType": "weekend",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.2477500000000532,
+      "samples": 4
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.20494444444439827,
+      "samples": 18
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.19494117647057946,
+      "samples": 17
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.19482352941178546,
+      "samples": 17
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.18605882352937897,
+      "samples": 17
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.1878000000000308,
+      "samples": 15
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.18299999999996241,
+      "samples": 15
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.20564705882377574,
+      "samples": 17
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.2518823529408377,
+      "samples": 17
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.334823529411618,
+      "samples": 17
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.3125294117649125,
+      "samples": 17
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.28752941176492186,
+      "samples": 17
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.2734210526315457,
+      "samples": 19
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.32305882352924903,
+      "samples": 17
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.2938500000000829,
+      "samples": 20
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.3145909090907098,
+      "samples": 22
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.3253636363637714,
+      "samples": 22
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.24127272727270627,
+      "samples": 22
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.30818181818171875,
+      "samples": 22
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.3942999999999074,
+      "samples": 20
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.3321052631580235,
+      "samples": 19
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.2600952380950968,
+      "samples": 21
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.24594999999999345,
+      "samples": 20
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.2481578947368737,
+      "samples": 19
+    },
+    {
+      "month": 8,
+      "dayType": "workday",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.23568421052631924,
+      "samples": 19
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.28650000000000847,
+      "samples": 6
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.23249999999999696,
+      "samples": 6
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.1927500000000606,
+      "samples": 8
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.19299999999988618,
+      "samples": 7
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.2061428571428873,
+      "samples": 7
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.18466666666665787,
+      "samples": 6
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.17633333333325632,
+      "samples": 6
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.221333333333367,
+      "samples": 6
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.3118333333334249,
+      "samples": 6
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.49624999999994657,
+      "samples": 4
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.2955000000001746,
+      "samples": 6
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.4595999999996138,
+      "samples": 5
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.5959999999998444,
+      "samples": 5
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.2295714285714244,
+      "samples": 7
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.28757142857146584,
+      "samples": 7
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.34542857142837746,
+      "samples": 7
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.3446666666670429,
+      "samples": 6
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.24859999999935098,
+      "samples": 5
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.25916666666749205,
+      "samples": 6
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.5133999999998196,
+      "samples": 5
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.5613999999998669,
+      "samples": 5
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.3867142857142686,
+      "samples": 7
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.345833333333303,
+      "samples": 6
+    },
+    {
+      "month": 9,
+      "dayType": "weekend",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.30949999999991934,
+      "samples": 6
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.23625000000004093,
+      "samples": 16
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.21287500000005366,
+      "samples": 16
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.20299999999996696,
+      "samples": 15
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.18862500000003024,
+      "samples": 16
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.18273333333336267,
+      "samples": 15
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.23766666666661726,
+      "samples": 12
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.26858333333344336,
+      "samples": 12
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.3451666666665763,
+      "samples": 12
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.29985714285728754,
+      "samples": 14
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.22645454545404806,
+      "samples": 11
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.21191666666670508,
+      "samples": 12
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.39033333333348863,
+      "samples": 9
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.5502500000000813,
+      "samples": 12
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.30485714285691756,
+      "samples": 14
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.31706666666639194,
+      "samples": 15
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.3129333333337096,
+      "samples": 15
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.3216875000002446,
+      "samples": 16
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.3199230769228926,
+      "samples": 13
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.39299999999975627,
+      "samples": 15
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.3629375000002213,
+      "samples": 16
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.41833333333335454,
+      "samples": 15
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.3340624999999875,
+      "samples": 16
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.34450000000002284,
+      "samples": 14
+    },
+    {
+      "month": 9,
+      "dayType": "workday",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.3229285714285441,
+      "samples": 14
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.44966666666656846,
+      "samples": 9
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.5055999999999585,
+      "samples": 5
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.4024000000002161,
+      "samples": 5
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.32083333333328784,
+      "samples": 6
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.30900000000004485,
+      "samples": 6
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.2857142857142857,
+      "samples": 7
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.4012499999999477,
+      "samples": 8
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.45260000000025685,
+      "samples": 5
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.583833333333511,
+      "samples": 6
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.6536666666668225,
+      "samples": 6
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 10,
+      "slot": 10,
+      "value": 1.2015999999998712,
+      "samples": 5
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 11,
+      "slot": 11,
+      "value": 1.1317142857147604,
+      "samples": 7
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 12,
+      "slot": 12,
+      "value": 0.7286666666666406,
+      "samples": 3
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.7862499999997112,
+      "samples": 4
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.7367500000001996,
+      "samples": 4
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.32566666666616584,
+      "samples": 3
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.516499999999894,
+      "samples": 6
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.6277142857140754,
+      "samples": 7
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.6087999999999283,
+      "samples": 5
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.3960000000000036,
+      "samples": 5
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.4800000000000182,
+      "samples": 5
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.4788333333333412,
+      "samples": 6
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.5358000000000175,
+      "samples": 5
+    },
+    {
+      "month": 10,
+      "dayType": "weekend",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.4070000000000391,
+      "samples": 4
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.2391818181818466,
+      "samples": 11
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.24183333333326118,
+      "samples": 12
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.19090000000005602,
+      "samples": 10
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.20066666666662059,
+      "samples": 12
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.17218181818183934,
+      "samples": 11
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.20799999999998622,
+      "samples": 14
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.35408333333339215,
+      "samples": 12
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.694222222222177,
+      "samples": 9
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.8263749999999561,
+      "samples": 8
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.5551000000002659,
+      "samples": 10
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 10,
+      "slot": 10,
+      "value": 1.0164285714286703,
+      "samples": 7
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 11,
+      "slot": 11,
+      "value": 0.8452857142849552,
+      "samples": 7
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 12,
+      "slot": 12,
+      "value": 1.0254545454547497,
+      "samples": 11
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.7910000000000537,
+      "samples": 8
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.612899999999911,
+      "samples": 10
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.6239230769235135,
+      "samples": 13
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.612916666666185,
+      "samples": 12
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.5542500000000246,
+      "samples": 8
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.3311249999999859,
+      "samples": 8
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.47645454545454413,
+      "samples": 11
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.4076428571428486,
+      "samples": 14
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.4866666666666788,
+      "samples": 9
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.5044285714284992,
+      "samples": 7
+    },
+    {
+      "month": 10,
+      "dayType": "workday",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.37075000000004366,
+      "samples": 12
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.7651428571427914,
+      "samples": 7
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.5906666666667965,
+      "samples": 6
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.6179999999999382,
+      "samples": 5
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.5789999999999054,
+      "samples": 5
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.63100000000004,
+      "samples": 5
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.5985999999998057,
+      "samples": 5
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.7064285714286598,
+      "samples": 7
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.5950000000000273,
+      "samples": 6
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.784333333334113,
+      "samples": 3
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.7616666666664665,
+      "samples": 3
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.7389999999993506,
+      "samples": 5
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 11,
+      "slot": 11,
+      "value": 2.4176666666670976,
+      "samples": 6
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 12,
+      "slot": 12,
+      "value": 1.0221666666665594,
+      "samples": 6
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 13,
+      "slot": 13,
+      "value": 1.063000000000746,
+      "samples": 6
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.8117999999994936,
+      "samples": 5
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.6484999999995011,
+      "samples": 4
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.6937500000001933,
+      "samples": 4
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 17,
+      "slot": 17,
+      "value": 1.1005000000000678,
+      "samples": 4
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 18,
+      "slot": 18,
+      "value": 1.0806666666667297,
+      "samples": 6
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.9651666666665429,
+      "samples": 6
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.9335999999998876,
+      "samples": 5
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.7736666666667892,
+      "samples": 3
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.7074999999999818,
+      "samples": 2
+    },
+    {
+      "month": 11,
+      "dayType": "weekend",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.8082500000001573,
+      "samples": 4
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.7412000000001626,
+      "samples": 10
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.7125384615384204,
+      "samples": 13
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.6775833333333973,
+      "samples": 12
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.6426923076923091,
+      "samples": 13
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.6547499999999596,
+      "samples": 12
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.6809999999999642,
+      "samples": 12
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.8540769230769281,
+      "samples": 13
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 7,
+      "slot": 7,
+      "value": 0.92811111111127,
+      "samples": 9
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.9112000000003491,
+      "samples": 10
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.9219999999996465,
+      "samples": 9
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 10,
+      "slot": 10,
+      "value": 0.807545454545706,
+      "samples": 11
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 11,
+      "slot": 11,
+      "value": 2.1861666666668307,
+      "samples": 12
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 12,
+      "slot": 12,
+      "value": 1.2034545454541785,
+      "samples": 11
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 13,
+      "slot": 13,
+      "value": 0.8567500000000526,
+      "samples": 12
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.7457272727272084,
+      "samples": 11
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.6759090909094373,
+      "samples": 11
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 16,
+      "slot": 16,
+      "value": 0.7595714285712509,
+      "samples": 14
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.7801818181818073,
+      "samples": 11
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 18,
+      "slot": 18,
+      "value": 0.8569999999999709,
+      "samples": 11
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 19,
+      "slot": 19,
+      "value": 0.9415555555556492,
+      "samples": 9
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.8794545454544608,
+      "samples": 11
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.8829000000000405,
+      "samples": 10
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.8138888888888182,
+      "samples": 9
+    },
+    {
+      "month": 11,
+      "dayType": "workday",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.8270999999999731,
+      "samples": 10
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 0,
+      "slot": 0,
+      "value": 1.0468000000000757,
+      "samples": 5
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 1,
+      "slot": 1,
+      "value": 0.9204000000003362,
+      "samples": 5
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.8092499999997926,
+      "samples": 4
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.8962500000000091,
+      "samples": 4
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.904200000000128,
+      "samples": 5
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.9464999999997872,
+      "samples": 4
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 6,
+      "slot": 6,
+      "value": 0.7626666666666703,
+      "samples": 6
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 7,
+      "slot": 7,
+      "value": 1.1544000000001688,
+      "samples": 5
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.9705999999998767,
+      "samples": 5
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 9,
+      "slot": 9,
+      "value": 1.0110000000010284,
+      "samples": 3
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 10,
+      "slot": 10,
+      "value": 1.1623333333319958,
+      "samples": 3
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 11,
+      "slot": 11,
+      "value": 2.683749999999975,
+      "samples": 4
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 12,
+      "slot": 12,
+      "value": 1.7979999999998881,
+      "samples": 4
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 13,
+      "slot": 13,
+      "value": 1.6241666666674444,
+      "samples": 6
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 14,
+      "slot": 14,
+      "value": 1.8964999999994347,
+      "samples": 4
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 15,
+      "slot": 15,
+      "value": 1.763666666666192,
+      "samples": 3
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 16,
+      "slot": 16,
+      "value": 1.1407500000004802,
+      "samples": 4
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 17,
+      "slot": 17,
+      "value": 1.1743333333332278,
+      "samples": 6
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 18,
+      "slot": 18,
+      "value": 1.2620000000000193,
+      "samples": 6
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 19,
+      "slot": 19,
+      "value": 1.0892499999999927,
+      "samples": 4
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 20,
+      "slot": 20,
+      "value": 0.9399999999998272,
+      "samples": 4
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 21,
+      "slot": 21,
+      "value": 1.2496666666669018,
+      "samples": 3
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 22,
+      "slot": 22,
+      "value": 0.9909999999996822,
+      "samples": 3
+    },
+    {
+      "month": 12,
+      "dayType": "weekend",
+      "hour": 23,
+      "slot": 23,
+      "value": 1.2526666666669068,
+      "samples": 3
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 0,
+      "slot": 0,
+      "value": 0.9504285714287367,
+      "samples": 7
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 1,
+      "slot": 1,
+      "value": 1.0085999999997513,
+      "samples": 10
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 2,
+      "slot": 2,
+      "value": 0.8677500000001146,
+      "samples": 8
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 3,
+      "slot": 3,
+      "value": 0.8302727272726274,
+      "samples": 11
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 4,
+      "slot": 4,
+      "value": 0.8233636363635345,
+      "samples": 11
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 5,
+      "slot": 5,
+      "value": 0.9155555555556324,
+      "samples": 9
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 6,
+      "slot": 6,
+      "value": 1.1243000000000394,
+      "samples": 10
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 7,
+      "slot": 7,
+      "value": 1.2668888888888938,
+      "samples": 9
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 8,
+      "slot": 8,
+      "value": 0.9392222222219667,
+      "samples": 9
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 9,
+      "slot": 9,
+      "value": 0.9500000000000455,
+      "samples": 9
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 10,
+      "slot": 10,
+      "value": 1.0187999999994646,
+      "samples": 10
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 11,
+      "slot": 11,
+      "value": 1.898888888889183,
+      "samples": 9
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 12,
+      "slot": 12,
+      "value": 1.1495833333337562,
+      "samples": 12
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 13,
+      "slot": 13,
+      "value": 1.133249999999947,
+      "samples": 8
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 14,
+      "slot": 14,
+      "value": 0.8791250000002435,
+      "samples": 8
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 15,
+      "slot": 15,
+      "value": 0.8152222222220694,
+      "samples": 9
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 16,
+      "slot": 16,
+      "value": 1.0724545454544858,
+      "samples": 11
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 17,
+      "slot": 17,
+      "value": 0.9605833333333749,
+      "samples": 12
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 18,
+      "slot": 18,
+      "value": 1.181461538461585,
+      "samples": 13
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 19,
+      "slot": 19,
+      "value": 1.054909090909198,
+      "samples": 11
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 20,
+      "slot": 20,
+      "value": 1.087272727272648,
+      "samples": 11
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 21,
+      "slot": 21,
+      "value": 0.9683636363636403,
+      "samples": 11
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 22,
+      "slot": 22,
+      "value": 1.1485999999998966,
+      "samples": 10
+    },
+    {
+      "month": 12,
+      "dayType": "workday",
+      "hour": 23,
+      "slot": 23,
+      "value": 0.9533333333333253,
+      "samples": 9
+    }
+  ],
+  "metadata": {
+    "reviewStatus": "CANDIDATE",
+    "country": "DE",
+    "geography": "Jedno gospodarstwo domowe OPSD 4 w południowych Niemczech; lokalizacja uogólniona przez dostawcę.",
+    "sourceUrl": "https://data.open-power-system-data.org/household_data/2020-04-15/",
+    "sourceKey": "opsd_household_data_2020_04_15",
+    "sourceColumnSet": [
+      "DE_KN_residential4_grid_import",
+      "DE_KN_residential4_pv",
+      "DE_KN_residential4_grid_export",
+      "DE_KN_residential4_ev"
+    ],
+    "sourceSha256": "15956440b27465686eae2abf5895cbc3dab80f934a891bcb2f4f944428e97d60",
+    "sourceYear": 2016,
+    "sourceTimestampBasis": "OPSD uses left-labeled hourly buckets; the current-minus-previous counter delta is assigned to the current row label, with an approximately one-minute offset inherent in the last observation within that hour",
+    "civilTimeBasis": "Europe/Berlin from cet_cest_timestamp",
+    "derivation": "delta(grid_import) + delta(pv) - delta(grid_export) - delta(ev)",
+    "wholeHouseBoundaryInference": "grid import plus onsite PV minus grid export approximates building load; EV charging is subtracted to represent household load without the car. This is an inferred boundary, not a direct whole-building meter.",
+    "heatPumpTreatment": "The heat pump is already included in whole-house electricity and is not added again.",
+    "evTreatment": "EV counter delta is subtracted from the inferred building load.",
+    "aggregation": "Arithmetic mean by current Berlin civil month, workday/weekend, and hour label; no holiday adjustment.",
+    "interpolatedPolicy": "Skip an interval if any used counter is marked interpolated on either its start or end counter row; source flags are pipe-separated column names.",
+    "negativeBalancePolicy": "Retain negative raw hourly balance values in group means and diagnostics; apply no clipping.",
+    "confidence": "LOW: empirical pattern from one household in one source year; not guaranteed representative of other households.",
+    "processingScript": "scripts/profile-catalog/opsd-household-balance.py"
+  },
+  "quality": {
+    "sourceIntervalsInBerlinYear": 8784,
+    "usedIntervals": 5986,
+    "interpolatedIntervalsExcluded": 2798,
+    "groupCount": 576,
+    "minimumSamplesPerGroup": 1,
+    "maximumSamplesPerGroup": 23,
+    "allGroupMeansPositive": true,
+    "rawNegativeHours": 1,
+    "rawNegativeEnergyKwh": -0.08099999999922147,
+    "negativeHourlyLoadDiagnostics": [
+      {
+        "timestampUtc": "2016-08-10T13:00:00Z",
+        "monthBerlin": 8,
+        "dayTypeBerlin": "workday",
+        "hourBerlin": 15,
+        "loadKwh": -0.08099999999922147
+      }
+    ],
+    "negativeValuesClipped": false,
+    "gapsFilled": false,
+    "sourceSha256": "15956440b27465686eae2abf5895cbc3dab80f934a891bcb2f4f944428e97d60",
+    "sourceYear": 2016,
+    "minimumGroupMeanKwh": 0.14900000000034197,
+    "maximumGroupMeanKwh": 2.683749999999975
+  }
+}

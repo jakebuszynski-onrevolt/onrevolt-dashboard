@@ -31,6 +31,7 @@ export type OfferWorkspaceAddedItemPricing = {
 };
 
 export type OfferWorkspaceAddedItem = {
+  kind?: 'DISCOUNT';
   id: string;
   description: string;
   quantity: number;
@@ -121,7 +122,7 @@ function parsePricingEdit(value: unknown, label: string): OfferWorkspaceConfigur
   return result;
 }
 
-function parseAddedPricing(value: unknown, label: string): OfferWorkspaceAddedItemPricing {
+function parseAddedPricing(value: unknown, label: string, discount = false): OfferWorkspaceAddedItemPricing {
   const input = record(value, label);
   allowKeys(input, ['unitSaleNet', 'unitPurchaseNet', 'purchaseVatRate', 'operatingCostNet', 'operatingCostBasis', 'marginRate', 'saleVatRate'], label);
   if (input.operatingCostBasis !== 'PER_UNIT' && input.operatingCostBasis !== 'PER_LINE') {
@@ -132,7 +133,7 @@ function parseAddedPricing(value: unknown, label: string): OfferWorkspaceAddedIt
     return parsed as number;
   };
   const unitSaleNet = input.unitSaleNet === undefined ? undefined
-    : finite(input.unitSaleNet, 0, 100000000, `${label}.unitSaleNet`) as number;
+    : finite(input.unitSaleNet, discount ? -100000000 : 0, discount ? 0 : 100000000, `${label}.unitSaleNet`) as number;
   const marginRate = input.marginRate === undefined ? undefined
     : finite(input.marginRate, 0, 100, `${label}.marginRate`, true);
   if (unitSaleNet === undefined && marginRate == null) {
@@ -152,7 +153,15 @@ function parseAddedPricing(value: unknown, label: string): OfferWorkspaceAddedIt
 
 function parseAddedItem(value: unknown, label: string): OfferWorkspaceAddedItem {
   const input = record(value, label);
-  allowKeys(input, ['id', 'description', 'quantity', 'role', 'supplyMode', 'pricing'], label);
+  allowKeys(input, ['id', 'description', 'quantity', 'role', 'supplyMode', 'pricing', 'kind'], label);
+  if (input.kind !== undefined && input.kind !== 'DISCOUNT') throw new Error('Nieznany rodzaj pozycji.');
+  const discount = input.kind === 'DISCOUNT';
+  const pricing = parseAddedPricing(input.pricing, `${label}.pricing`, discount);
+  if (discount && (input.quantity !== 1 || input.role !== 'OTHER' || input.supplyMode !== 'SERVICE_ONLY'
+    || pricing.unitSaleNet == null || pricing.unitSaleNet >= 0 || pricing.unitPurchaseNet !== 0
+    || pricing.purchaseVatRate !== 0 || pricing.operatingCostNet !== 0 || (pricing.marginRate ?? 0) !== 0)) {
+    throw new Error('Upust wymaga ujemnej ceny, ilości 1 i zerowych kosztów zakupu oraz realizacji.');
+  }
   if (typeof input.role !== 'string' || !addedItemRoles.includes(input.role as typeof addedItemRoles[number])) {
     throw new Error(`${label}.role: nie można dodać głównego urządzenia`);
   }
@@ -160,12 +169,13 @@ function parseAddedItem(value: unknown, label: string): OfferWorkspaceAddedItem 
     throw new Error(`${label}.supplyMode: dozwolone są tylko dostawa OnRevolt lub usługa`);
   }
   return {
+    ...(discount ? { kind: 'DISCOUNT' as const } : {}),
     id: id(input.id, `${label}.id`),
     description: description(input.description, `${label}.description`) as string,
     quantity: finite(input.quantity, 0.000001, 1000000, `${label}.quantity`) as number,
     role: input.role as OfferWorkspaceAddedItem['role'],
     supplyMode: input.supplyMode as OfferWorkspaceAddedItem['supplyMode'],
-    pricing: parseAddedPricing(input.pricing, `${label}.pricing`),
+    pricing,
   };
 }
 
@@ -277,8 +287,8 @@ function finiteOrNull(value: unknown): number | null {
 }
 
 /** Converts an entered per-unit sale amount to the calculator's unrounded net unit price. */
-export function offerWorkspaceSaleAmountToNet(amount: number, basis: 'NET' | 'GROSS', vatRate: number | null): number {
-  if (!Number.isFinite(amount) || amount < 0) throw new Error('Cena jednostkowa musi być nieujemną liczbą.');
+export function offerWorkspaceSaleAmountToNet(amount: number, basis: 'NET' | 'GROSS', vatRate: number | null, discount = false): number {
+  if (!Number.isFinite(amount) || (discount ? amount >= 0 : amount < 0)) throw new Error(discount ? 'Upust musi być kwotą ujemną.' : 'Cena jednostkowa musi być nieujemną liczbą.');
   if (basis === 'NET') return amount;
   if (vatRate === null || !Number.isFinite(vatRate) || vatRate < 0 || vatRate > 1) {
     throw new Error('Do przeliczenia ceny brutto potrzebna jest jawna stawka VAT sprzedaży.');
@@ -287,8 +297,8 @@ export function offerWorkspaceSaleAmountToNet(amount: number, basis: 'NET' | 'GR
 }
 
 /** Converts a stored net unit price to the displayed per-unit sale amount without rounding. */
-export function offerWorkspaceSaleNetToAmount(unitSaleNet: number, basis: 'NET' | 'GROSS', vatRate: number | null): number {
-  if (!Number.isFinite(unitSaleNet) || unitSaleNet < 0) throw new Error('Cena jednostkowa netto musi być nieujemną liczbą.');
+export function offerWorkspaceSaleNetToAmount(unitSaleNet: number, basis: 'NET' | 'GROSS', vatRate: number | null, discount = false): number {
+  if (!Number.isFinite(unitSaleNet) || (discount ? unitSaleNet >= 0 : unitSaleNet < 0)) throw new Error('Nieprawidłowa cena jednostkowa netto.');
   if (basis === 'NET') return unitSaleNet;
   if (vatRate === null || !Number.isFinite(vatRate) || vatRate < 0 || vatRate > 1) {
     throw new Error('Do wyświetlenia ceny brutto potrzebna jest jawna stawka VAT sprzedaży.');
@@ -409,6 +419,7 @@ function rowsForTemplate(template: EditableTemplate, edit: OfferWorkspaceConfigu
       workspaceAdded: true,
       workspaceChanged: true,
       workspaceAddedId: item.id,
+      ...(item.kind === 'DISCOUNT' ? { workspaceDiscount: true } : {}),
     };
   });
   return [...updated, ...added] as EditableTemplate['items'];

@@ -114,17 +114,17 @@ test('details form renders core, map, and project fields without exposing notes'
   for (const label of [
     'Imię i nazwisko / Nazwa', 'Typ klienta', 'Telefon', 'Adres e-mail', 'NIP', 'Opiekun projektu',
     'Ulica', 'Kod', 'Miasto', 'Adres inwestycji i zdjęcie lokalizacji', 'Problematyka',
-    'Oczekiwany rezultat', 'Nazwa projektu', 'Typ projektu', 'Status projektu', 'Etap',
+    'Oczekiwany rezultat', 'Nazwa projektu', 'Typ projektu', 'Etap',
     'Następne działanie', 'Termin następnego działania', 'Adres inwestycji projektu',
   ]) assert.ok(html.includes(label), label);
-  for (const value of ['Anna Nowak', 'Słoneczna 12, Łódź', 'Dom Kowalskich', 'Nowy kontakt', 'Import ręczny']) {
+  for (const value of ['Anna Nowak', 'Słoneczna 12, Łódź', 'Dom Kowalskich', 'Import ręczny']) {
     assert.ok(html.includes(value), value);
   }
   assert.ok(html.includes('Data rejestracji'));
   assert.ok(html.includes('12.06.2024'));
   assert.match(componentSource, /<FormLabel>Data rejestracji<\/FormLabel><Input value=\{registration\} isReadOnly/);
   assert.match(componentSource, /<FormLabel>Źródło projektu<\/FormLabel><Input value=\{props\.origin\} isReadOnly/);
-  assert.match(componentSource, /<FormLabel>Status projektu<\/FormLabel><Input value=\{props\.statusLabel\} isReadOnly/);
+  assert.ok(!html.includes('Status projektu'));
   assert.ok(!html.includes('NOTATKA NIE MOŻE BYĆ W FORMULARZU'));
   assert.ok(!clientDetailsKeys.includes('notes' as never));
   assert.ok(!clientDetailsKeys.includes('source' as never));

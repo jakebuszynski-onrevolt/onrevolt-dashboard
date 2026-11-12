@@ -25,6 +25,7 @@ type CurrentStaffUser = {
   positionTitle?: string | null;
   systemRole: string;
   permissions?: string[];
+  siteVisitsOnly?: boolean;
   companyRoles?: Array<{ name: string }>;
 };
 
@@ -37,6 +38,12 @@ function visibleRoutes(routes: IRoute[], user: CurrentStaffUser | null): IRoute[
     const items = visibleRoutes(route.items, user);
     return items.length ? [{ ...route, items }] : [];
   });
+}
+
+function siteVisitRoutes(routes: IRoute[]): IRoute[] {
+  const sales = routes.find((route) => route.name === 'Sprzedaż');
+  const clients = sales?.items?.filter((route) => route.path === '/clients') || [];
+  return sales && clients.length ? [{ ...sales, items: clients }] : [];
 }
 
 function userSubtitle(user: CurrentStaffUser | null) {
@@ -55,8 +62,13 @@ function SidebarContent(props: {
 }) {
   const { routes, mini, hovered } = props;
   const [user, setUser] = useState<CurrentStaffUser | null>(null);
+  const [userLoaded, setUserLoaded] = useState(false);
   const textColor = useColorModeValue('navy.700', 'white');
-  const navigationRoutes = useMemo(() => visibleRoutes(routes, user), [routes, user]);
+  const navigationRoutes = useMemo(() => {
+    if (!userLoaded || !user) return [];
+    if (user.siteVisitsOnly) return siteVisitRoutes(routes);
+    return visibleRoutes(routes, user);
+  }, [routes, user, userLoaded]);
 
   async function loadCurrentUser() {
     try {
@@ -65,6 +77,8 @@ function SidebarContent(props: {
       setUser(response.ok && payload.ok ? payload.data : null);
     } catch {
       setUser(null);
+    } finally {
+      setUserLoaded(true);
     }
   }
 
@@ -95,16 +109,18 @@ function SidebarContent(props: {
         </Box>
       </Stack>
 
-      <Flex
-        ps="20px"
-        pe={{ md: '20px', '2xl': '20px' }}
-        mt="60px"
-        borderRadius="30px"
-        justifyContent={'center'}
-        alignItems="center"
-      >
-        <SidebarCard mini={mini} hovered={hovered} />
-      </Flex>
+      {!user?.siteVisitsOnly ? (
+        <Flex
+          ps="20px"
+          pe={{ md: '20px', '2xl': '20px' }}
+          mt="60px"
+          borderRadius="30px"
+          justifyContent={'center'}
+          alignItems="center"
+        >
+          <SidebarCard mini={mini} hovered={hovered} />
+        </Flex>
+      ) : null}
       <Flex mt="75px" mb="56px" justifyContent="center" alignItems="center">
         <Avatar
           h="48px"

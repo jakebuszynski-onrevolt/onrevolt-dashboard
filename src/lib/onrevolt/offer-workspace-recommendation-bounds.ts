@@ -18,15 +18,17 @@ export type OfferWorkspaceRecommendationDailyBatteryBounds = {
 export type OfferWorkspaceRecommendationExistingPvBatteryBounds = {
   basis: 'existing_pv';
   existingPvPowerKw: number;
-  minimumBatteryKwhPerPvKwp: 0.5;
-  maximumBatteryKwhPerPvKwp: 5;
+  minimumBatteryKwhPerPvKwp: number;
+  maximumBatteryKwhPerPvKwp: number;
   minimumBatteryCapacityKwh: number;
   maximumBatteryCapacityKwh: number;
 };
 
 export type OfferWorkspaceRecommendationBatteryBounds =
   | OfferWorkspaceRecommendationDailyBatteryBounds
-  | OfferWorkspaceRecommendationExistingPvBatteryBounds;
+  | OfferWorkspaceRecommendationExistingPvBatteryBounds
+  | { basis: 'pv_production'; totalConsumptionKwh: number; minimumPvProductionKwh: number; maximumPvProductionKwh: number;
+      minimumBatteryCapacityKwh: number; maximumBatteryCapacityKwh: number };
 
 export type RecommendationBatteryBoundsResult =
   | { bounds: OfferWorkspaceRecommendationBatteryBounds; reason: null }
@@ -36,9 +38,9 @@ export const INCOMPLETE_RECOMMENDATION_CONSUMPTION_REASON =
   'Nie można wyznaczyć zakresu pojemności magazynu: profil zużycia nie obejmuje kompletnego okresu pomiarowego lub zawiera brakujące albo nieprawidłowe interwały.';
 export const INVALID_EXISTING_PV_RECOMMENDATION_REASON =
   'Nie można wyznaczyć zakresu magazynu: moc istniejącej instalacji PV musi być dodatnia i skończona.';
-export const OFFER_RECOMMENDATION_MIN_BATTERY_KWH_PER_EXISTING_PV_KWP = 0.5;
-export const OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_EXISTING_PV_KWP = 5;
-export const OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP = 2.5;
+export const OFFER_RECOMMENDATION_MIN_BATTERY_KWH_PER_EXISTING_PV_KWP = 2;
+export const OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_EXISTING_PV_KWP = 3;
+export const OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP = 3;
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -194,10 +196,27 @@ export function filterOfferCandidatesByRecommendationPvBounds<T extends { batter
 ): { candidates: T[]; totalCandidatesBeforeFilter: number; excludedCandidates: number } {
   const filtered = candidates.filter(candidate => Number.isFinite(candidate.batteryCapacityKwh)
     && Number.isFinite(candidate.totalPvKw)
+    && candidate.totalPvKw > 0
+    && candidate.batteryCapacityKwh >= OFFER_RECOMMENDATION_MIN_BATTERY_KWH_PER_EXISTING_PV_KWP * candidate.totalPvKw
     && candidate.batteryCapacityKwh <= maximumBatteryKwhPerPvKwp * candidate.totalPvKw);
   return {
     candidates: filtered,
     totalCandidatesBeforeFilter: candidates.length,
     excludedCandidates: candidates.length - filtered.length,
   };
+}
+
+export function filterOfferCandidatesByPvProduction<T extends { addedPvKw: number }>(
+  candidates: readonly T[], consumptionKwh: number, existingPvKwh: number, addedPvKwh: ReadonlyMap<number, number>,
+): { candidates: T[]; totalCandidatesBeforeFilter: number; excludedCandidates: number } {
+  if (!Number.isFinite(consumptionKwh) || consumptionKwh <= 0 || !Number.isFinite(existingPvKwh) || existingPvKwh < 0) {
+    throw new Error('Brak poprawnego zużycia lub produkcji PV do porównania zakresu 80–120%.');
+  }
+  const filtered = candidates.filter(candidate => {
+    const added = candidate.addedPvKw === 0 ? 0 : addedPvKwh.get(candidate.addedPvKw);
+    if (added == null || !Number.isFinite(added) || added < 0) throw new Error('Brak kompletnego modelu dodawanej PV do filtrowania.');
+    const production = existingPvKwh + added;
+    return production >= consumptionKwh * 0.8 - 1e-6 && production <= consumptionKwh * 1.2 + 1e-6;
+  });
+  return { candidates: filtered, totalCandidatesBeforeFilter: candidates.length, excludedCandidates: candidates.length - filtered.length };
 }

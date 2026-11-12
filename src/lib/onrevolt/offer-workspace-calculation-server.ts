@@ -20,13 +20,14 @@ import {
 import { enumerateOfferCandidates, type ApprovedConfigurationTemplate, type OfferCandidateEnumerationInput, type OfferCandidateSnapshot } from './offer-candidates';
 import { offerCalculationDependencyHash, offerCalculationPeriodHours } from './offer-workspace-calculation-dependencies';
 import { completeHistoryForSummary } from './client-energy-cost-summary-server';
+import { invoiceNetMeteringFactorForPeriod, type InvoiceNetMeteringFactorResolution } from './invoice-net-metering-factor';
 import { OFFER_RECOMMENDATION_BATCH_LIMIT, OFFER_RECOMMENDATION_COARSE_LIMIT, planOfferWorkspaceRecommendationSearch } from './offer-workspace-recommendation-search';
 import { recommendationInputIssues } from './offer-workspace-recommendation-inputs';
 import { PME2_RULES } from './offer-financing-v2';
 import {
   calculateOfferWorkspaceExistingPvBatteryBounds,
   calculateOfferWorkspaceRecommendationBatteryBounds,
-  filterOfferCandidatesByRecommendationBatteryBounds,
+  filterOfferCandidatesByPvProduction,
   filterOfferCandidatesByRecommendationPvBounds,
   OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP,
   validateOfferWorkspaceRecommendationConsumptionProfile,
@@ -148,6 +149,32 @@ async function financialSources(workspace: OfferWorkspace, draft: OfferWorkspace
     };
     baselineReasons.push(...loadedBaselineHistory.issues.map(issue => `${issue.date}: ${issue.message}`), ...completion.issues);
   }
+  let baselineNetMeteringFactor: InvoiceNetMeteringFactorResolution | null = null;
+  let baselineNetMeteringFactorIssue: string | null = null;
+  if (draft.currentSettlement === 'NET_METERING' && draft.existingPv.powerKw !== 0) {
+    try {
+      baselineNetMeteringFactor = await invoiceNetMeteringFactorForPeriod({
+        projectId: workspace.projectId,
+        clientId: workspace.clientId,
+        ppeNumber: workspace.ppeNumber,
+        period: { startMonth: workspace.period.startMonth, endDate: workspace.period.endDate },
+      });
+    } catch (error) {
+      return {
+        reasons: [`Nie udało się zweryfikować współczynnika opustu z faktur dla PPE: ${error instanceof Error ? error.message : 'błąd źródła'}.`],
+        baselineAssumptions,
+      };
+    }
+    if (baselineNetMeteringFactor.status === 'selected') {
+      baselineAssumptions.push(`Współczynnik opustu ${baselineNetMeteringFactor.factor} przyjęto z potwierdzonej faktury ENEA dla PPE (${baselineNetMeteringFactor.invoicePeriods.join(', ')}); zastosowano go wyłącznie do rachunku bazowego NET_METERING.`);
+    } else if (baselineNetMeteringFactor.status === 'ambiguous') {
+      baselineNetMeteringFactorIssue = `Niejednoznaczny współczynnik opustu na potwierdzonych fakturach dla PPE (${baselineNetMeteringFactor.factors.join(', ')}); nie można porównać rachunku bazowego.`;
+    } else if (baselineNetMeteringFactor.status === 'invalid') {
+      baselineNetMeteringFactorIssue = 'Sprzeczne lub nieobsługiwane dane współczynnika opustu na potwierdzonej fakturze dla PPE; nie można porównać rachunku bazowego.';
+    } else if (baselineNetMeteringFactor.status === 'missing' && draft.existingPv.powerKw == null) {
+      baselineNetMeteringFactorIssue = 'Brak potwierdzonego współczynnika opustu z faktury i jawnej mocy istniejącej PV; nie można porównać rachunku bazowego.';
+    }
+  }
   const baselineUsable = loadedBaselineHistory !== null && baselineReasons.length === 0;
   const baselineDependency = baselineUsable
     ? { status: 'available', history: loadedBaselineHistory, assumptions: baselineAssumptions }
@@ -171,8 +198,14 @@ async function financialSources(workspace: OfferWorkspace, draft: OfferWorkspace
   const exportPrices = new Map([...rce].map(([hour, value]) => [hour, Math.max(0, value) * 1.23]));
   const targetHistory = snapshotHistory(target, from, until);
   const sourceDependencyStamp = offerCalculationDependencyHash({ startUtc, endUtc, pricesAsOf,
-    baseline: baselineDependency, targetHistory, rdnPricesNet, exportPrices });
-  return { baselineHistory, baselineReasons, baselineAssumptions, targetHistory, rdnPricesNet, exportPrices, pricesAsOf, sourceDependencyStamp };
+    baseline: baselineDependency, targetHistory, rdnPricesNet, exportPrices,
+    baselineNetMeteringFactor: baselineNetMeteringFactor ? {
+      status: baselineNetMeteringFactor.status,
+      factor: baselineNetMeteringFactor.factor,
+      sourceRevision: baselineNetMeteringFactor.sourceRevision,
+    } : null });
+  return { baselineHistory, baselineReasons, baselineAssumptions, baselineNetMeteringFactor, baselineNetMeteringFactorIssue,
+    targetHistory, rdnPricesNet, exportPrices, pricesAsOf, sourceDependencyStamp };
 }
 
 function offerCandidateEnumerationInput(workspace: OfferWorkspace, draft: OfferWorkspaceDraft): OfferCandidateEnumerationInput {
@@ -371,6 +404,30 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
   };
   const common: Omit<OfferCalculationInput, 'draft' | 'addedPvHours'> = { workspace: calculationWorkspace, energy, ...financial };
   const addedProfiles = new Map<string, Map<string, number>>();
+  async function loadAddedPvHours(powerKw: number) {
+    if (settings.addedPvTiltDegrees == null || settings.addedPvAzimuthDegrees == null || draft.existingPv.lossPercent == null) throw new Error('Uzupełnij geometrię dodatkowej PV i straty modelu.');
+    const location = workspace.input.location;
+    if (location?.latitude == null || location.longitude == null) throw new Error('Brak współrzędnych instalacji PV.');
+    const key = String(powerKw);
+    if (!addedProfiles.has(key)) {
+      const profileRead = await readOfferPvProfileWithSourceRevision({ latitude: location.latitude, longitude: location.longitude, powerKw,
+        tiltDegrees: settings.addedPvTiltDegrees, azimuthDegrees: settings.addedPvAzimuthDegrees, lossPercent: draft.existingPv.lossPercent,
+        fromUtc: first.startUtc, untilUtc: last.endUtc });
+      if (!requiresPvSource) throw new OfferPvSourceRevisionError('Obliczenie użyło PV spoza zapisanego kontekstu źródłowego.');
+      if (!profileRead.sourceRevision) {
+        throw new OfferPvSourceRevisionError('Nie udało się potwierdzić rewizji dodanego profilu PV.');
+      }
+      if (pvSourceRevisionUsed && profileRead.sourceRevision !== pvSourceRevisionUsed) {
+        throw new OfferPvSourceRevisionError('Źródło PV zmieniło się między profilami użytymi w obliczeniu. Ponów obliczenia.');
+      }
+      pvSourceRevisionUsed = profileRead.sourceRevision;
+      assertPvSourceRevisionStable(workspace, true, pvSourceRevisionUsed);
+      addedProfiles.set(key, new Map(profileRead.profile.hours.map(hour => [hour.startUtc, hour.pvKwh])));
+      dependencyStamp = dependencyStampWithPvSource(workspace, draft, sourceDependencyStamp, true, profileRead.sourceRevision);
+    }
+
+    return addedProfiles.get(String(powerKw))!;
+  }
   async function calculate(selectedDraft: OfferWorkspaceDraft) {
     const effectiveDraft = mode === 'recommend' ? { ...selectedDraft, configurationEdits: undefined, commercialPricing: undefined } : selectedDraft;
     const templates = mode === 'recommend'
@@ -382,26 +439,8 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
       if (!pv.powerKw || settings.addedPvTiltDegrees === null || settings.addedPvAzimuthDegrees === null || draft.existingPv.lossPercent === null) {
         return blockedOfferCalculation(['Uzupełnij moc, nachylenie i azymut rozbudowy PV oraz straty modelu.']);
       }
-      const location = workspace.input.location;
-      if (location?.latitude == null || location.longitude == null) return blockedOfferCalculation(['Brak współrzędnych instalacji PV.']);
-      const key = String(pv.powerKw);
-      if (!addedProfiles.has(key)) {
-        const profileRead = await readOfferPvProfileWithSourceRevision({ latitude: location.latitude, longitude: location.longitude, powerKw: pv.powerKw,
-          tiltDegrees: settings.addedPvTiltDegrees, azimuthDegrees: settings.addedPvAzimuthDegrees, lossPercent: draft.existingPv.lossPercent,
-          fromUtc: first.startUtc, untilUtc: last.endUtc });
-        if (!requiresPvSource) throw new OfferPvSourceRevisionError('Obliczenie użyło PV spoza zapisanego kontekstu źródłowego.');
-        if (!profileRead.sourceRevision) {
-          throw new OfferPvSourceRevisionError('Nie udało się potwierdzić rewizji dodanego profilu PV.');
-        }
-        if (pvSourceRevisionUsed && profileRead.sourceRevision !== pvSourceRevisionUsed) {
-          throw new OfferPvSourceRevisionError('Źródło PV zmieniło się między profilami użytymi w obliczeniu. Ponów obliczenia.');
-        }
-        pvSourceRevisionUsed = profileRead.sourceRevision;
-        assertPvSourceRevisionStable(workspace, true, pvSourceRevisionUsed);
-        addedProfiles.set(key, new Map(profileRead.profile.hours.map(hour => [hour.startUtc, hour.pvKwh])));
-        dependencyStamp = dependencyStampWithPvSource(workspace, draft, sourceDependencyStamp, true, profileRead.sourceRevision);
-      }
-      addedPvHours = addedProfiles.get(key)!;
+      addedPvHours = await loadAddedPvHours(pv.powerKw);
+
     }
     const result = await calculateOfferWorkspaceScenario({ ...common, draft: effectiveDraft, addedPvHours });
     result.sourceDependencyStamp = dependencyStamp;
@@ -427,20 +466,39 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
   }
   const enumeration = enumerateOfferCandidates(offerCandidateEnumerationInput(workspace, draft));
   const unfilteredCandidates = enumeration.candidates;
-  const batteryFilter = filterOfferCandidatesByRecommendationBatteryBounds(unfilteredCandidates, recommendationBatteryRange!.bounds!);
-  const recommendationBatteryBounds = {
-    ...recommendationBatteryRange!.bounds!,
-    totalCandidatesBeforeFilter: batteryFilter.totalCandidatesBeforeFilter,
-    excludedCandidates: batteryFilter.excludedCandidates,
-  };
-  const pvFilter = draft.pvStrategy === 'ADD_TEMPLATE'
-    ? filterOfferCandidatesByRecommendationPvBounds(batteryFilter.candidates, OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP)
-    : null;
-  const recommendationPvBounds = pvFilter ? {
-    maximumBatteryKwhPerPvKwp: OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP,
+  const batteryFilter = filterOfferCandidatesByRecommendationPvBounds(unfilteredCandidates);
+  const consumptionKwh = energy.intervals.reduce((sum, row) => sum + row.loadKwh!, 0);
+  const addedProduction = new Map<number, number>();
+  let pvFilter: { candidates: OfferCandidateSnapshot[]; totalCandidatesBeforeFilter: number; excludedCandidates: number } | null = null;
+  if (draft.pvStrategy === 'ADD_TEMPLATE' && batteryFilter.candidates.length) {
+    for (const powerKw of new Set(batteryFilter.candidates.map(candidate => candidate.addedPvKw))) {
+      if (powerKw === 0) continue;
+      const profile = await loadAddedPvHours(powerKw);
+      let production = 0;
+      for (const row of energy.intervals) {
+        const pvKwh = profile.get(row.startUtc);
+        if (pvKwh == null || !Number.isFinite(pvKwh) || pvKwh < 0) throw new Error('Niepełny profil dodawanej PV do filtrowania produkcji.');
+        production += pvKwh;
+      }
+      addedProduction.set(powerKw, production);
+    }
+    if (energy.intervals.some(row => row.pvKwh == null || !Number.isFinite(row.pvKwh) || row.pvKwh < 0)) throw new Error('Niepełny profil istniejącej PV do filtrowania produkcji.');
+    const existingProductionKwh = energy.intervals.reduce((sum, row) => sum + row.pvKwh!, 0);
+    pvFilter = filterOfferCandidatesByPvProduction(batteryFilter.candidates, consumptionKwh, existingProductionKwh, addedProduction);
+  }
+  const recommendationBatteryBounds: NonNullable<OfferWorkspaceCalculation['recommendationBatteryBounds']> = draft.pvStrategy === 'KEEP_EXISTING'
+    ? { ...recommendationBatteryRange!.bounds!, totalCandidatesBeforeFilter: batteryFilter.totalCandidatesBeforeFilter, excludedCandidates: batteryFilter.excludedCandidates }
+    : { basis: 'pv_production', totalConsumptionKwh: consumptionKwh,
+      minimumPvProductionKwh: 0.8 * consumptionKwh, maximumPvProductionKwh: 1.2 * consumptionKwh,
+      minimumBatteryCapacityKwh: unfilteredCandidates.length ? Math.min(...unfilteredCandidates.map(candidate => 2 * candidate.totalPvKw)) : 0,
+      maximumBatteryCapacityKwh: unfilteredCandidates.length ? Math.max(...unfilteredCandidates.map(candidate => 3 * candidate.totalPvKw)) : 0,
+      totalCandidatesBeforeFilter: batteryFilter.totalCandidatesBeforeFilter, excludedCandidates: batteryFilter.excludedCandidates };
+  const recommendationPvBounds = draft.pvStrategy === 'ADD_TEMPLATE' ? {
+    minimumBatteryKwhPerPvKwp: 2, maximumBatteryKwhPerPvKwp: OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP,
+    minimumProductionKwh: 0.8 * consumptionKwh, maximumProductionKwh: 1.2 * consumptionKwh, consumptionKwh,
     pvBasis: 'existing_plus_added' as const,
-    totalCandidatesBeforeFilter: pvFilter.totalCandidatesBeforeFilter,
-    excludedCandidates: pvFilter.excludedCandidates,
+    totalCandidatesBeforeFilter: pvFilter?.totalCandidatesBeforeFilter ?? 0,
+    excludedCandidates: pvFilter?.excludedCandidates ?? 0,
   } : undefined;
   const sizeCandidates = pvFilter ? pvFilter.candidates : batteryFilter.candidates;
   const requiresPme2Capacity = workspace.clientType === 'B2C' && draft.financing.considerGrant;
@@ -459,10 +517,7 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
   }
   if (!batteryFilter.candidates.length) {
     if (hasContinuation) throw new Error('Nie można kontynuować rekomendacji: katalog nie zawiera już wariantów do oceny.');
-    const formatCapacity = (value: number) => value.toLocaleString('pl-PL', { maximumFractionDigits: 2 });
-    const reason = recommendationBatteryBounds.basis === 'existing_pv'
-      ? `Brak gotowych konfiguracji z magazynem w zakresie ${formatCapacity(recommendationBatteryBounds.minimumBatteryCapacityKwh)}–${formatCapacity(recommendationBatteryBounds.maximumBatteryCapacityKwh)} kWh (0,5–5× istniejąca moc PV: ${formatCapacity(recommendationBatteryBounds.existingPvPowerKw)} kWp).`
-      : `Brak gotowych konfiguracji z magazynem w zakresie ${formatCapacity(recommendationBatteryBounds.minimumBatteryCapacityKwh)}–${formatCapacity(recommendationBatteryBounds.maximumBatteryCapacityKwh)} kWh (0,5–2× średnie dobowe zużycie).`;
+    const reason = 'Brak gotowych konfiguracji z magazynem w zakresie 2–3 kWh na 1 kWp łącznej mocy PV (istniejąca + dodawana).';
     const result = blockedOfferCalculation([reason]);
     result.recommendationBatteryBounds = recommendationBatteryBounds;
     result.recommendationPvBounds = recommendationPvBounds;
@@ -471,9 +526,7 @@ export async function calculateOfferWorkspaceOnServer(workspace: OfferWorkspace,
   if (!sizeCandidates.length) {
     if (hasContinuation) throw new Error('Nie można kontynuować rekomendacji: nie pozostały warianty spełniające limit PV.');
     if (!recommendationPvBounds) throw new Error('Nie można kontynuować rekomendacji: brak PV do filtrowania.');
-    const ratio = OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP.toLocaleString('pl-PL', { maximumFractionDigits: 1 });
-    const pvBasis = 'łącznej mocy PV (istniejąca + dodawana)';
-    const result = blockedOfferCalculation([`Brak gotowych konfiguracji spełniających limit PV po filtrze zużycia: maksymalnie ${ratio} kWh magazynu na 1 kWp ${pvBasis}.`]);
+    const result = blockedOfferCalculation(['Brak gotowych konfiguracji z produkcją PV w zakresie 80–120% zużycia w okresie analizy (istniejąca + dodawana).']);
     result.recommendationBatteryBounds = recommendationBatteryBounds;
     result.recommendationPvBounds = recommendationPvBounds;
     return attachSourceIdentity(result);

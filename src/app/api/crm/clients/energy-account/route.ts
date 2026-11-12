@@ -72,8 +72,9 @@ export async function GET(req: NextRequest) {
     let analysisStartMonth: string | undefined;
     for (const account of accounts) {
       if (account.projectId) {
-        const selected = await readAnalysisAccountMeasurements(account.id, account.projectId);
+        const selected = await readAnalysisAccountMeasurements(account.id, account.projectId, { includeReusable: Boolean(projectId) });
         account.measurementFiles = selected.files;
+        if (projectId) Object.assign(account, { measurementCoverageFiles: selected.coverageFiles });
         if (projectId) analysisStartMonth = selected.period.startMonth;
       }
     }

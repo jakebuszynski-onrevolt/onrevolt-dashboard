@@ -10,7 +10,7 @@ const code = ts.transpileModule(readFileSync(filename, 'utf8'), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
 }).outputText;
 
-type FixtureOptions = { denied?: boolean; createRace?: 'same' | 'different' };
+type FixtureOptions = { denied?: boolean; restricted?: boolean; createRace?: 'same' | 'different' };
 
 function fixture(options: FixtureOptions = {}) {
   const records = new Map<string, any>();
@@ -116,7 +116,15 @@ function fixture(options: FixtureOptions = {}) {
       authorizeStaffRequest: async () => options.denied
         ? { ok: false, response: { status: 403 } }
         : { ok: true, user: { id: 'staff' } },
+      authorizeSiteVisitRequest: async () => options.denied
+        ? { ok: false, response: { status: 403 } }
+        : { ok: true, user: { id: 'staff', restricted: options.restricted } },
+      isSiteVisitOnlyUser: (user: any) => Boolean(user?.restricted),
+      staffAuthorizationResponse: () => null,
       isAdminUser: () => true,
+    },
+    'lib/onrevolt/site-visit-access': {
+      requireSiteVisitProject: async () => undefined,
     },
     'lib/onrevolt/site-audit': {
       normalizeSiteAuditFormData: (value: Record<string, unknown>) => ({ ...value }),
@@ -302,4 +310,35 @@ test('malformed requests and completion validation return 400 instead of a retry
   })));
   assert.equal(completion.status, 400);
   assert.equal(incomplete.records.size, 0);
+});
+
+test('restricted audit creation binds the form auditor to the authenticated user', async () => {
+  const state = fixture({ restricted: true });
+  const result = await state.exports.POST(state.request(draftBody({
+    auditorId: 'staff',
+    formData: { auditor_id: 'staff', client_name: 'Klient' },
+  })));
+
+  assert.equal(result.status, 201);
+  assert.equal(result.value.data.auditorId, 'staff');
+  assert.equal(result.value.data.formData.auditor_id, 'staff');
+});
+
+test('restricted audit save rejects a conflicting form auditor and an arbitrary assignee', async () => {
+  const mismatched = fixture({ restricted: true });
+  const conflict = await mismatched.exports.POST(mismatched.request(draftBody({
+    auditorId: 'staff',
+    formData: { auditor_id: 'other-staff' },
+  })));
+  assert.equal(conflict.status, 400);
+  assert.equal(mismatched.records.size, 0);
+  assert.equal(mismatched.logs.length, 0);
+
+  const arbitrary = fixture({ restricted: true });
+  const rejected = await arbitrary.exports.POST(arbitrary.request(draftBody({
+    formData: { auditor_id: 'other-staff' },
+  })));
+  assert.equal(rejected.status, 400);
+  assert.equal(arbitrary.records.size, 0);
+  assert.equal(arbitrary.logs.length, 0);
 });

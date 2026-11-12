@@ -56,6 +56,8 @@ export type ClientEnergyAnnualModel = {
 };
 
 export type ClientEnergyMeasurements = {
+  consumption?: { annualKwh: number; source: string } | null;
+  modelledHours?: number;
   months: ClientEnergySummaryMonth[];
   days: ClientEnergySummaryDay[];
   issues: string[];
@@ -91,6 +93,7 @@ export type ClientEnergyMeasurements = {
 };
 
 export type ClientEnergySummaryLoadState = {
+  consumption?: { annualKwh: number; source: string } | null;
   requestKey: string;
   status: 'loading' | 'ready' | 'error';
   error?: string;
@@ -112,6 +115,8 @@ export function areClientEnergySummaryLoadStatesEqual(
   return left?.requestKey === right.requestKey
     && left.status === right.status
     && left.error === right.error
+    && left.consumption?.annualKwh === right.consumption?.annualKwh
+    && left.consumption?.source === right.consumption?.source
     && (left.warnings || []).length === (right.warnings || []).length
     && (left.warnings || []).every((warning, index) => warning === right.warnings?.[index]);
 }
@@ -121,12 +126,14 @@ export function resolveClientAnnualConsumption(input: {
   hasEnergyInvoices: boolean;
   profileStatus: 'loading' | 'ready' | 'error';
   profileAnnualKwh?: number | null;
+  measurementAnnualKwh?: number | null;
   invoiceAnnualKwh?: number | null;
   manualSourceSelected: boolean;
   manualAnnualKwh?: number | null;
 }) {
   const positive = (value?: number | null) => value != null && Number.isFinite(value) && value > 0 ? value : null;
-  if (input.hasOperatorData) return input.profileStatus === 'ready' ? positive(input.profileAnnualKwh) : null;
+  if (input.hasOperatorData) return positive(input.measurementAnnualKwh)
+    ?? (input.profileStatus === 'ready' ? positive(input.profileAnnualKwh) : null);
   if (input.hasEnergyInvoices) return positive(input.invoiceAnnualKwh);
   return input.manualSourceSelected ? positive(input.manualAnnualKwh) : null;
 }
@@ -358,10 +365,10 @@ export default function ClientEnergySummary({
   const annualModel = data?.annualModel;
   const displayedAnnualConsumptionKwh = annualModel
     ? annualModel.provenance?.annualConsumptionKwh ?? annualModel.annualConsumptionKwh
-    : annualConsumptionKwh;
+    : data?.consumption?.annualKwh ?? annualConsumptionKwh;
   const displayedConsumptionSource = annualModel
     ? `MODELLED · ${annualModel.provenance?.source || annualModel.profileSource || 'profil roczny RE'}`
-    : consumptionSource || 'Brak potwierdzonego źródła';
+    : data?.consumption?.source || consumptionSource || 'Brak potwierdzonego źródła';
   const displayMonths = annualModel ? annualModel.months.map(month => ({
     ...month,
     loadKwh: month.loadKwh,
@@ -435,8 +442,8 @@ export default function ClientEnergySummary({
     requestKey,
     status,
     ...(status === 'error' ? { error } : {}),
-    ...(status === 'ready' ? { warnings: loadWarnings } : {}),
-  }), [requestKey, status, error, loadWarnings]);
+    ...(status === 'ready' ? { warnings: loadWarnings, consumption: data?.consumption ?? null } : {}),
+  }), [requestKey, status, error, loadWarnings, data?.consumption]);
   const valuesMasked = maskValues || loading || profileLoading;
 
   useEffect(() => {
@@ -444,8 +451,9 @@ export default function ClientEnergySummary({
   }, [onLoadStateChange, loadState]);
 
   return <section className={styles.summary} aria-busy={valuesMasked}>
+    {!!data?.modelledHours && !valuesMasked ? <p role="note">Pomiary + Model CRM: {data.modelledHours} brakujących godzin uzupełniono szacunkiem. Oryginalne pomiary zachowano.</p> : null}
     {data && !valuesMasked ? <div className={styles.periodHeader}>
-      <span>{annualModel ? 'Okres profilu MODELLED' : 'Okres pomiarów'}</span>
+      <span>{annualModel ? 'Okres profilu MODELLED' : data.modelledHours ? 'Okres pomiarów i uzupełnień Model CRM' : 'Okres pomiarów'}</span>
       <strong>{periodLabel || (annualModel ? 'Brak profilu rocznego' : 'Brak danych pomiarowych')}</strong>
     </div> : null}
     <div className={styles.kpis}>
@@ -459,14 +467,16 @@ export default function ClientEnergySummary({
         <strong>{valuesMasked ? '—' : kwh(kpiImport)}</strong>
         <small>{valuesMasked ? 'Przeliczanie danych…' : annualModel
           ? annualModel.flowAvailable ? `MODELLED · ${annualModel.provenance?.source || annualModel.profileSource || 'profil roczny RE'}` : annualModel.issues[0] || 'Nie obliczono przepływu sieciowego.'
-          : measurementMonths.length ? `${measuredImportMonths}/12 mies. z plikami · bez ekstrapolacji` : 'Brak danych pomiarowych'}</small>
+          : data?.modelledHours ? `${measuredImportMonths}/12 mies. · pomiary + uzupełnienie luk Model CRM`
+            : measurementMonths.length ? `${measuredImportMonths}/12 mies. z plikami · bez ekstrapolacji` : 'Brak danych pomiarowych'}</small>
       </article>
       <article className={`${styles.kpi} ${styles.exportKpi}`}>
         <span>{annualModel ? 'Modelowane oddanie do sieci ↑' : 'Oddano do sieci ↑'}</span>
         <strong>{valuesMasked ? '—' : kwh(kpiExport)}</strong>
         <small>{valuesMasked ? 'Przeliczanie danych…' : annualModel
           ? annualModel.flowAvailable ? `MODELLED · ${annualModel.provenance?.source || annualModel.profileSource || 'profil roczny RE'}` : annualModel.issues[0] || 'Nie obliczono przepływu sieciowego.'
-          : measurementMonths.length ? `${measuredExportMonths}/12 mies. z plikami · bez ekstrapolacji` : 'Brak danych pomiarowych'}</small>
+          : data?.modelledHours ? `${measuredExportMonths}/12 mies. · pomiary + uzupełnienie luk Model CRM`
+            : measurementMonths.length ? `${measuredExportMonths}/12 mies. z plikami · bez ekstrapolacji` : 'Brak danych pomiarowych'}</small>
       </article>
       <article className={`${styles.kpi} ${styles.costKpi}`}>
         <span>Szacowany koszt wg taryfy</span>

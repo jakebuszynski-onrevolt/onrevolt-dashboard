@@ -4,6 +4,7 @@ export const operationalPipelineStages = [
   { code: 'CRM_LEAD', name: 'Lead', sortOrder: 10, color: '#7C3AED', status: 'LEAD', isTerminal: false, requiresOwner: false, requiresNextAction: true },
   { code: 'CRM_CZEKA_NA_KALKULACJE', name: 'Czeka na kalkulację', sortOrder: 20, color: '#2563EB', status: 'CZEKA_NA_KALKULACJE', isTerminal: false, requiresOwner: true, requiresNextAction: true },
   { code: 'CRM_W_TRAKCIE_OBSLUGI', name: 'W trakcie obsługi', sortOrder: 30, color: '#0EA5E9', status: 'W_TRAKCIE_OBSLUGI', isTerminal: false, requiresOwner: true, requiresNextAction: true },
+  { code: 'CRM_WIZJA_LOKALNA', name: 'Wizja Lokalna', sortOrder: 35, color: '#0891B2', status: 'W_TRAKCIE_OBSLUGI', isTerminal: false, requiresOwner: true, requiresNextAction: true },
   { code: 'CRM_OFERTA_PRZYGOTOWANA', name: 'Oferta przygotowana', sortOrder: 40, color: '#F59E0B', status: 'OFERTA_PRZYGOTOWANA', isTerminal: false, requiresOwner: true, requiresNextAction: true },
   { code: 'CRM_OFERTA_ZAAKCEPTOWANA', name: 'Zaakceptowano ofertę', sortOrder: 50, color: '#16A34A', status: 'OFERTA_ZAAKCEPTOWANA', isTerminal: false, requiresOwner: true, requiresNextAction: true },
   { code: 'CRM_ZALICZKA_MONTAZ', name: 'Wpłacono zaliczkę / montaż', sortOrder: 60, color: '#059669', status: 'ZALICZKA_MONTAZ', isTerminal: false, requiresOwner: true, requiresNextAction: true },

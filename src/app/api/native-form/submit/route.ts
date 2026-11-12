@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
 const DOMAIN = process.env.PIPEDRIVE_DOMAIN;
 const BASE =
@@ -49,6 +50,8 @@ async function updateDeal(id: string | number, data: Record<string, any>) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await authorizeStaffRequest(req, 'crm.write');
+  if (!access.ok) return access.response;
   try {
     if (!TOKEN || !BASE) return new Response("Pipedrive env missing", { status: 500 });
 

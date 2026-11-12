@@ -176,3 +176,30 @@ test('energy saves leave automatic profile refresh to the key-driven effect', ()
   assert.ok(overviewText.indexOf('auditSaved = true') < overviewText.indexOf("fetch('/api/crm/clients/energy-account'"),
     'audit success must be recorded before the follow-up account save can fail');
 });
+
+
+test('odświeżenie po imporcie zachowuje checkbox i edycje tego projektu, odczytuje nowe ID audytu', () => {
+  let callback: ts.Expression | undefined;
+  const visit = (node: ts.Node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === 'load') {
+      const inside = (child: ts.Node) => {
+        if (ts.isCallExpression(child) && ts.isIdentifier(child.expression) && child.expression.text === 'setEnergyDataSettings') callback = child.arguments[0];
+        ts.forEachChild(child, inside);
+      };
+      inside(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(profileAst); assert.ok(callback);
+  const js = ts.transpileModule('const merge = ' + callback.getText(profileAst), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const factory = new Function('energyDataSettingsFromClient', 'clientPayload', 'loadedProject', 'preserveEnergySettings', 'selectedProjectId', 'energyPvSourceProjectRef', js + ';return merge;');
+  const current = { hasOperatorData: true, existingPvKw: '13', auditId: '' };
+  const loaded = () => ({ hasOperatorData: false, existingPvKw: '9.92', auditId: 'new-audit' });
+  const project = { id: 'one', energyAudits: [{ id: 'new-audit' }] };
+  const same = factory(loaded, { data: {} }, project, true, 'one', { current: null });
+  assert.deepEqual(same(current), { ...current, auditId: 'new-audit' });
+  const other = factory(loaded, { data: {} }, project, true, 'two', { current: null });
+  assert.deepEqual(other(current), loaded());
+  const normal = factory(loaded, { data: {} }, project, false, 'one', { current: null });
+  assert.deepEqual(normal(current), loaded());
+});

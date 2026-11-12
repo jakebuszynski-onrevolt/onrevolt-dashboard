@@ -30,8 +30,12 @@ export type InvoiceRecognitionFields = {
   consumption: {
     totalBeforeBalancingKwh?: number;
     totalAfterBalancingKwh?: number;
+    meteredImportKwh?: number;
+    importBasis?: 'METERED';
     exportedBeforeBalancingKwh?: number;
     exportedAfterBalancingKwh?: number;
+    billedAfterDiscountKwh?: number;
+    netMeteringFactor?: number;
     monthly: InvoiceMonthlyEnergy[];
     zones: InvoiceEnergyZone[];
   };

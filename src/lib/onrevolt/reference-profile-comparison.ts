@@ -70,11 +70,15 @@ type Eligibility = { summary: Summary; prepared: PreparedProfile | null };
 const BDEW_SOURCE = 'bdew-standard-load-profiles-2025';
 const VDEW_SOURCE = 'vdew-standard-load-profiles-1999-2000';
 const OPSD_SOURCE = 'opsd_household_data_2020_04_15';
+const OPSD_WHOLEHOUSE_KEY = 'opsd_20200415_de_kn_residential4_household_heat_pump';
+const OPSD_WHOLEHOUSE_SOURCE_SHA256 = '15956440b27465686eae2abf5895cbc3dab80f934a891bcb2f4f944428e97d60';
+const OPSD_WHOLEHOUSE_FORMULA = 'delta(grid_import) + delta(pv) - delta(grid_export) - delta(ev)';
 const WHEN2HEAT_SOURCE = 'when2heat-20230727';
 const COMPARISON_YEAR = 2025;
 const BDEW_PROJECTION_METHOD = 'bdew-standard-profile';
 const VDEW_PROJECTION_METHOD = 'vdew-standard-profile';
 const OPSD_PUMP_PROJECTION_METHOD = 'opsd-normalized-pump-shape';
+const OPSD_WHOLEHOUSE_PROJECTION_METHOD = 'opsd-whole-house-seasonal-pattern';
 const DAY_MINUTES = 24 * 60;
 const QUARTERS_PER_DAY = 96;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -106,9 +110,10 @@ const vdewNames: Record<string, string> = {
 
 const opsdNames: Record<string, string> = {
   opsd_20200415_de_kn_residential1_grid_import: 'Dom 1 — pobór z sieci (OPSD)',
-  opsd_20200415_de_kn_residential1_heat_pump: 'Dom 1 — pompa ciepła (OPSD)',
+  opsd_20200415_de_kn_residential1_heat_pump: 'Sama pompa ciepła — dom 1 (OPSD)',
   opsd_20200415_de_kn_residential4_grid_import: 'Dom 4 — pobór z sieci (OPSD)',
-  opsd_20200415_de_kn_residential4_heat_pump: 'Dom 4 — pompa ciepła (OPSD)',
+  opsd_20200415_de_kn_residential4_heat_pump: 'Sama pompa ciepła — dom 4 (OPSD)',
+  [OPSD_WHOLEHOUSE_KEY]: 'Dom z pompą ciepła — bez ładowania auta (OPSD 4)',
   opsd_20200415_de_kn_industrial1_grid_import: 'Magazyn przemysłowy — pobór z sieci (OPSD)',
   opsd_20200415_de_kn_industrial3_grid_import: 'Instytut badawczy — pobór z sieci (OPSD)',
 };
@@ -420,6 +425,180 @@ function opsdMetadataReason(profile: CatalogProfile): string | null {
   return null;
 }
 
+function opsdWholeHousePatternReason(profile: CatalogProfile): string | null {
+  if (profile.key !== OPSD_WHOLEHOUSE_KEY || profile.sourceKey !== OPSD_SOURCE
+    || profile.name !== 'Dom z pompą ciepła — bez ładowania auta (OPSD 4)'
+    || profile.category !== 'household_whole_house' || profile.kind !== 'DERIVED_SEASONAL_PATTERN'
+    || profile.quantity !== 'whole_building_energy_consumption' || profile.unit !== 'kWh'
+    || profile.timeBasis !== 'EUROPE_BERLIN_MONTH_DAYTYPE_HOUR' || profile.resolutionMinutes !== 60
+    || profile.start !== null || profile.end !== null) {
+    return 'Metadane podstawowe nie pasują do zweryfikowanego profilu pełnego zużycia gospodarstwa OPSD 4.';
+  }
+  const metadata = profile.metadata;
+  const expectedColumns = [
+    'DE_KN_residential4_grid_import',
+    'DE_KN_residential4_pv',
+    'DE_KN_residential4_grid_export',
+    'DE_KN_residential4_ev',
+  ];
+  if (metadata.reviewStatus !== 'CANDIDATE' || metadata.country !== 'DE'
+    || metadata.geography !== 'Jedno gospodarstwo domowe OPSD 4 w południowych Niemczech; lokalizacja uogólniona przez dostawcę.'
+    || metadata.sourceUrl !== 'https://data.open-power-system-data.org/household_data/2020-04-15/'
+    || metadata.sourceKey !== OPSD_SOURCE || metadata.sourceYear !== 2016
+    || metadata.sourceSha256 !== OPSD_WHOLEHOUSE_SOURCE_SHA256
+    || !Array.isArray(metadata.sourceColumnSet) || JSON.stringify(metadata.sourceColumnSet) !== JSON.stringify(expectedColumns)
+    || metadata.sourceTimestampBasis !== 'OPSD uses left-labeled hourly buckets; the current-minus-previous counter delta is assigned to the current row label, with an approximately one-minute offset inherent in the last observation within that hour'
+    || metadata.civilTimeBasis !== 'Europe/Berlin from cet_cest_timestamp'
+    || metadata.derivation !== OPSD_WHOLEHOUSE_FORMULA
+    || metadata.wholeHouseBoundaryInference !== 'grid import plus onsite PV minus grid export approximates building load; EV charging is subtracted to represent household load without the car. This is an inferred boundary, not a direct whole-building meter.'
+    || metadata.heatPumpTreatment !== 'The heat pump is already included in whole-house electricity and is not added again.'
+    || metadata.evTreatment !== 'EV counter delta is subtracted from the inferred building load.'
+    || metadata.aggregation !== 'Arithmetic mean by current Berlin civil month, workday/weekend, and hour label; no holiday adjustment.'
+    || metadata.interpolatedPolicy !== 'Skip an interval if any used counter is marked interpolated on either its start or end counter row; source flags are pipe-separated column names.'
+    || metadata.negativeBalancePolicy !== 'Retain negative raw hourly balance values in group means and diagnostics; apply no clipping.'
+    || metadata.confidence !== 'LOW: empirical pattern from one household in one source year; not guaranteed representative of other households.'
+    || metadata.processingScript !== 'scripts/profile-catalog/opsd-household-balance.py') {
+    return 'Brakuje potwierdzonego źródła, wzoru bilansu, wyłączenia interpolacji lub granicy wnioskowania OPSD 4.';
+  }
+
+  const quality = profile.quality;
+  if (quality.sourceSha256 !== OPSD_WHOLEHOUSE_SOURCE_SHA256 || quality.sourceYear !== 2016
+    || quality.sourceIntervalsInBerlinYear !== 8784
+    || !isFiniteNumber(quality.usedIntervals) || !Number.isInteger(quality.usedIntervals) || quality.usedIntervals <= 0
+    || !isFiniteNumber(quality.interpolatedIntervalsExcluded) || !Number.isInteger(quality.interpolatedIntervalsExcluded)
+    || quality.usedIntervals + quality.interpolatedIntervalsExcluded !== quality.sourceIntervalsInBerlinYear
+    || quality.groupCount !== 576
+    || quality.allGroupMeansPositive !== true || quality.negativeValuesClipped !== false || quality.gapsFilled !== false
+    || !isFiniteNumber(quality.rawNegativeHours) || !Number.isInteger(quality.rawNegativeHours) || quality.rawNegativeHours < 0
+    || !isFiniteNumber(quality.rawNegativeEnergyKwh)
+    || !Array.isArray(quality.negativeHourlyLoadDiagnostics)
+    || quality.negativeHourlyLoadDiagnostics.length !== quality.rawNegativeHours
+    || profile.series.length !== 576) {
+    return 'Wskaźniki jakości lub liczba danych OPSD 4 nie zgadzają się ze zweryfikowanym rokiem źródłowym.';
+  }
+
+  const seen = new Set<string>();
+  const sampleCounts: number[] = [];
+  const values: number[] = [];
+  for (const point of profile.series) {
+    if (!isRecord(point) || JSON.stringify(Object.keys(point).sort())
+      !== JSON.stringify(['dayType', 'hour', 'month', 'samples', 'slot', 'value'])) {
+      return 'Punkt profilu OPSD 4 ma nieprawidłową strukturę.';
+    }
+    const { month, dayType, hour, slot, value, samples } = point;
+    if (!Number.isInteger(month) || Number(month) < 1 || Number(month) > 12
+      || !['workday', 'weekend'].includes(String(dayType))
+      || !Number.isInteger(hour) || Number(hour) < 0 || Number(hour) > 23
+      || slot !== hour || !isFiniteNumber(value) || value <= 0
+      || !Number.isInteger(samples) || Number(samples) < 1) {
+      return 'Punkt profilu OPSD 4 ma nieprawidłowy miesiąc, typ dnia, godzinę, średnią lub liczbę próbek.';
+    }
+    const coordinate = `${month}/${dayType}/${hour}`;
+    if (seen.has(coordinate)) return 'Seria OPSD 4 zawiera powtórzony miesiąc, typ dnia i godzinę.';
+    seen.add(coordinate);
+    sampleCounts.push(Number(samples));
+    values.push(value);
+  }
+  for (let month = 1; month <= 12; month += 1) {
+    for (const dayType of ['workday', 'weekend']) {
+      for (let hour = 0; hour < 24; hour += 1) {
+        if (!seen.has(`${month}/${dayType}/${hour}`)) return 'Seria OPSD 4 nie zawiera wszystkich 576 grup.';
+      }
+    }
+  }
+  const minSamples = Math.min(...sampleCounts);
+  const maxSamples = Math.max(...sampleCounts);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  if (quality.minimumSamplesPerGroup !== minSamples || quality.maximumSamplesPerGroup !== maxSamples
+    || sampleCounts.reduce((sum, count) => sum + count, 0) !== quality.usedIntervals
+    || !isFiniteNumber(quality.minimumGroupMeanKwh) || Math.abs(quality.minimumGroupMeanKwh - minValue) > 1e-12
+    || !isFiniteNumber(quality.maximumGroupMeanKwh) || Math.abs(quality.maximumGroupMeanKwh - maxValue) > 1e-12) {
+    return 'Podsumowania jakości OPSD 4 nie zgadzają się z wartościami 576 grup.';
+  }
+
+  const negativeRows = new Set<string>();
+  let negativeSum = 0;
+  for (const raw of quality.negativeHourlyLoadDiagnostics) {
+    if (!isRecord(raw) || typeof raw.timestampUtc !== 'string' || !isFiniteNumber(raw.loadKwh) || raw.loadKwh >= 0
+      || !Number.isInteger(raw.monthBerlin) || !Number.isInteger(raw.hourBerlin)
+      || !['workday', 'weekend'].includes(String(raw.dayTypeBerlin))) {
+      return 'Diagnostyka ujemnych godzin OPSD 4 jest nieprawidłowa.';
+    }
+    const stamp = parseOpsdTimestamp(raw.timestampUtc);
+    if (!stamp || negativeRows.has(raw.timestampUtc)) {
+      return 'Diagnostyka ujemnych godzin OPSD 4 nie zgadza się z rokiem lub zawiera powtórzenia.';
+    }
+    const berlinParts = Object.fromEntries(opsdCivilFormatter.formatToParts(new Date(stamp.epoch)).map(({ type, value }) => [type, value]));
+    const berlinDate = `${berlinParts.year}-${berlinParts.month}-${berlinParts.day}`;
+    const berlinWeekday = new Date(`${berlinDate}T12:00:00.000Z`).getUTCDay();
+    const berlinDayType = berlinWeekday === 0 || berlinWeekday === 6 ? 'weekend' : 'workday';
+    if (Number(berlinParts.year) !== 2016 || Number(berlinParts.month) !== raw.monthBerlin || Number(berlinParts.hour) !== raw.hourBerlin
+      || berlinDayType !== raw.dayTypeBerlin) {
+      return 'Diagnostyka ujemnych godzin OPSD 4 nie zgadza się z czasem cywilnym Europe/Berlin.';
+    }
+    negativeRows.add(raw.timestampUtc);
+    negativeSum += raw.loadKwh;
+  }
+  if (Math.abs(negativeSum - quality.rawNegativeEnergyKwh) > 1e-9) {
+    return 'Suma ujemnych godzin OPSD 4 nie zgadza się z diagnostyką jakości.';
+  }
+  if ((quality.rawNegativeHours === 0 && Math.abs(quality.rawNegativeEnergyKwh) > 1e-12)
+    || (quality.rawNegativeHours > 0 && quality.rawNegativeEnergyKwh >= 0)) {
+    return 'Suma ujemnych godzin OPSD 4 ma nieprawidłowy znak.';
+  }
+  return null;
+}
+
+function opsdWholeHouseDayType(date: string): 'workday' | 'weekend' {
+  const weekday = new Date(`${date}T12:00:00.000Z`).getUTCDay();
+  return weekday === 0 || weekday === 6 ? 'weekend' : 'workday';
+}
+
+function opsdWholeHousePattern(profile: CatalogProfile) {
+  const pattern = new Map<string, number>();
+  for (const point of profile.series) {
+    pattern.set(`${point.month}/${point.dayType}/${point.hour}`, Number(point.value));
+  }
+  return pattern;
+}
+
+function opsdWholeHouseNotes(profile: CatalogProfile): string[] {
+  const quality = profile.quality;
+  return [
+    `Źródło: Open Power System Data Household Data, gospodarstwo domowe 4. Oś bieżących etykiet obejmuje 2016 r. czasu Europe/Berlin; użyto ${quality.usedIntervals} z ${quality.sourceIntervalsInBerlinYear} przedziałów, a ${quality.interpolatedIntervalsExcluded} pominięto z powodu flag interpolacji.`,
+    'Bilans obciążenia budynku: różnica poboru z sieci + różnica PV − różnica eksportu z sieci − różnica licznika EV. EV odjęto, aby nie przypisywać ładowania auta do zużycia domu; pompy ciepła nie dodawano ponownie, bo jej pobór jest już w bilansie budynku.',
+    'Zgodnie z plikiem przetwarzania OPSD godzina bieżącej etykiety opisuje bieżący koszyk; różnica liczników bazuje na ostatnich obserwacjach wewnątrz koszyka i ma około jednominutowe przesunięcie względem granicy. To wnioskowana granica całego budynku, a nie bezpośredni pomiar licznikiem całego domu.',
+    'Przedział pominięto, jeśli którykolwiek użyty licznik był oznaczony jako interpolowany w bieżącym lub poprzednim wierszu. Braków nie uzupełniano.',
+    `Zachowano ${quality.rawNegativeHours} ujemnych surowych godzin (suma ${Number(quality.rawNegativeEnergyKwh).toFixed(3)} kWh) w średnich grup i diagnostyce; nie przycinano wartości. Wszystkie 576 średnich grup są dodatnie, ale najmniejsza grupa ma tylko ${quality.minimumSamplesPerGroup} próbkę.`,
+    'Niska pewność: empiryczny kształt pochodzi z jednego gospodarstwa i jednego roku, więc nie gwarantuje reprezentatywności innych domów.',
+    'Kształt odwzorowano bezpośrednio na miesiąc, dzień roboczy/weekend i godzinę. Sobota i niedziela są weekendem; nie stosuje się polskich ani niemieckich świąt.',
+  ];
+}
+
+function validateOpsdWholeHouseAndMake(profile: CatalogProfile): Eligibility {
+  const reason = opsdWholeHousePatternReason(profile);
+  const notes = reason ? [] : opsdWholeHouseNotes(profile);
+  const yearLabel = 'Kształt empiryczny 2016 (Berlin)';
+  if (reason) return { summary: makeSummary(profile, false, reason, yearLabel, notes), prepared: null };
+
+  const pattern = opsdWholeHousePattern(profile);
+  const days = datesOfYear(COMPARISON_YEAR).map(({ date, month }) => {
+    const dayType = opsdWholeHouseDayType(date);
+    const hours = Array.from({ length: 24 }, (_, hour) => {
+      const value = pattern.get(`${month}/${dayType}/${hour}`);
+      if (value === undefined || !Number.isFinite(value) || value <= 0) {
+        throw new Error(`Brak dodatniej grupy OPSD 4 dla ${date}, godziny ${hour}.`);
+      }
+      return value;
+    });
+    return { date, month, dayType, hours };
+  });
+  const summary = makeSummary(profile, true, null, yearLabel, notes);
+  const prepared: PreparedProfile = { summary, days, year: COMPARISON_YEAR, notes };
+  return { summary, prepared };
+}
+
 function bdewNotes(profile: CatalogProfile) {
   const sheet = bdewSheet(profile)!;
   const notes = [
@@ -648,7 +827,11 @@ function evaluateProfile(profileInput: CatalogProfile): Eligibility {
   if (!isRecord(profileInput.metadata)) return summarizeUnknown(profileInput, 'Brakuje metadanych wymaganych do weryfikacji profilu.');
   if (profileInput.sourceKey === BDEW_SOURCE) return validateBdewAndMake(profileInput);
   if (profileInput.sourceKey === VDEW_SOURCE) return validateVdewAndMake(profileInput);
-  if (profileInput.sourceKey === OPSD_SOURCE) return validateOpsdAndMake(profileInput);
+  if (profileInput.sourceKey === OPSD_SOURCE) {
+    return profileInput.key === OPSD_WHOLEHOUSE_KEY
+      ? validateOpsdWholeHouseAndMake(profileInput)
+      : validateOpsdAndMake(profileInput);
+  }
   if (profileInput.sourceKey === WHEN2HEAT_SOURCE) return summarizeKnownWhen2Heat(profileInput);
   return summarizeUnknown(profileInput, 'Źródło profilu nie jest obsługiwane przez porównanie energii elektrycznej.');
 }
@@ -660,6 +843,7 @@ export function summarizeReferenceProfile(profile: CatalogProfile): Summary {
 function calculationMethod(profile: CatalogProfile): string {
   if (profile?.sourceKey === BDEW_SOURCE) return BDEW_PROJECTION_METHOD;
   if (profile?.sourceKey === VDEW_SOURCE) return VDEW_PROJECTION_METHOD;
+  if (profile?.key === OPSD_WHOLEHOUSE_KEY) return OPSD_WHOLEHOUSE_PROJECTION_METHOD;
   if (profile?.sourceKey === OPSD_SOURCE) return OPSD_PUMP_PROJECTION_METHOD;
   return 'unsupported';
 }
@@ -696,6 +880,7 @@ export function getReferenceProfileCalculationEligibility(
   }
 
   if (profile.sourceKey === OPSD_SOURCE) {
+    if (profile.key === OPSD_WHOLEHOUSE_KEY) return { eligible: true, reason: null, method };
     if (profile.quantity === 'energy_import') {
       return {
         eligible: false,
@@ -752,6 +937,14 @@ function projectionNotes(profile: CatalogProfile, method: string, sourceYear: nu
         ? 'Dla H0 zastosowano dynamizację zależną od dnia roku okresu docelowego.'
         : 'Profil VDEW G/L nie jest dynamizowany; oficjalna funkcja dynamizacji dotyczy H0.',
       'Zachowano dobowy kształt i różnice sezonowe; dopasowanie do rocznego zużycia następuje jedną normalizacją całego okresu.',
+    ];
+  }
+
+  if (method === OPSD_WHOLEHOUSE_PROJECTION_METHOD) {
+    return [
+      'Źródło: pochodny kształt OPSD 4 z 2016 r., zbudowany z różnic liczników poboru z sieci, PV, eksportu i EV; pompa ciepła pozostaje częścią zużycia domu i nie jest dodawana drugi raz. Różnica current-minus-previous jest przypisana do bieżącej etykiety koszyka, którego ostatni odczyt ma około jednominutowe przesunięcie.',
+      'Każdą polską datę docelową przypisano bezpośrednio do źródłowej grupy miesiąc × dzień roboczy/weekend × godzina Europe/Berlin. Weekendy obejmują sobotę i niedzielę; święta nie są wydzielane.',
+      'To empiryczna obserwacja jednego gospodarstwa, nie gwarantowany typowy profil. Jedna normalizacja dopasowuje kształt do rocznej energii użytej w porównaniu.',
     ];
   }
 
@@ -822,6 +1015,22 @@ export function buildReferenceProfileProjection(
       };
     });
     return { method, notes: projectionNotes(profile, method, null), sourceYear: null, days };
+  }
+
+  if (method === OPSD_WHOLEHOUSE_PROJECTION_METHOD) {
+    const index = opsdWholeHousePattern(profile);
+    const days = parts.map(({ date, month, weekday }) => {
+      const dayType = weekday === 0 || weekday === 6 ? 'weekend' as const : 'workday' as const;
+      const hours = Array.from({ length: 24 }, (_, hour) => {
+        const value = index.get(`${month}/${dayType}/${hour}`);
+        if (value === undefined || !Number.isFinite(value) || value <= 0) {
+          throw new Error(`Brak dodatniej grupy OPSD 4 ${month}/${dayType}/${hour}.`);
+        }
+        return value;
+      });
+      return { date, month, dayType, hours };
+    });
+    return { method, notes: projectionNotes(profile, method, 2016), sourceYear: 2016, days };
   }
 
   const complete = completeOpsdYear(profile);

@@ -190,3 +190,17 @@ test('waliduje kotwicę i daty depozytu, zachowując limity jawne z dokumentu', 
     ...calculation, initialDepositLots: [{ ...calculation.initialDepositLots[0], expiresMonth: '2025-02' }],
   })), /musi przypadać po miesiącu uznania/);
 });
+
+test('tryb szczegółowej ulgi zapisuje się w szkicu i odrzuca niepoprawny typ', () => {
+  for (const detailed of [true, false]) {
+    const input = { ...emptyOfferWorkspaceDraft(), calculation: { ...defaultOfferCalculationAssumptions(), taxDetailedCalculation: detailed } };
+    assert.equal(parseOfferWorkspaceDraft(input).calculation?.taxDetailedCalculation, detailed);
+  }
+  assert.throws(() => parseOfferWorkspaceDraft({ ...emptyOfferWorkspaceDraft(), calculation: { ...defaultOfferCalculationAssumptions(), taxDetailedCalculation: 'true' } }));
+});
+
+test('zapis szkicu zachowuje włączenie i wyłączenie magazynu przed wyborem zestawu', () => {
+  for (const includeStorage of [true, false]) {
+    assert.equal(parseOfferWorkspaceDraft({ ...emptyOfferWorkspaceDraft(), includeStorage }).includeStorage, includeStorage);
+  }
+});

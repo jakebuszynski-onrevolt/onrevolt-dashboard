@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { jsonResponse, optionalString, parseDate, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
+import { defaultNewProjectAnalysisStartMonth } from 'lib/onrevolt/project-analysis-period';
 import { isOperationalPipelineStageCode } from 'lib/onrevolt/pipeline-stages';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
     const project = await prisma.project.create({
       data: {
         clientId: requireString(body, 'clientId'),
+        analysisStartMonth: defaultNewProjectAnalysisStartMonth(),
         title: requireString(body, 'title'),
         clientType: typeof body.clientType === 'string' ? body.clientType as any : 'UNKNOWN',
         status: stage?.status || body.status || 'LEAD',

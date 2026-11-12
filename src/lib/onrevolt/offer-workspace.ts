@@ -5,6 +5,7 @@ import { automaticOfferCommercialBreakdown, parseOfferWorkspaceCommercialBreakdo
 
 export const OFFER_WORKSPACE_SCHEMA_VERSION = 1;
 export const DEFAULT_OFFER_BILLING_CYCLE_MONTHS = 2;
+export const DEFAULT_OFFER_TAX_RATE_PERCENT = 12;
 export const OFFER_WORKSPACE_STEPS = ['SYSTEM', 'CONFIGURATION', 'SAVINGS', 'DESCRIPTION', 'SUMMARY'] as const;
 export type OfferWorkspaceStep = typeof OFFER_WORKSPACE_STEPS[number];
 
@@ -24,6 +25,7 @@ export type OfferWorkspaceInitialDepositLot = {
 export type OfferCalculationAssumptions = {
   pvReconstructionAccepted?: boolean;
   taxEstimateAccepted?: boolean;
+  taxDetailedCalculation?: boolean;
   billingCycleMonths: number | null;
   billingCycleStartMonth?: string | null;
   initialCreditKwh: number | null;
@@ -52,6 +54,13 @@ export function defaultOfferCalculationAssumptions(): OfferCalculationAssumption
   };
 }
 
+export function usesOfferTaxEstimate(settings: OfferCalculationAssumptions): boolean {
+  if (settings.taxDetailedCalculation != null) return !settings.taxDetailedCalculation;
+  // Starsze szkice z kompletem danych zachowują dokładną symulację.
+  return settings.taxEstimateAccepted === true
+    || [settings.taxBasePln, settings.taxRemainingLimitPln, settings.taxEligibleCostPln].some(value => value == null);
+}
+
 export type OfferWorkspaceDraft = {
   schemaVersion: 1;
   step: OfferWorkspaceStep;
@@ -64,6 +73,7 @@ export type OfferWorkspaceDraft = {
     lossPercent: number | null;
   };
   pvStrategy: 'KEEP_EXISTING' | 'ADD_TEMPLATE';
+  includeStorage?: boolean;
   currentSettlement: 'NET_METERING' | 'NET_BILLING' | null;
   targetSettlement: 'NET_METERING' | 'NET_BILLING' | null;
   targetOperatorId: number | null;
@@ -79,7 +89,7 @@ export type OfferWorkspaceDraft = {
 
 export type OfferCalculationAssumptionKey = Exclude<
   keyof OfferCalculationAssumptions,
-  'billingCycleStartMonth' | 'initialCreditLots' | 'initialDepositLots' | 'pvReconstructionAccepted' | 'taxEstimateAccepted'
+  'billingCycleStartMonth' | 'initialCreditLots' | 'initialDepositLots' | 'pvReconstructionAccepted' | 'taxEstimateAccepted' | 'taxDetailedCalculation'
 >;
 
 export function offerWorkspaceDraftWithCalculationValue(
@@ -444,6 +454,7 @@ export function parseOfferWorkspaceDraft(value: unknown): OfferWorkspaceDraft {
       lossPercent: optionalNumber(pv.lossPercent, 0, 99, 'Straty PV'),
     },
     pvStrategy: choice(input.pvStrategy, ['KEEP_EXISTING', 'ADD_TEMPLATE'], 'zakres PV'),
+    ...(input.includeStorage === undefined ? {} : { includeStorage: boolean(input.includeStorage, 'Magazyn w ofercie') }),
     currentSettlement: settlement(input.currentSettlement),
     targetSettlement: settlement(input.targetSettlement),
     targetOperatorId: optionalId(input.targetOperatorId, 'operator'),
@@ -472,6 +483,9 @@ export function parseOfferWorkspaceDraft(value: unknown): OfferWorkspaceDraft {
     result.calculation = {
       pvReconstructionAccepted: calculation.pvReconstructionAccepted === undefined ? false : boolean(calculation.pvReconstructionAccepted, 'Akceptacja szacowanej produkcji PV'),
       taxEstimateAccepted: calculation.taxEstimateAccepted === undefined ? false : boolean(calculation.taxEstimateAccepted, 'Akceptacja szacowanej ulgi'),
+      ...(calculation.taxDetailedCalculation === undefined ? {} : {
+        taxDetailedCalculation: boolean(calculation.taxDetailedCalculation, 'Dokładne dane do ulgi'),
+      }),
       billingCycleMonths: calculation.billingCycleMonths == null
         ? null
         : nullable('billingCycleMonths', 1, 12),

@@ -1,6 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveProjectAnalysisPeriod } from './project-analysis-period';
+import { defaultNewProjectAnalysisStartMonth, resolveProjectAnalysisPeriod } from './project-analysis-period';
+
+test('new projects start with the latest complete April–March year', () => {
+  for (const [now, expected] of [
+    ['2026-11-09T12:00:00Z', '2025-04'],
+    ['2027-01-01T12:00:00Z', '2025-04'],
+    ['2027-03-31T21:59:59Z', '2025-04'],
+    ['2027-03-31T22:00:00Z', '2026-04'],
+  ]) {
+    const date = new Date(now);
+    const start = defaultNewProjectAnalysisStartMonth(date);
+    assert.equal(start, expected);
+    const period = resolveProjectAnalysisPeriod(start, date);
+    assert.equal(period.periodKeys.length, 12);
+    assert.equal(period.endMonth, `${Number(expected.slice(0, 4)) + 1}-03`);
+    assert.ok(new Date(period.untilUtc).getTime() <= date.getTime());
+  }
+});
+
+test('persisted April remains selected when the next analysis year closes', () => {
+  const start = defaultNewProjectAnalysisStartMonth(new Date('2026-11-09T12:00:00Z'));
+  assert.equal(resolveProjectAnalysisPeriod(start, new Date('2028-04-02T12:00:00Z')).startMonth, '2025-04');
+});
 
 test('legacy null defaults to the previous 12 fully closed Warsaw months', () => {
   const period = resolveProjectAnalysisPeriod(null, new Date('2026-10-31T23:30:00.000Z'));

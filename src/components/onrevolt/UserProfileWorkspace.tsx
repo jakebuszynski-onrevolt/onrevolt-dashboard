@@ -36,6 +36,7 @@ type StaffUser = {
   systemRole: string;
   positionTitle?: string | null;
   avatarUrl?: string | null;
+  siteVisitsOnly?: boolean;
   passwordResetRequired: boolean;
   companyRoles: CompanyRole[];
 };
@@ -174,7 +175,13 @@ export default function UserProfileWorkspace() {
               Dane operatora widoczne w panelu, zdjęcie profilowe i hasło.
             </Text>
           </Box>
-          <Button as={Link} href="/admin/settings" leftIcon={<Icon as={MdArrowBack} />} variant="outline">
+          <Button
+            as={Link}
+            href={user?.siteVisitsOnly ? '/admin/clients' : '/admin/settings'}
+            leftIcon={<Icon as={MdArrowBack} />}
+            variant="outline"
+            isDisabled={!user}
+          >
             Ustawienia
           </Button>
         </Flex>

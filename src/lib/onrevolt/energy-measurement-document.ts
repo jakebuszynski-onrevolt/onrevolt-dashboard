@@ -2,6 +2,25 @@ import * as XLSX from 'xlsx';
 
 type SheetRow = Array<string | number | boolean | Date | null | undefined>;
 
+export class EnergyMeasurementIncompleteError extends Error {
+  constructor(message: string, public readonly userMessage: string) {
+    super(message);
+    this.name = 'EnergyMeasurementIncompleteError';
+  }
+}
+
+function incompleteDayRanges(days: Set<string>) {
+  const sorted = [...days].sort();
+  const ranges: string[][] = [];
+  for (const day of sorted) {
+    const last = ranges.at(-1);
+    if (last && Date.parse(day) - Date.parse(last[1]) === 86400000) last[1] = day;
+    else ranges.push([day, day]);
+  }
+  const format = (day: string) => day.split('-').reverse().join('.');
+  return ranges.map(([from, to]) => from === to ? format(from) : `${format(from)}–${format(to)}`).join(', ');
+}
+
 export type EnergyMeasurementWorkbookInfo = {
   kind: 'ACTIVE_IMPORT' | 'ACTIVE_EXPORT';
   ppeNumber: string;
@@ -13,6 +32,8 @@ export type EnergyMeasurementWorkbookInfo = {
   totalKwh: number;
   rowsCount: number;
   sheetName: string;
+  modelledRows?: number;
+  modelDescription?: string;
   tariffRegisterPeriods?: Array<{
     validFrom: string;
     mode: 'total' | 'zoned';
@@ -26,7 +47,7 @@ export type EnergyMeasurementInterval = {
   startUtc: string;
   endUtc: string;
   valueKwh: number;
-  source: 'measured' | 'estimated';
+  source: 'measured' | 'estimated' | 'modelled';
   occurrence: number;
 };
 
@@ -35,7 +56,7 @@ export type EnergyMeasurementWorkbookWithIntervals = {
   intervals: EnergyMeasurementInterval[];
 };
 
-type ParsedMeasurementRow = { localEndEpoch: number; valueKwh: number; source: 'measured' | 'estimated'; winterLabel: boolean };
+type ParsedMeasurementRow = { localEndEpoch: number; valueKwh: number; source: EnergyMeasurementInterval['source']; winterLabel: boolean };
 
 const warsawFormatter = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Warsaw',
@@ -218,6 +239,17 @@ function parseEnergyMeasurementWorkbook(bytes: Buffer, includeIntervals: boolean
     throw new Error('Nie można odczytać pliku XLSX');
   }
 
+  // CRM reconstructions are explicit, separate from estimates supplied by the OSD.
+  let modelDescription: string | undefined;
+  if (workbook.Sheets['Model CRM']) {
+    const metadata = XLSX.utils.sheet_to_json<SheetRow>(workbook.Sheets['Model CRM'], { header: 1, raw: true });
+    if (metadata[0]?.[0] !== 'ONREVOLT_MEASUREMENT_MODEL_V1'
+      || typeof metadata[1]?.[0] !== 'string' || !metadata[1][0].trim()) {
+      throw new Error('Brak opisu pochodzenia uzupełnień Model CRM.');
+    }
+    modelDescription = metadata[1][0].trim();
+  }
+
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) continue;
@@ -271,7 +303,9 @@ function parseEnergyMeasurementWorkbook(bytes: Buffer, includeIntervals: boolean
     let validRows = 0;
     let invalidStatusRows = 0;
     let invalidValueRows = 0;
+    let modelledRows = 0;
     let firstInvalidRow: string | undefined;
+    const invalidDays = new Set<string>();
     const parsedRows: ParsedMeasurementRow[] = [];
     for (const row of rows.slice(headerIndex + 1)) {
       const timestamp = civilTimestamp(row[dateIndex]);
@@ -282,7 +316,8 @@ function parseEnergyMeasurementWorkbook(bytes: Buffer, includeIntervals: boolean
       }
       timestamps.push(timestamp);
       const status = String(row[statusIndex] ?? '').trim();
-      const validStatus = status === 'Dane rzeczywiste' || status === 'Dane szacowane';
+      if (status === 'Model CRM' && !modelDescription) throw new Error('Wartości Model CRM wymagają arkusza z opisem pochodzenia.');
+      const validStatus = status === 'Dane rzeczywiste' || status === 'Dane szacowane' || status === 'Model CRM';
       // ENEA leaves inactive OBIS tariff zones empty, including after a tariff change mid-month.
       const populatedIndexes = valueIndexes.filter((index) => String(row[index] ?? '').trim() !== '');
       const values = (isZonedReport ? populatedIndexes : valueIndexes).map((index) => numericCell(row[index]));
@@ -294,6 +329,8 @@ function parseEnergyMeasurementWorkbook(bytes: Buffer, includeIntervals: boolean
       if (!validStatus) invalidStatusRows += 1;
       if (!validValues) invalidValueRows += 1;
       if (!validStatus || !validValues) {
+        // ENEA timestamps describe interval ends; midnight belongs to the prior day.
+        invalidDays.add(new Date(timestamp - 1).toISOString().slice(0, 10));
         if (!firstInvalidRow) {
           const reasons = [
             !validStatus ? 'wymagany status Dane rzeczywiste lub Dane szacowane' : null,
@@ -304,6 +341,7 @@ function parseEnergyMeasurementWorkbook(bytes: Buffer, includeIntervals: boolean
         continue;
       }
       validRows += 1;
+      if (status === 'Model CRM') modelledRows += 1;
       if (isZonedReport && totalRegisterIndex >= 0) {
         const mode = populatedIndexes.includes(valueIndexes[totalRegisterIndex]) ? 'total' : 'zoned';
         if (tariffRegisterPeriods.at(-1)?.mode !== mode) {
@@ -317,14 +355,16 @@ function parseEnergyMeasurementWorkbook(bytes: Buffer, includeIntervals: boolean
       parsedRows.push({
         localEndEpoch: timestamp,
         valueKwh: values.reduce((sum, value) => sum + value!, 0),
-        source: status.trim() === 'Dane rzeczywiste' ? 'measured' : 'estimated',
+        source: status === 'Dane rzeczywiste' ? 'measured' : status === 'Model CRM' ? 'modelled' : 'estimated',
         winterLabel: typeof row[dateIndex] === 'string' && /\s+czasu zimowego$/.test(String(row[dateIndex]).trim()),
       });
     }
     if (firstInvalidRow) {
-      throw new Error(`Niepełne dane godzinowe: ${validRows}/${expectedRows} poprawnych pomiarów. `
+      throw new EnergyMeasurementIncompleteError(`Niepełne dane godzinowe: ${validRows}/${expectedRows} poprawnych pomiarów. `
         + `Wiersze z brakującym lub nieprawidłowym statusem: ${invalidStatusRows}; wartością kWh: ${invalidValueRows}. `
-        + `Pierwszy niepoprawny pomiar: ${firstInvalidRow}.`);
+        + `Pierwszy niepoprawny pomiar: ${firstInvalidRow}.`,
+        `Nie dodano pliku: miesiąc ${period.periodFrom.slice(0, 7)} jest niepełny (${validRows} z ${expectedRows} godzin). `
+        + `Brak lub niepoprawne pomiary: ${incompleteDayRanges(invalidDays)}. Pobierz pełny miesięczny raport ENEA.`);
     }
     if (timestamps.length < 2) throw new Error('Plik nie zawiera pomiarów godzinowych');
 
@@ -373,6 +413,7 @@ function parseEnergyMeasurementWorkbook(bytes: Buffer, includeIntervals: boolean
         totalKwh: reportedTotal ?? totalKwh,
         rowsCount: timestamps.length,
         sheetName,
+        ...(modelledRows ? { modelledRows, modelDescription } : {}),
         ...(tariffRegisterPeriods.length > 1 ? { tariffRegisterPeriods } : {}),
       },
       intervals: includeIntervals ? intervalsFromRows(parsedRows) : [],

@@ -134,8 +134,8 @@ function normalized(value: string | null | undefined): string {
   return value?.trim().toUpperCase() ?? '';
 }
 
-function roundCents(value: number, label: string): number {
-  if (!Number.isFinite(value) || value < 0) throw new RangeError(`${label} musi być skończoną kwotą nieujemną.`);
+function roundCents(value: number, label: string, discount = false): number {
+  if (!Number.isFinite(value) || (!discount && value < 0)) throw new RangeError(`${label} musi być skończoną kwotą nieujemną.`);
   const cents = Math.round((value + Number.EPSILON) * 100);
   if (!Number.isSafeInteger(cents)) throw new RangeError(`${label} przekracza obsługiwany limit.`);
   if (Math.abs(value - cents / 100) > 0.0000001) throw new RangeError(`${label} musi być wyrażona w pełnych groszach.`);
@@ -257,17 +257,17 @@ export function calculateOfferCommercialPricing(
     }
     if (commonVatRate !== null && commonVatRate !== line.saleVatRate) throw new Error('Podział grup wymaga jednej stawki VAT sprzedaży.');
     commonVatRate = line.saleVatRate;
-    const lineGrossCents = roundCents(line.calculation.saleGross, `Cena brutto pozycji ${line.templateId}/${line.itemId}`);
-    const lineNetCents = roundCents(line.calculation.saleNet, `Cena netto pozycji ${line.templateId}/${line.itemId}`);
-    const lineSaleAmountCents = roundCents(line.saleAmount, `Cena sprzedaży pozycji ${line.templateId}/${line.itemId}`);
+    const lineGrossCents = roundCents(line.calculation.saleGross, `Cena brutto pozycji ${line.templateId}/${line.itemId}`, item.workspaceDiscount);
+    const lineNetCents = roundCents(line.calculation.saleNet, `Cena netto pozycji ${line.templateId}/${line.itemId}`, item.workspaceDiscount);
+    const lineSaleAmountCents = roundCents(line.saleAmount, `Cena sprzedaży pozycji ${line.templateId}/${line.itemId}`, item.workspaceDiscount);
     assertEqualCents(lineSaleAmountCents, pricing.saleAmountBasis === 'NET' ? lineNetCents : lineGrossCents, `Cena sprzedaży pozycji ${line.templateId}/${line.itemId}`);
     includedGrossCents += lineGrossCents;
     includedNetCents += lineNetCents;
 
     const group = normalizedItemGroup(line, item, template.kind, automatic);
     const assignment = parsedBreakdown.allocations.find((allocation) => allocation.templateId === line.templateId && allocation.itemId === line.itemId);
-    if (!automatic && !assignment) throw new Error(`Brak przypisania pozycji ${line.templateId}/${line.itemId} do grupy komercyjnej.`);
-    if (!automatic && assignment!.group !== group) {
+    if (!automatic && !assignment && !item.workspaceDiscount) throw new Error(`Brak przypisania pozycji ${line.templateId}/${line.itemId} do grupy komercyjnej.`);
+    if (!automatic && assignment && assignment.group !== group) {
       throw new Error(`Pozycja ${line.templateId}/${line.itemId} musi należeć do grupy ${group}.`);
     }
 
@@ -301,7 +301,7 @@ export function calculateOfferCommercialPricing(
     } else if (group === 'TRANSPORT') {
       transportGrossCents += lineGrossCents;
     }
-    if (group === 'STORAGE_INSTALLATION' && template.kind?.startsWith('PV_')) pvTransferredGrossCents += lineGrossCents;
+    if (group === 'STORAGE_INSTALLATION' && template.kind?.startsWith('PV_') && !item.workspaceDiscount) pvTransferredGrossCents += lineGrossCents;
     if (group === 'STORAGE_INSTALLATION' && batteryCategories.has(normalized(item.product?.category ?? null))) {
       batteryFound = true;
     }
@@ -319,6 +319,9 @@ export function calculateOfferCommercialPricing(
   }
 
   const allocationReferences = new Set(allocationsByReference.keys());
+  for (const template of templates) for (const item of template.items) {
+    if (item.workspaceDiscount && !item.workspaceRemoved) allocationReferences.add(referenceKey(template.id, item.id));
+  }
   if (!automatic && (allocationReferences.size !== includedReferences.size
     || [...includedReferences].some((key) => !allocationReferences.has(key)))) {
     throw new Error('Każda aktualna pozycja uwzględniona w cenie musi mieć dokładnie jedno przypisanie.');

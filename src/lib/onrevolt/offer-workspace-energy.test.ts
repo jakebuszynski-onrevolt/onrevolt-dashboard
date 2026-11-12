@@ -71,6 +71,18 @@ test('operator estimates without PV are not labelled as a PV model', () => {
   assert.equal(result.totals.loadKwh, 2);
   assert.ok(result.issues.some(issue => issue.includes('szacowane przez operatora')));
 });
+
+test('CRM gap estimates remain labelled MODELLED even without PV and are not described as OSD estimates', () => {
+  const data = input();
+  data.intervals[0].import!.source = 'modelled';
+  data.intervals[0].export = null;
+  const result = buildOfferWorkspaceEnergy({ ...data, noPv: true, pvHours: [] });
+  assert.equal(result.quality, 'MODELLED');
+  assert.equal(result.totals.loadKwh, 2);
+  assert.match(result.source, /Model CRM/);
+  assert.ok(result.issues.some(issue => issue.includes('Model CRM: 1 godz.')));
+  assert.ok(!result.issues.some(issue => issue.includes('szacowane przez operatora')));
+});
 test('model versus observed export discrepancy is explicit and follows RE clipping', () => {
   const data = input();
   data.pvHours[0].pvKwh = 0.25;

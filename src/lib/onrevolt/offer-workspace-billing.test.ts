@@ -206,6 +206,108 @@ test('net-metering nets later 15-minute exports across the monthly cycle and kee
   assert.equal(month.creditBalanceKwh, 0);
 });
 
+test('same-hour net-metering is opt-in, leaves measured flows intact, and balances subhour intervals first', () => {
+  const startUtc = '2026-01-01T23:00:00.000Z';
+  const endUtc = '2026-01-02T23:00:00.000Z';
+  const intervals = makeIntervals(startUtc, endUtc, 15, (index) => {
+    if (index === 0) return { importKwh: 2, exportKwh: 0 };
+    if (index === 1) return { importKwh: 0, exportKwh: 1 };
+    return { importKwh: 0, exportKwh: 0 };
+  });
+  const tariffHistory = history(['2026-01-02']);
+  const legacy = billOfferWorkspaceScenario({
+    tariffHistory, context, vatBasis: 'NET', settlement: netMetering(), intervals,
+  });
+  const hourlyBalanced = billOfferWorkspaceScenario({
+    tariffHistory, context, vatBasis: 'NET',
+    settlement: netMetering({ hourlyNettingMode: 'SAME_HOUR_NET_EXCHANGE' }), intervals,
+  });
+
+  ready(legacy);
+  ready(hourlyBalanced);
+  assert.equal(legacy.result.totals.billedImportKwh, 1.2);
+  assert.equal(legacy.result.totals.billedExportKwh, 1);
+  assert.equal(hourlyBalanced.result.totals.billedImportKwh, 1);
+  assert.equal(hourlyBalanced.result.totals.billedExportKwh, 0);
+  assert.equal(hourlyBalanced.result.totals.creditAddedKwh, 0);
+  assert.match(hourlyBalanced.warnings.join(' '), /bilansowane w każdej lokalnej godzinie/iu);
+  assert.equal(intervals.reduce((sum, interval) => sum + interval.importKwh, 0), 2);
+  assert.equal(intervals.reduce((sum, interval) => sum + interval.exportKwh, 0), 1);
+  assert.equal(hourlyBalanced.result.totals.importKwh, 2);
+  assert.equal(hourlyBalanced.result.totals.exportKwh, 1);
+});
+
+test('ENEA-style hourly net-metering applies opust by variable-fee component basis', () => {
+  const startUtc = '2026-01-01T23:00:00.000Z';
+  const endUtc = '2026-01-02T23:00:00.000Z';
+  const feeTariff = tariff() as ClientTariffPayload & Record<string, any>;
+  const feeRows = [
+    { key: 'energy', label: 'Energia czynna', net: 0.5 },
+    { key: 'network', label: 'Opłata sieciowa zmienna', net: 0.1 },
+    { key: 'quality', label: 'Opłata jakościowa', net: 0.03 },
+    { key: 'oze', label: 'Opłata OZE', net: 0.02 },
+    { key: 'cogeneration', label: 'Opłata kogeneracyjna', net: 0.01 },
+  ];
+  feeTariff.variable = feeRows.map((row) => ({
+    component_key: row.key, label: row.label, window_code: 'all', price: row.net * 1.23,
+  }));
+  feeTariff.pricing.tariffStorage.variable = feeRows.map((row) => ({
+    component_key: row.key, label: row.label, window_code: 'all',
+    net: row.net, gross: row.net * 1.23, vatRate: 0.23,
+  }));
+  const intervals = makeIntervals(startUtc, endUtc, 15, (index) => {
+    if (index === 0) return { importKwh: 6, exportKwh: 0 };
+    if (index === 1) return { importKwh: 0, exportKwh: 2 };
+    if (index === 4) return { importKwh: 0, exportKwh: 2 };
+    return { importKwh: 0, exportKwh: 0 };
+  });
+  const result = billOfferWorkspaceScenario({
+    tariffHistory: history(['2026-01-02'], feeTariff), context, vatBasis: 'NET', intervals,
+    settlement: netMetering({
+      coverage: 'ENERGY_AND_VARIABLE_DISTRIBUTION',
+      hourlyNettingMode: 'SAME_HOUR_NET_EXCHANGE',
+      variableFeeOpustBasis: 'OZE_CHP_PRE_OPUST',
+    }),
+  });
+
+  ready(result);
+  const month = result.result.months[0];
+  const components = Object.fromEntries((month.distributionComponents || []).map((component) => [
+    component.componentKey, component.amountPln,
+  ]));
+  assert.equal(month.importKwh, 6);
+  assert.equal(month.exportKwh, 4);
+  assert.equal(month.billedImportKwh, 2.4);
+  assert.equal(month.billedExportKwh, 2);
+  assert.equal(month.creditAddedKwh, 1.6);
+  assert.match(result.warnings.join(' '), /OZE i kogeneracyjna.*przed opustem/iu);
+  assert.ok(Math.abs(month.coveredDistributionPln - 0.208) < 1e-10);
+  assert.ok(Math.abs(month.distributionCostPln - 0.432) < 1e-10);
+  assert.ok(Math.abs(components.network - 0.24) < 1e-10);
+  assert.ok(Math.abs(components.quality - 0.072) < 1e-10);
+  assert.ok(Math.abs(components.oze - 0.08) < 1e-10);
+  assert.ok(Math.abs(components.cogeneration - 0.04) < 1e-10);
+});
+
+test('same-hour net-metering keeps the two autumn repeated hours separate', () => {
+  const startUtc = '2026-10-24T22:00:00.000Z';
+  const endUtc = '2026-10-25T23:00:00.000Z';
+  const intervals = makeIntervals(startUtc, endUtc, 60, (index) => {
+    if (index === 2) return { importKwh: 1, exportKwh: 0 };
+    if (index === 3) return { importKwh: 0, exportKwh: 1 };
+    return { importKwh: 0, exportKwh: 0 };
+  });
+  const result = billOfferWorkspaceScenario({
+    tariffHistory: history(['2026-10-25']), context, vatBasis: 'NET',
+    settlement: netMetering({ hourlyNettingMode: 'SAME_HOUR_NET_EXCHANGE' }), intervals,
+  });
+
+  ready(result);
+  assert.ok(Math.abs(result.result.totals.billedImportKwh - 0.2) < 1e-10);
+  assert.equal(result.result.totals.billedExportKwh, 1);
+  assert.equal(result.result.totals.creditAddedKwh, 0.8);
+});
+
 test('net-billing applies deposits chronologically, oldest first, with explicit expiry and refund cap', () => {
   const startUtc = '2026-01-30T23:00:00Z';
   const endUtc = '2026-01-31T23:00:00Z';

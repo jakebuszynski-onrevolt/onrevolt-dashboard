@@ -1,6 +1,6 @@
-import ClientsWorkspace from 'components/onrevolt/ClientsWorkspace';
+import ClientsWorkspaceRouter from 'components/onrevolt/ClientsWorkspaceRouter';
 
 export default function Page() {
-  return <ClientsWorkspace />;
+  return <ClientsWorkspaceRouter />;
 }
 

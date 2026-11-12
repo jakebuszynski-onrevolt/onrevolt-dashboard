@@ -9,7 +9,8 @@ import {
 } from 'lib/onrevolt/api';
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
-import { authorizeStaffRequest, isAdminUser } from 'lib/onrevolt/staff-server';
+import { authorizeSiteVisitRequest, authorizeStaffRequest, isAdminUser, isSiteVisitOnlyUser, staffAuthorizationResponse } from 'lib/onrevolt/staff-server';
+import { requireSiteVisitProject } from 'lib/onrevolt/site-visit-access';
 import {
   normalizeSiteAuditFormData,
   SITE_AUDIT_SCHEMA_VERSION,
@@ -23,6 +24,23 @@ const auditInclude = {
   auditor: { select: { id: true, name: true, email: true, avatarUrl: true, positionTitle: true } },
   createdBy: { select: { id: true, name: true, email: true } },
   documents: { orderBy: { createdAt: 'desc' as const } },
+} as const;
+const restrictedAuditInclude = {
+  auditor: { select: { id: true, name: true } },
+  createdBy: { select: { id: true, name: true } },
+  documents: {
+    select: {
+      id: true,
+      title: true,
+      fileName: true,
+      mimeType: true,
+      sizeBytes: true,
+      siteAuditId: true,
+      auditFieldKey: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: 'desc' as const },
+  },
 } as const;
 
 class SiteAuditInputError extends Error {}
@@ -156,27 +174,33 @@ async function syncTechnicalEnergyAudit(
 }
 
 export async function GET(req: NextRequest) {
-  const access = await authorizeStaffRequest(req, 'site-audits.manage');
+  const access = await authorizeSiteVisitRequest(req, 'site-audits.manage');
   if (!access.ok) return access.response;
   try {
     const projectId = req.nextUrl.searchParams.get('projectId') || '';
     if (!projectId) throw new Error('Brak projectId');
+    await requireSiteVisitProject(access.user, projectId);
+    const include = isSiteVisitOnlyUser(access.user) ? restrictedAuditInclude : auditInclude;
     const audits = await prisma.siteAudit.findMany({
       where: { projectId },
-      include: auditInclude,
+      include,
       orderBy: { updatedAt: 'desc' },
       take: 50,
     });
     return jsonResponse({ ok: true, data: audits });
   } catch (error) {
+    const authorizationResponse = staffAuthorizationResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     return serverError('Nie udało się pobrać wizji lokalnych', error);
   }
 }
 
 export async function POST(req: NextRequest) {
-  const access = await authorizeStaffRequest(req, 'site-audits.manage');
+  const access = await authorizeSiteVisitRequest(req, 'site-audits.manage');
   if (!access.ok) return access.response;
   try {
+    const restricted = isSiteVisitOnlyUser(access.user);
+    const include = restricted ? restrictedAuditInclude : auditInclude;
     let body: Record<string, any>;
     try {
       body = await readJsonObject(req);
@@ -202,6 +226,7 @@ export async function POST(req: NextRequest) {
     } catch (error) {
       throw new SiteAuditInputError(error instanceof Error ? error.message : 'Brak wymaganego pola projectId');
     }
+    await requireSiteVisitProject(access.user, projectId);
     const project = await prisma.project.findUnique({
       where: { id: projectId },
       select: { id: true, clientId: true },
@@ -209,7 +234,7 @@ export async function POST(req: NextRequest) {
     if (!project) throw new SiteAuditNotFound('Nie znaleziono projektu');
 
     const before = resolvedId
-      ? await prisma.siteAudit.findUnique({ where: { id: resolvedId }, include: auditInclude })
+      ? await prisma.siteAudit.findUnique({ where: { id: resolvedId }, include })
       : null;
     if (id && !before) throw new SiteAuditNotFound('Nie znaleziono wizji lokalnej do aktualizacji');
     if (before && before.projectId !== projectId) {
@@ -235,12 +260,27 @@ export async function POST(req: NextRequest) {
     const status = statuses.has(body.status as SiteAuditStatus)
       ? body.status as SiteAuditStatus
       : SiteAuditStatus.DRAFT;
-    const auditorId = typeof body.auditorId === 'string' && body.auditorId
+    let auditorId = typeof body.auditorId === 'string' && body.auditorId
       ? body.auditorId
       : undefined;
+    if (restricted) {
+      const formAuditorId = typeof data.auditor_id === 'string' && data.auditor_id.trim()
+        ? data.auditor_id.trim()
+        : undefined;
+      if (auditorId && formAuditorId && auditorId !== formAuditorId) {
+        throw new SiteAuditInputError('Audytor formularza nie zgadza się z audytorem wizji lokalnej');
+      }
+      auditorId = auditorId || formAuditorId || before?.auditorId || access.user.id;
+      if (auditorId !== access.user.id && auditorId !== before?.auditorId) {
+        throw new SiteAuditInputError('Wizję lokalną możesz przypisać do siebie albo pozostawić dotychczasowego audytora');
+      }
+      data.auditor_id = auditorId;
+    }
     if (auditorId) {
-      const auditor = await prisma.staffUser.findFirst({ where: { id: auditorId, active: true }, select: { id: true } });
-      if (!auditor) throw new SiteAuditInputError('Wybrany audytor nie jest aktywnym użytkownikiem');
+      if (!restricted || auditorId !== before?.auditorId) {
+        const auditor = await prisma.staffUser.findFirst({ where: { id: auditorId, active: true }, select: { id: true } });
+        if (!auditor) throw new SiteAuditInputError('Wybrany audytor nie jest aktywnym użytkownikiem');
+      }
     }
     const steps = completedSteps(body.completedSteps);
     if (status === SiteAuditStatus.COMPLETED) {
@@ -275,6 +315,7 @@ export async function POST(req: NextRequest) {
     let audit;
     try {
       audit = await prisma.$transaction(async (tx) => {
+        await requireSiteVisitProject(access.user, projectId, tx);
         let saved;
         if (before) {
           if (expected.provided) {
@@ -288,7 +329,7 @@ export async function POST(req: NextRequest) {
             if (result.count !== 1) {
               throw new SiteAuditConflict('Wizja lokalna została zmieniona w innej sesji. Odśwież dane przed ponownym zapisem.');
             }
-            saved = await tx.siteAudit.findUnique({ where: { id: before.id }, include: auditInclude });
+            saved = await tx.siteAudit.findUnique({ where: { id: before.id }, include });
             if (!saved) {
               throw new SiteAuditConflict('Wizja lokalna przestała być dostępna. Odśwież dane.');
             }
@@ -296,7 +337,7 @@ export async function POST(req: NextRequest) {
             saved = await tx.siteAudit.update({
               where: { id: before.id },
               data: recordData,
-              include: auditInclude,
+              include,
             });
           }
         } else {
@@ -306,7 +347,7 @@ export async function POST(req: NextRequest) {
               ...recordData,
               createdById: access.user.id,
             },
-            include: auditInclude,
+            include,
           });
         }
         await syncTechnicalEnergyAudit(projectId, data, tx);
@@ -314,9 +355,10 @@ export async function POST(req: NextRequest) {
       });
     } catch (error) {
       if (isUniqueConstraintError(error) && isDeterministicDraft) {
+        await requireSiteVisitProject(access.user, projectId);
         const concurrent = await prisma.siteAudit.findUnique({
           where: { id: resolvedId },
-          include: auditInclude,
+          include,
         });
         if (concurrent?.projectId === projectId && mutationId
           && (concurrent.formData as Record<string, unknown> | null)?._autosaveMutationId === mutationId) {
@@ -340,6 +382,8 @@ export async function POST(req: NextRequest) {
     });
     return jsonResponse({ ok: true, data: audit }, { status: before ? 200 : 201 });
   } catch (error) {
+    const authorizationResponse = staffAuthorizationResponse(error);
+    if (authorizationResponse) return authorizationResponse;
     if (error instanceof SiteAuditInputError) {
       return jsonResponse({ ok: false, error: error.message }, { status: 400 });
     }

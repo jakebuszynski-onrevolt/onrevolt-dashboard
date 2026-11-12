@@ -3,6 +3,7 @@ import { TaskStatus } from '@prisma/client';
 import { forbidden, jsonResponse, notFound, optionalString, readJsonObject, requireString, serverError } from 'lib/onrevolt/api';
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prisma } from 'lib/onrevolt/prisma';
+import { defaultNewProjectAnalysisStartMonth } from 'lib/onrevolt/project-analysis-period';
 import { isOperationalPipelineStageCode, projectStatusStageCode } from 'lib/onrevolt/pipeline-stages';
 import { locationMapProviderValues } from 'lib/onrevolt/location-maps';
 import { authorizeStaffRequest, getCurrentStaffUser, isAdminUser, hasStaffPermission } from 'lib/onrevolt/staff-server';
@@ -165,7 +166,7 @@ function validateClientType(value: unknown, fallback = 'UNKNOWN') {
 function optionalLocationMapProvider(source: Record<string, any> | undefined, key: string) {
   if (!source || !Object.prototype.hasOwnProperty.call(source, key)) return undefined;
   const value = source[key];
-  if (value == null || value === '') return 'GOOGLE';
+  if (value == null || value === '') return 'GEOPORTAL2';
   if (typeof value !== 'string' || !locationMapProviderSet.has(value)) {
     throw new Error('Nieprawidłowe źródło obrazu mapy');
   }
@@ -426,7 +427,7 @@ export async function POST(req: NextRequest) {
       });
 
       const siteInput = investmentSiteData(savedClient.id, displayName, contactBody, projectBody);
-      const site = siteInput ? await tx.investmentSite.create({ data: siteInput }) : null;
+      const site = siteInput ? await tx.investmentSite.create({ data: { ...siteInput, mapProvider: siteInput.mapProvider ?? 'GEOPORTAL2' } }) : null;
       const projectInput = projectData(displayName, clientType, projectBody, contactBody, site?.id);
       if (projectInput) {
         const stageCode = projectStatusStageCode[projectInput.status];
@@ -444,7 +445,7 @@ export async function POST(req: NextRequest) {
           if (stage.requiresOwner && !projectInput.ownerId) projectInput.ownerId = access.user.id;
           projectInput.closedAt = stage.isTerminal ? new Date() : null;
         }
-        await tx.project.create({ data: { ...projectInput, clientId: savedClient.id } });
+        await tx.project.create({ data: { ...projectInput, clientId: savedClient.id, analysisStartMonth: defaultNewProjectAnalysisStartMonth() } });
       }
 
       return savedClient;
@@ -565,7 +566,7 @@ export async function PUT(req: NextRequest) {
           if (investmentSiteId) {
             await tx.investmentSite.update({ where: { id: investmentSiteId }, data: siteInput });
           } else {
-            const site = await tx.investmentSite.create({ data: siteInput });
+            const site = await tx.investmentSite.create({ data: { ...siteInput, mapProvider: siteInput.mapProvider ?? 'GEOPORTAL2' } });
             investmentSiteId = site.id;
           }
         }
@@ -600,7 +601,7 @@ export async function PUT(req: NextRequest) {
           }
           await tx.project.update({ where: { id: projectId }, data });
         } else {
-          await tx.project.create({ data: { ...data, clientId: id } });
+          await tx.project.create({ data: { ...data, clientId: id, analysisStartMonth: defaultNewProjectAnalysisStartMonth() } });
         }
       }
 

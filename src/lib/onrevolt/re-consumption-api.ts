@@ -67,6 +67,7 @@ export function validateReConsumptionPeriod(workbook: EnergyMeasurementWorkbookI
 export function inspectReConsumptionWorkbook(bytes: Buffer, now = new Date(), periodKeys?: readonly string[]) {
   if (!bytes.length || bytes.length > 25 * 1024 * 1024) throw new Error('Nieprawidłowy rozmiar XLSX (limit 25 MB)');
   const info = inspectEnergyMeasurementWorkbook(bytes);
+  if (info.modelledRows) throw new Error('Plik zawiera uzupełnienia Model CRM. Nie można przekazać ich do RE jako pomiarów operatora.');
   validateReConsumptionPeriod(info, now, periodKeys);
   // RE reads only the first sheet and can write both channels in one request.
   const workbook = XLSX.read(bytes, { type: 'buffer' });

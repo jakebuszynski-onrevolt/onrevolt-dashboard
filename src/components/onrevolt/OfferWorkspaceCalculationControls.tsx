@@ -8,10 +8,12 @@ import {
   Button,
   Checkbox,
   FormControl,
+  FormErrorMessage,
   FormLabel,
   Grid,
   Input,
   Progress,
+  Select,
   Text,
   Tooltip,
   useColorModeValue,
@@ -20,6 +22,8 @@ import React, { useState } from 'react';
 import { MdAdd, MdCalculate, MdDeleteOutline, MdOutlineAutoAwesome } from 'react-icons/md';
 import {
   DEFAULT_OFFER_BILLING_CYCLE_MONTHS,
+  DEFAULT_OFFER_TAX_RATE_PERCENT,
+  usesOfferTaxEstimate,
   defaultOfferCalculationAssumptions,
   offerWorkspaceDraftWithCalculationValue,
   parseOfferWorkspaceDraft,
@@ -95,8 +99,8 @@ const fields: Array<{
   placeholder?: string;
 }> = [
   { key: 'billingCycleMonths', label: 'Okres rozliczeniowy', unit: 'mies.', min: 1, max: 12, step: 1, placeholder: `${DEFAULT_OFFER_BILLING_CYCLE_MONTHS} (domyślnie)` },
-  { key: 'initialCreditKwh', label: 'Saldo opustu na początek okresu danych', unit: 'kWh', min: 0, max: 1000000, step: 0.1, required: true, placeholder: 'Wymagane; 0, jeśli historycznie brak' },
-  { key: 'initialDepositPln', label: 'Saldo depozytu na początek okresu danych', unit: 'zł', min: 0, max: 1000000, step: 0.01, required: true, placeholder: 'Wymagane; 0, jeśli historycznie brak' },
+  { key: 'initialCreditKwh', label: 'Saldo opustu na początek okresu danych', unit: 'kWh', min: 0, max: 1000000, step: 0.1, placeholder: '0 (szacunek przy braku salda i transz)' },
+  { key: 'initialDepositPln', label: 'Saldo depozytu na początek okresu danych', unit: 'zł', min: 0, max: 1000000, step: 0.01, placeholder: '0 (szacunek przy braku salda i transz)' },
   { key: 'batteryReservePercent', label: 'Rezerwa magazynu', unit: '%', min: 0, max: 99, step: 1 },
   { key: 'chargeEfficiencyPercent', label: 'Sprawność ładowania', unit: '%', min: 1, max: 100, step: 1 },
   { key: 'dischargeEfficiencyPercent', label: 'Sprawność rozładowania', unit: '%', min: 1, max: 100, step: 1 },
@@ -410,6 +414,14 @@ export default function OfferWorkspaceCalculationControls({
   const muted = useColorModeValue('secondaryGray.600', 'secondaryGray.300');
   const line = useColorModeValue('secondaryGray.200', 'whiteAlpha.200');
   const recommendationIssues = recommendationInputIssues(draft);
+  const taxRate = assumptions.taxRatePercent ?? DEFAULT_OFFER_TAX_RATE_PERCENT;
+  const taxIsEstimate = usesOfferTaxEstimate(assumptions);
+  const taxFieldsRequired = clientType === 'B2C' && draft.financing.considerTaxRelief
+    && !taxIsEstimate;
+  const requiredFields = fields.filter((field) =>
+    (draft.pvStrategy === 'ADD_TEMPLATE' && ['addedPvTiltDegrees', 'addedPvAzimuthDegrees'].includes(field.key))
+    || (taxFieldsRequired && ['taxBasePln', 'taxRemainingLimitPln', 'taxEligibleCostPln'].includes(field.key)));
+  const missingFields = requiredFields.filter((field) => assumptions[field.key] == null);
   const visibleCalculation = recommendationIssues.length > 0 && calculation?.recommendationSearch
     ? null
     : calculation;
@@ -461,9 +473,11 @@ export default function OfferWorkspaceCalculationControls({
     </Box> : null}
     {!calculationIsStale && visibleCalculation?.recommendationBatteryBounds ? <Box mt="10px" role="status" data-testid="recommendation-battery-bounds">
       <Text color={muted} fontSize="11px">
-        {visibleCalculation.recommendationBatteryBounds.basis === 'daily_consumption'
+        {visibleCalculation.recommendationBatteryBounds.basis === 'pv_production'
+          ? `Zużycie w okresie: ${number(visibleCalculation.recommendationBatteryBounds.totalConsumptionKwh)} kWh · Produkcja PV: ${number(visibleCalculation.recommendationBatteryBounds.minimumPvProductionKwh)}–${number(visibleCalculation.recommendationBatteryBounds.maximumPvProductionKwh)} kWh (80–120% zużycia). Magazyn: 2–3 kWh na 1 kWp łącznej PV. `
+          : visibleCalculation.recommendationBatteryBounds.basis === 'daily_consumption'
           ? `Średnie zużycie: ${recommendationNumber(visibleCalculation.recommendationBatteryBounds.averageDailyConsumptionKwh)} kWh/dobę · Magazyn: ${recommendationNumber(visibleCalculation.recommendationBatteryBounds.minimumBatteryCapacityKwh)}–${recommendationNumber(visibleCalculation.recommendationBatteryBounds.maximumBatteryCapacityKwh)} kWh (0,5–2× dobowe zużycie). `
-          : `Magazyn: ${recommendationNumber(visibleCalculation.recommendationBatteryBounds.minimumBatteryCapacityKwh)}–${recommendationNumber(visibleCalculation.recommendationBatteryBounds.maximumBatteryCapacityKwh)} kWh (0,5–5× istniejąca moc PV: ${number(visibleCalculation.recommendationBatteryBounds.existingPvPowerKw)} kWp). `}
+          : `Magazyn: ${recommendationNumber(visibleCalculation.recommendationBatteryBounds.minimumBatteryCapacityKwh)}–${recommendationNumber(visibleCalculation.recommendationBatteryBounds.maximumBatteryCapacityKwh)} kWh (${number(visibleCalculation.recommendationBatteryBounds.minimumBatteryKwhPerPvKwp)}–${number(visibleCalculation.recommendationBatteryBounds.maximumBatteryKwhPerPvKwp)}× istniejąca moc PV: ${number(visibleCalculation.recommendationBatteryBounds.existingPvPowerKw)} kWp). `}
         {visibleCalculation.recommendationPvBounds
           ? `Maksymalnie ${number(visibleCalculation.recommendationPvBounds.maximumBatteryKwhPerPvKwp)} kWh magazynu na 1 kWp łącznej mocy PV (istniejąca + dodawana). ` : ''}
         Tylko gotowe konfiguracje.
@@ -471,7 +485,7 @@ export default function OfferWorkspaceCalculationControls({
           ? visibleCalculation.recommendationBatteryBounds.excludedCandidates > 0
             ? ` Pominięto: ${number(visibleCalculation.recommendationBatteryBounds.excludedCandidates)} poza zakresem istniejącej PV.` : ''
           : visibleCalculation.recommendationBatteryBounds.excludedCandidates > 0 || (visibleCalculation.recommendationPvBounds?.excludedCandidates ?? 0) > 0
-            ? ` Pominięto: ${number(visibleCalculation.recommendationBatteryBounds.excludedCandidates)} poza zakresem zużycia; ${number(visibleCalculation.recommendationPvBounds?.excludedCandidates ?? 0)} przekroczyło limit PV.` : ''}
+            ? ` Pominięto: ${number(visibleCalculation.recommendationBatteryBounds.excludedCandidates)} poza zakresem magazynu; ${number(visibleCalculation.recommendationPvBounds?.excludedCandidates ?? 0)} poza zakresem produkcji PV.` : ''}
       </Text>
     </Box> : null}
     {visibleCalculation?.status === 'blocked' && visibleCalculation.reasons.length ? <Alert status="warning" mt="12px" alignItems="flex-start" borderRadius="6px"><AlertIcon mt="2px" /><AlertDescription><Text fontWeight="700">Nie można przygotować pełnego wyniku.</Text>{visibleCalculation.reasons.map((reason, index) => <Text key={`${index}-${reason}`} mt="4px">{reason}</Text>)}</AlertDescription></Alert> : null}
@@ -521,23 +535,43 @@ export default function OfferWorkspaceCalculationControls({
     </Box> : null}
 
     <Box as="details" mt="14px" borderTop="1px solid" borderColor={line} pt="12px">
-      <Box as="summary" cursor="pointer" fontWeight="700">Założenia obliczeń</Box>
+      <Box as="summary" cursor="pointer" fontWeight="700" color={missingFields.length ? 'red.500' : undefined}>Założenia obliczeń{missingFields.length ? ` · Uzupełnij wymagane pola (${missingFields.length})` : ''}</Box>
+      {missingFields.length ? <Text mt="8px" color="red.500" role="alert">Do obliczenia rekomendacji i czasu zwrotu uzupełnij: {missingFields.map((field) => field.label.toLocaleLowerCase('pl-PL')).join(', ')}. Brakujące pola zaznaczono na czerwono.</Text> : null}
       <Text mt="6px" color={muted} fontSize="10px">Saldo oznacza stan na początek pierwszego miesiąca danych pomiarowych, nie saldo na dziś. Brak salda i transz oznacza szacunek od 0, bez zmiany zapisanego szkicu. Znane saldo dodatnie wymaga datowanych transz. Stawka podatku jest parametrem scenariusza, nie oceną prawną.</Text>
       <Grid templateColumns={{ base: '1fr', md: 'repeat(2, minmax(0, 1fr))' }} gap="10px" mt="12px">
         <Checkbox aria-label="Prognoza PV oparta na pomiarach ENEA i modelowanej autokonsumpcji" isChecked={assumptions.pvReconstructionAccepted === true} isDisabled={disabled} onChange={(event) => updateCalculation((current) => ({ ...current, pvReconstructionAccepted: event.target.checked }))}>
           Prognoza PV oparta na pomiarach ENEA i modelowanej autokonsumpcji
         </Checkbox>
-        {clientType === 'B2C' ? <Checkbox aria-label="Szacunkowa ulga 12%: pełny limit 53 000 zł i wystarczający dochód" isChecked={assumptions.taxEstimateAccepted === true} isDisabled={disabled} onChange={(event) => updateCalculation((current) => ({ ...current, taxEstimateAccepted: event.target.checked }))}>
-          Szacunkowa ulga 12%: pełny limit 53 000 zł i wystarczający dochód
-        </Checkbox> : null}
+        {clientType === 'B2C' && draft.financing.considerTaxRelief ? <Box>
+          <Checkbox aria-label="Dokładne dane do ulgi (opcjonalnie)" isChecked={!taxIsEstimate} isDisabled={disabled}
+            onChange={(event) => {
+              const detailed = event.target.checked;
+              if (!detailed) clearEditingValues(['taxBasePln', 'taxRemainingLimitPln', 'taxEligibleCostPln']);
+              updateCalculation((current) => ({ ...current, taxDetailedCalculation: detailed }));
+            }}>
+            Dokładne dane do ulgi (opcjonalnie)
+          </Checkbox>
+          <Text mt="4px" fontSize="11px" color={muted}>{taxIsEstimate
+            ? `Ulga szacunkowa ${taxRate}%. Przy braku danych: wolny limit 53 000 zł i wystarczający dochód. Zapisane ograniczenia są uwzględniane.`
+            : 'Uzupełnij dane poniżej, aby doprecyzować symulację ulgi.'}</Text>
+        </Box> : null}
       </Grid>
       {lotValidationError ? <Alert status="error" mt="8px" borderRadius="6px" role="alert"><AlertIcon /><AlertDescription>{lotValidationError}</AlertDescription></Alert> : null}
       <Grid templateColumns={{ base: '1fr 1fr', lg: 'repeat(3, minmax(0, 1fr))' }} gap="10px" mt="12px">
-        {fields.map((field) => {
+        {fields.filter((field) => !['taxBasePln', 'taxRemainingLimitPln', 'taxEligibleCostPln'].includes(field.key) || taxFieldsRequired).map((field) => {
           const value = assumptions[field.key];
-          return <FormControl key={field.key} minW="0" isRequired={field.required}>
-            <FormLabel fontSize="10px" minH="30px" mb="4px">{field.label} [{field.unit}]</FormLabel>
-            <Input
+          const missing = missingFields.includes(field);
+          const invalidInput = editingValues[field.key] != null;
+          return <FormControl key={field.key} minW="0" isRequired={requiredFields.includes(field)} isInvalid={missing || invalidInput}>
+            <FormLabel color={missing || invalidInput ? 'red.500' : undefined} fontSize="10px" minH="30px" mb="4px">{field.label} [{field.unit}]</FormLabel>
+            {field.key === 'taxRatePercent' ? <>
+              <Select aria-label={`${field.label} [${field.unit}]`} h="36px" fontSize="11px" isDisabled={disabled}
+                value={taxRate} onChange={(event) => setAssumption(field, event.target.value)}>
+                {[12, 19, 32].map((rate) => <option key={rate} value={rate}>{rate}%{rate === 12 && value == null ? ' — domyślnie w symulacji' : ''}</option>)}
+                {value != null && ![12, 19, 32].includes(value) ? <option value={value}>{value}% — zapisana stawka</option> : null}
+              </Select>
+              <Text color={muted} fontSize="10px" mt="4px">Założenie symulacji; wybierz stawkę właściwą dla klienta.</Text>
+            </> : <Input
               aria-label={`${field.label} [${field.unit}]`}
               type="text"
               inputMode="decimal"
@@ -547,7 +581,8 @@ export default function OfferWorkspaceCalculationControls({
               h="36px"
               fontSize="11px"
               onChange={(event) => setAssumption(field, event.target.value)}
-            />
+            />}
+            <FormErrorMessage fontSize="10px">{invalidInput ? `Wpisz poprawną wartość od ${field.min} do ${field.max}.` : 'Wymagane do obliczenia rekomendacji i czasu zwrotu.'}</FormErrorMessage>
           </FormControl>;
         })}
         <FormControl minW="0">

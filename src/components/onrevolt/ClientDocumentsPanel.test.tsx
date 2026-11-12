@@ -60,6 +60,14 @@ test('wariant energy pokazuje kreski dla brakujących pól i nie emituje zerowyc
   assert.doesNotMatch(markup, /0(?:[,.]0+)?\s*(?:kWh|zł)/);
 });
 
+test('zwykła faktura pokazuje pobór licznikowy bez wymyślonego oddania', async () => {
+  const document = { ...emptyInvoice, energyConsumptionKwh: 845,
+    invoiceRecognition: { fields: { consumption: { importBasis: 'METERED', meteredImportKwh: 845, monthly: [] } } } };
+  const markup = await renderPanel({ variant: 'energy', documents: [document] });
+  assert.match(markup, /Pobór: 845\s*kWh/);
+  assert.match(markup, /Oddanie: —/);
+});
+
 test('wariant energy renderuje semantyczną tabelę faktur z wymaganymi kolumnami', async () => {
   const markup = await renderPanel({ variant: 'energy', documents: [emptyInvoice] });
 

@@ -149,6 +149,15 @@ test('four commercial rows survive draft parsing, change the snapshot and reconc
   assert.equal(textById(fivePage, '#b2c_kosztorys_wartosc_brutto_5_strona_10'), '4 263,84');
   assert.equal(textById(fivePage, '#b2c_kosztorys_pozycja_6_strona_10'), '');
   assert.equal(textById(fivePage, '#b2c_koszt_systemu_strona_10'), '67 560,00');
+  const discounted = parseOfferWorkspaceDraft({ ...grouped, configurationEdits: [{ templateId: 'battery-kit', addedItems: [{
+    id: 'discount', kind: 'DISCOUNT', description: 'Upust', quantity: 1, role: 'OTHER', supplyMode: 'SERVICE_ONLY',
+    pricing: { unitSaleNet: -5000 / 1.08, unitPurchaseNet: 0, purchaseVatRate: 0, operatingCostNet: 0, operatingCostBasis: 'PER_UNIT', saleVatRate: 0.08 },
+  }] }] });
+  const discountDocument = renderOfferWorkspaceDocument(data, discounted, { templateKey: OFFER_TEMPLATE_V4_KEY });
+  const discountPage = parseSvg(discountDocument.pages[9].svg);
+  assert.equal(textById(discountPage, '#b2c_koszt_systemu_strona_10'), '62 560,00');
+  assert.equal(textById(discountPage, '#b2c_kosztorys_pozycja_6_strona_10'), '');
+  assert.equal(textById(discountPage, '#b2c_kosztorys_wartosc_brutto_5_strona_10'), '4 263,84');
 });
 
 test('annual-model document labels grid flows as estimates and keeps their model provenance', () => {

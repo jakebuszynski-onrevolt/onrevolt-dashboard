@@ -4,7 +4,7 @@ import path from 'path';
 import { NextRequest } from 'next/server';
 import { badRequest, jsonResponse, notFound, serverError } from 'lib/onrevolt/api';
 import { writeAuditLog } from 'lib/onrevolt/audit';
-import { closedMeasurementPeriodKeys, inspectEnergyMeasurementWorkbook } from 'lib/onrevolt/energy-measurement-document';
+import { closedMeasurementPeriodKeys, EnergyMeasurementIncompleteError, inspectEnergyMeasurementWorkbook } from 'lib/onrevolt/energy-measurement-document';
 import { prisma } from 'lib/onrevolt/prisma';
 import { preflightProjectReConsumption, ReStationRequiredError, requireProjectReStation, syncEnergyMeasurementToRe } from 'lib/onrevolt/re-consumption-sync';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
@@ -61,7 +61,15 @@ export async function POST(req: NextRequest) {
       const projects = await prisma.project.findMany({ where: { clientId }, select: { id: true }, take: 2 });
       if (projects.length === 1) analysisProjectId = projects[0].id;
     }
-    await requireProjectReStation(clientId, projectId);
+    // CRM measurements can be collected before a dashboard station is assigned.
+    // Only the absence of a link permits local-only import; invalid links still fail.
+    let hasReStation = true;
+    try {
+      await requireProjectReStation(clientId, analysisProjectId);
+    } catch (error) {
+      if (!(error instanceof ReStationRequiredError)) throw error;
+      hasReStation = false;
+    }
     const analysisPeriodResult = analysisProjectId ? await readProjectAnalysisPeriod(analysisProjectId) : undefined;
     if (analysisProjectId && !analysisPeriodResult) return notFound('Nie znaleziono projektu tego klienta');
 
@@ -70,6 +78,7 @@ export async function POST(req: NextRequest) {
     try {
       info = inspectEnergyMeasurementWorkbook(bytes);
     } catch (error) {
+      if (error instanceof EnergyMeasurementIncompleteError) return badRequest(error.userMessage);
       return badRequest(error instanceof Error ? error.message : String(error));
     }
 
@@ -131,8 +140,9 @@ export async function POST(req: NextRequest) {
       }, { status: 409 });
     }
 
-    const rePreflight = await preflightProjectReConsumption({ clientId, projectId, workbook: info, replaceExisting: replaceReProfile });
-    if (rePreflight.status === 'existing') {
+    const rePreflight = hasReStation
+      ? await preflightProjectReConsumption({ clientId, projectId, workbook: info, replaceExisting: replaceReProfile }) : null;
+    if (rePreflight?.status === 'existing') {
       return jsonResponse({ ok: false, code: 'ENERGY_RE_MONTH_EXISTS', error: 'Ten miesiąc ma już profil XLSX w RE. Czy zastąpić go danymi z tego pliku?' }, { status: 409 });
     }
 
@@ -213,6 +223,12 @@ export async function POST(req: NextRequest) {
           },
         });
         measurementId = measurement.id;
+        // The explicit upload establishes this source without creating a station RE.
+        if (analysisProjectId) await tx.energyAudit.upsert({
+          where: { projectId: analysisProjectId },
+          create: { projectId: analysisProjectId, hasOperatorData: true, profileSource: 'OPERATOR_HOURLY' },
+          update: { hasOperatorData: true, profileSource: 'OPERATOR_HOURLY' },
+        });
         return createdDocument;
       });
     } catch (error) {
@@ -233,7 +249,9 @@ export async function POST(req: NextRequest) {
       after: { document, workbook: info },
     });
 
-    const reSync = await syncEnergyMeasurementToRe(measurementId, { clientId, projectId, actorId: access.user.id, replaceExisting: replaceReProfile });
+    const reSync = hasReStation
+      ? await syncEnergyMeasurementToRe(measurementId, { clientId, projectId, actorId: access.user.id, replaceExisting: replaceReProfile })
+      : { status: 'not_linked', station: null, message: 'Plik zapisano w CRM. Przekazanie do RE będzie dostępne po przypisaniu stacji.' };
     return jsonResponse({ ok: true, data: { document, workbook: info, reSync } }, { status: 201 });
   } catch (error) {
     if (error instanceof ReStationRequiredError) return badRequest(error.message);

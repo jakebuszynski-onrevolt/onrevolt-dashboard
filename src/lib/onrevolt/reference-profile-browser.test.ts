@@ -2,14 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { buildReferenceProfileProjection, getReferenceProfileCalculationEligibility, type CatalogProfile } from './reference-profile-comparison';
+import { getReferenceProfileCalculationEligibility, type CatalogProfile } from './reference-profile-comparison';
 import { profileContentHash } from '../../../scripts/profile-catalog/storage-core';
 import { buildAnnualOfferConsumptionProfile } from './offer-workspace-annual-profile';
 import { resolveProjectAnalysisPeriod } from './project-analysis-period';
 const engine = require('../../../public/shared/re-consumption-engine.js');
 const catalog = JSON.parse(readFileSync('output/profile-catalog-20261106/catalog.json', 'utf8')).profiles as CatalogProfile[];
+catalog.push(JSON.parse(readFileSync('assets/reference-profiles/opsd-residential4-whole-house.json', 'utf8')));
 function adapter() {
-  const window: any = { buildReferenceProfileProjection };
+  const window: any = {};
+  vm.runInNewContext(readFileSync('public/shared/reference-profile-projection.js', 'utf8'), { window });
   vm.runInNewContext(readFileSync('integrations/re/reference-profile-browser.js', 'utf8'), { window, Date, Map, Number, Array, Math, Object });
   return window.REReferenceProfile;
 }

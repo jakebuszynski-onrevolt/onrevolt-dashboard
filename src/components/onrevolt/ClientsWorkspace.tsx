@@ -35,6 +35,7 @@ import {
 } from '@chakra-ui/react';
 import Card from 'components/card/Card';
 import Link from 'next/link';
+import { activeServiceStatusValue, activeServiceWithoutTasksStatusValue, missingStatusValue, matchesClientProjectFilter, projectForClientFilter } from 'lib/onrevolt/client-project-filter';
 import { useEffect, useMemo, useState } from 'react';
 import {
   MdAdd,
@@ -125,12 +126,8 @@ const projectStatuses = [
   ['WSTRZYMANY', 'Wstrzymany'],
 ] as const;
 
-const missingStatusValue = '__NO_STATUS__';
-const activeServiceStatusValue = '__IN_SERVICE__';
-const activeServiceWithoutTasksStatusValue = '__IN_SERVICE_WITHOUT_TASKS__';
 const statusLabels = new Map<string, string>(projectStatuses.map(([value, label]) => [value, label]));
 const statusSortOrder = new Map<string, number>(projectStatuses.map(([value], index) => [value, index]));
-const statusFilterOptions = projectStatuses.map(([value, label]) => ({ value, label }));
 const clientCollator = new Intl.Collator('pl', { sensitivity: 'base', numeric: true });
 
 const clientTypeOptions = [
@@ -182,7 +179,7 @@ export default function ClientsWorkspace() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [stages, setStages] = useState<StageRow[]>([]);
   const [query, setQuery] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState(activeServiceStatusValue);
   const [selectedClientType, setSelectedClientType] = useState('all');
   const [sortKey, setSortKey] = useState<ClientSortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -243,37 +240,16 @@ export default function ClientsWorkspace() {
   }
 
   function clientDisplayType(client: ClientRow) {
-    return client.projects?.[0]?.clientType || client.clientType;
+    return projectForClientFilter(client.projects, selectedStatus)?.clientType || client.clientType;
   }
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
     return clients.filter((client) => {
       const contact = client.contacts?.[0];
-      const project = client.projects?.[0];
+      const project = projectForClientFilter(client.projects, selectedStatus);
       const site = project?.investmentSite || client.investmentSites?.[0];
-      const hasActiveProject = client.projects?.some((item) => {
-        const status = projectStatusValue(item);
-        return status !== 'LEAD' && status !== missingStatusValue;
-      });
-      const hasOpenServiceProject = client.projects?.some((item) => {
-        const status = projectStatusValue(item);
-        return status !== 'LEAD'
-          && status !== 'ZAKONCZONY'
-          && status !== missingStatusValue
-          && !item.stage?.isTerminal;
-      });
-      const hasAssignedActiveTasks = Boolean(client._count?.tasks)
-        || client.projects?.some((item) => Boolean(item._count?.tasks));
-      const matchesStatus = selectedStatus === 'all'
-        || (selectedStatus === activeServiceStatusValue
-          && hasActiveProject)
-        || (selectedStatus === activeServiceWithoutTasksStatusValue
-          && hasOpenServiceProject
-          && !hasAssignedActiveTasks)
-        || client.projects?.some((item) => projectStatusValue(item) === selectedStatus)
-        || (!client.projects?.length && selectedStatus === missingStatusValue);
-      if (!matchesStatus) return false;
+      if (!matchesClientProjectFilter(client, selectedStatus)) return false;
       if (selectedClientType !== 'all' && client.clientType !== selectedClientType) return false;
       if (!text) return true;
       return [
@@ -288,6 +264,7 @@ export default function ClientsWorkspace() {
         project?.clientType,
         project?.source,
         project?.status,
+        project?.stage?.name,
         project ? projectStatusLabel(projectStatusValue(project)) : '',
       ].join(' ').toLowerCase().includes(text);
     });
@@ -298,15 +275,15 @@ export default function ClientsWorkspace() {
     return filtered
       .map((client, index) => ({ client, index }))
       .sort((left, right) => {
-        const leftProject = left.client.projects?.[0];
-        const rightProject = right.client.projects?.[0];
+        const leftProject = projectForClientFilter(left.client.projects, selectedStatus);
+        const rightProject = projectForClientFilter(right.client.projects, selectedStatus);
         let result = 0;
 
         if (sortKey === 'status') {
           const leftStatus = projectStatusValue(leftProject);
           const rightStatus = projectStatusValue(rightProject);
-          result = (statusSortOrder.get(leftStatus) ?? Number.MAX_SAFE_INTEGER)
-            - (statusSortOrder.get(rightStatus) ?? Number.MAX_SAFE_INTEGER);
+          result = (leftProject?.stage?.sortOrder ?? (statusSortOrder.get(leftStatus) ?? Number.MAX_SAFE_INTEGER))
+            - (rightProject?.stage?.sortOrder ?? (statusSortOrder.get(rightStatus) ?? Number.MAX_SAFE_INTEGER));
         } else {
           const leftValue = sortKey === 'client'
             ? left.client.displayName
@@ -324,7 +301,7 @@ export default function ClientsWorkspace() {
         return result === 0 ? left.index - right.index : result * direction;
       })
       .map(({ client }) => client);
-  }, [filtered, sortDirection, sortKey]);
+  }, [filtered, sortDirection, sortKey, selectedStatus]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const visibleClients = sortedClients.slice(page * pageSize, (page + 1) * pageSize);
 
@@ -487,10 +464,13 @@ export default function ClientsWorkspace() {
               <option value="all">Wszystkie</option>
               <option value={activeServiceStatusValue}>W obsłudze (bez Leadów)</option>
               <option value={activeServiceWithoutTasksStatusValue}>W obsłudze (bez zadań)</option>
-              {statusFilterOptions.map((status) => (
-                <option key={status.value} value={status.value}>
-                  {status.label}
+              {stages.map((stage) => (
+                <option key={stage.id} value={`stage:${stage.id}`}>
+                  {stage.name}
                 </option>
+              ))}
+              {projectStatuses.filter(([status]) => !stages.some((stage) => stage.status === status)).map(([status, label]) => (
+                <option key={status} value={status}>Status: {label}</option>
               ))}
             </Select>
           </FormControl>
@@ -513,7 +493,7 @@ export default function ClientsWorkspace() {
             <Tbody>
               {visibleClients.map((client) => {
                 const contact: ClientRow['contacts'][number] = client.contacts?.[0] || {};
-                const project = client.projects?.[0];
+                const project = projectForClientFilter(client.projects, selectedStatus);
                 const statusValue = projectStatusValue(project);
                 const site = project?.investmentSite || client.investmentSites?.[0];
                 const projectClientType = project?.clientType;
@@ -531,7 +511,7 @@ export default function ClientsWorkspace() {
                     </Td>
                     <Td>{project?.title || '-'}</Td>
                     <Td>
-                      <Badge colorScheme={projectStatusColor(statusValue)}>{projectStatusLabel(statusValue)}</Badge>
+                      <Badge colorScheme={projectStatusColor(statusValue)}>{project?.stage?.name || projectStatusLabel(statusValue)}</Badge>
                     </Td>
                     <Td>
                       <Text>{client.clientType}</Text>
@@ -635,10 +615,6 @@ export default function ClientsWorkspace() {
                     <option key={value} value={value}>{label}</option>
                   ))}
                 </Select>
-              </FormControl>
-              <FormControl>
-                <FormLabel>Status projektu</FormLabel>
-                <Input value={projectStatusLabel(form.status)} isReadOnly />
               </FormControl>
               <FormControl>
                 <FormLabel>Etap</FormLabel>

@@ -1,4 +1,5 @@
 export type CalculationInput = {
+  saleDiscount?: boolean;
   quantity: number;
   unitPurchaseNet: number;
   purchaseVatRate: number;
@@ -68,6 +69,16 @@ export function validateManualSaleTotals(unitSaleNet: number, quantity: number) 
 }
 
 export function calculateConfigurationLine(input: CalculationInput): CalculationResult {
+  if (input.saleDiscount) {
+    if (input.quantity !== 1 || input.unitPurchaseNet !== 0 || input.operatingCostNet !== 0
+      || input.purchaseVatRate !== 0 || input.marginRate !== 0 || input.forcedSaleNet !== undefined
+      || input.unitSaleNet == null || !Number.isFinite(input.unitSaleNet) || input.unitSaleNet >= 0
+      || ![0.08, 0.23].includes(input.saleVatRate)) throw new Error('Nieprawidłowa pozycja upustu.');
+    const positive = calculateConfigurationLine({ ...input, saleDiscount: false, unitSaleNet: -input.unitSaleNet, includeVatSurplus: false });
+    return { ...positive, saleNet: -positive.saleNet, rawSaleNet: -positive.rawSaleNet!,
+      saleGross: -positive.saleGross, saleVatValue: -positive.saleVatValue,
+      marginNet: -positive.marginNet, profitNet: -positive.profitNet, profitWithVatSurplus: -positive.profitWithVatSurplus };
+  }
   assertFiniteMoney(input.quantity, 'quantity');
   assertFiniteMoney(input.unitPurchaseNet, 'unitPurchaseNet');
   assertFiniteMoney(input.purchaseVatRate, 'purchaseVatRate');

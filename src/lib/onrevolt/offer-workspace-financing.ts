@@ -16,6 +16,7 @@ import {
 export type OfferWorkspaceFinancingClientType = 'B2C' | 'B2B';
 
 export interface OfferWorkspaceFinancingPricingLine {
+  discount?: boolean;
   id: string;
   /** Exact product category; only MAGAZYN_ENERGII and BATTERY identify a storage line. */
   category: string | null;
@@ -162,11 +163,13 @@ function resolveStorageCost(input: OfferWorkspaceFinancingInput): {
   }
 
   const batteryLines = input.selectedPricingLines.filter((line) => isBatteryProductCategory(line.category));
+  const discounts = input.selectedPricingLines.filter(line => line.discount);
   if (batteryLines.length === 0 || batteryLines.some((line) => line.amountGross === null)) {
     return { amount: null, source: 'unavailable' };
   }
   return {
-    amount: batteryLines.reduce((sum, line) => sum + (line.amountGross as number), 0),
+    amount: Math.max(0, batteryLines.reduce((sum, line) => sum + (line.amountGross as number), 0)
+      + discounts.reduce((sum, line) => sum + (line.amountGross as number), 0)),
     source: 'battery-product-lines',
   };
 }
@@ -468,7 +471,9 @@ export function calculateOfferWorkspaceFinancing(
   }
   for (const line of input.selectedPricingLines) {
     if (!line.id.trim()) throw new TypeError('Każda wybrana pozycja cenowa musi mieć identyfikator.');
-    if (line.amountGross !== null) assertFiniteNonNegative(line.amountGross, `Kwota brutto pozycji ${line.id}`);
+    if (line.discount) {
+      if (line.amountGross === null || !Number.isFinite(line.amountGross) || line.amountGross >= 0) throw new TypeError('Upust wymaga ujemnej kwoty brutto.');
+    } else if (line.amountGross !== null) assertFiniteNonNegative(line.amountGross, `Kwota brutto pozycji ${line.id}`);
   }
   if (input.batteryCapacityKwh !== null) assertFiniteNonNegative(input.batteryCapacityKwh, 'Pojemność magazynu');
   if (input.pvPowerKwp !== null) assertFiniteNonNegative(input.pvPowerKwp, 'Moc PV');

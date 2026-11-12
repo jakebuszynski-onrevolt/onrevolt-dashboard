@@ -32,6 +32,7 @@ function renderControls(calculation: OfferWorkspaceCalculation | null, calculati
     initialCreditLots: [{ kwh: 1.25, creditedMonth: '2025-01', expiresMonth: '2026-02' }],
     initialDepositPln: 25,
     initialDepositLots: [{ amountPln: 25, creditedMonth: '2025-02', expiresMonth: '2026-02', refundCapPln: 7.5 }],
+    ...(options.draft?.calculation || {}),
   };
   return renderToStaticMarkup(createElement(ChakraProvider, null, createElement(OfferWorkspaceCalculationControls, {
     draft,
@@ -68,16 +69,14 @@ test('kontrolki pokazują miesięczną kotwicę i jawne daty obu typów sald', (
   assert.match(markup, /Dodaj transzę/);
 });
 
-test('zgody na dodatkowe założenia są jawne, domyślnie wyłączone i ulga dotyczy tylko B2C', () => {
+test('zgoda na model PV pozostaje jawna, a ulga nie wymaga zgody na szacunek', () => {
   const b2cMarkup = renderControls(null);
   const b2bMarkup = renderControls(null, false, 'B2B');
 
   const pvConsent = b2cMarkup.match(/<input[^>]*aria-label="Prognoza PV oparta na pomiarach ENEA i modelowanej autokonsumpcji"[^>]*>/)?.[0];
-  const taxConsent = b2cMarkup.match(/<input[^>]*aria-label="Szacunkowa ulga 12%: pełny limit 53 000 zł i wystarczający dochód"[^>]*>/)?.[0];
   assert.ok(pvConsent);
-  assert.ok(taxConsent);
   assert.doesNotMatch(pvConsent || '', /checked=""/);
-  assert.doesNotMatch(taxConsent || '', /checked=""/);
+  assert.doesNotMatch(b2cMarkup, /aria-label="Szacunkowa ulga/);
   assert.doesNotMatch(b2bMarkup, /Szacunkowa ulga 12%: pełny limit 53 000 zł i wystarczający dochód/);
 });
 
@@ -154,7 +153,7 @@ test('rekomendacja pokazuje wyliczony zakres baterii i liczbę pominiętych konf
 
   assert.match(markup, /data-testid="recommendation-battery-bounds"/);
   assert.match(markup, /Średnie zużycie: 51,6 kWh\/dobę · Magazyn: 25,8–103,2 kWh \(0,5–2× dobowe zużycie\)\. Maksymalnie 2,5 kWh magazynu na 1 kWp łącznej mocy PV \(istniejąca \+ dodawana\)\. Tylko gotowe konfiguracje\./);
-  assert.match(markup, /Pominięto: 3 poza zakresem zużycia; 1 przekroczyło limit PV\./);
+  assert.match(markup, /Pominięto: 3 poza zakresem magazynu; 1 poza zakresem produkcji PV\./);
   assert.doesNotMatch(renderControls(calculation, false, 'B2C', { stale: true }), /recommendation-battery-bounds/);
 
   const keepCalculation = {
@@ -358,4 +357,36 @@ test('wyczyszczenie wymaganego salda zapisuje null i unieważnia poprzednią kal
   assert.equal(cleared.calculation?.initialCreditKwh, null);
   assert.notEqual(offerWorkspaceCalculationInputKey(cleared), previousKey);
   assert.equal(offerWorkspaceCalculationPreflightError(cleared), null);
+});
+
+test('brakujące dane ulgi są czerwone tylko w opcjonalnym trybie dokładnym', () => {
+  const draft = emptyOfferWorkspaceDraft();
+  draft.financing.considerTaxRelief = true;
+  const simple = renderControls(null, false, 'B2C', { draft });
+  assert.doesNotMatch(simple, /Uzupełnij wymagane pola/);
+  assert.doesNotMatch(simple, /aria-label="Podstawa opodatkowania/);
+  assert.match(simple, /Ulga szacunkowa 12%/);
+  draft.calculation = { ...defaultOfferCalculationAssumptions(), taxDetailedCalculation: true };
+  const html = renderControls(null, false, 'B2C', { draft });
+  assert.match(html, /Uzupełnij wymagane pola \(3\)/);
+  const input = html.match(/<input[^>]*aria-label="Podstawa opodatkowania przed ulgą \[zł\]"[^>]*>/)?.[0];
+  assert.match(input || '', /aria-invalid="true"/);
+  assert.match(html, /<select[^>]*aria-label="Stawka podatku w symulacji \[%\]"/);
+  assert.match(html, /12% — domyślnie w symulacji/);
+  draft.calculation = { ...defaultOfferCalculationAssumptions(), taxDetailedCalculation: false, taxRatePercent: 19 };
+  const estimated = renderControls(null, false, 'B2C', { draft });
+  assert.doesNotMatch(estimated, /Uzupełnij wymagane pola/);
+  assert.match(estimated, /Ulga szacunkowa 19%/);
+  assert.doesNotMatch(renderControls(null, false, 'B2B', { draft }), /Uzupełnij wymagane pola/);
+});
+
+test('geometria dodatkowej PV jest wymagana tylko przy dodawaniu PV; zero jest poprawne', () => {
+  const draft = emptyOfferWorkspaceDraft();
+  draft.financing.considerTaxRelief = false;
+  draft.pvStrategy = 'ADD_TEMPLATE';
+  assert.match(renderControls(null, false, 'B2C', { draft }), /Uzupełnij wymagane pola \(2\)/);
+  draft.calculation = { ...defaultOfferCalculationAssumptions(), addedPvTiltDegrees: 0, addedPvAzimuthDegrees: 0, taxRatePercent: 0 };
+  const html = renderControls(null, false, 'B2C', { draft });
+  assert.doesNotMatch(html, /Uzupełnij wymagane pola/);
+  assert.match(html, /0% — zapisana stawka/);
 });

@@ -4,7 +4,7 @@ import { prisma } from 'lib/onrevolt/prisma';
 import { authorizeStaffRequest, getCurrentStaffUser, serializeStaffUser, staffUserInclude } from 'lib/onrevolt/staff-server';
 
 export async function GET(req: NextRequest) {
-  const access = await authorizeStaffRequest(req);
+  const access = await authorizeStaffRequest(req, 'profile.self');
   if (!access.ok) return access.response;
   try {
     const user = await getCurrentStaffUser(req);
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const access = await authorizeStaffRequest(req);
+  const access = await authorizeStaffRequest(req, 'profile.self');
   if (!access.ok) return access.response;
   try {
     const currentUser = await getCurrentStaffUser(req);

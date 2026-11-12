@@ -45,6 +45,10 @@ export type OfferWorkspaceCalculation = {
     excludedCandidates: number;
   };
   recommendationPvBounds?: {
+    minimumBatteryKwhPerPvKwp?: number;
+    minimumProductionKwh?: number;
+    maximumProductionKwh?: number;
+    consumptionKwh?: number;
     maximumBatteryKwhPerPvKwp: number;
     pvBasis: 'existing_plus_added';
     totalCandidatesBeforeFilter: number;

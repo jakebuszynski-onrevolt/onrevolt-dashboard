@@ -93,6 +93,8 @@
 .workspace :global(.energy-coverage-item[data-ready=true]) { background:#f2faf6; border-color:#dbf1e6; }
 .workspace :global(.energy-coverage-item) strong { display:block; font-size:10px; font-weight:500; color:#1b9b6c; margin-top:4px; }
 .workspace :global(.energy-coverage-item[data-ready=false]) strong { color:#9aa7c1; }
+.workspace :global(.energy-coverage-item[data-estimated=true]) { background:#fffbeb; border-color:#f5df9d; }
+.workspace :global(.energy-coverage-item .energy-coverage-note) { display:block; width:fit-content; margin:5px auto 0; padding:2px 6px; border-radius:4px; background:#fef0b4; color:#805a08; font-size:10px; }
 .workspace :global(.energy-portal),.workspace :global(.energy-files) { border-top:1px solid #e9edf6; margin-top:20px; padding-top:12px; }
 .workspace :global(.energy-portal)>summary,.workspace :global(.energy-files)>summary { cursor:pointer; font-size:12px; font-weight:500; min-height:35px; display:flex; align-items:center; gap:8px; list-style:none; }
 .workspace :global(.energy-portal)>summary:after,.workspace :global(.energy-files)>summary:after { content:'+'; color:#8b9bc3; font-size:18px; }

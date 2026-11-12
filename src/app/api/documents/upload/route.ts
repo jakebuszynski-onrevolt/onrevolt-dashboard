@@ -6,9 +6,16 @@ import { jsonResponse, serverError } from 'lib/onrevolt/api';
 import { writeAuditLog } from 'lib/onrevolt/audit';
 import { prepareDocumentFile } from 'lib/onrevolt/document-image';
 import { recognizeInvoicePdf } from 'lib/onrevolt/invoice-recognition';
+import { invoiceImportField } from 'lib/onrevolt/invoice-recognition/consumption';
 import type { InvoiceRecognitionResult } from 'lib/onrevolt/invoice-recognition';
 import { prisma } from 'lib/onrevolt/prisma';
-import { requireStaffUser, staffAuthorizationResponse } from 'lib/onrevolt/staff-server';
+import {
+  authorizeSiteVisitRequest,
+  isSiteVisitOnlyUser,
+  StaffAuthorizationError,
+  staffAuthorizationResponse,
+} from 'lib/onrevolt/staff-server';
+import { requireSiteVisitProject } from 'lib/onrevolt/site-visit-access';
 
 const maxUploadBytes = 25 * 1024 * 1024;
 const allowedDocumentTypes = new Set([
@@ -81,20 +88,65 @@ function duplicateDocument(document: {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireStaffUser(req, 'documents.manage');
+    const access = await authorizeSiteVisitRequest(req, 'documents.manage');
+    if (!access.ok) return access.response;
+    const user = access.user;
+    const restricted = isSiteVisitOnlyUser(user);
     const uploadDir = process.env.ONREVOLT_UPLOAD_DIR;
     if (!uploadDir) throw new Error('Missing ONREVOLT_UPLOAD_DIR');
 
     const form = await req.formData();
+    const type = String(form.get('type') || '').trim();
+    const title = String(form.get('title') || '').trim();
+    if (!allowedDocumentTypes.has(type)) throw new Error('Nieprawidłowy typ dokumentu');
+    if (!title) throw new Error('Upload wymaga pola title');
+
+    const clientId = String(form.get('clientId') || '').trim() || undefined;
+    const projectId = String(form.get('projectId') || '').trim() || undefined;
+    const siteAuditId = String(form.get('siteAuditId') || '').trim() || undefined;
+    const auditFieldKey = String(form.get('auditFieldKey') || '').trim() || undefined;
+    const siteAuditAttachmentTypes = new Set(['INNE', 'ZDJECIE_MONTAZU']);
+    let linkedSiteAudit: { projectId: string; clientId: string } | null = null;
+    if (restricted && (!siteAuditId || !siteAuditAttachmentTypes.has(type))) {
+      throw new Error('Wymagane jest przypisanie zdjęcia lub materiału do wizji lokalnej');
+    }
+    if (restricted) {
+      const unsupportedFields = [
+        'offerId', 'contractId', 'installationId', 'installedDeviceId', 'odsCaseId', 'serviceTicketId',
+        'billingPeriodFrom', 'billingPeriodTo', 'billingCycleMonths', 'invoiceNumber', 'amountGross',
+        'amountDue', 'invoicePpeNumber', 'invoiceTariff', 'energyConsumptionKwh', 'invoiceRecognition',
+        'replaceDocumentId', 'replaceExistingInvoice', 'assignmentMismatchConfirmed',
+      ];
+      if (unsupportedFields.some((key) => String(form.get(key) || '').trim())) {
+        throw new Error('Załącznik wizji lokalnej nie może zawierać danych faktury ani innych powiązań');
+      }
+    }
+    if (siteAuditId) {
+      if (!auditFieldKey || !/^[a-z0-9_.-]{1,120}$/i.test(auditFieldKey)) {
+        throw new Error('Załącznik audytu wymaga prawidłowego klucza pola');
+      }
+      linkedSiteAudit = await prisma.siteAudit.findUnique({
+        where: { id: siteAuditId },
+        select: { projectId: true, project: { select: { clientId: true } } },
+      }).then((siteAudit) => siteAudit && ({ projectId: siteAudit.projectId, clientId: siteAudit.project.clientId }));
+      if (!linkedSiteAudit) {
+        if (restricted) throw new StaffAuthorizationError(403, 'Brak dostępu do załącznika wizji lokalnej');
+        throw new Error('Nie znaleziono audytu dla załącznika');
+      }
+      if (projectId !== linkedSiteAudit.projectId || clientId !== linkedSiteAudit.clientId) {
+        if (restricted) throw new StaffAuthorizationError(403, 'Brak dostępu do załącznika wizji lokalnej');
+        throw new Error('Załącznik nie odpowiada klientowi lub projektowi audytu');
+      }
+      if (restricted) await requireSiteVisitProject(user, linkedSiteAudit.projectId);
+    } else if (auditFieldKey) {
+      throw new Error('Klucz pola audytu wymaga siteAuditId');
+    }
+
     const file = form.get('file');
     if (!(file instanceof File)) throw new Error('Brak pliku w polu file');
     if (file.size <= 0) throw new Error('Plik jest pusty');
     if (file.size > maxUploadBytes) throw new Error('Plik przekracza limit 25 MB');
 
-    const type = String(form.get('type') || '').trim();
-    const title = String(form.get('title') || '').trim();
-    if (!allowedDocumentTypes.has(type)) throw new Error('Nieprawidłowy typ dokumentu');
-    if (!title) throw new Error('Upload wymaga pola title');
     const billingPeriodFrom = formDate(form, 'billingPeriodFrom');
     const billingPeriodTo = formDate(form, 'billingPeriodTo');
     const billingCycleMonths = formNumber(form, 'billingCycleMonths');
@@ -139,27 +191,8 @@ export async function POST(req: NextRequest) {
     }
     const { bytes } = preparedFile;
     const sha256 = createHash('sha256').update(bytes).digest('hex');
-    const clientId = String(form.get('clientId') || '').trim() || undefined;
-    const projectId = String(form.get('projectId') || '').trim() || undefined;
-    const siteAuditId = String(form.get('siteAuditId') || '').trim() || undefined;
-    const auditFieldKey = String(form.get('auditFieldKey') || '').trim() || undefined;
     if (type === 'FAKTURA_PRAD' && !clientId) {
       throw new Error('Faktura musi być przypisana do klienta');
-    }
-    if (siteAuditId) {
-      if (!auditFieldKey || !/^[a-z0-9_.-]{1,120}$/i.test(auditFieldKey)) {
-        throw new Error('Załącznik audytu wymaga prawidłowego klucza pola');
-      }
-      const siteAudit = await prisma.siteAudit.findUnique({
-        where: { id: siteAuditId },
-        select: { projectId: true, project: { select: { clientId: true } } },
-      });
-      if (!siteAudit) throw new Error('Nie znaleziono audytu dla załącznika');
-      if (projectId !== siteAudit.projectId || clientId !== siteAudit.project.clientId) {
-        throw new Error('Załącznik nie odpowiada klientowi lub projektowi audytu');
-      }
-    } else if (auditFieldKey) {
-      throw new Error('Klucz pola audytu wymaga siteAuditId');
     }
 
     const effectiveInvoiceNumber = String(form.get('invoiceNumber') || '').trim()
@@ -167,7 +200,7 @@ export async function POST(req: NextRequest) {
       || undefined;
     const replaceDocumentId = String(form.get('replaceDocumentId') || '').trim() || undefined;
     const replaceExistingInvoice = String(form.get('replaceExistingInvoice') || '') === 'true';
-    const identicalInvoice = type === 'FAKTURA_PRAD'
+    const identicalInvoice = !restricted && type === 'FAKTURA_PRAD'
       ? await prisma.document.findFirst({
         where: { clientId, type: 'FAKTURA_PRAD', sha256 },
         orderBy: { updatedAt: 'desc' },
@@ -182,7 +215,7 @@ export async function POST(req: NextRequest) {
       }, { status: 409 });
     }
 
-    const existingInvoice = type === 'FAKTURA_PRAD' && effectiveInvoiceNumber
+    const existingInvoice = !restricted && type === 'FAKTURA_PRAD' && effectiveInvoiceNumber
       ? await prisma.document.findFirst({
         where: { clientId, type: 'FAKTURA_PRAD', invoiceNumber: effectiveInvoiceNumber },
         orderBy: { updatedAt: 'desc' },
@@ -207,10 +240,10 @@ export async function POST(req: NextRequest) {
       }, { status: 409 });
     }
 
-    const projectAccount = projectId
+    const projectAccount = !restricted && projectId
       ? await prisma.energyPortalAccount.findFirst({ where: { clientId, projectId } })
       : null;
-    const expectedAccount = projectAccount || (clientId
+    const expectedAccount = projectAccount || (!restricted && clientId
       ? await prisma.energyPortalAccount.findFirst({
         where: { clientId, projectId: null },
         orderBy: { updatedAt: 'desc' },
@@ -222,11 +255,11 @@ export async function POST(req: NextRequest) {
     const expectedTariff = expectedAccount?.tariff?.trim() || '';
     const ppeMismatch = Boolean(expectedPpe && detectedPpe && expectedPpe !== detectedPpe);
     const tariffMismatch = Boolean(expectedTariff && detectedTariff && expectedTariff !== detectedTariff);
-    if ((ppeMismatch || tariffMismatch) && String(form.get('assignmentMismatchConfirmed') || '') !== 'true') {
+    if (!restricted && (ppeMismatch || tariffMismatch) && String(form.get('assignmentMismatchConfirmed') || '') !== 'true') {
       throw new Error('PPE lub grupa taryfowa na fakturze różni się od danych klienta. Wymagane jest świadome potwierdzenie.');
     }
 
-    const confirmedRecognition = recognition ? {
+    const confirmedRecognition = !restricted && recognition ? {
       ...recognition,
       fields: {
         ...recognition.fields,
@@ -239,6 +272,10 @@ export async function POST(req: NextRequest) {
         amountDue: formNumber(form, 'amountDue'),
         ppeNumber: String(form.get('invoicePpeNumber') || '').trim() || recognition.fields.ppeNumber,
         tariff: String(form.get('invoiceTariff') || '').trim() || recognition.fields.tariff,
+        consumption: {
+          ...recognition.fields.consumption,
+          [invoiceImportField(recognition.fields.consumption)]: formNumber(form, 'energyConsumptionKwh'),
+        },
       },
       confirmation: {
         confirmedAt: new Date().toISOString(),
@@ -256,12 +293,34 @@ export async function POST(req: NextRequest) {
       throw new Error('Nieprawidłowa ścieżka dokumentu');
     }
 
+    const restrictedProjectId = restricted ? linkedSiteAudit?.projectId : undefined;
+    if (restricted && !restrictedProjectId) {
+      throw new StaffAuthorizationError(403, 'Brak dostępu do załącznika wizji lokalnej');
+    }
+    if (restricted && restrictedProjectId) {
+      await requireSiteVisitProject(user, restrictedProjectId);
+    }
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, bytes, { flag: 'wx' });
 
     let document;
     try {
-      const documentData = {
+      const documentData = restricted ? {
+        type: type as any,
+        title,
+        fileName: preparedFile.fileName,
+        mimeType: preparedFile.mimeType,
+        sizeBytes: bytes.length,
+        sha256,
+        storagePath: relativePath,
+        clientId,
+        projectId,
+        siteAuditId,
+        auditFieldKey,
+        uploadedById: user.id,
+        visibleToClient: false,
+        documentDate: formDate(form, 'documentDate'),
+      } : {
         type: type as any,
         title,
         fileName: preparedFile.fileName,
@@ -299,12 +358,17 @@ export async function POST(req: NextRequest) {
         invoiceRecognition: confirmedRecognition,
         notes: String(form.get('notes') || '') || undefined,
       };
-      document = existingInvoice
-        ? await prisma.document.update({
-          where: { id: existingInvoice.id },
-          data: documentData,
-        })
-        : await prisma.document.create({ data: documentData });
+      document = restricted && restrictedProjectId
+        ? await prisma.$transaction(async (tx) => {
+            await requireSiteVisitProject(user, restrictedProjectId, tx);
+            return tx.document.create({ data: documentData });
+          })
+        : existingInvoice
+          ? await prisma.document.update({
+            where: { id: existingInvoice.id },
+            data: documentData,
+          })
+          : await prisma.document.create({ data: documentData });
     } catch (error) {
       await unlink(absolutePath).catch(() => undefined);
       throw error;
@@ -327,7 +391,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return jsonResponse({ ok: true, data: document }, { status: 201 });
+    const responseDocument = restricted ? {
+      id: document.id,
+      title: document.title,
+      fileName: document.fileName,
+      mimeType: document.mimeType,
+      sizeBytes: document.sizeBytes,
+      siteAuditId: document.siteAuditId,
+      auditFieldKey: document.auditFieldKey,
+      createdAt: document.createdAt,
+    } : document;
+    return jsonResponse({ ok: true, data: responseDocument }, { status: 201 });
   } catch (error) {
     const authorizationResponse = staffAuthorizationResponse(error);
     if (authorizationResponse) return authorizationResponse;

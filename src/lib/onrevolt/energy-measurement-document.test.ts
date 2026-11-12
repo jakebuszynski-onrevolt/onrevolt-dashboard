@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as XLSX from 'xlsx';
-import { closedMeasurementPeriodKeys, inspectEnergyMeasurementWorkbook } from './energy-measurement-document';
+import { closedMeasurementPeriodKeys, inspectEnergyMeasurementWorkbook, parseEnergyMeasurementIntervals } from './energy-measurement-document';
 
 function workbookBytes(rows: unknown[][]) {
   const workbook = XLSX.utils.book_new();
@@ -28,6 +28,24 @@ function hourlyReport(kind: 'pobrana' | 'oddana', year: number, month: number) {
   rows.push(['Suma', numberOfHours]);
   return rows;
 }
+
+test('uzupełnienia CRM mają oddzielne pochodzenie, wymagają opisu i zachowują pomiary', () => {
+  const rows = hourlyReport('pobrana', 2026, 1);
+  rows[6][2] = 'Model CRM';
+  rows[7][2] = 'Dane szacowane';
+  assert.throws(() => parseEnergyMeasurementIntervals(workbookBytes(rows)), /wymagają arkusza/);
+  const workbook = XLSX.read(workbookBytes(rows), { type: 'buffer' });
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['ONREVOLT_MEASUREMENT_MODEL_V1'], ['Profil domowy i pompa ciepła, kalibracja do pomiarów'],
+  ]), 'Model CRM');
+  const parsed = parseEnergyMeasurementIntervals(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+  assert.equal(parsed.info.modelledRows, 1);
+  assert.equal(parsed.intervals[0].source, 'modelled');
+  assert.equal(parsed.intervals[1].source, 'estimated');
+  assert.equal(parsed.intervals[2].source, 'measured');
+  assert.equal(parsed.info.totalKwh, 744);
+  assert.equal(parsed.intervals.length, 744);
+});
 
 test('rozpoznaje pełny miesięczny raport godzinowy ENEA', () => {
   const info = inspectEnergyMeasurementWorkbook(workbookBytes(hourlyReport('pobrana', 2026, 1)));
@@ -213,4 +231,16 @@ test('wyznacza zakres ostatnich 12 zamkniętych miesięcy', () => {
   assert.equal(keys.has('2026-08'), true);
   assert.equal(keys.has('2025-08'), false);
   assert.equal(keys.has('2026-09'), false);
+});
+
+
+test('brak drugiej połowy września opisuje dni dostaw, bez mylenia północy z kolejnym dniem', () => {
+  const rows = hourlyReport('pobrana', 2026, 9);
+  for (let i = 6 + 336; i < rows.length - 1; i++) { rows[i][1] = ''; rows[i][2] = ''; }
+  assert.throws(() => inspectEnergyMeasurementWorkbook(workbookBytes(rows)), (error: any) => {
+    assert.match(error.userMessage, /336 z 720 godzin/);
+    assert.match(error.userMessage, /15.09.2026–30.09.2026/);
+    assert.doesNotMatch(error.userMessage, /01.10.2026/);
+    return true;
+  });
 });

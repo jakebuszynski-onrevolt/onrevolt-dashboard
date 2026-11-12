@@ -18,6 +18,7 @@ export const companyRoleLabels: Record<string, string> = {
   KSIEGOWOSC: 'Księgowość',
   BIURO: 'Biuro',
   PODWYKONAWCA: 'Podwykonawca',
+  WIZJA_LOKALNA: 'Wizje lokalne — ograniczony dostęp',
 };
 
 export const companyRoleOrder = [
@@ -32,6 +33,7 @@ export const companyRoleOrder = [
   'KSIEGOWOSC',
   'BIURO',
   'PODWYKONAWCA',
+  'WIZJA_LOKALNA',
 ];
 
 export function initialsFromName(name: string) {

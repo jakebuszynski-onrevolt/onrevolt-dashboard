@@ -5,7 +5,7 @@ import type { OfferWorkspaceDraft } from './offer-workspace';
 import type { OfferWorkspaceCalculation } from './offer-workspace-calculation-types';
 import { prisma } from './prisma';
 
-export const OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION = 'offer-workspace-calculation-v16-pme2-capacity';
+export const OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION = 'offer-workspace-calculation-v20-invoice-recalibration';
 // A full year with the exact breakdown for three settlement scenarios exceeds 32 MiB.
 export const MAX_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES = 64 * 1024 * 1024;
 const COMPRESS_OFFER_WORKSPACE_CALCULATION_RESULT_BYTES = 1024 * 1024;

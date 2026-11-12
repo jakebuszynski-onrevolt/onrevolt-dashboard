@@ -4,21 +4,37 @@ import path from 'node:path';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { selectOfferMeasurementFilesForPeriod } from './offer-measurement-month-reuse';
 
 const helperPath = path.resolve(__dirname, './project-analysis-measurements.ts');
 const helperCode = ts.transpileModule(readFileSync(helperPath, 'utf8'), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   fileName: helperPath,
 }).outputText;
-const periodKeys = Array.from({ length: 12 }, (_, index) => {
+const defaultPeriodKeys = Array.from({ length: 12 }, (_, index) => {
   const date = new Date(Date.UTC(2025, 9 + index, 1));
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 });
 
-type MeasurementFixture = { id: string; accountId: string; accountProjectId: string; projectId: string | null; periodYear: number; periodMonth: number };
+type MeasurementFixture = {
+  id: string;
+  accountId: string;
+  accountProjectId: string;
+  projectId: string | null;
+  periodYear: number;
+  periodMonth: number;
+  kind?: string;
+  status?: string;
+};
 
-function measurementReader(options: { missingProject?: boolean; fileCount?: number; files?: MeasurementFixture[] } = {}) {
-  const state: { query?: any; calls: number } = { calls: 0 };
+function measurementReader(options: {
+  missingProject?: boolean;
+  fileCount?: number;
+  files?: MeasurementFixture[];
+  periodKeys?: string[];
+} = {}) {
+  const state: { query?: any; queries: any[]; calls: number } = { calls: 0, queries: [] };
+  const periodKeys = options.periodKeys ?? defaultPeriodKeys;
   const modules: Record<string, unknown> = {
     './prisma': {
       prisma: {
@@ -26,6 +42,7 @@ function measurementReader(options: { missingProject?: boolean; fileCount?: numb
           findMany: async (query: any) => {
             state.calls += 1;
             state.query = query;
+            state.queries.push(query);
             const fixtures = options.files ?? Array.from({ length: options.fileCount ?? 0 }, (_, index) => ({
               id: `file-${index}`, accountId: 'account-3', accountProjectId: 'project-7', projectId: 'project-7',
               periodYear: 2026, periodMonth: 1,
@@ -35,8 +52,10 @@ function measurementReader(options: { missingProject?: boolean; fileCount?: numb
             return fixtures.filter(file => file.accountId === query.where.accountId
               && file.accountProjectId === query.where.account.projectId
               && projectFilter.OR.some((condition: any) => condition.projectId === file.projectId)
-              && periodFilter.OR.some((period: any) => period.periodYear === file.periodYear && period.periodMonth === file.periodMonth))
-              .map(({ id }) => ({ id }));
+              && (!periodFilter || periodFilter.OR.some((period: any) => period.periodYear === file.periodYear && period.periodMonth === file.periodMonth))
+              && (!query.where.status || query.where.status === file.status)
+              && (!query.where.kind || query.where.kind.in.includes(file.kind)))
+              .map(file => ({ ...file }));
           },
         },
       },
@@ -46,11 +65,12 @@ function measurementReader(options: { missingProject?: boolean; fileCount?: numb
         assert.equal(projectId, 'project-7');
         return options.missingProject ? null : {
           projectId,
-          storedStartMonth: '2025-10',
-          period: { startMonth: '2025-10', endMonth: '2026-09', periodKeys },
+          storedStartMonth: periodKeys[0],
+          period: { startMonth: periodKeys[0], endMonth: periodKeys.at(-1), periodKeys },
         };
       },
     },
+    './offer-measurement-month-reuse': { selectOfferMeasurementFilesForPeriod },
   };
   const exports: any = {};
   vm.runInNewContext(helperCode, {
@@ -68,13 +88,14 @@ test('analysis measurements query all selected months, scoped to both account an
   const result = await fixture.read('account-3', 'project-7');
 
   assert.equal(result.files.length, 57);
-  assert.deepEqual(result.period.periodKeys, periodKeys);
+  assert.deepEqual(result.period.periodKeys, defaultPeriodKeys);
+  assert.equal(Object.hasOwn(result, 'coverageFiles'), false);
   assert.equal(fixture.state.calls, 1);
   assert.deepEqual(JSON.parse(JSON.stringify(fixture.state.query.where)), {
     accountId: 'account-3',
     account: { projectId: 'project-7' },
     AND: [
-      { OR: periodKeys.map(key => {
+      { OR: defaultPeriodKeys.map(key => {
         const [periodYear, periodMonth] = key.split('-').map(Number);
         return { periodYear, periodMonth };
       }) },
@@ -94,6 +115,64 @@ test('measurement scope excludes prior-project files after account reassignment 
 
   const result = await fixture.read('account-3', 'project-7');
   assert.deepEqual(result.files.map((file: { id: string }) => file.id), ['current', 'legacy']);
+});
+
+test('coverage reuses May 2025 for missing May 2026 while exact-period failures remain visible only in portal files', async () => {
+  const fixture = measurementReader({ files: [
+    { id: 'failed-may-2026', accountId: 'account-3', accountProjectId: 'project-7', projectId: 'project-7', periodYear: 2026, periodMonth: 5, kind: 'ACTIVE_IMPORT', status: 'FAILED' },
+    { id: 'ready-may-2025', accountId: 'account-3', accountProjectId: 'project-7', projectId: 'project-7', periodYear: 2025, periodMonth: 5, kind: 'ACTIVE_IMPORT', status: 'DOWNLOADED' },
+    { id: 'wrong-kind-may-2025', accountId: 'account-3', accountProjectId: 'project-7', projectId: 'project-7', periodYear: 2025, periodMonth: 5, kind: 'REACTIVE_IMPORT', status: 'DOWNLOADED' },
+  ] });
+
+  const result = await fixture.read('account-3', 'project-7', { includeReusable: true });
+
+  assert.deepEqual(result.files.map((file: MeasurementFixture) => file.id), ['failed-may-2026']);
+  assert.deepEqual(result.coverageFiles.map((file: MeasurementFixture & { targetPeriod: string }) => [
+    file.id, file.targetPeriod, file.periodYear, file.periodMonth,
+  ]), [['ready-may-2025', '2026-05', 2025, 5]]);
+  assert.equal(fixture.state.calls, 2);
+  assert.equal(fixture.state.queries[1].where.status, 'DOWNLOADED');
+  assert.deepEqual(JSON.parse(JSON.stringify(fixture.state.queries[1].where.kind)), { in: ['ACTIVE_IMPORT', 'ACTIVE_EXPORT'] });
+});
+
+test('coverage prefers an actual May 2025 file over the reusable May 2026 file', async () => {
+  const fixture = measurementReader({
+    periodKeys: ['2025-05'],
+    files: [
+      { id: 'real-may-2025', accountId: 'account-3', accountProjectId: 'project-7', projectId: 'project-7', periodYear: 2025, periodMonth: 5, kind: 'ACTIVE_IMPORT', status: 'DOWNLOADED' },
+      { id: 'later-may-2026', accountId: 'account-3', accountProjectId: 'project-7', projectId: 'project-7', periodYear: 2026, periodMonth: 5, kind: 'ACTIVE_IMPORT', status: 'DOWNLOADED' },
+    ],
+  });
+
+  const result = await fixture.read('account-3', 'project-7', { includeReusable: true });
+
+  assert.deepEqual(result.files.map((file: MeasurementFixture) => file.id), ['real-may-2025']);
+  assert.deepEqual(result.coverageFiles.map((file: MeasurementFixture & { targetPeriod: string }) => [file.id, file.targetPeriod, file.periodYear]), [
+    ['real-may-2025', '2025-05', 2025],
+  ]);
+});
+
+test('coverage keeps account and file project boundaries across years', async () => {
+  const fixture = measurementReader({ files: [
+    { id: 'current-project-file', accountId: 'account-3', accountProjectId: 'project-7', projectId: 'project-7', periodYear: 2025, periodMonth: 5, kind: 'ACTIVE_IMPORT', status: 'DOWNLOADED' },
+    { id: 'former-project-file', accountId: 'account-3', accountProjectId: 'project-7', projectId: 'project-6', periodYear: 2025, periodMonth: 5, kind: 'ACTIVE_IMPORT', status: 'DOWNLOADED' },
+    { id: 'other-account-file', accountId: 'account-4', accountProjectId: 'project-7', projectId: 'project-7', periodYear: 2025, periodMonth: 5, kind: 'ACTIVE_IMPORT', status: 'DOWNLOADED' },
+  ] });
+
+  const result = await fixture.read('account-3', 'project-7', { includeReusable: true });
+
+  assert.deepEqual(result.coverageFiles.map((file: MeasurementFixture) => file.id), ['current-project-file']);
+  assert.deepEqual(JSON.parse(JSON.stringify(fixture.state.queries[1].where)), {
+    accountId: 'account-3',
+    account: { projectId: 'project-7' },
+    status: 'DOWNLOADED',
+    operator: 'ENEA',
+    kind: { in: ['ACTIVE_IMPORT', 'ACTIVE_EXPORT'] },
+    AND: [{ OR: [{ projectId: 'project-7' }, { projectId: null }] }],
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(fixture.state.queries[1].select)), {
+    kind: true, status: true, periodYear: true, periodMonth: true, dataSource: true,
+  }, 'coverage must not expose document or storage metadata');
 });
 
 test('missing analysis project fails before querying measurement files', async () => {

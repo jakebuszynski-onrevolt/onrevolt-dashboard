@@ -376,3 +376,18 @@ test('próg pełnych 16000 zł: 53333,33 zł nie wystarcza, 53333,34 zł wystarc
     assert.equal(result.preservedEquipmentSalePrices, expected);
   }
 });
+
+test('upust zachowuje cztery grupy i zmniejsza podstawę magazynu bez zmiany kosztów zakupu', () => {
+  const template = selectedTemplate();
+  const beforePricing = priceOfferWorkspaceConfiguration([template], 'REDUCED_8', 'B2C');
+  const before = calculateOfferCommercialPricing(beforePricing, [template], automaticOfferCommercialBreakdown());
+  template.items.push({ id: 'discount', position: 6, description: 'Upust', quantity: 1, role: 'OTHER', supplyMode: 'SERVICE_ONLY',
+    workspaceAdded: true, workspaceDiscount: true, pricingMode: 'INDIVIDUAL', unitSaleNet: -5000 / 1.08, unitPurchaseNet: 0,
+    purchaseVatRate: 0, operatingCostNet: 0, marginRate: 0, saleVatRate: 0.08, isOptional: false, requiresReview: false });
+  const pricing = priceOfferWorkspaceConfiguration([template], 'REDUCED_8', 'B2C');
+  const result = calculateOfferCommercialPricing(pricing, [template], automaticOfferCommercialBreakdown());
+  assert.equal(result.rows.length, 4);
+  assert.equal(result.totalGross, before.totalGross - 5000);
+  assert.equal(result.batteryEligibleGross, before.batteryEligibleGross - 5000);
+  assert.equal(pricing.totals!.totalCostNet, beforePricing.totals!.totalCostNet);
+});

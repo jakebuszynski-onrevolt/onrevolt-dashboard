@@ -240,19 +240,19 @@ test('completed snapshots retain KEEP existing-PV range basis without an additiv
 test('nowe ograniczenia konfiguracji unieważniają starsze wyniki i mieszczą się w kolumnie algorithmVersion VarChar(64)', () => {
   const f = fixture();
   const version = f.exports.OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION as string;
-  assert.equal(version, 'offer-workspace-calculation-v16-pme2-capacity');
+  assert.equal(version, 'offer-workspace-calculation-v20-invoice-recalibration');
   assert.ok(version.length <= 64, `algorithmVersion has ${version.length} characters; the schema column allows 64`);
 });
 
-test('old v15 snapshots cannot satisfy the v16 PME2 capacity algorithm lookup', async () => {
-  const f = fixture({ findFirst: { ...row, algorithmVersion: 'offer-workspace-calculation-v15-commercial-pv' } });
+test('old v16 snapshots cannot satisfy the v17 simple tax estimate algorithm lookup', async () => {
+  const f = fixture({ findFirst: { ...row, algorithmVersion: 'offer-workspace-calculation-v16-pme2-capacity' } });
   const repository = new f.exports.PrismaOfferWorkspaceCalculationSnapshotRepository(f.database);
   const version = f.exports.OFFER_WORKSPACE_CALCULATION_ALGORITHM_VERSION as string;
 
   const found = await repository.findCompletedByJob({ jobId: row.jobId, actorId: row.actorId, projectId: row.projectId, algorithmVersion: version });
 
   assert.equal(found, null);
-  assert.equal(f.calls[0].value.where.algorithmVersion, 'offer-workspace-calculation-v16-pme2-capacity');
+  assert.equal(f.calls[0].value.where.algorithmVersion, 'offer-workspace-calculation-v20-invoice-recalibration');
 });
 
 test('compressed large results round trip losslessly and legacy plain JSON remains readable', async () => {

@@ -25,6 +25,7 @@ export type OfferWorkspacePricingItem = PriceableTemplateItem & {
   workspaceRemoved?: boolean;
   workspaceAdded?: boolean;
   workspaceChanged?: boolean;
+  workspaceDiscount?: boolean;
   product?: (NonNullable<PriceableTemplateItem['product']> & {
     id?: string | null;
     sku?: string | null;
@@ -134,13 +135,16 @@ function itemCalculationInput(
     };
   }
 
-  const costs = resolveTemplateItemCosts({
+  const costs = item.workspaceDiscount ? {
+    unitPurchaseNet: 0, purchaseVatRate: 0, operatingCostNet: 0, marginRate: 0,
+    unitSaleNet: Number(item.unitSaleNet),
+  } : resolveTemplateItemCosts({
     ...item,
     productId: item.product?.id ?? item.productId,
   });
   const resolvedSaleVatRate = saleVatRate(mode, item);
   return {
-    input: { quantity, ...costs, saleVatRate: resolvedSaleVatRate },
+    input: { quantity, ...costs, saleVatRate: resolvedSaleVatRate, ...(item.workspaceDiscount ? { saleDiscount: true } : {}) },
     costs,
     saleVatRate: resolvedSaleVatRate,
     includedInSale: true,
@@ -268,6 +272,7 @@ export function priceOfferWorkspaceConfiguration(
   if (!hasMissingData && calculationInputs.length > 0) {
     try {
       totals = sumConfiguration(calculationInputs);
+      if (totals.saleNet < 0 || totals.saleGross < 0) throw new Error('Upust przekracza cenę całej konfiguracji.');
       lines.forEach((line) => {
         const calculationIndex = calculationIndexByLine.get(`${line.templateId}\u0000${line.itemId}`);
         const calculation = calculationIndex === undefined ? null : totals?.lines[calculationIndex] ?? null;
@@ -277,6 +282,7 @@ export function priceOfferWorkspaceConfiguration(
           : null;
       });
     } catch (error) {
+      totals = null;
       calculationError = error instanceof Error ? error.message : 'Dane BOM nie pozwalają na kalkulację.';
     }
   }

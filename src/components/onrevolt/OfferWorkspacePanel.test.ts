@@ -33,8 +33,8 @@ test('dodatkowa PV korzysta z geometrii klienta; własne wartości, w tym zero, 
   const partial = { ...manual, calculation: { ...manual.calculation, addedPvAzimuthDegrees: null } };
   assert.equal(offerDraftWithClientPvGeometry(partial, roofGeometry).calculation?.addedPvTiltDegrees, 0);
   assert.equal(offerDraftWithClientPvGeometry(partial, roofGeometry).calculation?.addedPvAzimuthDegrees, 200);
-  assert.equal(offerDraftWithClientPvGeometry(draft, undefined), draft);
-  assert.equal(offerDraftWithClientPvGeometry(draft, { tiltDegrees: null, azimuthDegrees: null }), draft);
+  assert.equal(offerDraftWithClientPvGeometry(draft, undefined).calculation?.addedPvTiltDegrees, 30);
+  assert.equal(offerDraftWithClientPvGeometry(draft, { tiltDegrees: null, azimuthDegrees: null }).calculation?.addedPvAzimuthDegrees, 180);
   const batteryOnly = emptyOfferWorkspaceDraft();
   assert.equal(offerDraftWithClientPvGeometry(batteryOnly, roofGeometry), batteryOnly, 'otwarcie oferty bez dodatkowej PV nie zmienia jej założeń ani tożsamości wyniku');
   const workspace = { clientType: 'B2C', input: { roofGeometry, existingBatteryPresent: false }, draft: { input: draft } } as any;
@@ -44,6 +44,15 @@ test('dodatkowa PV korzysta z geometrii klienta; własne wartości, w tym zero, 
   const clientPv = offerDraftWithClientPvGeometry({ ...draft, existingPv }, { tiltDegrees: null, azimuthDegrees: 180 });
   assert.equal(clientPv.calculation?.addedPvTiltDegrees, 15);
   assert.equal(clientPv.calculation?.addedPvAzimuthDegrees, 200, 'dokładny zapis parametrów PV ma pierwszeństwo przed ogólnym kierunkiem dachu');
+});
+
+test('istniejąca PV przy braku geometrii otrzymuje uzgodnione 30 stopni i południe, bez nadpisania zera', () => {
+  const draft = { ...emptyOfferWorkspaceDraft(), existingPv: { powerKw: 13, tiltDegrees: null, azimuthDegrees: null, lossPercent: 14 } };
+  const result = offerDraftWithClientPvGeometry(draft, undefined);
+  assert.equal(result.existingPv.tiltDegrees, 30);
+  assert.equal(result.existingPv.azimuthDegrees, 180);
+  const manual = { ...result, existingPv: { ...result.existingPv, tiltDegrees: 0, azimuthDegrees: 0 } };
+  assert.equal(offerDraftWithClientPvGeometry(manual, undefined), manual);
 });
 
 test('nieustalony VAT przyjmuje uzgodnioną stawkę B2C/B2B; jawne stawki pozostają bez zmian', () => {
@@ -344,4 +353,31 @@ test('stary cache bez podziału nie wyłącza automatycznych czterech lub pięci
   const restored = resolveCachedOfferDraft(server, 'source', 2, { expectedRevision: 2, input: { ...original, description: { before: 'Zachowaj tekst', after: '' } } });
   assert.equal(restored.input.commercialPricing?.schemaVersion, 2);
   assert.equal(restored.input.description.before, 'Zachowaj tekst');
+});
+
+test('nowy system zawsze net-billing, również po odczycie starszego szkicu i cache', () => {
+  const saved = { ...emptyOfferWorkspaceDraft(), currentSettlement: 'NET_METERING' as const, targetSettlement: 'NET_METERING' as const };
+  const workspace = { clientType: 'B2C', input: { existingPv: { powerKw: 10 }, settlementMode: 'net-metering' }, draft: { input: saved } } as any;
+  const loaded = initialDraft(workspace, null);
+  assert.equal(loaded.targetSettlement, 'NET_BILLING');
+  assert.equal(loaded.currentSettlement, 'NET_METERING');
+  assert.equal(saved.targetSettlement, 'NET_METERING');
+  assert.equal(initialDraft({ ...workspace, draft: null }, null).targetSettlement, 'NET_BILLING');
+  const cached = resolveCachedOfferDraft(loaded, 'source', 1, { expectedRevision: 1, input: { ...saved, targetSettlement: 'NET_BILLING' } });
+  assert.equal(cached.input.targetSettlement, 'NET_BILLING');
+});
+
+test('nowa oferta B2C zaczyna z PV, magazynem, dotacją i ulgą; zapisane wybory pozostają', () => {
+  const workspace = { clientType: 'B2C', input: { existingPv: { powerKw: 0 }, existingBatteryPresent: false } } as any;
+  const initial = initialDraft(workspace, null);
+  assert.equal(initial.pvStrategy, 'ADD_TEMPLATE');
+  assert.equal(initial.includeStorage, true);
+  assert.deepEqual(initial.financing, { considerGrant: true, considerTaxRelief: true });
+  assert.deepEqual(initial.selectedTemplateIds, [], 'zestaw wybiera użytkownik albo rekomendacja');
+  const saved = { ...initial, pvStrategy: 'KEEP_EXISTING' as const, includeStorage: false, financing: { considerGrant: false, considerTaxRelief: false } };
+  const restored = initialDraft({ ...workspace, draft: { input: saved } }, null);
+  assert.equal(restored.pvStrategy, 'KEEP_EXISTING');
+  assert.equal(restored.includeStorage, false);
+  assert.deepEqual(restored.financing, saved.financing);
+  assert.deepEqual(initialDraft({ ...workspace, clientType: 'B2B' }, null).financing, { considerGrant: false, considerTaxRelief: false });
 });

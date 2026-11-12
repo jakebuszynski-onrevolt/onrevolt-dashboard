@@ -25,6 +25,18 @@ const rollingMonths = Array.from({ length: 12 }, (_, index) => {
   };
 });
 
+test('uzupełniony rok jest opisany jako pomiary i model, bez zapewnienia o braku ekstrapolacji', async () => {
+  const { default: ClientEnergySummary } = await import('./ClientEnergySummary');
+  const markup = renderToStaticMarkup(createElement(ClientEnergySummary, {
+    projectId: 'hybrid', profile: null, annualConsumptionKwh: 0,
+    consumptionSource: 'Pomiary i model', hasPv: true, invoices: [],
+    initialData: { months: rollingMonths, days: [], issues: [], modelledHours: 1465 },
+  }));
+  assert.match(markup, /1465 brakujących godzin/);
+  assert.match(markup, /pomiary \+ uzupełnienie luk Model CRM/);
+  assert.doesNotMatch(markup, /bez ekstrapolacji/);
+});
+
 test('SSR pokazuje cztery KPI, nieznane PV i oddziela średnią dobę od pomiaru', async () => {
   const { default: ClientEnergySummary } = await import('./ClientEnergySummary');
   const markup = renderToStaticMarkup(createElement(ClientEnergySummary, {
@@ -343,4 +355,17 @@ test('błąd bieżącego profilu OSD nie pozwala użyć starego audytu jako dekl
     manualSourceSelected: false,
     manualAnnualKwh: 12400,
   }), 9700);
+});
+
+test('lokalne pomiary z modelem PV dostarczają roczne zużycie bez stacji RE', async () => {
+  const { default: Component, resolveClientAnnualConsumption, areClientEnergySummaryLoadStatesEqual } = await import('./ClientEnergySummary');
+  const consumption = { annualKwh: 21230.653, source: 'Pomiary + model PV · szacunek zużycia' };
+  const markup = renderToStaticMarkup(createElement(Component, { projectId: 'local', profile: null, annualConsumptionKwh: 0,
+    consumptionSource: 'Oczekiwanie na dane operatora', hasPv: true, invoices: [], initialData: { months: rollingMonths, days: [], issues: [], consumption } }));
+  assert.match(markup, /21\s*231 kWh/);
+  assert.match(markup, /Pomiary \+ model PV/);
+  assert.doesNotMatch(markup, /Oczekiwanie na dane operatora/);
+  assert.equal(resolveClientAnnualConsumption({ hasOperatorData: true, hasEnergyInvoices: true, profileStatus: 'ready', profileAnnualKwh: 0,
+    measurementAnnualKwh: consumption.annualKwh, manualSourceSelected: false }), consumption.annualKwh);
+  assert.equal(areClientEnergySummaryLoadStatesEqual({ requestKey: 'p', status: 'ready' }, { requestKey: 'p', status: 'ready', consumption }), false);
 });

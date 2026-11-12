@@ -6,6 +6,8 @@ export const staffSessionCookie = 'onrevolt_staff_session';
 export const staffSessionMaxAgeSeconds = 60 * 60 * 24 * 30;
 
 export type StaffPermission =
+  | 'site-visits.access'
+  | 'profile.self'
   | 'crm.read'
   | 'crm.write'
   | 'pricing.read'
@@ -24,6 +26,8 @@ export type StaffPermission =
   | 'settings.manage';
 
 const allPermissions: StaffPermission[] = [
+  'site-visits.access',
+  'profile.self',
   'crm.read',
   'crm.write',
   'pricing.read',
@@ -173,14 +177,37 @@ export function getStaffPermissions(user: any): Set<StaffPermission> {
   if (!user) return new Set();
   if (user.systemRole === 'ADMIN') return new Set(allPermissions);
   if (user.systemRole === 'MODERATOR') return new Set(moderatorPermissions);
+  if (isSiteVisitOnlyUser(user)) return new Set(['site-visits.access', 'profile.self']);
 
-  const permissions = new Set<StaffPermission>(['crm.read']);
+  const permissions = new Set<StaffPermission>(['crm.read', 'profile.self']);
   for (const entry of user.companyRoles || []) {
     for (const permission of companyRolePermissions[entry.companyRole?.code] || []) {
       permissions.add(permission);
     }
   }
   return permissions;
+}
+
+/** This restricted role cannot inherit broad CRM access from another company role. */
+export function isSiteVisitOnlyUser(user: any): boolean {
+  return user?.systemRole === 'USER' && (user.companyRoles || []).some(
+    (entry: any) => entry.companyRole?.code === 'WIZJA_LOKALNA',
+  );
+}
+
+export async function authorizeSiteVisitRequest(req: NextRequest, regularPermission: StaffPermission) {
+  try {
+    assertSameOrigin(req);
+    const user = await getCurrentStaffUser(req);
+    if (!user) throw new StaffAuthorizationError(401, 'Wymagane logowanie');
+    const permission = isSiteVisitOnlyUser(user) ? 'site-visits.access' : regularPermission;
+    if (!hasStaffPermission(user, permission)) throw new StaffAuthorizationError(403, 'Brak uprawnień do tej operacji');
+    return { ok: true as const, user };
+  } catch (error) {
+    const response = staffAuthorizationResponse(error);
+    if (response) return { ok: false as const, response };
+    throw error;
+  }
 }
 
 export function hasStaffPermission(user: any, permission: StaffPermission) {
@@ -231,6 +258,7 @@ export function serializeStaffUser(user: any) {
     phone: user.phone,
     active: user.active,
     systemRole: user.systemRole,
+    siteVisitsOnly: isSiteVisitOnlyUser(user),
     positionTitle: user.positionTitle,
     avatarUrl: user.avatarUrl,
     permissions: Array.from(getStaffPermissions(user)),

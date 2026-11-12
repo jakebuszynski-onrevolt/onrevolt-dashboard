@@ -125,6 +125,28 @@ test('składa zwykły miesiąc po UTC i zachowuje źródło rzeczywiste/szacowan
   assert.equal(series.files.length, 2);
 });
 
+test('przenosi rzeczywisty XLSX kwietnia z innego roku jako oznaczony szacunek i zachowuje miesięczną sumę', () => {
+  const bytes = reportBytes({ year: 2026, month: 4, value: 2 });
+  const original = Buffer.from(bytes);
+  const series = buildOfferMeasurementSeries([
+    { ...file('import-april-2026', 2026, 4, 'ACTIVE_IMPORT', bytes), targetPeriod: '2025-04' },
+  ], { ppeNumber, projectId: 'project-1', periodKeys: ['2025-04'], hasExistingPv: false });
+  assert.equal(series.intervals.length, 720);
+  assert.equal(series.intervals[0].localStart, '2025-04-01T00:00:00+02:00');
+  assert.ok(series.intervals.every(row => row.import?.source === 'modelled'));
+  assert.equal(series.intervals.reduce((sum, row) => sum + row.import!.valueKwh, 0), 1440);
+  assert.equal(series.files[0].sourcePeriod, '2026-04');
+  assert.equal(series.files[0].period, '2025-04');
+  assert.ok(bytes.equals(original));
+});
+
+test('przeniesienie roku nadal sprawdza PPE i pierwotny miesiąc raportu XLSX', () => {
+  const input = { ...file('import-april-2026', 2026, 4, 'ACTIVE_IMPORT', reportBytes({ year: 2026, month: 4 })), targetPeriod: '2025-04' };
+  assert.throws(() => buildOfferMeasurementSeries([input], { ppeNumber: 'wrong-ppe', periodKeys: ['2025-04'] }), /PPE/);
+  assert.throws(() => buildOfferMeasurementSeries([{ ...input, expectedPeriod: '2024-04' }], { ppeNumber, periodKeys: ['2025-04'] }), /Metadane/);
+  assert.throws(() => buildOfferMeasurementSeries([{ ...input, targetPeriod: '2025-05' }], { ppeNumber, periodKeys: ['2025-05'] }), /Okres pliku/);
+});
+
 test('obsługuje rzeczywiste etykiety ENEA: dwa razy 03:00, drugi z dopiskiem czasu zimowego', () => {
   const series = buildOfferMeasurementSeries([
     file('import-oct', 2025, 10, 'ACTIVE_IMPORT', reportBytes({ year: 2025, month: 10, eneaAutumnLabels: true })),

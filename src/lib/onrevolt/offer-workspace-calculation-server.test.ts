@@ -11,6 +11,7 @@ import * as recommendationBounds from './offer-workspace-recommendation-bounds';
 import { PME2_RULES } from './offer-financing-v2';
 import { recommendationInputIssues } from './offer-workspace-recommendation-inputs';
 import { completeHistoryForSummary } from './client-energy-cost-summary-server';
+import type { InvoiceNetMeteringFactorResolution } from './invoice-net-metering-factor';
 import { applyOfferWorkspaceConfigurationEdits, configurationEnergyQuantityFingerprint, hasRemovedCriticalConfigurationItem, validateOfferWorkspaceConfigurationEdits } from './offer-workspace-configuration-edits';
 
 const filename = path.resolve(__dirname, 'offer-workspace-calculation-server.ts');
@@ -102,6 +103,7 @@ function baselinePriceGapPeriod(validFrom: string, validUntil: string) {
 }
 
 function fixture(options: {
+  addedPvProductionFactor?: (powerKw: number) => number;
   baselineSellMethod?: string;
   targetSellMethod?: string;
   rdnRows?: Array<{ stamp: string; periodUtc: string; price: unknown }>;
@@ -118,6 +120,8 @@ function fixture(options: {
   pvSourceRevision?: string | null;
   pvSourceRevisionAfterProfile?: string;
   existingPvPowerKw?: number | null;
+  ppeNumber?: string | null;
+  invoiceFactor?: InvoiceNetMeteringFactorResolution;
   candidates?: Array<{ id?: string; templateIds: string[]; totals: unknown; missingPrices: string[]; requiresReview?: boolean; reviewReasons?: string[];
     totalPvKw?: number; existingPvKw?: number; addedPvKw?: number; batteryCapacityKwh?: number; batteryPowerKw?: number }>;
   billingCycleMonths?: number | null;
@@ -126,7 +130,8 @@ function fixture(options: {
 } = {}) {
   let calculationMode: 'selected' | 'recommend' = 'selected';
   const state = { preflightInputs: [] as any[], progress: [] as number[][], addedProfileReads: 0, profileReads: [] as any[], energyCalls: 0, overlayCalls: 0, marketQueries: [] as string[], scenarioInputs: [] as any[], targetCatalogCalls: 0,
-    clientTariffRequests: [] as any[], completedHistories: [] as any[], pvSourceRevision: options.pvSourceRevision ?? null };
+    clientTariffRequests: [] as any[], completedHistories: [] as any[], pvSourceRevision: options.pvSourceRevision ?? null,
+    invoiceFactorReads: 0, invoiceFactorInputs: [] as any[] };
   const months = Array.from({ length: 12 }, (_, index) => ({ period: `2026-${String(index + 1).padStart(2, '0')}` }));
   const fullPeriodHours = dependencies.offerCalculationPeriodHours(months)!;
   const energyDates = options.energyDates || ['2026-10-01'];
@@ -144,6 +149,7 @@ function fixture(options: {
   const targetTariff = { id: 2, sell_method: options.targetSellMethod || 'fixed', catalogRevision: 3 };
   const workspace: any = {
     clientId: 'client-1', projectId: 'project-1', clientType: 'B2C',
+    ppeNumber: options.ppeNumber ?? null,
     period: {
       startMonth: '2026-01', endMonth: '2026-12', endDate: '2026-12-31',
       periodKeys: months.map(month => month.period), fromUtc: fullPeriodHours[0],
@@ -200,6 +206,13 @@ function fixture(options: {
         return result;
       },
     },
+    './invoice-net-metering-factor': {
+      invoiceNetMeteringFactorForPeriod: async (input: any) => {
+        state.invoiceFactorReads++;
+        state.invoiceFactorInputs.push(input);
+        return options.invoiceFactor || { status: 'missing', factor: null, sourceRevision: 'd'.repeat(64), invoicePeriods: [] };
+      },
+    },
     './client-tariffs': { tariffToday: () => '2026-10-01' },
     './offer-workspace-energy-server': {
       calculateOfferWorkspaceEnergy: async () => { state.energyCalls++; return calculationMode === 'recommend' ? recommendationEnergy : energy; },
@@ -242,7 +255,7 @@ function fixture(options: {
         state.profileReads.push(profileInput);
         const sourceRevision = state.pvSourceRevision ?? options.pvSourceRevisionAfterProfile ?? null;
         if (options.pvSourceRevisionAfterProfile) state.pvSourceRevision = options.pvSourceRevisionAfterProfile;
-        return { profile: { hours: [] }, sourceRevision };
+        return { profile: { hours: recommendationIntervals.map(row => ({ startUtc: row.startUtc, pvKwh: (row.loadKwh ?? 0) * (options.addedPvProductionFactor?.(profileInput.powerKw) ?? 0.9) })) }, sourceRevision };
       },
     },
     './offer-pv-source-revision': { getOfferPvSourceRevision: () => state.pvSourceRevision },
@@ -255,7 +268,8 @@ function fixture(options: {
     },
     './offer-candidates': { enumerateOfferCandidates: () => ({
       candidates: (options.candidates || []).map(candidate => ({ ...candidate,
-        batteryCapacityKwh: candidate.batteryCapacityKwh ?? 10,
+        batteryCapacityKwh: candidate.batteryCapacityKwh ?? 25,
+        addedPvKw: candidate.addedPvKw ?? 0,
         totalPvKw: candidate.totalPvKw ?? 10,
         id: candidate.id || `offer-candidate:${candidate.templateIds.map(encodeURIComponent).join(':')}` })),
       rejectedReasonList: [],
@@ -302,7 +316,7 @@ function recommendationFixture(options: Parameters<typeof fixture>[0] = {}) {
   return f;
 }
 
-test('PME2 filtruje rekomendację przy 10 kWh i dokładnie 2× PV; bez dotacji zachowuje mniejsze zestawy', async () => {
+test('PME2 filtruje rekomendację przy 10 kWh i dokładnie 2× PV; zakres 2–3× obowiązuje także bez dotacji', async () => {
   for (const considerGrant of [true, false]) {
     const capacities = [9.99, 10, 16.07, 19.99, 20, 20.01];
     const f = recommendationFixture({
@@ -311,9 +325,9 @@ test('PME2 filtruje rekomendację przy 10 kWh i dokładnie 2× PV; bez dotacji z
     });
     f.draft.financing.considerGrant = considerGrant;
     const result = await f.calculate('recommend');
-    assert.equal(result.recommendationSearch?.totalCandidates, considerGrant ? 2 : 6);
+    assert.equal(result.recommendationSearch?.totalCandidates, 2);
     assert.deepEqual(f.state.scenarioInputs.map(input => input.draft.selectedTemplateIds[0]).sort(),
-      (considerGrant ? [20, 20.01] : capacities).map(capacity => `battery-${capacity}`).sort());
+      [20, 20.01].map(capacity => `battery-${capacity}`).sort());
   }
 });
 
@@ -458,30 +472,30 @@ test('actual candidate failures precede technical review messages in a blocked c
   assert.equal(result.reasons[0], 'Niepełny profil wariantu.');
 });
 
-test('rekomendacja filtruje inclusive granice po loadKwh przed planowaniem i symulacją', async () => {
+test('rekomendacja filtruje inclusive granice 2–3× PV przed planowaniem i symulacją', async () => {
   const candidates = [
-    { id: 'minimum', templateIds: ['battery-minimum'], totals: {}, missingPrices: [], batteryCapacityKwh: 6 },
-    { id: 'maximum', templateIds: ['battery-maximum'], totals: {}, missingPrices: [], batteryCapacityKwh: 24 },
-    { id: 'below', templateIds: ['battery-below'], totals: {}, missingPrices: [], batteryCapacityKwh: 5.999 },
-    { id: 'above', templateIds: ['battery-above'], totals: {}, missingPrices: [], batteryCapacityKwh: 24.001 },
+    { id: 'minimum', templateIds: ['battery-minimum'], totals: {}, missingPrices: [], batteryCapacityKwh: 20 },
+    { id: 'maximum', templateIds: ['battery-maximum'], totals: {}, missingPrices: [], batteryCapacityKwh: 30 },
+    { id: 'below', templateIds: ['battery-below'], totals: {}, missingPrices: [], batteryCapacityKwh: 19.999 },
+    { id: 'above', templateIds: ['battery-above'], totals: {}, missingPrices: [], batteryCapacityKwh: 30.001 },
   ];
   const f = recommendationFixture({
     templates: candidates.map(candidate => ({ id: candidate.templateIds[0], name: candidate.id, kind: 'MAGAZYN' })),
     candidates,
     recommendationEnergyIntervals: fullYearRecommendationEnergy(0.5, 10),
   });
-  f.draft.pvStrategy = 'ADD_TEMPLATE';
+  f.draft.pvStrategy = 'KEEP_EXISTING';
   f.draft.calculation.addedPvTiltDegrees = 30;
   f.draft.calculation.addedPvAzimuthDegrees = 180;
 
   const result = await f.calculate('recommend');
 
   const dailyBounds = result.recommendationBatteryBounds;
-  assert.ok(dailyBounds?.basis === 'daily_consumption');
-  assert.equal(dailyBounds.averageDailyConsumptionKwh, 12);
-  assert.equal(dailyBounds.minimumDailyConsumptionMultiplier, 0.5);
-  assert.equal(dailyBounds.minimumBatteryCapacityKwh, 6);
-  assert.equal(dailyBounds.maximumBatteryCapacityKwh, 24);
+  assert.ok(dailyBounds?.basis === 'existing_pv');
+  assert.equal(dailyBounds.existingPvPowerKw, 10);
+  assert.equal(dailyBounds.minimumBatteryKwhPerPvKwp, 2);
+  assert.equal(dailyBounds.minimumBatteryCapacityKwh, 20);
+  assert.equal(dailyBounds.maximumBatteryCapacityKwh, 30);
   assert.equal(dailyBounds.totalCandidatesBeforeFilter, 4);
   assert.equal(dailyBounds.excludedCandidates, 2);
   assert.equal(result.recommendationSearch?.totalCandidates, 2);
@@ -495,7 +509,7 @@ test('rekomendacja filtruje inclusive granice po loadKwh przed planowaniem i sym
 test('brak dopasowania pokazuje konkretny zakres i nie rozszerza go automatycznie', async () => {
   const f = recommendationFixture({
     templates: [{ id: 'battery-large', name: 'Duży magazyn', kind: 'MAGAZYN' }],
-    candidates: [{ id: 'large', templateIds: ['battery-large'], totals: {}, missingPrices: [], batteryCapacityKwh: 30, totalPvKw: 10 }],
+    candidates: [{ id: 'large', templateIds: ['battery-large'], totals: {}, missingPrices: [], batteryCapacityKwh: 41, totalPvKw: 10 }],
   });
   f.draft.pvStrategy = 'ADD_TEMPLATE';
   f.draft.calculation.addedPvTiltDegrees = 30;
@@ -506,19 +520,19 @@ test('brak dopasowania pokazuje konkretny zakres i nie rozszerza go automatyczni
   assert.equal(result.recommendationSearch, undefined);
   assert.equal(result.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 1);
   assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 1);
-  assert.equal(result.recommendationBatteryBounds?.basis, 'daily_consumption');
-  assert.ok(Math.abs(result.recommendationBatteryBounds!.minimumBatteryCapacityKwh - 5) < 1e-9);
-  assert.match(result.reasons.join(' '), /Brak gotowych konfiguracji.*5–20 kWh.*0,5–2× średnie dobowe zużycie/u);
+  assert.equal(result.recommendationBatteryBounds?.basis, 'pv_production');
+  assert.ok(Math.abs(result.recommendationBatteryBounds!.minimumBatteryCapacityKwh - 20) < 1e-9);
+  assert.match(result.reasons.join(' '), /Brak gotowych konfiguracji.*2–3 kWh.*łącznej mocy PV/u);
   assert.equal(f.state.scenarioInputs.length, 0, 'the out-of-range candidate was not simulated');
   assert.equal(f.state.preflightInputs.length, 1);
 });
 
-test('limit PV 2,5 kWh/kWp przyjmuje 48 kWh przy 19,2 kWp łącznej istniejącej i dodanej PV', async () => {
+test('limit PV 3 kWh/kWp przyjmuje 48 kWh przy 16 kWp łącznej istniejącej i dodanej PV', async () => {
   const candidates = [
     { id: 'combined-boundary', templateIds: ['battery-48', 'pv-9-3'], totals: {}, missingPrices: [],
-      batteryCapacityKwh: 48, existingPvKw: 9.9, addedPvKw: 9.3, totalPvKw: 9.9 + 9.3 },
+      batteryCapacityKwh: 48, existingPvKw: 9.9, addedPvKw: 6.1, totalPvKw: 9.9 + 6.1 },
     { id: 'combined-below', templateIds: ['battery-below', 'pv-9-299'], totals: {}, missingPrices: [],
-      batteryCapacityKwh: 48, existingPvKw: 9.9, addedPvKw: 9.299, totalPvKw: 19.199 },
+      batteryCapacityKwh: 48, existingPvKw: 9.9, addedPvKw: 6.099, totalPvKw: 15.999 },
     { id: 'too-small-for-consumption', templateIds: ['battery-small'], totals: {}, missingPrices: [],
       batteryCapacityKwh: 10, existingPvKw: 9.9, addedPvKw: 100, totalPvKw: 109.9 },
   ];
@@ -528,9 +542,9 @@ test('limit PV 2,5 kWh/kWp przyjmuje 48 kWh przy 19,2 kWp łącznej istniejącej
     location: { latitude: 52.23, longitude: 21.01 },
     templates: [
       { id: 'battery-48', name: 'Bateria 48', kind: 'MAGAZYN' },
-      { id: 'pv-9-3', name: 'PV 9,3', kind: 'PV_DACH_SKOSNY', powerKw: 9.3 },
+      { id: 'pv-9-3', name: 'PV 9,3', kind: 'PV_DACH_SKOSNY', powerKw: 6.1 },
       { id: 'battery-below', name: 'Bateria 48 poniżej', kind: 'MAGAZYN' },
-      { id: 'pv-9-299', name: 'PV 9,299', kind: 'PV_DACH_SKOSNY', powerKw: 9.299 },
+      { id: 'pv-9-299', name: 'PV 9,299', kind: 'PV_DACH_SKOSNY', powerKw: 6.099 },
       { id: 'battery-small', name: 'Bateria za mała', kind: 'MAGAZYN' },
     ],
     candidates,
@@ -542,29 +556,30 @@ test('limit PV 2,5 kWh/kWp przyjmuje 48 kWh przy 19,2 kWp łącznej istniejącej
 
   const result = await f.calculate('recommend');
 
-  assert.ok(result.recommendationBatteryBounds?.basis === 'daily_consumption');
-  assert.equal(result.recommendationBatteryBounds.averageDailyConsumptionKwh, 24);
+  assert.ok(result.recommendationBatteryBounds?.basis === 'pv_production');
+  assert.ok(Math.abs(result.recommendationBatteryBounds.totalConsumptionKwh - 8760) < 1e-6);
   assert.equal(result.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 3);
-  assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 1);
-  assert.equal(result.recommendationPvBounds?.maximumBatteryKwhPerPvKwp, 2.5);
-  assert.equal(result.recommendationPvBounds?.totalCandidatesBeforeFilter, 2);
-  assert.equal(result.recommendationPvBounds?.excludedCandidates, 1);
+  assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 2);
+  assert.equal(result.recommendationPvBounds?.maximumBatteryKwhPerPvKwp, 3);
+  assert.equal(result.recommendationPvBounds?.totalCandidatesBeforeFilter, 1);
+  assert.equal(result.recommendationPvBounds?.excludedCandidates, 0);
   assert.equal(result.recommendationSearch?.totalCandidates, 1);
   assert.deepEqual(f.state.scenarioInputs.map(input => input.draft.selectedTemplateIds), [['battery-48', 'pv-9-3']]);
   assert.equal(f.state.addedProfileReads, 1, 'the filtered-out PV pair is not loaded for annual simulation');
   assert.equal(candidates[0].existingPvKw! + candidates[0].addedPvKw!, candidates[0].totalPvKw);
 });
 
-test('ADD_TEMPLATE wyjaśnia brak dopasowania po przekroczeniu 2,5 kWh/kWp łącznej PV', async () => {
+test('ADD_TEMPLATE wyjaśnia brak dopasowania dla produkcji poniżej 80% zużycia', async () => {
   const f = recommendationFixture({
     existingPvPowerKw: 0,
+    addedPvProductionFactor: () => 0.79,
     pvSourceRevision: 'added-pv-source',
     location: { latitude: 52.23, longitude: 21.01 },
     templates: [
       { id: 'battery-large', name: 'Magazyn', kind: 'MAGAZYN' },
       { id: 'pv-small', name: 'PV 5 kWp', kind: 'PV_DACH_SKOSNY', powerKw: 5 },
     ],
-    candidates: [{ id: 'large', templateIds: ['battery-large', 'pv-small'], totals: {}, missingPrices: [], batteryCapacityKwh: 20,
+    candidates: [{ id: 'large', templateIds: ['battery-large', 'pv-small'], totals: {}, missingPrices: [], batteryCapacityKwh: 15,
       totalPvKw: 5, existingPvKw: 0, addedPvKw: 5 }],
     recommendationEnergyIntervals: fullYearRecommendationEnergy(0.5),
   });
@@ -578,7 +593,7 @@ test('ADD_TEMPLATE wyjaśnia brak dopasowania po przekroczeniu 2,5 kWh/kWp łąc
   assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 0);
   assert.equal(result.recommendationPvBounds?.totalCandidatesBeforeFilter, 1);
   assert.equal(result.recommendationPvBounds?.excludedCandidates, 1);
-  assert.match(result.reasons.join(' '), /Brak gotowych konfiguracji.*limit PV.*2,5 kWh.*łącznej mocy PV/u);
+  assert.match(result.reasons.join(' '), /Brak gotowych konfiguracji.*80–120% zużycia/u);
   assert.equal(f.state.scenarioInputs.length, 0, 'the PV-limited candidate was not simulated');
   assert.equal(f.state.preflightInputs.length, 1);
 });
@@ -600,13 +615,13 @@ test('KEEP_EXISTING bez dodatniej PV ma czytelny blokujący powód bez automatyc
   assert.equal(f.state.scenarioInputs.length, 0);
 });
 
-test('KEEP_EXISTING filtruje 19 konfiguracji wyłącznie do zakresu 0,5–5× istniejącej PV: zostają 3 magazyny 16 kWh', async () => {
+test('KEEP_EXISTING filtruje 19 konfiguracji wyłącznie do zakresu 2–3× istniejącej PV: zostają 3 magazyny 24 kWh', async () => {
   const candidates = Array.from({ length: 19 }, (_, index) => ({
     id: `keep-candidate-${index}`,
     templateIds: [`keep-battery-${index}`],
     totals: {},
     missingPrices: [],
-    batteryCapacityKwh: index < 3 ? 16 : 50,
+    batteryCapacityKwh: index < 3 ? 24 : 50,
     totalPvKw: 9.9,
     existingPvKw: 9.9,
     addedPvKw: 0,
@@ -625,10 +640,10 @@ test('KEEP_EXISTING filtruje 19 konfiguracji wyłącznie do zakresu 0,5–5× is
   const existingPvBounds = result.recommendationBatteryBounds;
   assert.ok(existingPvBounds?.basis === 'existing_pv');
   assert.equal(existingPvBounds.existingPvPowerKw, 9.9);
-  assert.equal(existingPvBounds.minimumBatteryKwhPerPvKwp, 0.5);
-  assert.equal(existingPvBounds.maximumBatteryKwhPerPvKwp, 5);
-  assert.equal(existingPvBounds.minimumBatteryCapacityKwh, 4.95);
-  assert.equal(existingPvBounds.maximumBatteryCapacityKwh, 49.5);
+  assert.equal(existingPvBounds.minimumBatteryKwhPerPvKwp, 2);
+  assert.equal(existingPvBounds.maximumBatteryKwhPerPvKwp, 3);
+  assert.equal(existingPvBounds.minimumBatteryCapacityKwh, 19.8);
+  assert.equal(existingPvBounds.maximumBatteryCapacityKwh, 3 * 9.9);
   assert.equal('averageDailyConsumptionKwh' in existingPvBounds, false,
     'complete consumption remains required by simulation but is not used to derive KEEP bounds');
   assert.equal(result.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 19);
@@ -657,12 +672,12 @@ test('KEEP_EXISTING przy braku dopasowań pokazuje dokładny zakres istniejącej
   assert.equal(result.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 1);
   assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 1);
   assert.equal(result.recommendationPvBounds, undefined);
-  assert.match(result.reasons.join(' '), /Brak gotowych konfiguracji.*4,95–49,5 kWh.*0,5–5× istniejąca moc PV: 9,9 kWp/u);
+  assert.match(result.reasons.join(' '), /Brak gotowych konfiguracji.*2–3 kWh.*łącznej mocy PV/u);
   assert.equal(f.state.scenarioInputs.length, 0, 'the out-of-range configuration was not simulated');
 });
 
-test('KEEP_EXISTING przy 9,9 kWp zachowuje 7 konfiguracji 16, 32, 48 i 48,12 kWh; poprzedni limit PV zostawiał 3', async () => {
-  const capacities = [16, 16, 16, 32, 48, 48.12, 48.12, ...Array.from({ length: 12 }, () => 50)];
+test('KEEP_EXISTING przy 9,9 kWp zachowuje tylko 24 kWh spośród 16, 24, 48 i 48,12 kWh', async () => {
+  const capacities = [16, 16, 16, 24, 48, 48.12, 48.12, ...Array.from({ length: 12 }, () => 50)];
   const candidates = capacities.map((batteryCapacityKwh, index) => ({
     id: `shape-candidate-${index}`,
     templateIds: [`shape-battery-${index}`],
@@ -673,8 +688,6 @@ test('KEEP_EXISTING przy 9,9 kWp zachowuje 7 konfiguracji 16, 32, 48 i 48,12 kWh
     existingPvKw: 9.9,
     addedPvKw: 0,
   }));
-  assert.equal(recommendationBounds.filterOfferCandidatesByRecommendationPvBounds(candidates, 2.5).candidates.length, 3,
-    'the superseded 2.5 kWh/kWp upper limit would have retained only the three 16 kWh configurations');
   const f = recommendationFixture({
     existingPvPowerKw: 9.9,
     pvSourceRevision: 'existing-pv-source',
@@ -686,19 +699,19 @@ test('KEEP_EXISTING przy 9,9 kWp zachowuje 7 konfiguracji 16, 32, 48 i 48,12 kWh
   const result = await f.calculate('recommend');
 
   assert.equal(result.recommendationBatteryBounds?.basis, 'existing_pv');
-  assert.equal(result.recommendationBatteryBounds?.minimumBatteryCapacityKwh, 4.95);
-  assert.equal(result.recommendationBatteryBounds?.maximumBatteryCapacityKwh, 49.5);
+  assert.equal(result.recommendationBatteryBounds?.minimumBatteryCapacityKwh, 19.8);
+  assert.equal(result.recommendationBatteryBounds?.maximumBatteryCapacityKwh, 3 * 9.9);
   assert.equal(result.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 19);
-  assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 12);
+  assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 18);
   assert.equal(result.recommendationPvBounds, undefined);
-  assert.equal(result.recommendationSearch?.totalCandidates, 7);
-  assert.equal(result.recommendationSearch?.evaluatedCandidates, 7);
-  assert.equal(f.state.scenarioInputs.length, 7);
+  assert.equal(result.recommendationSearch?.totalCandidates, 1);
+  assert.equal(result.recommendationSearch?.evaluatedCandidates, 1);
+  assert.equal(f.state.scenarioInputs.length, 1);
   assert.deepEqual(Array.from(result.rankings as Array<{ templateIds: string[] }>, row => row.templateIds[0]).sort(),
-    ['shape-battery-0', 'shape-battery-1', 'shape-battery-2', 'shape-battery-3', 'shape-battery-4', 'shape-battery-5', 'shape-battery-6']);
+    ['shape-battery-3']);
 });
 
-test('ADD_TEMPLATE nadal filtruje 152→128 po zużyciu i 128→36 po PV', async () => {
+test('ADD_TEMPLATE nadal filtruje 152→128 po magazynie i 128→36 po produkcji PV', async () => {
   const candidates = Array.from({ length: 152 }, (_, index) => {
     const inPvRange = index >= 24 && index < 60;
     const pvId = inPvRange || index < 24 ? 'added-pv-16' : 'added-pv-15';
@@ -716,6 +729,7 @@ test('ADD_TEMPLATE nadal filtruje 152→128 po zużyciu i 128→36 po PV', async
   });
   const f = recommendationFixture({
     existingPvPowerKw: 0,
+    addedPvProductionFactor: power => power === 16 ? 1 : 1.6,
     pvSourceRevision: 'added-pv-source',
     location: { latitude: 52.23, longitude: 21.01 },
     templates: [
@@ -733,8 +747,8 @@ test('ADD_TEMPLATE nadal filtruje 152→128 po zużyciu i 128→36 po PV', async
 
   const result = await f.calculate('recommend');
 
-  assert.ok(result.recommendationBatteryBounds?.basis === 'daily_consumption');
-  assert.equal(result.recommendationBatteryBounds.minimumDailyConsumptionMultiplier, 0.5);
+  assert.ok(result.recommendationBatteryBounds?.basis === 'pv_production');
+  assert.ok(result.recommendationBatteryBounds.minimumPvProductionKwh > 0);
   assert.equal(result.recommendationBatteryBounds?.totalCandidatesBeforeFilter, 152);
   assert.equal(result.recommendationBatteryBounds?.excludedCandidates, 24);
   assert.equal(result.recommendationPvBounds?.pvBasis, 'existing_plus_added');
@@ -744,7 +758,7 @@ test('ADD_TEMPLATE nadal filtruje 152→128 po zużyciu i 128→36 po PV', async
   assert.equal(result.recommendationSearch?.evaluatedCandidates, 36);
   assert.equal(result.rankings.length, 36);
   assert.equal(f.state.scenarioInputs.length, 36);
-  assert.equal(f.state.addedProfileReads, 1);
+  assert.equal(f.state.addedProfileReads, 2);
 });
 
 test('brak load lub niepełny workspace period blokuje tylko rekomendację i odrzuca kontynuację bez zmiany poprzedniego wyniku', async () => {
@@ -763,7 +777,7 @@ test('brak load lub niepełny workspace period blokuje tylko rekomendację i odr
   assert.equal(blockedFixture.state.scenarioInputs.length, 0);
 
   const candidates = Array.from({ length: 64 }, (_, index) => ({
-    id: `candidate-${index}`, templateIds: [`battery-${index}`], totals: {}, missingPrices: [], batteryCapacityKwh: 10,
+    id: `candidate-${index}`, templateIds: [`battery-${index}`], totals: {}, missingPrices: [], batteryCapacityKwh: 25,
   }));
   const continuationFixture = recommendationFixture({
     templates: candidates.map(candidate => ({ id: candidate.templateIds[0], name: candidate.id, kind: 'MAGAZYN' })),
@@ -866,6 +880,56 @@ test('existing PV contributes its source fingerprint without any PV templates', 
   const noPvResult = await noExistingPv.calculate();
   assert.notEqual(noPvResult.sourceDependencyStamp, result.sourceDependencyStamp,
     'without existing PV and without PV templates, the PV source is not a calculation dependency');
+});
+
+test('confirmed invoice factor is PPE/date scoped to the baseline and changes calculation dependency identity', async () => {
+  const baseOptions = {
+    existingPvPowerKw: 13,
+    pvSourceRevision: 'pv-source-1',
+    location: { latitude: 52.23, longitude: 21.01 },
+    ppeNumber: 'PPE 1',
+  };
+  const f = fixture({ ...baseOptions, invoiceFactor: {
+    status: 'selected', factor: 0.8, sourceRevision: 'a'.repeat(64), invoicePeriods: ['2025-04-01–2026-03-31'],
+  } });
+  f.draft.targetSettlement = 'NET_BILLING';
+  const result = await f.calculate();
+
+  assert.equal(f.state.invoiceFactorReads, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.state.invoiceFactorInputs[0])), {
+    projectId: 'project-1', clientId: 'client-1', ppeNumber: 'PPE 1',
+    period: { startMonth: '2026-01', endDate: '2026-12-31' },
+  });
+  assert.equal(f.state.scenarioInputs[0].baselineNetMeteringFactor.factor, 0.8);
+  assert.equal(f.state.scenarioInputs[0].baselineNetMeteringFactorIssue, null);
+  assert.match(result.sourceDependencyStamp, /^[a-f0-9]{64}$/);
+
+  const unknownPower = fixture({
+    existingPvPowerKw: null,
+    ppeNumber: 'PPE 1',
+    invoiceFactor: { status: 'selected', factor: 0.8, sourceRevision: 'c'.repeat(64), invoicePeriods: ['2025-04-01–2026-03-31'] },
+  });
+  await unknownPower.calculate();
+  assert.equal(unknownPower.state.invoiceFactorReads, 1,
+    'a confirmed invoice remains usable when existing PV kWp is unknown');
+  assert.equal(unknownPower.state.scenarioInputs[0].baselineNetMeteringFactor.factor, 0.8);
+
+  const changed = fixture({ ...baseOptions, invoiceFactor: {
+    status: 'selected', factor: 0.7, sourceRevision: 'b'.repeat(64), invoicePeriods: ['2025-04-01–2026-03-31'],
+  } });
+  changed.draft.targetSettlement = 'NET_BILLING';
+  assert.notEqual(await changed.loadDependencyStamp(), await f.loadDependencyStamp(),
+    'invoice evidence changes force a fresh explicit calculation lookup');
+
+  const netBillingBaseline = fixture({ ...baseOptions, invoiceFactor: {
+    status: 'selected', factor: 0.8, sourceRevision: 'a'.repeat(64), invoicePeriods: ['2025-04-01–2026-03-31'],
+  } });
+  netBillingBaseline.draft.currentSettlement = 'NET_BILLING';
+  netBillingBaseline.draft.targetSettlement = 'NET_BILLING';
+  await netBillingBaseline.calculate();
+  assert.equal(netBillingBaseline.state.invoiceFactorReads, 0,
+    'a baseline that is already NET_BILLING does not read a net-metering factor');
+  assert.equal(netBillingBaseline.state.scenarioInputs[0].baselineNetMeteringFactor, null);
 });
 
 test('added PV is a source dependency only when selected or present in recommendation candidates', () => {
@@ -1226,7 +1290,7 @@ test('more than fifty candidates return the best partial result and continue wit
     missingPrices: [],
     totalPvKw: 10,
     addedPvKw: 0,
-    batteryCapacityKwh: 5 + Math.floor(index / 8) * 2,
+    batteryCapacityKwh: 20 + Math.floor(index / 8),
     batteryPowerKw: 2 + index % 3,
   }));
   const f = recommendationFixture({
@@ -1297,7 +1361,7 @@ test('continuation rejects a changed PV battery bound even when the filtered can
   const candidates = Array.from({ length: 64 }, (_, index) => ({
     id: `candidate-${String(index).padStart(2, '0')}`,
     templateIds: [`battery-${index}`], totals: {}, missingPrices: [],
-    totalPvKw: 10, batteryCapacityKwh: 10, batteryPowerKw: 5,
+    totalPvKw: 10, batteryCapacityKwh: 25, batteryPowerKw: 5,
   }));
   const f = recommendationFixture({
     templates: candidates.map(candidate => ({ id: candidate.templateIds[0], name: candidate.id, kind: 'MAGAZYN' })),
@@ -1318,7 +1382,7 @@ test('cold added-PV source identity warms on the first profile and remains resum
     id: `candidate-${String(index).padStart(2, '0')}`,
     templateIds: [`battery-${index}`, 'pv-template'],
     totals: {}, missingPrices: [], totalPvKw: 5, addedPvKw: 5,
-    batteryCapacityKwh: 5 + Math.floor(index / 8), batteryPowerKw: 3 + index % 2,
+    batteryCapacityKwh: 10 + index % 6, batteryPowerKw: 3 + index % 2,
   }));
   const f = recommendationFixture({
     templates: [
@@ -1350,7 +1414,7 @@ test('continuation retains per-candidate errors and rebuilds one cumulative inco
   const allCandidates = Array.from({ length: 64 }, (_, index) => ({
     id: `candidate-${String(index).padStart(2, '0')}`,
     templateIds: [`battery-${index}`], totals: {}, missingPrices: [], totalPvKw: 10, addedPvKw: 0,
-    batteryCapacityKwh: 5 + Math.floor(index / 8) * 2, batteryPowerKw: 2 + index % 3,
+    batteryCapacityKwh: 20 + Math.floor(index / 8), batteryPowerKw: 2 + index % 3,
   }));
   const failure = 'Awaria obliczenia wariantu 0.';
   const f = recommendationFixture({

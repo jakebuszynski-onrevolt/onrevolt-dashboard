@@ -189,3 +189,12 @@ test('invalid or partial model coverage is reported instead of extrapolated', ()
   assert.equal(result.modelUrl, null);
   assert.ok(result.issues.includes('Model PV zwrócił niepełny okres.'));
 });
+
+test('roczne zużycie lokalne wymaga kompletnych godzin i braku istniejącego magazynu', () => {
+  const data = fixture({ pv: () => 2, exports: () => 1 });
+  for (const row of data.measurementSeries.intervals) row.import!.valueKwh = 3;
+  assert.equal(summarize(data).loadKwh, data.modelHours.length * 4);
+  assert.equal(summarize(data, true).loadKwh, null);
+  data.measurementSeries.intervals[2].import = null;
+  assert.equal(summarize(data).loadKwh, null);
+});

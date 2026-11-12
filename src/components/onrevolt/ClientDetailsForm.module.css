@@ -20,7 +20,7 @@
 .location { min-width:0; border:0; margin-top:26px; padding:0; }
 .root .location :global(.chakra-input), .root .location :global(.chakra-select) { border-radius:16px; font-size:14px; }
 .root .location > :global(.chakra-form-control) > button { border-radius:16px; }
-.projectGrid { row-gap:20px; }
-.projectAddress { grid-column:span 2; }
-@media(max-width:1200px) { .columns, .projectGrid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px 16px; } }
+.projectGrid { grid-template-columns:repeat(3,minmax(0,1fr)); row-gap:20px; }
+.projectAddress { grid-column:auto; }
+@media(max-width:1200px) { .projectAddress { grid-column:span 2; } .columns, .projectGrid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px 16px; } }
 @media(max-width:640px) { .section { padding:18px 16px 22px; border-radius:22px; } .columns, .projectGrid { grid-template-columns:minmax(0,1fr); gap:24px; } .projectAddress { grid-column:auto; } .addressHeading { min-height:0; margin-bottom:0; } .header { align-items:flex-start; flex-wrap:wrap; margin-bottom:18px; } .actions { margin-left:auto; } }

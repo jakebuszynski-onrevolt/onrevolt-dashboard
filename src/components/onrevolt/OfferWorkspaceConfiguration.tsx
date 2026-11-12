@@ -5,11 +5,11 @@ import {
   IconButton, Input, Select, Slider, SliderTrack, SliderFilledTrack, SliderThumb,
   Table, TableContainer, Tbody, Td, Text, Th, Thead, Tooltip, Tr, useColorModeValue,
 } from '@chakra-ui/react';
-import React, { useState } from 'react';
+import React from 'react';
 import { MdAdd, MdArrowDropDown, MdArrowDropUp, MdAutoAwesome } from 'react-icons/md';
 import { configurationInvestmentScope } from 'lib/onrevolt/configuration-templates';
 import { automaticOfferCommercialBreakdown } from 'lib/onrevolt/offer-workspace-commercial-pricing';
-import { selectOfferWorkspaceTemplate, setOfferWorkspacePvStrategy, type OfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
+import { DEFAULT_OFFER_TAX_RATE_PERCENT, defaultOfferCalculationAssumptions, offerWorkspaceDraftWithCalculationValue, usesOfferTaxEstimate, selectOfferWorkspaceTemplate, setOfferWorkspacePvStrategy, type OfferWorkspaceDraft } from 'lib/onrevolt/offer-workspace';
 import { priceOfferWorkspaceConfiguration, type OfferWorkspacePricingResult } from 'lib/onrevolt/offer-workspace-pricing';
 import { applyOfferWorkspaceConfigurationEdits } from 'lib/onrevolt/offer-workspace-configuration-edits';
 import type { OfferWorkspaceCalculation } from 'lib/onrevolt/offer-workspace-calculation-types';
@@ -55,7 +55,6 @@ const sameTemplateIds = (left: string[] | null | undefined, right: string[]) =>
   left != null && left.length === right.length && right.every((id) => left.includes(id));
 
 export default function OfferWorkspaceConfiguration({ draft, templates, clientType, disabled, itemsEditable = false, onPricingPreview, pendingConfigurationEdits = false, pendingPricing = null, calculationDisabled = false, calculation, calculationLoading, calculationMode, calculationProgress, calculationIsStale, calculationError, onCalculate, onSelectRanking, onChange }: Props) {
-  const [pendingStorage, setPendingStorage] = useState(false);
   const configurationControlsDisabled = disabled || pendingConfigurationEdits;
   const color = useColorModeValue('#2b3674', 'white');
   const muted = useColorModeValue('#8392b4', 'gray.400');
@@ -94,7 +93,7 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
   const storage = selected.find((item) => configurationInvestmentScope(item.kind) === 'BATTERY');
   const pv = selected.find((item) => configurationInvestmentScope(item.kind) === 'PV');
   const hasEdits = Boolean(draft.configurationEdits?.length);
-  const storageEnabled = !!storage || pendingStorage;
+  const storageEnabled = !!storage || draft.includeStorage === true;
   const pvEnabled = draft.pvStrategy === 'ADD_TEMPLATE';
   const totalPv = draft.existingPv.powerKw == null || (pvEnabled && pv?.powerKw == null)
     ? null : draft.existingPv.powerKw + (pvEnabled ? pv!.powerKw! : 0);
@@ -209,6 +208,7 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
       const selectedTemplateIds = current.selectedTemplateIds.filter((selectedId) =>
         configurationInvestmentScope(templates.find((item) => item.id === selectedId)?.kind || '') !== scope);
       return { ...current, selectedTemplateIds,
+        ...(scope === 'BATTERY' ? { includeStorage: false } : {}),
         ...(current.configurationEdits ? { configurationEdits: current.configurationEdits.filter(edit => selectedTemplateIds.includes(edit.templateId)) } : {}),
         commercialPricing: automaticOfferCommercialBreakdown() };
     });
@@ -370,14 +370,24 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
                     : selectedCalculation ? `Kwota w symulacji: ${amount == null ? '—' : `${money(amount)} zł`}` : estimate.detail
                   : selectedCalculation ? `Nie uwzględniono w kosztach: ${money(amount ?? 0)} zł` : 'Nie uwzględniono w kosztach'}</Text>
               </FormControl>
+              {!grant && checked && clientType === 'B2C' ? <Box mt="12px">
+                <Text fontSize="11px" mb="6px">Stawka podatku w symulacji</Text>
+                <Flex gap="8px" role="group" aria-label="Stawka podatku dla ulgi">
+                  {[12, 19, 32].map((rate) => <Button key={rate} size="sm" colorScheme="purple"
+                    variant={(draft.calculation?.taxRatePercent ?? DEFAULT_OFFER_TAX_RATE_PERCENT) === rate ? 'solid' : 'outline'}
+                    aria-pressed={(draft.calculation?.taxRatePercent ?? DEFAULT_OFFER_TAX_RATE_PERCENT) === rate}
+                    isDisabled={configurationControlsDisabled}
+                    onClick={() => onChange((current) => offerWorkspaceDraftWithCalculationValue(current, 'taxRatePercent', rate))}>{rate}%</Button>)}
+                </Flex>
+                <Text mt="6px" fontSize="11px" color={muted}>{usesOfferTaxEstimate(draft.calculation ?? defaultOfferCalculationAssumptions())
+                  ? `Ulga szacunkowa ${draft.calculation?.taxRatePercent ?? DEFAULT_OFFER_TAX_RATE_PERCENT}%. Dokładne dane możesz uzupełnić później w Założeniach obliczeń.`
+                  : 'Symulacja na podstawie szczegółowych danych podatkowych z Założeń obliczeń.'}</Text>
+              </Box> : null}
             </Box>;
           })}
         </Grid>
         {currentCalculation ? <Text mt="8px" fontSize="10px" color={muted}>Dotacje i ulgi są szacunkowe; kwalifikowalność, warunki i ostateczne kwoty wymagają potwierdzenia.</Text> : null}
-        <Tooltip label="Rabaty zostaną udostępnione po podłączeniu kosztorysu oferty."><Grid templateColumns={{ base: '1fr', md: 'repeat(2, minmax(0, 1fr))' }} columnGap="48px" rowGap="16px" mt="24px">
-          <FormControl isDisabled><FormLabel fontSize="11px">Nazwa rabatu</FormLabel><Input value="" readOnly /></FormControl>
-          <FormControl isDisabled><FormLabel fontSize="11px">Kwota rabatu [zł]</FormLabel><Input value="" placeholder="—" readOnly /></FormControl>
-        </Grid></Tooltip>
+        <Text mt="16px" fontSize="11px" color={muted}>Upust możesz dodać w tabeli pozycji wybranej konfiguracji poniżej.</Text>
       </Box>
     </Box>
 
@@ -386,7 +396,7 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
       <Text color={muted} mt="4px">Zestawy katalogowe</Text>
       {configurationEditError ? <Box role="alert" color="red.700" bg="red.50" p="12px" mt="12px"><Text>{configurationEditError} Własne zmiany pozostają w szkicu. Wybierz inną konfigurację lub ponownie wczytaj jej pozycje.</Text><Button size="sm" mt="8px" isDisabled={configurationControlsDisabled || !itemsEditable} onClick={() => onChange(current => ({ ...current, configurationEdits: [] }))}>Wczytaj pozycje konfiguracji ponownie</Button></Box> : null}
       {hasEdits ? <Text fontSize="sm" mt="10px" color={muted}>Rekomendacja porównuje gotowe konfiguracje. Wybranie wariantu z rankingu zastąpi własne zmiany pozycji.</Text> : null}
-      <FormControl mt="18px" maxW="420px" isDisabled={configurationControlsDisabled}>
+      <FormControl mt="18px" maxW="420px" isDisabled={configurationControlsDisabled} isInvalid={draft.saleVatMode === 'REVIEW'} isRequired>
         <FormLabel fontSize="11px">VAT od sprzedaży</FormLabel>
         <Select value={draft.saleVatMode} onChange={(event) => { const value = event.target.value as OfferWorkspaceDraft['saleVatMode']; onChange((current) => ({ ...current, saleVatMode: value })); }}>
           <option value="REVIEW">Do weryfikacji</option><option value="REDUCED_8">8% · stawka obniżona</option><option value="STANDARD_23">23% · stawka podstawowa</option><option value="MIXED">Według stawek pozycji</option>
@@ -434,10 +444,11 @@ export default function OfferWorkspaceConfiguration({ draft, templates, clientTy
             <Checkbox isChecked={enabled} isDisabled={configurationControlsDisabled || !choices.length} colorScheme="purple" onChange={(event) => {
               const checked = event.target.checked;
               if (isPv) onChange((current) => setOfferWorkspacePvStrategy(current, templates, checked ? 'ADD_TEMPLATE' : 'KEEP_EXISTING'));
-              else { setPendingStorage(checked); if (!checked) selectTemplate('BATTERY', ''); }
+              else if (!checked) selectTemplate('BATTERY', '');
+              else onChange((current) => ({ ...current, includeStorage: true }));
             }}>{isPv ? 'Instalacja fotowoltaiczna' : 'Magazyn energii'}</Checkbox>
             <Text mt="24px" mb="24px" pl="24px" color={muted}>{isPv ? 'Panele PV, konstrukcja, zabezpieczenia i montaż.' : 'Falownik, magazyn i wymagany osprzęt.'}</Text>
-            <FormControl isDisabled={configurationControlsDisabled || !enabled || !choices.length}>
+            <FormControl isDisabled={configurationControlsDisabled || !enabled || !choices.length} isInvalid={enabled && !choice} isRequired={enabled}>
               <FormLabel fontSize="11px">{isPv ? 'Konfiguracja instalacji fotowoltaicznej' : 'Konfiguracja magazynu'}</FormLabel>
               <Select value={choice?.id || ''} placeholder={choices.length ? 'Wybierz konfigurację' : 'Brak zestawów katalogowych'} onChange={(event) => selectTemplate(scope, event.target.value)} title={choice?.name}>
                 {choices.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}

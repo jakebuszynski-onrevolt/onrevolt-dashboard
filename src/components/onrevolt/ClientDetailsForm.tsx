@@ -133,7 +133,6 @@ export default function ClientDetailsForm(props: Props) {
       <div className={styles.projectGrid}>
         {input('projectTitle', 'Nazwa projektu')}
         {typeSelect('projectClientType', 'Typ projektu')}
-        <FormControl className={styles.field}><FormLabel>Status projektu</FormLabel><Input value={props.statusLabel} isReadOnly /></FormControl>
         <FormControl className={styles.field} isDisabled={disabled}><FormLabel>Etap</FormLabel>
           <Select value={values.stageId} onChange={event => props.onStageChange(event.target.value)}><option value="">Brak etapu</option>{props.stages.map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}</Select>
         </FormControl>

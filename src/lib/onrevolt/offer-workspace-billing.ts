@@ -60,6 +60,10 @@ export type NetMeteringPolicy = {
   creditExpiryMonths: number;
   coverage: 'ENERGY_ONLY' | 'ENERGY_AND_VARIABLE_DISTRIBUTION';
   fixedChargeTreatment: 'ALWAYS_BILLED';
+  /** Enables ENEA-style physical import/export balancing within each local clock hour before opust. */
+  hourlyNettingMode?: 'SAME_HOUR_NET_EXCHANGE';
+  /** Keeps OZE and cogeneration charges on post-hour imports while opust discounts other variable fees. */
+  variableFeeOpustBasis?: 'OZE_CHP_PRE_OPUST';
 };
 
 export type NetBillingPolicy = {
@@ -799,6 +803,16 @@ function validateMeteringPolicy(policy: NetMeteringPolicy, billingCycleMonths: n
   if (policy.fixedChargeTreatment !== 'ALWAYS_BILLED') {
     throw new Error('Opłaty stałe nie są kompensowane w tym module; wymagane fixedChargeTreatment: ALWAYS_BILLED.');
   }
+  if (policy.hourlyNettingMode !== undefined && policy.hourlyNettingMode !== 'SAME_HOUR_NET_EXCHANGE') {
+    throw new Error('Nieznany tryb godzinowego bilansowania importu i eksportu dla net-meteringu.');
+  }
+  if (policy.variableFeeOpustBasis !== undefined && policy.variableFeeOpustBasis !== 'OZE_CHP_PRE_OPUST') {
+    throw new Error('Nieznana podstawa opustu dla zmiennych opłat dystrybucyjnych.');
+  }
+  if (policy.variableFeeOpustBasis === 'OZE_CHP_PRE_OPUST'
+    && policy.hourlyNettingMode !== 'SAME_HOUR_NET_EXCHANGE') {
+    throw new Error('Rozdzielenie podstawy opłaty OZE i kogeneracyjnej wymaga wcześniejszego bilansowania w tej samej godzinie.');
+  }
   finite(policy.netMeteringRatio, 'netMeteringRatio', Number.EPSILON, 1);
   if (policy.netMeteringRatio !== 0.8 && policy.netMeteringRatio !== 0.7) {
     throw new Error('netMeteringRatio musi jawnie wynosić 0.8 albo 0.7; wybór zależy od mocy instalacji prosumenckiej.');
@@ -1296,6 +1310,87 @@ function validateMeteringRange(
   }
 }
 
+type NetMeteringHourlyFlow = { importKwh: number; exportKwh: number };
+
+function balanceNetMeteringHourlyFlows(
+  policy: NetMeteringPolicy,
+  intervals: PreparedInterval[],
+): NetMeteringHourlyFlow[] {
+  const flows = intervals.map((interval) => ({ importKwh: interval.importKwh, exportKwh: interval.exportKwh }));
+  if (policy.hourlyNettingMode !== 'SAME_HOUR_NET_EXCHANGE') return flows;
+
+  const groups = new Map<string, number[]>();
+  intervals.forEach((interval, index) => {
+    const local = interval.local;
+    const key = `${local.date}T${String(local.hour).padStart(2, '0')}@${local.offsetMinutes}`;
+    const indices = groups.get(key) || [];
+    indices.push(index);
+    groups.set(key, indices);
+  });
+
+  for (const indices of groups.values()) {
+    const imported = indices.reduce((sum, index) => sum + intervals[index].importKwh, 0);
+    const exported = indices.reduce((sum, index) => sum + intervals[index].exportKwh, 0);
+    const netImport = Math.max(imported - exported, 0);
+    const netExport = Math.max(exported - imported, 0);
+    const allocateDirection = (direction: 'importKwh' | 'exportKwh', measured: number, net: number) => {
+      const contributing = indices.filter((index) => intervals[index][direction] > 0);
+      let allocated = 0;
+      contributing.forEach((index, position) => {
+        const share = position === contributing.length - 1
+          ? Math.max(0, net - allocated)
+          : net * intervals[index][direction] / measured;
+        flows[index][direction] = share;
+        allocated += share;
+      });
+    };
+    allocateDirection('importKwh', imported, netImport);
+    allocateDirection('exportKwh', exported, netExport);
+  }
+  return flows;
+}
+
+function netMeteringDistributionCharges(
+  rate: RateEntry,
+  policy: NetMeteringPolicy,
+  postHourImportKwh: number,
+  postOpustImportKwh: number,
+  coveredKwh: number,
+): { costPln: number; coveredPln: number; components: OfferBillingCostComponent[] } {
+  const opustCoversDistribution = policy.coverage === 'ENERGY_AND_VARIABLE_DISTRIBUTION';
+  if (policy.variableFeeOpustBasis !== 'OZE_CHP_PRE_OPUST') {
+    const coveredPln = opustCoversDistribution ? coveredKwh * rate.distribution : 0;
+    const costPln = postHourImportKwh * rate.distribution - coveredPln;
+    const billedKwh = opustCoversDistribution ? postOpustImportKwh : postHourImportKwh;
+    const components = rate.distributionComponents.map((component) => ({
+      componentKey: component.componentKey,
+      label: component.label,
+      category: component.category,
+      amountPln: component.ratePlnPerKwh * billedKwh,
+    }));
+    return { costPln, coveredPln, components };
+  }
+  let costPln = 0;
+  let coveredPln = 0;
+  const components = rate.distributionComponents.map((component) => {
+    const opustExempt = component.category === 'oze' || component.category === 'cogeneration';
+    const billedKwh = opustCoversDistribution && !opustExempt
+      ? postOpustImportKwh : postHourImportKwh;
+    const amountPln = component.ratePlnPerKwh * billedKwh;
+    costPln += amountPln;
+    if (opustCoversDistribution && !opustExempt) {
+      coveredPln += component.ratePlnPerKwh * coveredKwh;
+    }
+    return {
+      componentKey: component.componentKey,
+      label: component.label,
+      category: component.category,
+      amountPln,
+    };
+  });
+  return { costPln, coveredPln, components };
+}
+
 function runNetMetering(
   policy: NetMeteringPolicy,
   intervals: PreparedInterval[],
@@ -1305,6 +1400,7 @@ function runNetMetering(
   const results = intervals.map(emptyInterval);
   allocateFixed(intervals, rates, results);
   validateMeteringRange(policy, intervals, billingCycleMonths);
+  const hourlyFlows = balanceNetMeteringHourlyFlows(policy, intervals);
   const initialLots = policy.initialCreditLots || [];
   const credits: Array<{ kwh: number; expiresMonth: string; order: number }> = initialLots
     .map((lot, order) => ({ ...lot, order: order - initialLots.length }));
@@ -1337,9 +1433,10 @@ function runNetMetering(
     let cycleImports = 0;
     for (const index of indices) {
       const interval = intervals[index];
-      cycleImports += interval.importKwh;
+      const flow = hourlyFlows[index];
+      cycleImports += flow.importKwh;
       monthlyExports.set(interval.local.month,
-        (monthlyExports.get(interval.local.month) || 0) + interval.exportKwh);
+        (monthlyExports.get(interval.local.month) || 0) + flow.exportKwh);
     }
     for (const [month, exportedKwh] of monthlyExports) {
       if (exportedKwh <= 0) continue;
@@ -1364,33 +1461,33 @@ function runNetMetering(
     let coverageRemaining = coveredTotal;
     for (const index of indices) {
       const interval = intervals[index];
+      const flow = hourlyFlows[index];
       const result = results[index];
-      const covered = Math.min(interval.importKwh, coverageRemaining);
+      const covered = Math.min(flow.importKwh, coverageRemaining);
       coverageRemaining -= covered;
-      const billedImport = interval.importKwh - covered;
+      const billedImport = flow.importKwh - covered;
       const rate = rates[index];
-      const coveredDistribution = policy.coverage === 'ENERGY_AND_VARIABLE_DISTRIBUTION'
-        ? covered * rate.distribution : 0;
-      const distribution = interval.importKwh * rate.distribution - coveredDistribution;
+      const distributionCharges = netMeteringDistributionCharges(rate, policy, flow.importKwh, billedImport, covered);
       const energy = billedImport * rate.energy;
       result.billedImportKwh = billedImport;
-      result.billedExportKwh = interval.exportKwh;
+      result.billedExportKwh = flow.exportKwh;
       result.coveredKwh = covered;
       result.coveredEnergyPln = covered * rate.energy;
-      result.coveredDistributionPln = coveredDistribution;
+      result.coveredDistributionPln = distributionCharges.coveredPln;
       result.energyCostPln = energy;
-      result.distributionCostPln = distribution;
-      result.totalCostPln += energy + distribution;
-      result.cashDuePln += energy + distribution;
+      result.distributionCostPln = distributionCharges.costPln;
+      result.distributionComponents = reconcileComponents(distributionCharges.components,
+        distributionCharges.costPln, `Dystrybucja ${interval.startUtc}`);
+      result.totalCostPln += energy + distributionCharges.costPln;
+      result.cashDuePln += energy + distributionCharges.costPln;
       result.creditExpiredKwh = index === indices[0] ? expiredKwh : 0;
       result.creditUsedKwh = covered;
-      result.creditAddedKwh = interval.exportKwh * policy.netMeteringRatio;
+      result.creditAddedKwh = flow.exportKwh * policy.netMeteringRatio;
     }
     const cycleBalance = credits.reduce((sum, lot) => sum + lot.kwh, 0);
     const lastIndex = indices[indices.length - 1];
     results[lastIndex].creditBalanceKwh = cycleBalance;
   }
-  attachDistributionComponents(intervals, rates, results, policy);
   return finishScenario(results);
 }
 
@@ -1443,6 +1540,12 @@ function billScenario(
   result.intervalTariffs = buildIntervalTariffs(intervals, rates);
   const warnings = input.settlement.mode === 'GRID_IMPORT' ? [] : input.settlement.mode === 'NET_METERING'
     ? ['Wynik net-meteringu jest modelem rozliczenia cyklu, nie dokładnym odtworzeniem faktury: eksporty z całego jawnego cyklu są przeliczane współczynnikiem i mogą pokryć wcześniejszy import w tym samym cyklu; eksport z kolejnego, już odrębnego cyklu nie koryguje wstecz poprzedniego rachunku.',
+      ...(input.settlement.hourlyNettingMode === 'SAME_HOUR_NET_EXCHANGE'
+        ? ['Import i eksport są najpierw bilansowane w każdej lokalnej godzinie; surowe pomiary pozostają zachowane w wyniku.']
+        : []),
+      ...(input.settlement.variableFeeOpustBasis === 'OZE_CHP_PRE_OPUST'
+        ? ['Opłaty OZE i kogeneracyjna są liczone od importu po bilansowaniu godzinowym, przed opustem; pozostałe zmienne opłaty dystrybucyjne korzystają z ilości po opuście.']
+        : []),
       ...(input.context.billingCycleMonths > 1
         ? ['Salda miesięczne wewnątrz wielomiesięcznego cyklu pozostają null do jego zamknięcia; koszty są alokacją wyniku cyklu, nie miesięcznym odczytem faktury.']
         : []),

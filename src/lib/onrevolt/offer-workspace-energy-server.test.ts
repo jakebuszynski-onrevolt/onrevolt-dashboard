@@ -29,6 +29,8 @@ function fixture(options: { sourceRevision?: string; profileSourceRevision?: str
     annualProfileInputs: [] as any[],
     resolvedProfileCalls: 0,
     resolvedProfileSelection: null as any,
+    refreshedSeries: null as any,
+    refreshInputs: [] as any[],
   };
   const artifacts = new Map<string, unknown>();
   const workspace: any = {
@@ -59,6 +61,11 @@ function fixture(options: { sourceRevision?: string; profileSourceRevision?: str
       loadKwh: 1, pvKwh: 1, directKwh: 0, importKwh: 1, exportKwh: 0 }],
   };
   const modules: Record<string, unknown> = {
+    './offer-measurement-completion-server': { refreshCompletedOfferMeasurements: async (series: any, pv: any) => {
+      state.refreshInputs.push(pv);
+      return state.refreshedSeries || series;
+    } },
+    './offer-workspace-server': { summarizeOfferMeasurementSeries: () => ({ months: [{ period: '2026-01', importKwh: 123, exportKwh: 0 }], dayProfiles: [], issues: [] }) },
     './offer-pv-source-revision': { getOfferPvSourceRevision: () => state.sourceRevision },
     './offer-pv-profile': {
       OfferPvSourceRevisionError: class OfferPvSourceRevisionError extends Error {},
@@ -143,6 +150,17 @@ test('energy artifact misses once, then returns the persisted result without reb
   assert.equal(f.state.artifactWrites, 1);
   assert.equal(f.sourceRevisionOf(first), 'pv-source-a');
   assert.equal(f.sourceRevisionOf(second), 'pv-source-a', 'persisted energy retains its exact profile-source identity');
+});
+
+test('niezapisana geometria PV odtwarza uzupełnienia i ich sumy przed obliczeniem energii', async () => {
+  const f = fixture();
+  f.state.refreshedSeries = { intervals: [{ ...f.series.intervals[0], import: { valueKwh: 123, source: 'modelled', fileIds: [] } }] };
+  f.draft.existingPv.tiltDegrees = 20;
+  await f.calculate();
+  assert.equal(f.state.refreshInputs[0].tiltDegrees, 20);
+  assert.equal(f.state.refreshInputs[0].latitude, 52.23);
+  assert.equal(f.state.buildInputs[0].intervals[0].import.valueKwh, 123);
+  assert.equal(f.state.buildInputs[0].months[0].importKwh, 123);
 });
 
 test('changed PV source fingerprint misses the prior energy artifact', async () => {

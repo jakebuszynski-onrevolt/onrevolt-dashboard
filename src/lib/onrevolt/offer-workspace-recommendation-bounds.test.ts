@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   calculateOfferWorkspaceExistingPvBatteryBounds,
   calculateOfferWorkspaceRecommendationBatteryBounds,
+  filterOfferCandidatesByPvProduction,
   filterOfferCandidatesByRecommendationBatteryBounds,
   filterOfferCandidatesByRecommendationPvBounds,
   INCOMPLETE_RECOMMENDATION_CONSUMPTION_REASON,
@@ -119,11 +120,11 @@ test('rzeczywiste zerowe zużycie daje poprawny zakres [0, 0], bez zamiany braku
   ], bounds).candidates.map(candidate => candidate.id), ['zero']);
 });
 
-test('limit PV 2,5 kWh/kWp uwzględnia łączną moc istniejącej i dodawanej instalacji, bez zaokrągleń', () => {
-  assert.equal(OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP, 2.5);
+test('limit PV 3 kWh/kWp uwzględnia łączną moc istniejącej i dodawanej instalacji, bez zaokrągleń', () => {
+  assert.equal(OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_PV_KWP, 3);
   const filtered = filterOfferCandidatesByRecommendationPvBounds([
-    { id: '48-at-19-2', batteryCapacityKwh: 48, totalPvKw: 19.2, existingPvKw: 9.9, addedPvKw: 9.3 },
-    { id: '48-below-19-2', batteryCapacityKwh: 48, totalPvKw: 19.199, existingPvKw: 9.9, addedPvKw: 9.299 },
+    { id: '48-at-19-2', batteryCapacityKwh: 48, totalPvKw: 16, existingPvKw: 9.9, addedPvKw: 6.1 },
+    { id: '48-below-19-2', batteryCapacityKwh: 48, totalPvKw: 15.999, existingPvKw: 9.9, addedPvKw: 6.099 },
     { id: 'existing-only', batteryCapacityKwh: 24.75, totalPvKw: 9.9, existingPvKw: 9.9, addedPvKw: 0 },
     { id: 'no-pv', batteryCapacityKwh: 5, totalPvKw: 0, existingPvKw: 0, addedPvKw: 0 },
   ]);
@@ -133,24 +134,24 @@ test('limit PV 2,5 kWh/kWp uwzględnia łączną moc istniejącej i dodawanej in
   assert.equal(filtered.excludedCandidates, 2);
 });
 
-test('KEEP_EXISTING wyznacza inkluzywny zakres 0,5–5× istniejącej PV bez zaokrągleń', () => {
-  assert.equal(OFFER_RECOMMENDATION_MIN_BATTERY_KWH_PER_EXISTING_PV_KWP, 0.5);
-  assert.equal(OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_EXISTING_PV_KWP, 5);
+test('KEEP_EXISTING wyznacza inkluzywny zakres 2–3× istniejącej PV bez zaokrągleń', () => {
+  assert.equal(OFFER_RECOMMENDATION_MIN_BATTERY_KWH_PER_EXISTING_PV_KWP, 2);
+  assert.equal(OFFER_RECOMMENDATION_MAX_BATTERY_KWH_PER_EXISTING_PV_KWP, 3);
   const result = calculateOfferWorkspaceExistingPvBatteryBounds(9.9);
   assert.equal(result.reason, null);
   assert.deepEqual(result.bounds, {
     basis: 'existing_pv',
     existingPvPowerKw: 9.9,
-    minimumBatteryKwhPerPvKwp: 0.5,
-    maximumBatteryKwhPerPvKwp: 5,
-    minimumBatteryCapacityKwh: 4.95,
-    maximumBatteryCapacityKwh: 49.5,
+    minimumBatteryKwhPerPvKwp: 2,
+    maximumBatteryKwhPerPvKwp: 3,
+    minimumBatteryCapacityKwh: 19.8,
+    maximumBatteryCapacityKwh: 3 * 9.9,
   });
   const filtered = filterOfferCandidatesByRecommendationBatteryBounds([
-    { id: 'below', batteryCapacityKwh: 4.949 },
-    { id: 'minimum', batteryCapacityKwh: 4.95 },
-    { id: 'maximum', batteryCapacityKwh: 49.5 },
-    { id: 'above', batteryCapacityKwh: 49.501 },
+    { id: 'below', batteryCapacityKwh: 19.799 },
+    { id: 'minimum', batteryCapacityKwh: 19.8 },
+    { id: 'maximum', batteryCapacityKwh: 29.7 },
+    { id: 'above', batteryCapacityKwh: 29.701 },
   ], result.bounds!);
   assert.deepEqual(filtered.candidates.map(candidate => candidate.id), ['minimum', 'maximum']);
   assert.equal(filtered.totalCandidatesBeforeFilter, 4);
@@ -184,4 +185,11 @@ test('ADD_TEMPLATE nadal wyznacza zakres 0,5–2× średniego dobowego zużycia'
     { id: 'add-min', batteryCapacityKwh: 6 },
     { id: 'add-upper', batteryCapacityKwh: 24 },
   ], add.bounds!).candidates.map(candidate => candidate.id), ['add-min', 'add-upper']);
+});
+
+test('produkcja 80–120% obejmuje istniejącą PV i nie ogranicza dużych firm do 20 MWh', () => {
+  const candidates = [0, 1, 2, 3].map(addedPvKw => ({addedPvKw}));
+  const filter = filterOfferCandidatesByPvProduction(candidates, 100000, 40000, new Map([[1,39999],[2,40000],[3,80000]]));
+  assert.deepEqual(filter.candidates.map(c => c.addedPvKw), [2,3]);
+  assert.throws(() => filterOfferCandidatesByPvProduction([{addedPvKw:4}],100000,40000,new Map()));
 });

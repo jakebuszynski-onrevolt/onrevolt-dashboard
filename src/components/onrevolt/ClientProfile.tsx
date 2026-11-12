@@ -34,6 +34,7 @@ import ClientDetailsForm, { resetClientDetails } from 'components/onrevolt/Clien
 import OfferDocument from 'components/onrevolt/OfferDocument';
 import ClientDocumentsPanel from 'components/onrevolt/ClientDocumentsPanel';
 import ClientEnergyWorkspace, { type EnergyWorkspaceSettings } from 'components/onrevolt/ClientEnergyWorkspace';
+import ClientMeasurementCoverage, { measurementCoverageRows, type MeasurementCoverageFile } from 'components/onrevolt/ClientMeasurementCoverage';
 import ClientEnergyPv, { useClientEnergyPv } from 'components/onrevolt/ClientEnergyPv';
 import ClientEnergySummary, {
   areClientEnergySummaryLoadStatesEqual,
@@ -67,6 +68,7 @@ import {
   calculateClientJourney,
   type ClientJourneyKey,
 } from 'lib/onrevolt/client-journey';
+import { uploadEnergyMeasurementBatch } from 'lib/onrevolt/energy-measurement-upload';
 import { summarizeEnergyInvoices } from 'lib/onrevolt/energy-data';
 import {
   calculateSolisMaxExportPowerW,
@@ -543,7 +545,7 @@ const emptyForm: ClientFormState = {
   investmentAddress: '',
   latitude: '',
   longitude: '',
-  mapProvider: 'GOOGLE',
+  mapProvider: 'GEOPORTAL2',
   projectTitle: '',
   projectClientType: 'UNKNOWN',
   status: 'LEAD',
@@ -912,7 +914,7 @@ function formFromClient(client: any, selectedProject?: any): ClientFormState {
     investmentAddress: site.fullAddress || site.addressLine || contact.investmentAddress || project.locationAddress || '',
     latitude: site.latitude == null ? '' : String(site.latitude),
     longitude: site.longitude == null ? '' : String(site.longitude),
-    mapProvider: site.mapProvider || 'GOOGLE',
+    mapProvider: site.mapProvider || 'GEOPORTAL2',
     projectTitle: project.title || '',
     projectClientType: project.clientType || client?.clientType || 'UNKNOWN',
     status: project.status || 'LEAD',
@@ -1013,7 +1015,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const [energyOverviewSaving, setEnergyOverviewSaving] = useState(false);
   const [energyOverviewMessage, setEnergyOverviewMessage] = useState('');
   const [energyOverviewError, setEnergyOverviewError] = useState('');
-  const [analysisFiles, setAnalysisFiles] = useState<{ key: string; files: EnergyMeasurementFileRow[] } | null>(null);
+  const [analysisFiles, setAnalysisFiles] = useState<{ key: string; files: EnergyMeasurementFileRow[]; coverageFiles: MeasurementCoverageFile[] } | null>(null);
   const [analysisFilesError, setAnalysisFilesError] = useState<{ key: string; error: string } | null>(null);
   const [analysisRefreshKey, setAnalysisRefreshKey] = useState(0);
   const [analysisSelectionPending, setAnalysisSelectionPending] = useState(false);
@@ -1174,7 +1176,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
         if (!response.ok || !payload.ok) throw new Error(payload.error || 'Nie udało się odczytać plików wybranego okresu.');
         if (payload.analysisStartMonth !== analysisPeriod.period?.startMonth) throw new Error('Okres zmienił się w innej karcie. Odśwież okres analizy.');
         if (!controller.signal.aborted) setAnalysisFiles({ key: analysisFilesKey,
-          files: payload.data.find((account: any) => account.id === energyAccount.id)?.measurementFiles || [] });
+          files: payload.data.find((account: any) => account.id === energyAccount.id)?.measurementFiles || [],
+          coverageFiles: payload.data.find((account: any) => account.id === energyAccount.id)?.measurementCoverageFiles || [] });
       }).catch(reason => {
         if (!controller.signal.aborted) setAnalysisFilesError({ key: analysisFilesKey, error: reason instanceof Error ? reason.message : String(reason) });
       });
@@ -1250,7 +1253,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     }
   }, [dashboardAccessEmailDirty, form.email, reStationStatus?.accountEmail, reStationStatus?.station]);
 
-  const load = useCallback(async (silent = false) => {
+  const load = useCallback(async (silent = false, preserveEnergySettings = false) => {
     if (!silent) setLoading(true);
     setError('');
     try {
@@ -1286,6 +1289,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       setEnergyAccount(energyAccountFromClient(clientPayload.data, loadedProject?.id));
       setEnergyDataSettings(current => ({
         ...energyDataSettingsFromClient(clientPayload.data, loadedProject),
+        ...(preserveEnergySettings && loadedProject?.id === selectedProjectId
+          ? { ...current, auditId: loadedProject.energyAudits?.[0]?.id || current.auditId } : {}),
         ...(loadedProject?.id && energyPvSourceProjectRef.current === loadedProject.id
           ? { existingPvKw: current.existingPvKw } : {}),
       }));
@@ -1668,6 +1673,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
       hasEnergyInvoices: energyDataSettings.hasEnergyInvoices,
       profileStatus,
       profileAnnualKwh: energyProfile?.annualKwh,
+      measurementAnnualKwh: isCurrentClientEnergySummaryLoadState(energySummaryLoadState, energySummaryRequestKey)
+        && energySummaryLoadState?.status === 'ready' ? energySummaryLoadState.consumption?.annualKwh : null,
       invoiceAnnualKwh: invoiceSummary.annualizedKwh,
       manualSourceSelected,
       manualAnnualKwh,
@@ -2235,6 +2242,9 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const projectStatus = projectStatusLabel(project.status || form.status);
   const energyFiles = analysisFiles?.key === analysisFilesKey ? analysisFiles.files : [];
   const energyMonths = energyMonthRows(energyFiles, analysisPeriod.period?.periodKeys || []);
+  const energyCoverage = measurementCoverageRows(analysisFiles?.key === analysisFilesKey ? analysisFiles.coverageFiles : [],
+    analysisPeriod.period?.periodKeys || []);
+  const coveredImportMonths = energyCoverage.filter(row => row.importFile).length;
   const energyRange = energyMonths.length
     ? `${energyMonths[energyMonths.length - 1].label} - ${energyMonths[0].label}`
     : '';
@@ -2279,7 +2289,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   });
   const maxMonthlyKwh = Math.max(1, ...(energyProfile?.months || []).map((month) => month.totalKwh));
   const maxHourlyKwh = Math.max(1, ...(selectedUsageMonth?.hourly || []).map((value) => value));
-  const analysisInvoices = energyInvoicesInAnalysisPeriod(energyInvoiceDocuments(client, project?.id), analysisPeriod.period);
+  const allProjectEnergyInvoices = energyInvoiceDocuments(client, project?.id);
+  const analysisInvoices = energyInvoicesInAnalysisPeriod(allProjectEnergyInvoices, analysisPeriod.period);
   const projectEnergyInvoices = analysisInvoices.included;
   const invoiceConsumptionSummary = summarizeEnergyInvoices(projectEnergyInvoices);
   const manualAnnualConsumptionKwh = Number(energyDataSettings.annualConsumptionKwh);
@@ -2292,6 +2303,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     hasEnergyInvoices: energyDataSettings.hasEnergyInvoices,
     profileStatus: energyProfileLoadState?.key === activeEnergyProfileKey ? energyProfileLoadState.status : 'loading',
     profileAnnualKwh: energyProfile?.annualKwh,
+      measurementAnnualKwh: isCurrentClientEnergySummaryLoadState(energySummaryLoadState, energySummaryRequestKey)
+        && energySummaryLoadState?.status === 'ready' ? energySummaryLoadState.consumption?.annualKwh : null,
     invoiceAnnualKwh: invoiceConsumptionSummary.annualizedKwh,
     manualSourceSelected,
     manualAnnualKwh: manualAnnualConsumptionKwh,
@@ -2304,7 +2317,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const acceptedConsumptionSource = sharedAnnualConsumptionKwh > 0
     ? 'Wspólny profil RE'
     : energyDataSettings.hasOperatorData && operatorAnnualConsumptionKwh > 0
-    ? 'Profil godzinowy OSD'
+    ? (isCurrentClientEnergySummaryLoadState(energySummaryLoadState, energySummaryRequestKey) && energySummaryLoadState?.status === 'ready' && energySummaryLoadState.consumption?.annualKwh ? energySummaryLoadState.consumption.source : 'Profil godzinowy OSD')
     : !energyDataSettings.hasOperatorData && energyDataSettings.hasEnergyInvoices && invoiceAnnualConsumptionKwh > 0
       ? 'Zużycie rozpoznane z faktur'
       : manualSourceSelected && acceptedAnnualConsumptionKwh > 0
@@ -2348,8 +2361,8 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
   const analysisWarnings = [
     ...(currentSummaryLoadState?.status === 'ready' ? currentSummaryLoadState.warnings || [] : []),
     ...(profileReadyForCurrentPeriod ? energyProfile?.warnings || [] : []),
-    energyAccount.id && energyMonths.some(row => row.importFile?.status !== 'DOWNLOADED')
-      ? `Brak pobranego pliku poboru w ${energyMonths.filter(row => row.importFile?.status !== 'DOWNLOADED').length} z 12 miesięcy.` : '',
+    energyAccount.id && energyCoverage.some(row => !row.importFile)
+      ? `Brak danych poboru w ${energyCoverage.filter(row => !row.importFile).length} z 12 miesięcy.` : '',
     analysisInvoices.crossingCount ? `Faktury przecinające granice okresu: ${analysisInvoices.crossingCount}.` : '',
     analysisInvoices.undatedCount ? `Faktury bez prawidłowych dat: ${analysisInvoices.undatedCount}.` : '',
     pvRequired && !pvPending && !pvError && !energyPv.complete ? 'Brakuje parametrów lub lokalizacji do prognozy PV.' : '',
@@ -2461,24 +2474,18 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
     setEnergyError('');
     setEnergyMessage('');
     try {
-      const invalidFile = selectedFiles.find((file) => !file.name.toLowerCase().endsWith('.xlsx'));
-      if (invalidFile) throw new Error(`Plik „${invalidFile.name}” nie jest plikiem XLSX.`);
-
-      const imported: string[] = [];
-      const reWarnings: string[] = [];
-      for (const file of selectedFiles) {
-        const result = await uploadEnergyXlsxFile(file);
-        const workbook = result?.workbook;
-        const kind = workbook?.kind === 'ACTIVE_IMPORT' ? 'pobranie' : 'oddanie';
-        imported.push(`${workbook?.periodFrom?.slice(0, 7) || file.name} (${kind})`);
-        if (result?.reSync?.status !== 'synced') reWarnings.push(result?.reSync?.message || 'RE nie potwierdziło importu pliku.');
+      const result = await uploadEnergyMeasurementBatch(selectedFiles, file => uploadEnergyXlsxFile(file));
+      if (result.imported.length) {
+        setEnergyDataSettings(current => ({ ...current, hasOperatorData: true, profileSource: 'OPERATOR_HOURLY' }));
+        setEnergyMessage(`Zapisano w CRM: ${result.imported.length} z ${selectedFiles.length} plików.${result.storedWithoutRe
+          ? ' Przekazanie do RE będzie dostępne po przypisaniu stacji.'
+          : result.reWarnings.length ? '' : ' Dane przekazano do RE.'}`);
       }
-      setEnergyMessage(`Dodano ${imported.length} ${imported.length === 1 ? 'plik' : 'pliki'} XLSX: ${imported.join(', ')}.${reWarnings.length ? '' : ' Dane przekazano do RE.'}`);
-      if (reWarnings.length) setEnergyError(reWarnings.join(' '));
+      setEnergyError([...result.errors, ...result.reWarnings].join('\n\n'));
     } catch (e) {
       setEnergyError(e instanceof Error ? e.message : String(e));
     } finally {
-      await Promise.all([load(true), loadEnergyProfile()]);
+      await Promise.all([load(true, true), loadEnergyProfile()]);
       setEnergyXlsxUploading(false);
       setEnergyXlsxDragActive(false);
       if (energyXlsxInputRef.current) energyXlsxInputRef.current.value = '';
@@ -4741,7 +4748,7 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                     hasTariffHistory={hasTariffHistory}
                     tariffSummary={<ClientTariffsPanel compact clientId={clientId} projectId={activeProjectId} onOpen={() => selectPrimaryTab(14)} onHistoryChange={setHasTariffHistory} />}
                     range={energyRange}
-                    measurementMonths={energyMonths.filter(row => row.importFile?.status === 'DOWNLOADED').length}
+                    measurementMonths={coveredImportMonths}
                     invoiceCount={invoiceConsumptionSummary.invoiceCount}
                     annualKwh={acceptedAnnualConsumptionKwh}
                     annualSource={acceptedConsumptionSource}
@@ -4768,22 +4775,19 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                         {energyDeclarationRetryAllowed ? 'Ponów przekazanie deklaracji do RE' : 'Zapisz źródła danych'}
                       </Button>
                     </Flex>}
-                    invoices={<ClientDocumentsPanel variant="energy" mode="invoices" clientId={clientId}
-                      projectId={activeProject?.id} documents={projectEnergyInvoices}
-                      expectedPpeNumber={energyAccount.id ? energyAccount.ppeNumber : ''}
-                      expectedTariff={energyAccount.id ? energyAccount.tariff : ''}
-                      onChanged={() => load(true)} />}
-                    measurements={<>
-                      {energyDataSettings.hasOperatorData ? <Box className="energy-operator-panel">
-                    <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" mb="18px">
-                      <Box>
-                        <Text color={textColor} fontSize="lg" fontWeight="800">Dane pomiarowe operatora</Text>
-                        <Text color={mutedColor}>Ostatnia synchronizacja: {formatDateTime(energyAccount.lastSyncAt)}</Text>
-                      </Box>
-                    </Flex>
-
+                    invoices={<>
+                      <Text fontSize="sm" color={mutedColor} mb="12px">
+                        Wszystkie zapisane faktury. Podsumowanie okresu uwzględnia tylko faktury mieszczące się w nim w całości.
+                      </Text>
+                      <ClientDocumentsPanel variant="energy" mode="invoices" clientId={clientId}
+                        projectId={activeProject?.id} documents={allProjectEnergyInvoices}
+                        expectedPpeNumber={energyAccount.id ? energyAccount.ppeNumber : ''}
+                        expectedTariff={energyAccount.id ? energyAccount.tariff : ''}
+                        onChanged={() => load(true)} />
+                    </>}
+                    measurementUpload={<>
                     {energyError ? (
-                      <Alert status="error" borderRadius="8px" mb="16px">
+                      <Alert status="error" borderRadius="8px" mb="16px" whiteSpace="pre-line">
                         <AlertIcon />
                         {energyError}
                       </Alert>
@@ -4864,11 +4868,18 @@ export default function ClientProfile({ clientId }: ClientProfileProps) {
                       </Box>
                     ) : null}
 
-                    <Flex justify="space-between" mt="20px" gap="12px"><Text fontWeight="600">Dostępność pomiarów</Text><Text color={mutedColor}>{energyMonths.filter(row => row.importFile?.status === 'DOWNLOADED').length}/12 miesięcy z plikiem poboru</Text></Flex>
-<div className="energy-coverage">{[...energyMonths].reverse().map(row => {
-  const ready = row.importFile?.status === 'DOWNLOADED';
-  return <div className="energy-coverage-item" data-ready={ready} key={row.key}><span>{row.label}</span><strong>{ready ? 'Pobór zapisany' : 'Brak poboru'}</strong><small>{row.exportFile?.status === 'DOWNLOADED' ? 'Oddanie zapisane' : 'Brak oddania'}</small></div>;
-})}</div>
+                    </>}
+                    measurements={<>
+                      {energyDataSettings.hasOperatorData ? <Box className="energy-operator-panel">
+                    <Flex direction={{ base: 'column', lg: 'row' }} justify="space-between" gap="16px" mb="18px">
+                      <Box>
+                        <Text color={textColor} fontSize="lg" fontWeight="800">Dane pomiarowe operatora</Text>
+                        <Text color={mutedColor}>Ostatnia synchronizacja: {formatDateTime(energyAccount.lastSyncAt)}</Text>
+                      </Box>
+                    </Flex>
+
+                    <Flex justify="space-between" mt="20px" gap="12px"><Text fontWeight="600">Dostępność pomiarów</Text><Text color={mutedColor}>{coveredImportMonths}/12 miesięcy z danymi poboru</Text></Flex>
+                    <ClientMeasurementCoverage rows={energyCoverage} />
 <details className="energy-portal"><summary>Dostęp do portalu operatora</summary>
 <SimpleGrid columns={{ base: 1, md: 2 }} gap="16px">
                       <FormControl>

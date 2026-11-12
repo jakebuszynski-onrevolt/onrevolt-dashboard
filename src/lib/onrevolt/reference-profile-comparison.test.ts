@@ -17,6 +17,10 @@ const catalog = JSON.parse(readFileSync(
 
 const profiles = catalog.profiles;
 const profileByKey = new Map(profiles.map((profile) => [profile.key, profile]));
+const opsdWholeHouse = JSON.parse(readFileSync(
+  join(process.cwd(), 'assets', 'reference-profiles', 'opsd-residential4-whole-house.json'),
+  'utf8',
+)) as CatalogProfile;
 
 function profile(key: string) {
   const found = profileByKey.get(key);
@@ -151,6 +155,10 @@ test('kwalifikacja projekcji rocznej dopuszcza H25/G25/L25, wszystkie VDEW i pom
   const pump = getReferenceProfileCalculationEligibility(profile('opsd_20200415_de_kn_residential1_heat_pump'));
   assert.equal(pump.eligible, true);
   assert.equal(pump.method, 'opsd-normalized-pump-shape');
+  assert.equal(summarizeReferenceProfile(profile('opsd_20200415_de_kn_residential1_heat_pump')).name,
+    'Sama pompa ciepła — dom 1 (OPSD)');
+  assert.equal(summarizeReferenceProfile(profile('opsd_20200415_de_kn_residential4_heat_pump')).name,
+    'Sama pompa ciepła — dom 4 (OPSD)');
 
   for (const key of ['bdew-2025-p25', 'bdew-2025-s25', 'opsd_20200415_de_kn_residential1_grid_import']) {
     const eligibility = getReferenceProfileCalculationEligibility(profile(key));
@@ -160,6 +168,68 @@ test('kwalifikacja projekcji rocznej dopuszcza H25/G25/L25, wszystkie VDEW i pom
   const partial = getReferenceProfileCalculationEligibility(profile('opsd_20200415_de_kn_industrial3_grid_import'));
   assert.equal(partial.eligible, false);
   assert.match(partial.reason || '', /kompletnego roku UTC/);
+});
+
+test('OPSD 4 whole-house pattern validates provenance and all 576 groups', () => {
+  const summary = summarizeReferenceProfile(opsdWholeHouse);
+  const eligibility = getReferenceProfileCalculationEligibility(opsdWholeHouse);
+  assert.equal(summary.eligible, true);
+  assert.equal(summary.key, 'opsd_20200415_de_kn_residential4_household_heat_pump');
+  assert.equal(summary.name, 'Dom z pompą ciepła — bez ładowania auta (OPSD 4)');
+  assert.equal(eligibility.eligible, true);
+  assert.equal(eligibility.method, 'opsd-whole-house-seasonal-pattern');
+  assert.equal(opsdWholeHouse.series.length, 576);
+  assert.equal(opsdWholeHouse.quality.minimumSamplesPerGroup, 1);
+  assert.ok(summary.notes.some((note) => note.includes('Niska pewność')));
+  assert.ok(summary.notes.some((note) => note.includes('EV odjęto')));
+  assert.ok(summary.notes.some((note) => note.includes('tylko 1 próbkę')));
+  assert.ok(summary.notes.some((note) => note.includes('około jednominutowe przesunięcie')));
+
+  const badMetadata = summarizeReferenceProfile({
+    ...opsdWholeHouse,
+    metadata: { ...opsdWholeHouse.metadata, evTreatment: 'EV nie odjęto' },
+  });
+  assert.equal(badMetadata.eligible, false);
+  assert.match(badMetadata.reason || '', /granicy wnioskowania/);
+
+  const missingGroup = summarizeReferenceProfile({
+    ...opsdWholeHouse,
+    series: opsdWholeHouse.series.slice(1),
+  });
+  assert.equal(missingGroup.eligible, false);
+  assert.match(missingGroup.reason || '', /liczba danych OPSD 4/);
+
+  const nonpositiveGroup = summarizeReferenceProfile({
+    ...opsdWholeHouse,
+    series: opsdWholeHouse.series.map((point, index) => index === 0 ? { ...point, value: 0 } : point),
+  });
+  assert.equal(nonpositiveGroup.eligible, false);
+  assert.match(nonpositiveGroup.reason || '', /średnią/);
+});
+
+test('OPSD whole-house projects month/day-type/hour directly with summer household load', () => {
+  const projection = buildReferenceProfileProjection(opsdWholeHouse, ['2025-07-15', '2025-07-19', '2025-12-25']);
+  assert.equal(projection.method, 'opsd-whole-house-seasonal-pattern');
+  assert.equal(projection.sourceYear, 2016);
+  assert.deepEqual(projection.days.map((day) => day.dayType), ['workday', 'weekend', 'workday']);
+  assert.ok(projection.days.every((day) => day.hours.length === 24 && day.hours.every((value) => value > 0)));
+  assert.ok(projection.days[0].hours.reduce((sum, value) => sum + value, 0) > 0,
+    'summer household consumption remains in the whole-house pattern');
+  assert.ok(projection.notes.some((note) => note.includes('jednego gospodarstwa')));
+
+  const pattern = new Map(opsdWholeHouse.series.map((point) => (
+    [`${point.month}/${point.dayType}/${point.hour}`, Number(point.value)]
+  )));
+  for (const day of projection.days) {
+    for (let hour = 0; hour < 24; hour += 1) {
+      assert.equal(day.hours[hour], pattern.get(`${day.month}/${day.dayType}/${hour}`));
+    }
+  }
+
+  const comparison = compareReferenceProfiles([opsdWholeHouse], { annualKwh: 12_000, month: null, dayType: 'all' })[0];
+  assert.equal(comparison.eligible, true);
+  assert.ok(Math.abs(sum(comparison.monthlyKwh) - 12_000) < 1e-8);
+  assert.ok(comparison.monthlyKwh[6] > 0);
 });
 
 test('projekcja buduje kształt z docelowych dat, sezonu i kalendarza lokalnego', () => {

@@ -139,7 +139,11 @@ async function main() {
   for (const [status, code] of Object.entries(projectStatusStageCode)) {
     const stage = await prisma.pipelineStage.findUniqueOrThrow({ where: { code } });
     await prisma.project.updateMany({
-      where: { status: status as ProjectStatus },
+      where: { status: status as ProjectStatus, OR: [
+        { stageId: null },
+        { stage: { code: { not: 'CRM_WIZJA_LOKALNA' } } },
+        { stage: { code: null } },
+      ] },
       data: {
         stageId: stage.id,
         closedAt: stage.isTerminal ? new Date() : undefined,

@@ -43,7 +43,11 @@ async function main() {
       const stageId = stageIds.get(code);
       if (!stageId) throw new Error(`Brak etapu operacyjnego ${code}`);
       const update = await tx.project.updateMany({
-        where: { status: status as ProjectStatus },
+        where: { status: status as ProjectStatus, OR: [
+          { stageId: null },
+          { stage: { code: { not: 'CRM_WIZJA_LOKALNA' } } },
+          { stage: { code: null } },
+        ] },
         data: { stageId },
       });
       remapped[status] = update.count;

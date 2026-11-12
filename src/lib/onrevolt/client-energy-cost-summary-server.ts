@@ -3,6 +3,7 @@ import { blockedClientEnergyCostSummary, buildClientEnergyCostSummary } from './
 import { callClientTariffs, clientTariffScope } from './client-tariffs-server';
 import { tariffToday, type ClientTariffData, type ClientTariffHistory, type ClientTariffPayload, type ClientTariffPeriod } from './client-tariffs';
 import { DEFAULT_OFFER_BILLING_CYCLE_MONTHS } from './offer-workspace';
+import { invoiceNetMeteringFactorForPeriod, type InvoiceNetMeteringFactorResolution } from './invoice-net-metering-factor';
 import { currentScenario, hourlyMarketPrices } from './offer-workspace-valuation-server';
 import { billOfferWorkspaceScenario, canonicalNetRows, priceOfferWorkspaceGrid, type NetBillingPolicy, type NetMeteringPolicy } from './offer-workspace-billing';
 import type { OfferMeasurementSeries } from './offer-measurements';
@@ -290,6 +291,7 @@ export async function invoiceBillingCycleForPeriod(
 
 export type ClientEnergyCostSummaryServerDependencies = {
   invoiceBillingCycleForPeriod: typeof invoiceBillingCycleForPeriod;
+  invoiceNetMeteringFactorForPeriod: typeof invoiceNetMeteringFactorForPeriod;
   currentScenario: typeof currentScenario;
   hourlyMarketPrices: typeof hourlyMarketPrices;
   completeHistoryForSummary: typeof completeHistoryForSummary;
@@ -299,6 +301,7 @@ export type ClientEnergyCostSummaryServerDependencies = {
 
 const defaultSummaryDependencies: ClientEnergyCostSummaryServerDependencies = {
   invoiceBillingCycleForPeriod,
+  invoiceNetMeteringFactorForPeriod,
   currentScenario,
   hourlyMarketPrices,
   completeHistoryForSummary,
@@ -402,6 +405,8 @@ export async function calculateClientEnergyCostSummaryOnServer(input: {
   const tariffHistory = completion.history;
   const intervals = (series?.intervals || []).filter(row => row.import != null || row.export != null);
   const estimatedIntervalCount = intervals.filter(row => row.import?.source === 'estimated' || row.export?.source === 'estimated').length;
+  const modelledIntervalCount = intervals.filter(row => row.import?.source === 'modelled' || row.export?.source === 'modelled').length;
+  if (modelledIntervalCount) assumptions.push(`Uzupełnienie luk Model CRM: ${modelledIntervalCount} godzin. Koszty obejmują pomiary oraz szacunek brakujących godzin, nie wyłącznie odczyty operatora.`);
   if (input.energySource === 'MODELLED' && series?.modelProvenance?.kind === 'annual-consumption') {
     assumptions.push(`Pobór i oddanie wyznaczono z rocznej deklaracji: ${series.modelProvenance.source} (${series.modelProvenance.annualConsumptionKwh} kWh/rok). Wartości są modelem, nie pomiarami.`);
   } else if (estimatedIntervalCount > 0) {
@@ -488,15 +493,45 @@ export async function calculateClientEnergyCostSummaryOnServer(input: {
         assumptions.push('Brak zapisanego salda początkowego opustu; w szacunku przyjęto 0 kWh.');
       }
       const powerKw = finiteNonnegative(audit?.existingPvKw);
-      if (powerKw == null) settlementIssue = 'Brak jawnej mocy istniejącej PV; nie można ustalić współczynnika net-meteringu.';
-      else {
-        const policy: NetMeteringPolicy = {
-          mode: 'NET_METERING', netMeteringRatio: powerKw <= 10 ? 0.8 : 0.7, initialCreditKwh,
+      let invoiceFactor: InvoiceNetMeteringFactorResolution | null = null;
+      try {
+        invoiceFactor = series?.ppeNumber
+          ? await dependencies.invoiceNetMeteringFactorForPeriod({
+            projectId: project.id,
+            clientId: project.clientId,
+            ppeNumber: series.ppeNumber,
+            period,
+          })
+          : null;
+      } catch (error) {
+        settlementIssue = `Nie udało się zweryfikować współczynnika opustu z faktury dla PPE: ${error instanceof Error ? error.message : 'błąd źródła'}.`;
+      }
+      if (!settlementIssue && invoiceFactor?.status === 'ambiguous') {
+        settlementIssue = `Niejednoznaczny współczynnik opustu na potwierdzonych fakturach dla PPE (${invoiceFactor.factors.join(', ')}); rachunku bazowego NET_METERING nie obliczono.`;
+      } else if (!settlementIssue && invoiceFactor?.status === 'invalid') {
+        settlementIssue = 'Sprzeczne lub nieobsługiwane dane współczynnika opustu na potwierdzonej fakturze dla PPE; rachunku bazowego NET_METERING nie obliczono.';
+      }
+      const netMeteringRatio = invoiceFactor?.status === 'selected'
+        ? invoiceFactor.factor
+        : powerKw == null ? null : powerKw <= 10 ? 0.8 : 0.7;
+      if (!settlementIssue && netMeteringRatio == null) {
+        settlementIssue = 'Brak jawnej mocy istniejącej PV i brak potwierdzonego współczynnika z faktury; nie można ustalić współczynnika net-meteringu.';
+      }
+      if (!settlementIssue && netMeteringRatio != null) {
+        if (invoiceFactor?.status === 'selected') {
+          assumptions.push(`Współczynnik opustu ${netMeteringRatio} przyjęto z potwierdzonej faktury ENEA dla PPE (${invoiceFactor.invoicePeriods.join(', ')}); zastępuje próg mocy istniejącej PV.`);
+        }
+        const policy = {
+          mode: 'NET_METERING' as const, netMeteringRatio, initialCreditKwh,
           initialCreditLots: lots.map(lot => ({ kwh: Number(lot.kwh), creditedMonth: String(lot.creditedMonth), expiresMonth: String(lot.expiresMonth) })),
           billingCycleStartMonth: billingCycleMonths > 1 ? cycleStartMonth : undefined,
           initialCreditExpiresMonth: null, creditExpiryMonths: 12,
-          coverage: 'ENERGY_AND_VARIABLE_DISTRIBUTION', fixedChargeTreatment: 'ALWAYS_BILLED',
-        };
+          coverage: 'ENERGY_AND_VARIABLE_DISTRIBUTION' as const, fixedChargeTreatment: 'ALWAYS_BILLED' as const,
+          ...(invoiceFactor?.status === 'selected' ? {
+            hourlyNettingMode: 'SAME_HOUR_NET_EXCHANGE' as const,
+            variableFeeOpustBasis: 'OZE_CHP_PRE_OPUST' as const,
+          } : {}),
+        } satisfies NetMeteringPolicy;
         settlementResult = dependencies.billOfferWorkspaceScenario({ tariffHistory, context: { annualUsageKwh, billingCycleMonths, connectionPowerKw }, vatBasis, settlement: policy, intervals: billIntervals });
       }
     } else {
@@ -535,6 +570,6 @@ export async function calculateClientEnergyCostSummaryOnServer(input: {
   }
   return buildClientEnergyCostSummary({
     pricing, settlementResult, settlementIssue, assumptions,
-    ...(input.energySource ? { source: input.energySource } : {}),
+    ...(modelledIntervalCount ? { source: 'MODELLED' as const } : input.energySource ? { source: input.energySource } : {}),
   });
 }

@@ -13,6 +13,7 @@ import * as clientEnergyCostSummary from './client-energy-cost-summary';
 import * as offerWorkspaceBilling from './offer-workspace-billing';
 import { calculateClientEnergyCostSummaryOnServer, completeHistoryForSummary } from './client-energy-cost-summary-server';
 import type { CatalogProfile } from './reference-profile-comparison';
+import * as measurementMonthReuse from './offer-measurement-month-reuse';
 
 const catalog = JSON.parse(readFileSync(path.join(process.cwd(), 'output', 'profile-catalog-20261106', 'catalog.json'), 'utf8')) as { profiles: CatalogProfile[] };
 const bdewH25 = catalog.profiles.find(profile => profile.key === 'bdew-2025-h25')!;
@@ -48,6 +49,7 @@ test('energy-summary uses the selected period in queries, validation and respons
     referenceSelectionReads: 0,
     project: {
       id: 'project-1', clientId: 'client-1', clientType: 'B2C',
+      client: { clientType: 'B2C' },
       investmentSite: { latitude: 52.2, longitude: 21 },
       offerWorkspace: { input: { existingBatteryPresent: false, existingPv: { powerKw: 5, tiltDegrees: 30, azimuthDegrees: 180, lossPercent: 12 } } },
       energyAudits: [{ existingPvKw: 9, roofTiltDeg: 25, roofOrientation: 'E', existingBatteryKwh: 4,
@@ -55,6 +57,8 @@ test('energy-summary uses the selected period in queries, validation and respons
     },
   };
   const modules: Record<string, unknown> = {
+    'lib/onrevolt/offer-measurement-month-reuse': measurementMonthReuse,
+    'lib/onrevolt/offer-measurement-completion-server': { completeProjectOfferMeasurements: async ({ series }: any) => ({ series, issues: [], revisionKey: null }) },
     'lib/onrevolt/api': {
       jsonResponse: (value: unknown, init?: ResponseInit) => Response.json(value, init),
       notFound: (message: string) => Response.json({ ok: false, error: message }, { status: 404 }),
@@ -134,6 +138,7 @@ test('energy-summary uses the selected period in queries, validation and respons
     },
     'lib/onrevolt/client-tariffs': { tariffToday: () => '2026-10-31' },
     'lib/onrevolt/offer-workspace-server': {
+      offerWorkspaceEffectiveClientType: (project: string, client: string) => project === 'UNKNOWN' ? client : project,
       offerWorkspaceProjectWhere: (id: string) => ({ id }),
       readOfferWorkspaceMeasurement: async () => Buffer.from('xlsx'),
       summarizeOfferMeasurementSeries: (_series: unknown, _issues: unknown, expected: string[]) => ({
@@ -145,8 +150,8 @@ test('energy-summary uses the selected period in queries, validation and respons
         project: { findFirst: async () => state.project },
         energyPortalAccount: { findMany: async () => state.accounts },
         energyMeasurementFile: { findMany: async (query: any) => {
-          state.measurementQuery = query;
           if (query.where.status?.not) return state.nonDownloadedFiles;
+          state.measurementQuery = query;
           return state.downloadedFiles ?? [{
             id: 'file-1', clientId: 'client-1', projectId: 'project-1', accountId: 'account-1', kind: 'ACTIVE_IMPORT',
             periodYear: 2025, periodMonth: 10, aggregation: '60 min', storagePath: null, fileName: null,
@@ -188,10 +193,8 @@ test('energy-summary uses the selected period in queries, validation and respons
   assert.deepEqual(body.data.period, period);
   assert.deepEqual(Array.from(state.seriesOptions.periodKeys), period.periodKeys);
   assert.equal(state.seriesOptions.now, undefined);
-  assert.deepEqual(JSON.parse(JSON.stringify(state.measurementQuery.where.AND[0].OR)), period.periodKeys.map((key) => {
-    const [periodYear, periodMonth] = key.split('-').map(Number);
-    return { periodYear, periodMonth };
-  }));
+  assert.deepEqual(JSON.parse(JSON.stringify(state.measurementQuery.where.AND[0].OR)), [{ projectId: 'project-1' }, { projectId: null }],
+    'source query retains project scope and also permits same-month measurements from another year');
   assert.deepEqual(body.data.months.map(({ period: key }: { period: string }) => key), period.periodKeys);
   assert.equal(body.data.pv.productionKwh, 1);
   assert.equal(state.modelCalls, 1);
@@ -243,7 +246,7 @@ test('energy-summary uses the selected period in queries, validation and respons
   assert.equal(selectedAnnualBody.data.annualModel.provenance.referenceProfile.contentHash, 'a'.repeat(64));
   assert.match(selectedAnnualBody.data.annualModel.provenance.source, /profil referencyjny/u);
   assert.doesNotMatch(selectedAnnualBody.data.annualModel.provenance.source, /profil godzinowy RE/u);
-  assert.equal(state.referenceSelectionReads, 2, 'the summary reads the project selection only when annual modelling is requested');
+  assert.equal(state.referenceSelectionReads, 3, 'the summary also reads the selected profile for filling measurement gaps');
 
   Object.assign(state.project.energyAudits[0], { profileSource: 'MONTHLY_MANUAL' });
   const monthlyManualResponse = await exports.GET({}, { params: Promise.resolve({ id: 'project-1' }) });

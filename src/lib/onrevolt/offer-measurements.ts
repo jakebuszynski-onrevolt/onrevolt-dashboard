@@ -2,11 +2,14 @@ import {
   parseEnergyMeasurementIntervals,
   type EnergyMeasurementInterval,
 } from './energy-measurement-document';
+import { projectMeasurementMonth } from './offer-measurement-month-reuse';
 
 export type OfferMeasurementKind = 'ACTIVE_IMPORT' | 'ACTIVE_EXPORT';
 export type OfferMeasurementFileInput = {
   id: string;
   expectedPeriod: string;
+  /** Original expectedPeriod remains authoritative for validating the source XLSX. */
+  targetPeriod?: string;
   expectedKind: OfferMeasurementKind;
   bytes: Buffer;
   projectId?: string;
@@ -48,6 +51,7 @@ export type OfferMeasurementSeries = {
     ppeNumber: string;
     totalKwh: number;
     rowsCount: number;
+    sourcePeriod?: string;
   }>;
 };
 
@@ -112,7 +116,9 @@ export function buildOfferMeasurementSeries(
   for (const file of files) {
     if (!file.id.trim() || ids.has(file.id)) throw new Error(`Brak lub powtórzone ID pliku pomiarowego: ${file.id}`);
     ids.add(file.id);
-    if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(file.expectedPeriod) || !allowedPeriods.has(file.expectedPeriod)) {
+    const effectivePeriod = file.targetPeriod ?? file.expectedPeriod;
+    if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(file.expectedPeriod) || !allowedPeriods.has(effectivePeriod)
+      || effectivePeriod.slice(5) !== file.expectedPeriod.slice(5)) {
       throw new Error(`Okres pliku ${file.id} nie należy do wybranego okresu analizy`);
     }
     if (options.projectId && file.projectId !== options.projectId) {
@@ -135,16 +141,18 @@ export function buildOfferMeasurementSeries(
       throw new Error(`Numer PPE w pliku ${file.id} nie zgadza się z numerem PPE projektu`);
     }
 
-    availableDirections.add(`${parsedPeriod}/${info.kind}`);
+    const projectedIntervals = effectivePeriod === parsedPeriod ? intervals : projectMeasurementMonth(intervals, effectivePeriod);
+    availableDirections.add(`${effectivePeriod}/${info.kind}`);
     const target = info.kind === 'ACTIVE_IMPORT' ? importReadings : exportReadings;
-    for (const interval of intervals) addReading(target, { interval, fileId: file.id });
+    for (const interval of projectedIntervals) addReading(target, { interval, fileId: file.id });
     fileInfo.push({
       id: file.id,
-      period: parsedPeriod,
+      period: effectivePeriod,
+      ...(effectivePeriod === parsedPeriod ? {} : { sourcePeriod: parsedPeriod }),
       kind: info.kind,
       ppeNumber: info.ppeNumber,
       totalKwh: info.totalKwh,
-      rowsCount: info.rowsCount,
+      rowsCount: projectedIntervals.length,
     });
   }
 

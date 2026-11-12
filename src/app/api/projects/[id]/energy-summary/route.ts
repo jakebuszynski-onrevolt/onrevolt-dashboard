@@ -3,11 +3,14 @@ import { jsonResponse, notFound } from 'lib/onrevolt/api';
 import { buildOfferMeasurementSeries, type OfferMeasurementKind, type OfferMeasurementFileInput, type OfferMeasurementSeries } from 'lib/onrevolt/offer-measurements';
 import {
   offerWorkspaceProjectWhere,
+  offerWorkspaceEffectiveClientType,
   readOfferWorkspaceMeasurement,
   summarizeOfferMeasurementSeries,
   type OfferWorkspaceStoredMeasurement,
 } from 'lib/onrevolt/offer-workspace-server';
 import { prisma } from 'lib/onrevolt/prisma';
+import { selectOfferMeasurementFilesForPeriod } from 'lib/onrevolt/offer-measurement-month-reuse';
+import { completeProjectOfferMeasurements } from 'lib/onrevolt/offer-measurement-completion-server';
 import { authorizeStaffRequest } from 'lib/onrevolt/staff-server';
 import { buildClientEnergyActualDays } from 'lib/onrevolt/client-energy-summary';
 import { readProjectAnalysisPeriod } from 'lib/onrevolt/project-analysis-period-server';
@@ -99,12 +102,13 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         id: true,
         clientId: true,
         clientType: true,
+        client: { select: { clientType: true } },
         investmentSite: { select: { latitude: true, longitude: true } },
         offerWorkspace: { select: { input: true } },
         energyAudits: {
           select: {
             existingPvKw: true, roofTiltDeg: true, roofOrientation: true, existingBatteryKwh: true,
-            annualConsumptionKwh: true, profileSource: true, settlementSystem: true, connectionPowerKw: true,
+            annualConsumptionKwh: true, profileSource: true, settlementSystem: true, connectionPowerKw: true, heatingSource: true, heatingSourceDetail: true,
           },
           take: 1,
         },
@@ -164,6 +168,8 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         existingBatteryPresent,
       });
     }
+    let referenceSelectionPromise: ReturnType<typeof readProjectReferenceProfileSelection> | undefined;
+    const projectReferenceSelection = () => referenceSelectionPromise ??= readProjectReferenceProfileSelection(projectId);
     async function annualFallback(measurementIssue: string, months: ReturnType<typeof emptyMonths>) {
       const annualConsumptionKwh = energyAudit?.profileSource === 'ANNUAL_DECLARATION'
         ? positiveAnnualConsumption(energyAudit.annualConsumptionKwh) : null;
@@ -172,7 +178,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       let selectionRead = false;
       let profile: OfferAnnualConsumptionProfile;
       try {
-        referenceSelection = await readProjectReferenceProfileSelection(projectId);
+        referenceSelection = await projectReferenceSelection();
         selectionRead = true;
         const referenceProfile = await resolveSelectedReferenceProfile(referenceSelection);
         profile = buildAnnualOfferConsumptionProfile({ annualConsumptionKwh, period, referenceProfile: referenceProfile || undefined });
@@ -247,6 +253,36 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         ...(pv ? { pv } : {}), cost,
       };
     }
+    const completionIssues: string[] = [];
+    let completionHasSource = false;
+    let completionAttempted = false;
+    async function completedSummary(series: OfferMeasurementSeries | null, ppeNumber: string | null, priorIssues: string[] = []) {
+      if (completionAttempted) return null;
+      if (priorIssues.some(issue => issue.startsWith('Plik ') || issue.includes('Nie udało się odczytać pomiarów')
+        || issue.includes('dane nie zostały wczytane') || issue.includes('poza statusem DOWNLOADED')
+        || issue.includes('Brak numeru PPE') || issue.includes('Nie udało się wczytać'))) return null;
+      completionAttempted = true;
+      const completion = await completeProjectOfferMeasurements({
+        projectId, clientId: project!.clientId, clientType: offerWorkspaceEffectiveClientType(project!.clientType, project!.client.clientType), period, series, ppeNumber,
+        heatingSource: energyAudit?.heatingSource ?? null, heatingSourceDetail: energyAudit?.heatingSourceDetail ?? null,
+        existingBatteryPresent, pv: { ...pvSettings, latitude: finiteCoordinate(project!.investmentSite?.latitude), longitude: finiteCoordinate(project!.investmentSite?.longitude) },
+        selectedProfile: await projectReferenceSelection(),
+      });
+      completionIssues.push(...completion.issues);
+      completionHasSource = completion.revisionKey !== null;
+      if (!completion.series || completion.series === series) return null;
+      const completed = completion.series;
+      const summary = summarizeOfferMeasurementSeries(completed, [...priorIssues, ...completion.issues], periodKeys);
+      const months = summary.months.map(month => ({ ...month, importAvailable: month.importKwh != null, exportAvailable: month.exportKwh != null }));
+      const pv = pvSummary ? pvSummary(completed, months) : null;
+      const annualKwh = pv?.loadKwh ?? (pvSettings.powerKw === 0 && months.every(m => m.importAvailable) ? months.reduce((sum, m) => sum + m.importKwh!, 0) : null);
+      return { period, months, days: buildClientEnergyActualDays(completed.intervals), issues: summary.issues,
+        modelledHours: completed.intervals.filter(row => row.import?.source === 'modelled' || row.export?.source === 'modelled').length,
+        consumption: annualKwh != null ? { annualKwh, source: 'Pomiary i faktury + dopasowany profil · szacunek' } : null,
+        ...(pv ? { pv } : {}),
+        cost: await calculateClientEnergyCostSummaryOnServer({ project: project as unknown as ClientEnergyCostSummaryProject, period, series: completed, months }),
+      };
+    }
     const projectAccounts = await prisma.energyPortalAccount.findMany({
       where: { projectId, clientId: project.clientId },
       select: { id: true, ppeNumber: true, operator: true },
@@ -256,16 +292,18 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     // operators still use their own selected tariff in the cost summary.
     const accounts = projectAccounts.filter(account => account.operator === 'ENEA');
     if (!accounts.length) {
+      const completed = await completedSummary(null, null);
+      if (completed) return jsonResponse({ ok: true, data: completed }, { headers: { 'Cache-Control': 'private, no-store' } });
       const months = emptyMonths(periodKeys);
       const operators = Array.from(new Set(projectAccounts.map(account => account.operator)));
       const measurementIssue = operators.length
         ? `Import pomiarów godzinowych dla operatora ${operators.join(', ')} nie jest jeszcze obsługiwany.`
         : 'Nie znaleziono konta operatora energii przypisanego do projektu.';
-      const modeled = await annualFallback(measurementIssue, months);
+      const modeled = completionHasSource ? null : await annualFallback(measurementIssue, months);
       if (modeled) return jsonResponse({ ok: true, data: modeled }, { headers: { 'Cache-Control': 'private, no-store' } });
       return jsonResponse({ ok: true, data: {
         period, months, days: [],
-        issues: [measurementIssue],
+        issues: [measurementIssue, ...completionIssues],
         ...(pvSummary ? { pv: pvSummary(null, months) } : {}),
         cost: await calculateClientEnergyCostSummaryOnServer({ project: project as unknown as ClientEnergyCostSummaryProject, period, series: null, months }),
       } }, { headers: { 'Cache-Control': 'private, no-store' } });
@@ -283,11 +321,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     const scopedAccounts = ppeNumbers.length
       ? accounts.filter((account) => account.ppeNumber?.trim() === ppeNumbers[0])
       : accounts;
-    const periodWhere = periodKeys.map((period) => {
-      const [periodYear, periodMonth] = period.split('-').map(Number);
-      return { periodYear, periodMonth };
-    });
-    const records = await prisma.energyMeasurementFile.findMany({
+    const records = selectOfferMeasurementFilesForPeriod(await prisma.energyMeasurementFile.findMany({
       where: {
         accountId: { in: scopedAccounts.map((account) => account.id) },
         clientId: project.clientId,
@@ -295,7 +329,6 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         status: 'DOWNLOADED',
         kind: { in: ['ACTIVE_IMPORT', 'ACTIVE_EXPORT'] },
         AND: [
-          { OR: periodWhere },
           { OR: [{ projectId }, { projectId: null }] },
         ],
       },
@@ -314,40 +347,42 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         document: { select: { clientId: true, projectId: true, storagePath: true, fileName: true, sizeBytes: true, sha256: true } },
       },
       orderBy: [{ periodYear: 'asc' }, { periodMonth: 'asc' }, { kind: 'asc' }, { id: 'asc' }],
-      take: maxMeasurementDocuments + 1,
-    });
+    }), periodKeys);
 
     const issues: string[] = [];
     let months = emptyMonths(periodKeys);
     let days: ReturnType<typeof buildClientEnergyActualDays> = [];
     let measurementSeries: OfferMeasurementSeries | null = null;
 
+    const periodWhere = periodKeys.map((period) => {
+      const [periodYear, periodMonth] = period.split('-').map(Number);
+      return { periodYear, periodMonth };
+    });
+    const nonDownloadedRecords = await prisma.energyMeasurementFile.findMany({
+      where: {
+        accountId: { in: scopedAccounts.map((account) => account.id) },
+        clientId: project.clientId,
+        operator: 'ENEA',
+        status: { not: 'DOWNLOADED' },
+        kind: { in: ['ACTIVE_IMPORT', 'ACTIVE_EXPORT'] },
+        AND: [
+          { OR: periodWhere },
+          { OR: [{ projectId }, { projectId: null }] },
+        ],
+      },
+      select: { id: true, status: true },
+    });
+    if (nonDownloadedRecords.length) {
+      issues.push(`Znaleziono ${nonDownloadedRecords.length} rekordów plików ENEA poza statusem DOWNLOADED; profil roczny nie zastępuje tych źródeł.`);
+    }
+
     if (records.length > maxMeasurementDocuments) {
       issues.push(`Znaleziono więcej niż ${maxMeasurementDocuments} pliki pomiarowe; dane nie zostały wczytane.`);
     } else if (!records.length) {
       issues.push(`Brak pobranych miesięcznych plików ENEA w okresie ${period.startMonth}–${period.endMonth}.`);
-      const periodWhere = periodKeys.map((period) => {
-        const [periodYear, periodMonth] = period.split('-').map(Number);
-        return { periodYear, periodMonth };
-      });
-      const nonDownloadedRecords = await prisma.energyMeasurementFile.findMany({
-        where: {
-          accountId: { in: scopedAccounts.map((account) => account.id) },
-          clientId: project.clientId,
-          operator: 'ENEA',
-          status: { not: 'DOWNLOADED' },
-          kind: { in: ['ACTIVE_IMPORT', 'ACTIVE_EXPORT'] },
-          AND: [
-            { OR: periodWhere },
-            { OR: [{ projectId }, { projectId: null }] },
-          ],
-        },
-        select: { id: true, status: true },
-      });
-      if (nonDownloadedRecords.length) {
-        issues.push(`Znaleziono ${nonDownloadedRecords.length} rekordów plików ENEA poza statusem DOWNLOADED; profil roczny nie zastępuje tych źródeł.`);
-      }
-      const modeled = nonDownloadedRecords.length ? null : await annualFallback(issues[0], months);
+      const completed = nonDownloadedRecords.length ? null : await completedSummary(null, ppeNumbers[0] ?? null, issues);
+      if (completed) return jsonResponse({ ok: true, data: completed }, { headers: { 'Cache-Control': 'private, no-store' } });
+      const modeled = nonDownloadedRecords.length || completionHasSource ? null : await annualFallback(issues[0], months);
       if (modeled) return jsonResponse({ ok: true, data: modeled }, { headers: { 'Cache-Control': 'private, no-store' } });
     } else {
       const eligible = records.filter((file) => {
@@ -383,7 +418,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
               document: file.document,
             };
             const bytes = await readOfferWorkspaceMeasurement(stored);
-            inputs.push({ id: file.id, expectedPeriod, expectedKind: file.kind as OfferMeasurementKind, bytes, projectId });
+            inputs.push({ id: file.id, expectedPeriod, targetPeriod: file.targetPeriod, expectedKind: file.kind as OfferMeasurementKind, bytes, projectId });
           } catch (error) {
             issues.push(`Plik ${file.id}: ${error instanceof Error ? error.message : String(error)}`);
           }
@@ -395,6 +430,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
           const series = buildOfferMeasurementSeries(inputs, { ppeNumber, periodKeys, projectId });
           measurementSeries = series;
           const summary = summarizeOfferMeasurementSeries(series, [], periodKeys);
+          issues.push(...summary.issues);
           for (const month of summary.months) {
             const monthSeries = series.periods.find((item) => item.period === month.period);
             monthMap.set(month.period, {
@@ -422,9 +458,19 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       }
     }
 
+    const completed = await completedSummary(measurementSeries, ppeNumbers[0] ?? null, issues);
+    if (completed) return jsonResponse({ ok: true, data: completed }, { headers: { 'Cache-Control': 'private, no-store' } });
+    issues.push(...completionIssues);
+    const pv = pvSummary ? pvSummary(measurementSeries, months) : null;
+    const fullImport = months.length === 12 && months.every(month => month.importAvailable && month.importKwh != null);
+    const consumption = pv?.loadKwh != null ? { annualKwh: pv.loadKwh, source: 'Pomiary + model PV · szacunek zużycia' }
+      : pvSettings.powerKw === 0 && fullImport && existingBatteryPresent === false
+        ? { annualKwh: months.reduce((sum, month) => sum + month.importKwh!, 0), source: 'Roczne zużycie z plików pomiarowych CRM' } : null;
     return jsonResponse({ ok: true, data: {
       period, months, days, issues,
-      ...(pvSummary ? { pv: pvSummary(measurementSeries, months) } : {}),
+      consumption,
+      modelledHours: measurementSeries?.intervals.filter(row => row.import?.source === 'modelled' || row.export?.source === 'modelled').length || 0,
+      ...(pv ? { pv } : {}),
       cost: await calculateClientEnergyCostSummaryOnServer({ project: project as unknown as ClientEnergyCostSummaryProject, period, series: measurementSeries, months }),
     } }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {

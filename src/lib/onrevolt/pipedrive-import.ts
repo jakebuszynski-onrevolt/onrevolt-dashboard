@@ -1,4 +1,5 @@
 import { prisma } from './prisma';
+import { defaultNewProjectAnalysisStartMonth } from './project-analysis-period';
 
 type ImportOptions = {
   apply: boolean;
@@ -258,6 +259,7 @@ export async function importPipedriveToLocal(options: ImportOptions): Promise<Im
     const project = await prisma.project.create({
       data: {
         clientId: client.id,
+        analysisStartMonth: defaultNewProjectAnalysisStartMonth(),
         investmentSiteId: site?.id,
         clientType: 'UNKNOWN',
         title: title || personName,

@@ -239,3 +239,13 @@ test('PME2 granice pojemności: 10 kWh oraz 2× PV; niespełnienie daje zero dot
     assert.equal(result.pme2.conditionalGross, eligible ? 6000 : 0);
   }
 });
+
+test('upust obniża podstawę dotacji także bez podziału komercyjnego i nie jest odejmowany dwukrotnie', () => {
+  const input = { ...base, selectedPricingLines: [...base.selectedPricingLines,
+    { id: 'discount', category: null, discount: true, amountGross: -5000 }] };
+  const result = calculateOfferWorkspaceFinancing(input);
+  assert.equal(result.pme2.storageCostExcludingEmsAndInverterGross, 35000);
+  const explicit = calculateOfferWorkspaceFinancing({ ...input, pme2: { storageCostExcludingEmsAndInverterGross: 35000 } });
+  assert.equal(explicit.pme2.storageCostExcludingEmsAndInverterGross, 35000);
+  assert.throws(() => calculateOfferWorkspaceFinancing({ ...base, selectedPricingLines: [{ id: 'bad', category: null, amountGross: -1 }] }));
+});

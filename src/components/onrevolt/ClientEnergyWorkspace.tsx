@@ -34,6 +34,7 @@ type Props = {
   analysisPeriod?: ReactNode; periodBusy?: boolean;
   annualKwh: number; annualSource: string; manualAnnualVisible: boolean;
   measurements: ReactNode; invoices: ReactNode; summary: ReactNode;
+  measurementUpload?: ReactNode;
   alerts?: ReactNode; sourceAlerts?: ReactNode; sourceActions?: ReactNode;
   pvFields?: ReactNode;
   pvDisabled?: boolean;
@@ -106,7 +107,7 @@ export default function ClientEnergyWorkspace(props: Props) {
           onClick={event => { event.preventDefault(); setActive(key); document.getElementById(`${id}-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
           <span className={styles.number}>{index + 1}</span><span>{title}<small>{subtitle}</small></span>
         </a>)}</nav>
-        <div className={styles.readiness}><small>Dostępność danych</small><strong>{props.measurementMonths}/12 <span>miesięcy z plikiem poboru</span></strong><strong>{props.invoiceCount} <span>faktur z rozpoznanym zużyciem</span></strong></div>
+        <div className={styles.readiness}><small>Dostępność danych</small><strong>{props.measurementMonths}/12 <span>miesięcy z danymi poboru</span></strong><strong>{props.invoiceCount} <span>faktur z rozpoznanym zużyciem</span></strong></div>
       </aside>
       <div className={styles.content}>
         <section className={styles.section} id={`${id}-object`} data-energy-section="object">
@@ -164,6 +165,7 @@ export default function ClientEnergyWorkspace(props: Props) {
             <label className={s.hasEnergyInvoices ? styles.selectedChoice : styles.sourceChoice}><input type="checkbox" checked={s.hasEnergyInvoices} onChange={event => props.onChange('hasEnergyInvoices', event.target.checked)} /><span><b>Mam faktury za energię</b><small>Zużycie i koszty z okresów rozliczeniowych.</small></span><MdReceiptLong /></label>
           </div>
           {props.sourceAlerts}
+          {props.measurementUpload}
           {s.hasOperatorData && <div className={styles.sourcePanel}>{props.measurements}</div>}
           {s.hasEnergyInvoices && <div className={styles.sourcePanel}>{props.invoices}</div>}
           {props.manualAnnualVisible ? <div className={styles.sourcePanel}><h3>Deklaracja klienta</h3>{annualField}</div>

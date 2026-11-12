@@ -11,7 +11,6 @@ import {
   MenuItem,
   MenuList,
   Text,
-  useColorMode,
   useColorModeValue,
 } from '@chakra-ui/react';
 import Link from 'components/link/Link';
@@ -24,10 +23,8 @@ import NextLink from 'next/link';
 // Assets
 import navImage from '/public/img/layout/Navbar.png';
 import { FaEthereum } from 'react-icons/fa';
-import { IoMdMoon, IoMdSunny } from 'react-icons/io';
 import { MdInfoOutline, MdNotificationsNone } from 'react-icons/md';
-import { useEffect, useState, useContext } from 'react';
-import { ConfiguratorContext } from 'contexts/ConfiguratorContext';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import routes from 'routes';
 
 type CurrentStaffUser = {
@@ -37,6 +34,7 @@ type CurrentStaffUser = {
   avatarUrl?: string | null;
   positionTitle?: string | null;
   systemRole: string;
+  siteVisitsOnly?: boolean;
   companyRoles?: Array<{ name: string }>;
 };
 
@@ -69,6 +67,12 @@ function firstName(name?: string | null) {
   return (name || '').trim().split(/\s+/)[0] || 'Operator';
 }
 
+function siteVisitRoutes() {
+  const sales = routes.find((route) => route.name === 'Sprzedaż');
+  const clients = sales?.items?.filter((route) => route.path === '/clients') || [];
+  return sales && clients.length ? [{ ...sales, items: clients }] : [];
+}
+
 function formatNotificationTime(value?: string | null) {
   if (!value) return '';
   const date = new Date(value);
@@ -84,8 +88,9 @@ function formatNotificationTime(value?: string | null) {
 export default function HeaderLinks(props: { secondary: boolean }) {
   const { secondary } = props;
   const [user, setUser] = useState<CurrentStaffUser | null>(null);
+  const [userLoaded, setUserLoaded] = useState(false);
   const [notifications, setNotifications] = useState<NotificationsState>(emptyNotifications);
-  const { colorMode, toggleColorMode } = useColorMode();
+  const userRef = useRef<CurrentStaffUser | null>(null);
   // Chakra Color Mode
   const navbarIcon = useColorModeValue('gray.400', 'white');
   let menuBg = useColorModeValue('white', 'navy.800');
@@ -101,14 +106,24 @@ export default function HeaderLinks(props: { secondary: boolean }) {
     '14px 17px 40px 4px rgba(112, 144, 176, 0.06)',
   );
   const borderButton = useColorModeValue('secondaryGray.500', 'whiteAlpha.200');
+  const showStaffTools = userLoaded && Boolean(user) && !user?.siteVisitsOnly;
+  const navigationRoutes = useMemo(
+    () => user?.siteVisitsOnly ? siteVisitRoutes() : showStaffTools ? routes : [],
+    [showStaffTools, user?.siteVisitsOnly],
+  );
 
   async function loadCurrentUser() {
     try {
       const response = await fetch('/api/auth/me', { cache: 'no-store' });
       const payload = await response.json();
-      setUser(response.ok && payload.ok ? payload.data : null);
+      const current = response.ok && payload.ok ? payload.data as CurrentStaffUser : null;
+      userRef.current = current;
+      setUser(current);
+      return current;
     } catch {
+      userRef.current = null;
       setUser(null);
+      return null;
     }
   }
 
@@ -123,14 +138,26 @@ export default function HeaderLinks(props: { secondary: boolean }) {
   }
 
   useEffect(() => {
-    loadCurrentUser();
-    loadNotifications();
-    const handler = () => loadCurrentUser();
-    const notificationsHandler = () => loadNotifications();
+    let active = true;
+    const syncUser = async () => {
+      const current = await loadCurrentUser();
+      if (!active) return;
+      setUserLoaded(true);
+      if (current && !current.siteVisitsOnly) await loadNotifications();
+      else setNotifications(emptyNotifications);
+    };
+    void syncUser();
+    const handler = () => { void syncUser(); };
+    const notificationsHandler = () => {
+      if (userRef.current && !userRef.current.siteVisitsOnly) void loadNotifications();
+    };
     window.addEventListener('onrevolt:staff-user-updated', handler);
     window.addEventListener('onrevolt:notifications-updated', notificationsHandler);
-    const interval = window.setInterval(loadNotifications, 60000);
+    const interval = window.setInterval(() => {
+      if (userRef.current && !userRef.current.siteVisitsOnly) void loadNotifications();
+    }, 60000);
     return () => {
+      active = false;
       window.removeEventListener('onrevolt:staff-user-updated', handler);
       window.removeEventListener('onrevolt:notifications-updated', notificationsHandler);
       window.clearInterval(interval);
@@ -169,19 +196,21 @@ export default function HeaderLinks(props: { secondary: boolean }) {
       borderRadius="30px"
       boxShadow={shadow}
     >
-      <SearchBar
-        mb={() => {
-          if (secondary) {
-            return { base: '10px', md: 'unset' };
-          }
-          return 'unset';
-        }}
-        me="10px"
-        borderRadius="30px"
-      />
+      {showStaffTools ? (
+        <SearchBar
+          mb={() => {
+            if (secondary) {
+              return { base: '10px', md: 'unset' };
+            }
+            return 'unset';
+          }}
+          me="10px"
+          borderRadius="30px"
+        />
+      ) : null}
       <Flex
         bg={ethBg}
-        display={secondary ? 'flex' : 'none'}
+        display={showStaffTools && secondary ? 'flex' : 'none'}
         borderRadius="30px"
         ms="auto"
         p="6px"
@@ -213,8 +242,8 @@ export default function HeaderLinks(props: { secondary: boolean }) {
           </Text>
         </Text>
       </Flex>
-      <SidebarResponsive routes={routes} />
-      <Menu>
+      {userLoaded && user ? <SidebarResponsive routes={navigationRoutes} /> : null}
+      {showStaffTools ? <Menu>
         <MenuButton p="0px">
           <Box position="relative" me="10px" mt="6px">
             <Icon
@@ -351,9 +380,9 @@ export default function HeaderLinks(props: { secondary: boolean }) {
             ))}
           </Flex>
         </MenuList>
-      </Menu>
+      </Menu> : null}
 
-      <Menu>
+      {showStaffTools ? <Menu>
         <MenuButton p="0px">
           <Icon
             mt="6px"
@@ -413,9 +442,9 @@ export default function HeaderLinks(props: { secondary: boolean }) {
             </Link>
           </Flex>
         </MenuList>
-      </Menu>
-      <Configurator />
-      <Menu>
+      </Menu> : null}
+      {showStaffTools ? <Configurator /> : null}
+      {userLoaded && user ? <Menu>
         <MenuButton p="0px" style={{ position: 'relative' }}>
           <Avatar
             name={user?.name || 'onRevolt'}
@@ -459,18 +488,20 @@ export default function HeaderLinks(props: { secondary: boolean }) {
               borderRadius="8px"
               px="14px"
             >
-              <Text fontSize="sm">Ustawienia profilu</Text>
+              <Text fontSize="sm">{user.siteVisitsOnly ? 'Profil i hasło' : 'Ustawienia profilu'}</Text>
             </MenuItem>
-            <MenuItem
-              as={NextLink}
-              href="/admin/settings"
-              _hover={{ bg: 'none' }}
-              _focus={{ bg: 'none' }}
-              borderRadius="8px"
-              px="14px"
-            >
-              <Text fontSize="sm">Użytkownicy i role</Text>
-            </MenuItem>
+            {!user.siteVisitsOnly ? (
+              <MenuItem
+                as={NextLink}
+                href="/admin/settings"
+                _hover={{ bg: 'none' }}
+                _focus={{ bg: 'none' }}
+                borderRadius="8px"
+                px="14px"
+              >
+                <Text fontSize="sm">Użytkownicy i role</Text>
+              </MenuItem>
+            ) : null}
             <MenuItem
               _hover={{ bg: 'none' }}
               _focus={{ bg: 'none' }}
@@ -483,7 +514,7 @@ export default function HeaderLinks(props: { secondary: boolean }) {
             </MenuItem>
           </Flex>
         </MenuList>
-      </Menu>
+      </Menu> : null}
     </Flex>
   );
 }

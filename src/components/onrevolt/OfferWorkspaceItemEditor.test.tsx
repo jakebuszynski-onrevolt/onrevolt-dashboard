@@ -223,3 +223,42 @@ test('błędna cena nie jest zapisywana, a zachowane koszty indywidualne nadal o
   assert.ok(markup.includes('data-change="changed"'), 'Koszty indywidualne muszą pozostawić oznaczenie zmienionej pozycji.');
   assert.ok(!markup.includes('role="dialog"'), 'Tabela nie może otwierać starego modala.');
 });
+
+test('upust -5000 zł zapisuje się tylko w ofercie, obniża sprzedaż i marżę, zachowuje koszty i daje się usunąć', () => {
+  for (const clientType of ['B2C', 'B2B']) {
+    const source = template();
+    const original = JSON.stringify(source);
+    const input = parseOfferWorkspaceDraft({ ...draft(), saleVatMode: clientType === 'B2C' ? 'REDUCED_8' : 'STANDARD_23',
+      configurationEdits: [{ templateId: 'battery', addedItems: [{ id: 'discount', kind: 'DISCOUNT', description: 'Upust handlowy',
+        quantity: 1, role: 'OTHER', supplyMode: 'SERVICE_ONLY', pricing: { unitSaleNet: -5000 / (clientType === 'B2C' ? 1.08 : 1),
+          unitPurchaseNet: 0, purchaseVatRate: 0, operatingCostNet: 0, operatingCostBasis: 'PER_UNIT', saleVatRate: 0.08 } }] }] });
+    const groups = seedGroups([source], input, clientType);
+    assert.equal(groups[0].rows[1].unitSaleAmount, '-5000,00');
+    assert.equal(groups[0].rows[1].discount, true);
+    const saved = parseOfferWorkspaceDraft(JSON.parse(JSON.stringify({ ...input, configurationEdits: build(groups, [source], input, clientType) })));
+    const pricing = priceOfferWorkspaceConfiguration(applyOfferWorkspaceConfigurationEdits([source], saved), saved.saleVatMode, clientType);
+    const before = priceOfferWorkspaceConfiguration([source], saved.saleVatMode, clientType);
+    assert.equal(pricing.systemCostBeforeFinancing, Number((before.systemCostBeforeFinancing! - 5000).toFixed(2)));
+    assert.equal(pricing.totals!.totalCostNet, before.totals!.totalCostNet);
+    assert.equal(pricing.totals!.profitNet, Number((before.totals!.profitNet + pricing.lines[1].calculation!.saleNet).toFixed(2)));
+    assert.equal(pricing.totals!.vatSurplus, before.totals!.vatSurplus);
+    groups[0].rows[1].unitSaleAmount = '-4500,00'; groups[0].rows[1].salePriceEdited = true;
+    const edited = build(groups, [source], input, clientType);
+    assert.equal(edited[0].addedItems![0].pricing.unitSaleNet, -4500 / (clientType === 'B2C' ? 1.08 : 1));
+    groups[0].rows[1].removed = true;
+    assert.equal(build(groups, [source], input, clientType).length, 0);
+    assert.equal(JSON.stringify(source), original);
+  }
+});
+
+test('upust nie pozwala zmienić kosztów ani ilości, zwykła ujemna cena pozostaje błędem', () => {
+  const item = { id: 'd', kind: 'DISCOUNT', description: 'Upust', quantity: 1, role: 'OTHER', supplyMode: 'SERVICE_ONLY',
+    pricing: { unitSaleNet: -5000, unitPurchaseNet: 0, purchaseVatRate: 0, operatingCostNet: 0, operatingCostBasis: 'PER_UNIT', saleVatRate: 0.08 } };
+  const parse = (row: unknown) => parseOfferWorkspaceConfigurationEdits([{ templateId: 'battery', addedItems: [row] }]);
+  for (const changed of [{ ...item, kind: undefined }, { ...item, quantity: 2 }, { ...item, pricing: { ...item.pricing, unitPurchaseNet: 1 } },
+    { ...item, pricing: { ...item.pricing, unitSaleNet: 5000 } }]) assert.throws(() => parse(changed));
+  const input = { ...draft(), configurationEdits: parse({ ...item, pricing: { ...item.pricing, unitSaleNet: -100000 } }) };
+  const pricing = priceOfferWorkspaceConfiguration(applyOfferWorkspaceConfigurationEdits([template()], input), 'REDUCED_8', 'B2C');
+  assert.equal(pricing.totals, null);
+  assert.match(pricing.calculationError!, /Upust przekracza/);
+});

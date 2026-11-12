@@ -90,6 +90,14 @@ function daysInMonth(year: number, month: number): number {
   return lastDay.getUTCDate();
 }
 
+/** Persist this default on creation; existing projects retain their saved or legacy period. */
+export function defaultNewProjectAnalysisStartMonth(now: Date = new Date()): string {
+  const { year, month } = warsawMonthAt(now);
+  // Only a complete April–March year can be used with historical hourly data.
+  const startMonth = `${year - (month >= 4 ? 1 : 2)}-04`;
+  return resolveProjectAnalysisPeriod(startMonth, now).startMonth;
+}
+
 export function resolveProjectAnalysisPeriod(
   startMonth?: string | null,
   now: Date = new Date(),
